@@ -21,7 +21,7 @@ mod summon_stubs;
 
 use magic::{Call, Eax, SCRATCH, Twin};
 use ownb::rec;
-use summon_stubs::{all_stubs, prime, rf, visit_stub, wf};
+use summon_stubs::{all_stubs, junk, junk_floats, prime, rf, visit_stub, wf};
 
 fn twin(n: u16) -> Option<Twin> {
     let mut t = Twin::load(n)?;
@@ -627,6 +627,208 @@ fn main_task_0152() {
             t.set_u16(l + 0x18, 2);
         }
         ownb::dirty_stack(&mut t, 0x9a90 + k, &[]);
+        t.check_entry(f, Call::default(), &[a], Eax::Checked);
+    }
+}
+
+/// 0155's offset `x` in `magic_0164`'s summon main (as the port's map).
+fn o164(x: u32) -> u32 {
+    let mut r = x;
+    for (start, here) in [
+        (0u32, 0u32),
+        (0x40e, 0x411),
+        (0xbf7, 0xbfd),
+        (0xc00, 0xc03),
+        (0xeb0, 0xe8f),
+        (0xece, 0xea3),
+        (0xf2d, 0xef0),
+        (0xfc8, 0xf8e),
+        (0xff3, 0xfa4),
+        (0x1151, 0x1105),
+        (0x117c, 0x111b),
+        (0x12fc, 0x12a9),
+        (0x131d, 0x12b8),
+        (0x1421, 0x1439),
+        (0x1435, 0x144e),
+        (0x14cd, 0x146c),
+    ] {
+        if x >= start {
+            r = x - start + here;
+        }
+    }
+    r
+}
+
+/// `magic_0155` 0x1000a990 and `magic_0164` 0x1000a770
+/// (`r46::summon_main_0155`, `summon_main_0164`): state 0 (slot 294
+/// answering 0xff and not), every state's wait on both sides of its
+/// bound and the chains it runs into, the fade word above and at its
+/// floor, the light's flag and the part's flag both ways, 10000 and the
+/// states past the table; the parents' lists empty and not.
+#[test]
+fn summon_main_0155_0164() {
+    for (n, rva, is_0164) in [(155u16, 0xa990u32, false), (164, 0xa770, true)] {
+        summon_main_case(n, rva, is_0164);
+    }
+}
+
+fn summon_main_case(n: u16, rva: u32, is_0164: bool) {
+    let Some(mut t) = twin(n) else { return };
+    all_stubs(&mut t);
+    summon_stubs::float_matrix_stubs(&mut t);
+    summon_stubs::vector_stubs(&mut t);
+    summon_stubs::summon_stubs(&mut t);
+    let f = t.at(rva);
+    let o = move |x: u32| if is_0164 { o164(x) } else { x };
+    let w = move |t: &Twin, x: u32| t.img.word(f + o(x));
+    rec(&mut t, 325, 2, |m, a| {
+        for i in 0..4 {
+            let x = m.r32(a[1] + 4 * i);
+            m.w32(a[0] + 4 * i, x ^ 0x10);
+        }
+        0x0325_0000 ^ a[0]
+    });
+    let answer = SCRATCH + 0x7f0;
+    rec(&mut t, 294, 1, move |m, _| m.r32(answer));
+    t.stub_st0(790, |_, _| 0.375);
+    for (s, x) in [(12u32, -1.5f64), (333, 0.75), (282, 2.25), (277, 4.0)] {
+        t.stub_st0(s, move |_, a| {
+            x + f64::from(a.first().copied().unwrap_or(0) & 3)
+        });
+    }
+    rec(&mut t, 558, 1, |m, a| {
+        for i in 0..4 {
+            m.w32(a[0] + 4 * i, 0x40 * i + 7);
+        }
+        0x558
+    });
+    rec(&mut t, 719, 3, |_, a| {
+        0x0719_0000 ^ a[0] ^ (a[1] << 8) ^ (a[2] << 12)
+    });
+    // slot 771's handle: its high word too
+    t.stub_edx(771, |_, a| 0x0077_1000 ^ a[0]);
+    prime(&mut t, f, SCRATCH + 0x3_8000);
+    // the owned nodes' vtable visits through a stub
+    let (visit, class) = (1000u32, SCRATCH + 0x3700);
+    visit_stub(&mut t, visit, class);
+    let owned = t.img.rel32_target(f + o(0xa7b));
+    let vt = t.img.word(owned + 5);
+    t.set_u32(vt + 0x1c, magic::TRAPS + 16 * visit);
+    let (a, r) = (SCRATCH + 0x100, SCRATCH + 0x1_0000);
+    // the parents (the scene's, the pair's)
+    let parents = [w(&t, 0x182), w(&t, 0x532)];
+    // the static list's last (its `+4` takes the node)
+    let qlast = w(&t, 0x5e2);
+    let wait49 = if is_0164 { 0x32 } else { 0x5a };
+    // (state, the count `R + 0x2c`, slot 294, the flag bits, lists empty)
+    let mut cases: Vec<(u32, i32, u32, u8, bool)> = vec![
+        (0, 0, 0xff, 0, true),
+        (0, 0, 3, 5, false),
+        (0, 0x20, 0x7f, 0, true),
+        (0xa, 0xe, 0, 0, true),
+        (0xa, 0xf, 0, 0, true),
+        (0xb, 0x18, 0, 0, false),
+        (0xb, 0x19, 0, 0, false),
+        (0xc, 0x34, 0, 0, true),
+        (0xc, 0x35, 0, 0, true),
+        (0xd, 0x35, 0, 0, false),
+        (0xd, 0x36, 0, 0, false),
+        (0xd, 0x36, 0, 0, true),
+        (0x14, 3, 0, 0, true),
+        (0x15, 0xe, 0, 0, false),
+        (0x15, 0xf, 0, 0, false),
+        (0x16, 0x13, 0, 0, true),
+        (0x16, 0x14, 0, 0, true),
+        (0x17, 0x1d, 0, 0, true),
+        (0x17, 0x1e, 0, 0, true),
+        (0x18, 0x48, 0, 0, true),
+        (0x18, 0x49, 0, 0, true),
+        (0x1e, 2, 0, 0, false),
+        (0x1f, 4, 0, 0, true),
+        (0x1f, 5, 0, 0, true),
+        (0x20, 8, 0, 0, false),
+        (0x20, 9, 0, 0, false),
+        (0x21, 0xe, 0, 0, true),
+        (0x21, 0xf, 0, 0, true),
+        (0x28, 0, 0, 0, true),
+        (0x29, 0x1d, 0, 0, true),
+        (0x29, 0x1e, 0, 0, true),
+        (0x2a, 0x31, 0, 0, true),
+        (0x2a, 0x32, 0, 0, true),
+        (0x2b, 0x45, 0, 0, true),
+        (0x2b, 0x46, 0, 0, true),
+        (0x2c, 0x77, 0, 0, true),
+        (0x2c, 0x78, 0, 0, true),
+        (0x32, 0, 0, 0, true),
+        (0x33, 0, 0, 0, true),
+        (0x34, 0x42, 0, 0, true),
+        (0x34, 0x43, 0, 1, true),
+        (0x34, 0x43, 0, 4, true),
+        (0x35, 0, 0, 0, true),
+        (0x35, 0, 0, 1, true),
+        (0x35, 0, 0, 5, true),
+        (0x3c, 0, 0, 0, true),
+        (0x3d, 0, 0, 4, true),
+        (0x3e, 7, 0, 0, true),
+        (0x3e, 8, 0, 0, true),
+        (0x3f, 0x1d, 0, 0, true),
+        (0x3f, 0x1e, 0, 0, true),
+        (0x40, 0x39, 0, 0, true),
+        (0x40, 0x3a, 0, 0, true),
+        (0x46, 0, 0, 0, true),
+        (0x47, 0, 0, 0, true),
+        (0x47, 1, 0, 0, true),
+        (0x48, 1, 0, 0, true),
+        (0x48, 2, 0, 0, true),
+        (0x49, wait49 - 1, 0, 0, true),
+        (0x49, wait49, 0, 0, true),
+        (0x2710, 0, 0, 0, true),
+        (0x2711, 0, 0, 0, true),
+        (5, 0, 0, 0, true),
+        (0x4a, 0, 0, 0, true),
+        (0x1000, 0, 0, 0, true),
+    ];
+    cases.push((0x0e, 0, 0, 0, true));
+    for (k, (state, count, ans, bits, empty)) in (0u32..).zip(cases) {
+        junk(&mut t, r, 0x60, k);
+        t.set_u32(r + 0x18, state);
+        t.set_u32(r + 0x2c, count.cast_unsigned());
+        t.set_u32(answer, ans);
+        t.set_u32(a + 4, r);
+        let (node, n0, n1) = (SCRATCH + 0x3600, SCRATCH + 0x3680, SCRATCH + 0x36c0);
+        t.set_u32(a, node);
+        for (x, next, prev) in [(node, n0, n1), (n0, n1, node), (n1, node, n0)] {
+            t.set_u32(x + 4, next);
+            t.set_u32(x + 8, prev);
+        }
+        for (i, &p) in (0u32..).zip(&parents) {
+            let blk = SCRATCH + 0x7800 + 0x40 * i;
+            junk(&mut t, blk, 0x20, k + i);
+            t.set_u32(p + 0x10, if empty { p } else { blk });
+            t.set_u32(p + 0xc, p);
+            t.set_u16(p + 0x18, 1 + i as u16);
+        }
+        let qblk = SCRATCH + 0x7900;
+        junk(&mut t, qblk, 0x20, k);
+        t.set_u32(qlast, qblk);
+        // the light's flag (bit 0) and the part's flag (bit 2)
+        for x in [0x8eeu32, 0x90c] {
+            let at = w(&t, x);
+            t.set_u8(at, bits | 0xa0);
+        }
+        // the fade word above its floor or at it
+        let fade = w(&t, 0xff7);
+        let floor = f32::from_bits(t.u32(w(&t, 0xffe)));
+        t.set_u32(fade, (floor + if k % 2 == 0 { 0.5 } else { 0.0 }).to_bits());
+        junk_floats(
+            &mut t,
+            f,
+            &[
+                0x19c, 0x4c, 0x8c, 0x788, 0x798, 0x81b, 0x1197, 0x6e8, 0x10a8, 0xdf5,
+            ],
+            k,
+        );
+        ownb::dirty_stack(&mut t, rva + k, &[]);
         t.check_entry(f, Call::default(), &[a], Eax::Checked);
     }
 }

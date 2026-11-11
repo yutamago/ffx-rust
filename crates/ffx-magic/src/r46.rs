@@ -1272,3 +1272,1068 @@ pub const MAIN_TASK_0152: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// [`summon_main_0155`]'s layout in a copy: the piecewise map of 0155's
+/// code offsets onto the copy's (`(start, here)`: from `start` on an
+/// offset `o` is `o - start + here`) and the copy's kind (155, or 164 for
+/// `magic_0164`'s copy: [`summon_main_0164`]).
+pub struct Main0155 {
+    pub map: &'static [(u32, u32)],
+    pub kind: u16,
+}
+
+impl Main0155 {
+    /// `magic_0155`'s own.
+    pub const OWN: Main0155 = Main0155 {
+        map: &[],
+        kind: 155,
+    };
+
+    /// `magic_0155`'s offset `o` in this copy.
+    #[must_use]
+    pub fn m(&self, o: u32) -> u32 {
+        let mut r = o;
+        for &(start, here) in self.map {
+            if o >= start {
+                r = o - start + here;
+            }
+        }
+        r
+    }
+}
+
+/// How a state of [`summon_main_0155_with`] ends: the counts `R + 0x28`
+/// and `R + 0x2c` go up (after the state on and/or the wait reset), or
+/// the state was set and the dispatch runs again.
+enum End155 {
+    /// Only the counts.
+    Count(u32),
+    /// The state on, then the counts.
+    Up(u32),
+    /// The state on, the wait reset, then the counts (the wait ends at 1).
+    UpReset(u32),
+    /// Dispatch again.
+    Again,
+}
+
+/// `magic_0155`'s summon main task (0x1000a990, 5590 bytes with its
+/// tables; a task callback `(A)`, cdecl; an aligned frame `E` of 0x4c
+/// bytes below three pushes, no /GS; the record `R = A[4]`, its state
+/// `R + 0x18`, counts `R + 0x28`, `R + 0x2c`, the wait). The same states as
+/// `magic_0613`'s ([`summon_main_0613`](crate::r35::summon_main_0613)),
+/// each ending on its own; by the state:
+/// - 0: the summon's model node (slot 294's answer as its flags, 1 when
+///   it answers 0xff), a colour node, the camera's move, the static link,
+///   the scene's nodes appended under the DLL's parent `P` (the store
+///   runs in the code; the old last read once, then each known), slots
+///   676 twice, two colour nodes, a pair under the second parent, the
+///   static list's node, an effect node; on to 0xa;
+/// - 0xa, 0x33: slots 719 and 306; 0xb, 0xc, 0x16, 0x28: nodes appended,
+///   an owned node, a particle node (0xc: slot 237); 0xd: two nodes under
+///   `P` (slot 237 between) and a particle node, on to 0x14;
+/// - 0x14/0x15, 0x17, 0x1e/0x1f, 0x29..0x2b, 0x46: words after their
+///   waits; 0x18, 0x21, 0x2c, 0x40, 0x49: on to the next group;
+/// - 0x20: the static tail link, slot 234, nodes, slot 325, an owned
+///   node, particle nodes, the part freed, an effect node; 0x34: a fade
+///   word down to `K`, then the part freed, a particle and an effect
+///   node; 0x35: a node freed, the part (slot 713 unless its flag), a node
+///   leaves, on to 0x3c; 0x3c/0x3d: slot 325, the part freed, a particle
+///   and an effect node; 0x3e/0x3f: the static node and the move's words,
+///   then the fade; 0x47: nodes leave and are freed, two registered;
+///   0x48: the fade;
+/// - 10000: the move's words and the summon's move, the summon's node
+///   leaves, its model set-up, the task unlinked.
+///
+/// Returns `eax` as the original leaves it.
+pub fn summon_main_0155<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    summon_main_0155_with(g, img, fr, &Main0155::OWN)
+}
+
+/// [`summon_main_0155`] on a copy's layout ([`Main0155`]). Kind 164
+/// (`magic_0164`'s, 0x1000a770, 5494 bytes): slot 676 asks for 0x80 and
+/// 0x60, 0x28 and 0x29 set other words, 0x46 runs slot 213 instead of its
+/// words, 0x48 also turns the model (slot 239) and starts its move, the
+/// end has no move, 0x49 waits 0x32.
+#[allow(clippy::too_many_lines)] // the original's states, in order
+pub fn summon_main_0155_with<G: Game>(g: &mut G, img: &Image, fr: &Frame, lay: &Main0155) -> Ret {
+    use crate::r25::abs_stores;
+    let f = fr.at;
+    let o = |x: u32| lay.m(x);
+    let w = |x: u32| img.word(f + o(x));
+    let k = |g: &G, x: u32| g.read::<f32>(w(x));
+    let gw = |g: &G, x: u32| g.read::<u32>(w(x));
+    let call = |x: u32| img.rel32_target(f + o(x));
+    // slot `n` through the imports pointer operand `x`
+    let slot = |g: &G, x: u32, n: u32| slot_target(g, w(x), n);
+    let abs = |g: &mut G, from: u32, to: u32| abs_stores(g, img, f, o(from), o(to));
+    // push ebp; and esp, -8; sub esp, 0x4c; three pushes
+    let base = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0x58);
+    let l = |x: u32| base.wrapping_add(x);
+    let below = base.wrapping_sub(4);
+    let task = fr.arg(g, 0);
+    let r = g.read::<u32>(task + 4);
+    let at = |x: u32| r.wrapping_add(x);
+    let count = |g: &G| g.read::<i32>(at(0x2c));
+    let set = |g: &mut G, s: u32| g.write::<u32>(at(0x18), s);
+    let reset = |g: &mut G| g.write::<u32>(at(0x2c), 0);
+    let up = |g: &mut G| {
+        let s = g.read::<u32>(at(0x18)).wrapping_add(1);
+        g.write::<u32>(at(0x18), s);
+    };
+    let leave = |g: &mut G, node: u32, eax: u32| crate::sa_misc::leave(g, node, eax);
+    // a sb append: the node (operand `n`) under the list (operand `p`)
+    let append = |g: &mut G, (c, n, p): (u32, u32, u32), eax: u32| {
+        crate::sb_misc::node_append(g, img, call(c), w(n), w(p), eax)
+    };
+    // an owned node (operand `n`, the list operand `p`) with its four
+    // pushed words (the last pushed first) at `base - d`
+    let owned = |g: &mut G, (c, n, p): (u32, u32, u32), words: [u32; 4], d: u32| {
+        let sp = base.wrapping_sub(d);
+        for (i, v) in (0u32..).zip(words) {
+            g.write::<u32>(sp + 4 * i, v);
+        }
+        let of = Frame {
+            at: call(c),
+            esp: sp.wrapping_sub(4),
+            ecx: w(n),
+            edx: w(p),
+            ..Frame::default()
+        };
+        crate::sa_misc::node_append_owned(g, img, &of)
+    };
+    // `push n; sub esp, 8; push a`: a particle node (operand `p`)
+    let particle = |g: &mut G, (c, p): (u32, u32), a: u32, n: u32| {
+        let sp = base.wrapping_sub(0x10);
+        g.write::<u32>(sp, a);
+        g.write::<u32>(sp + 0xc, n);
+        let pf = Frame {
+            at: call(c),
+            esp: sp.wrapping_sub(4),
+            ecx: w(p),
+            ..Frame::default()
+        };
+        crate::s3_nodes::particle_node_with(g, img, &pf)
+    };
+    // `push d; push ecx; push b; push a`: an effect node (operand `e`;
+    // the third word whatever `ecx` held: never read)
+    let effect = |g: &mut G, (c, e): (u32, u32), (a, b, d): (u32, u32, u32)| {
+        let sp = base.wrapping_sub(0x10);
+        g.write::<u32>(sp, w(a));
+        g.write::<u32>(sp + 4, w(b));
+        g.write::<u32>(sp + 0xc, d);
+        let ef = Frame {
+            at: call(c),
+            esp: sp.wrapping_sub(4),
+            ecx: w(e),
+            ..Frame::default()
+        };
+        crate::s3_nodes::effect_node_with(g, img, &ef)
+    };
+    // the node at operand `x` freed and unlinked through `base + 0x10`
+    let free_unlink = |g: &mut G, (c, x): (u32, u32), eax: u32| {
+        g.write::<u32>(l(0x10), w(x));
+        let ff = Frame {
+            at: call(c),
+            esp: below,
+            ecx: l(0x10),
+            eax,
+            ..Frame::default()
+        };
+        crate::nodes::free_then_unlink(g, img, &ff).eax
+    };
+    let free_part = |g: &mut G, (c, p): (u32, u32), eax: u32| {
+        crate::m0070::free_part(g, img, call(c), w(p), eax)
+    };
+    // a flag word's bit 0 set (operand `x`)
+    let flag1 = |g: &mut G, x: u32| {
+        let v = gw(g, x) | 1;
+        g.write::<u32>(w(x), v);
+    };
+    // the fade (the call at `c`) with the level at operand `kx`
+    let fade = |g: &mut G, c: u32, kx: u32| {
+        let level = u128::from(gw(g, kx));
+        let ff = Frame {
+            at: call(c),
+            esp: below,
+            xmm: [0, level, 0, 0],
+            ..Frame::default()
+        };
+        crate::s4_misc::fade_set(g, img, &ff).eax
+    };
+    let ebx = w(0x21);
+    let mut state = g.read::<u32>(at(0x18));
+    let end = loop {
+        if state > 0x2710 {
+            break End155::Count(state);
+        }
+        if state == 0x2710 {
+            break End155::Count(end_0155(g, img, f, lay, base, task));
+        }
+        if state > 0x49 {
+            break End155::Count(state);
+        }
+        let idx = img.word(w(0x37) + state) & 0xff;
+        let next = match state {
+            0 => {
+                start_0155(g, img, f, lay, base);
+                abs(g, 0x6ed, 0x701);
+                reset(g);
+                set(g, 0xa);
+                End155::Again
+            }
+            0xa | 0x33 => {
+                if state == 0xa && count(g) < 0xf {
+                    End155::Count(idx)
+                } else {
+                    let (i, j, a, b) = if state == 0xa {
+                        (0x9e7u32, 0xa01u32, 0x9f6u32, 0)
+                    } else {
+                        (0xf31, 0xf4b, 0xf40, 1)
+                    };
+                    // call width: 3
+                    let h = g.call(slot(g, i, 719), 0, &[w(a), 5, 0]).eax;
+                    // call width: 3
+                    let eax = g.call(slot(g, j, 306), 0, &[7, b, h]).eax;
+                    if state == 0xa {
+                        End155::Up(eax)
+                    } else {
+                        abs(g, 0xf63, 0xf95);
+                        let eax = free_part(g, (0xf96, 0xf5f), eax);
+                        let _ = eax;
+                        particle(g, (0xfaa, 0xfa0), w(0xfa5), 4);
+                        let eax = effect(g, (0xfc4, 0xfbf), (0xfba, 0xfb5, 2));
+                        flag1(g, 0xfca);
+                        abs(g, 0xfcf, 0xfd9);
+                        End155::UpReset(eax)
+                    }
+                }
+            }
+            0xb => {
+                if count(g) < 0x19 {
+                    End155::Count(idx)
+                } else {
+                    append(g, (0xa39, 0xa34, 0xa2f), idx);
+                    abs(g, 0xa52, 0xa7a);
+                    let words = [w(0xa49), w(0xa44), w(0xa3f), w(0xa34)];
+                    owned(g, (0xa7b, 0xa4e, 0xa2f), words, 0x10);
+                    let eax = particle(g, (0xa8e, 0xa89), w(0xa4e), 5);
+                    End155::Up(eax)
+                }
+            }
+            0xc => {
+                if count(g) < 0x35 {
+                    End155::Count(idx)
+                } else {
+                    append(g, (0xaba, 0xab5, 0xab0), idx);
+                    abs(g, 0xac3, 0xaeb);
+                    append(g, (0xaec, 0xabf, 0xab0), idx);
+                    // slot 237 `(model, v, 0, x)` on the third node
+                    g.write::<u32>(base.wrapping_sub(4), w(0xaf7));
+                    let cf = Frame {
+                        at: call(0xb01),
+                        esp: base.wrapping_sub(8),
+                        ecx: w(0xafc),
+                        edx: gw(g, 0xaf2),
+                        ..Frame::default()
+                    };
+                    crate::s4_small::call_237(g, img, &cf);
+                    abs(g, 0xb26, 0xb30);
+                    let words = [w(0xb1d), w(0xb18), w(0xb13), w(0xb0e)];
+                    owned(g, (0xb31, 0xb22, 0xb09), words, 0x10);
+                    let eax = particle(g, (0xb44, 0xb3f), w(0xb22), 8);
+                    End155::Up(eax)
+                }
+            }
+            0xd => {
+                if count(g) < 0x36 {
+                    End155::Count(idx)
+                } else {
+                    nodes_0155(g, img, f, lay, base);
+                    set(g, 0x14);
+                    End155::Again
+                }
+            }
+            0x14 | 0x15 => {
+                if state == 0x14 {
+                    up(g);
+                    reset(g);
+                }
+                if count(g) < 0xf {
+                    End155::Count(idx)
+                } else {
+                    abs(g, 0xb6f, 0xb79);
+                    End155::Up(idx)
+                }
+            }
+            0x16 => {
+                if count(g) < 0x14 {
+                    End155::Count(idx)
+                } else {
+                    append(g, (0xb9e, 0xb99, 0xb94), idx);
+                    abs(g, 0xbb7, 0xbdf);
+                    let words = [w(0xbae), w(0xba9), w(0xba4), w(0xb99)];
+                    owned(g, (0xbe0, 0xbb3, 0xb94), words, 0x10);
+                    let eax = particle(g, (0xbf3, 0xbee), w(0xbb3), 7);
+                    End155::UpReset(eax)
+                }
+            }
+            0x17 => {
+                if count(g) < 0x1e {
+                    End155::Count(idx)
+                } else {
+                    End155::Up(idx)
+                }
+            }
+            0x1e | 0x1f => {
+                if state == 0x1e {
+                    up(g);
+                    reset(g);
+                }
+                if count(g) < 5 {
+                    End155::Count(idx)
+                } else {
+                    abs(g, 0xc3f, 0xc49);
+                    End155::UpReset(idx)
+                }
+            }
+            0x20 => {
+                if count(g) < 9 {
+                    End155::Count(idx)
+                } else {
+                    End155::UpReset(tail_0155(g, img, f, lay, base))
+                }
+            }
+            0x28 => {
+                append(g, (0xe33, 0xe2e, 0xe29), idx);
+                abs(g, 0xe4c, 0xe74);
+                let words = [w(0xe43), w(0xe3e), w(0xe39), w(0xe2e)];
+                owned(g, (0xe75, 0xe48, 0xe29), words, 0x10);
+                let eax = if lay.kind == 164 {
+                    // 164 jumps into 0x16's particle call (`+0xbf5`) and its
+                    // end; no word
+                    let sp = base.wrapping_sub(0x10);
+                    g.write::<u32>(sp, w(0xe48));
+                    g.write::<u32>(sp + 0xc, 3);
+                    let pf = Frame {
+                        at: img.rel32_target(f + 0xbf6),
+                        esp: sp.wrapping_sub(4),
+                        ecx: w(0xe83),
+                        ..Frame::default()
+                    };
+                    crate::s3_nodes::particle_node_with(g, img, &pf)
+                } else {
+                    let eax = particle(g, (0xe88, 0xe83), w(0xe48), 3);
+                    abs(g, 0xe8c, 0xe96);
+                    eax
+                };
+                End155::UpReset(eax)
+            }
+            0x29..=0x2b => {
+                let (wait, run) = match state {
+                    0x29 => (0x1e, (0xeba, 0xece)),
+                    0x2a => (0x32, (0xee8, 0xef2)),
+                    _ => (0x46, (0xf0c, 0xf16)),
+                };
+                if count(g) < wait {
+                    End155::Count(idx)
+                } else {
+                    abs(g, run.0, run.1);
+                    if state == 0x2b {
+                        End155::UpReset(idx)
+                    } else {
+                        End155::Up(idx)
+                    }
+                }
+            }
+            0x32 => {
+                up(g);
+                // (on into 0x33 in the same call)
+                state = 0x33;
+                continue;
+            }
+            0x34 => {
+                let x = k(g, 0xff7);
+                // comiss; jbe: unordered keeps the word
+                if x > k(g, 0xffe) {
+                    let y = sub(x, k(g, 0x1008));
+                    g.write::<f32>(w(0x1010), y);
+                }
+                if count(g) < 0x43 {
+                    End155::Count(idx)
+                } else {
+                    abs(g, 0x1023, 0x1073);
+                    let eax = free_part(g, (0x1074, 0x101f), idx);
+                    let _ = eax;
+                    particle(g, (0x1088, 0x107e), w(0x1083), 6);
+                    let eax = effect(g, (0x10a2, 0x109d), (0x1098, 0x1093, 5));
+                    flag1(g, 0x10a8);
+                    abs(g, 0x10ad, 0x10b7);
+                    End155::Up(eax)
+                }
+            }
+            0x35 => {
+                if g.read::<u8>(w(0x8ee)) & 1 == 0 {
+                    End155::Count(idx)
+                } else {
+                    let mut eax = free_unlink(g, (0x906, 0x901), idx);
+                    if g.read::<u8>(w(0x90c)) & 4 == 0 {
+                        let v = gw(g, 0x91a);
+                        g.write::<u32>(gw(g, 0x914), v);
+                        // call width: 1
+                        eax = g.call(slot(g, 0x921, 713), 0, &[w(0x926)]).eax;
+                    }
+                    // the node leaves its parent (inline; the node at the
+                    // immediate `+0x97c`)
+                    leave(g, w(0x97c), eax);
+                    set(g, 0x3c);
+                    End155::Again
+                }
+            }
+            0x3c | 0x3d => {
+                if state == 0x3c {
+                    up(g);
+                }
+                abs(g, 0x10d2, 0x10fa);
+                // call width: 2
+                let eax = g.call(slot(g, 0x10ce, 325), 0, &[w(0x1106), w(0x1101)]).eax;
+                abs(g, 0x1114, 0x111e);
+                free_part(g, (0x111f, 0x1110), eax);
+                particle(g, (0x1133, 0x1129), w(0x112e), 0);
+                let eax = effect(g, (0x114d, 0x1148), (0x1143, 0x113e, 3));
+                flag1(g, 0x1153);
+                abs(g, 0x1158, 0x1162);
+                End155::UpReset(eax)
+            }
+            0x3e | 0x3f => {
+                let mut eax = idx;
+                if state == 0x3e && count(g) >= 8 {
+                    // push ecx (unread); push the value: the static node
+                    g.write::<u32>(base.wrapping_sub(8), w(0x1188));
+                    let sf = Frame {
+                        at: call(0x1192),
+                        esp: base.wrapping_sub(0xc),
+                        ecx: w(0x118d),
+                        ..Frame::default()
+                    };
+                    crate::s4_misc::static_node(g, img, &sf);
+                    let fl = (gw(g, 0x1197) & !2) | 1;
+                    // `K - xmm2`, `xmm2` 0 from the dispatch
+                    let x = sub(k(g, 0x119f), 0.0);
+                    abs(g, 0x11ad, 0x1243);
+                    g.write::<f32>(w(0x1247), x);
+                    abs(g, 0x124b, 0x1269);
+                    g.write::<u32>(w(0x126a), fl);
+                    up(g);
+                    reset(g);
+                    eax = fl;
+                }
+                if count(g) < 0x1e {
+                    End155::Count(eax)
+                } else {
+                    abs(g, 0x128d, 0x12dd);
+                    End155::Up(fade(g, 0x12de, 0x1289))
+                }
+            }
+            0x40 => {
+                if count(g) < 0x3a {
+                    End155::Count(idx)
+                } else {
+                    set(g, 0x46);
+                    End155::Again
+                }
+            }
+            0x46 => {
+                if lay.kind == 164 {
+                    // (164's own offsets)
+                    let raw = |x: u32| img.word(f + x);
+                    let m = g.read::<u32>(raw(0x129a));
+                    // call width: 2
+                    let eax = g.call(slot_target(g, raw(0x1292), 213), 0, &[m, 0]).eax;
+                    abs_stores(g, img, f, 0x12a9, 0x12b3);
+                    End155::UpReset(eax)
+                } else {
+                    abs(g, 0x12f2, 0x1306);
+                    End155::UpReset(idx)
+                }
+            }
+            0x47 => {
+                if count(g) < 1 {
+                    End155::Count(idx)
+                } else {
+                    let mut eax = leave(g, w(0x1328), idx);
+                    for (c, x, pc, p) in [
+                        (0x133eu32, 0x1339u32, 0x1348u32, 0x1343u32),
+                        (0x1359, 0x1354, 0x1363, 0x135e),
+                    ] {
+                        eax = free_unlink(g, (c, x), eax);
+                        eax = free_part(g, (pc, p), eax);
+                    }
+                    eax = leave(g, w(0x1368), eax);
+                    eax = leave(g, w(0x1372), eax);
+                    for (n, c) in [(0x137cu32, 0x1386u32), (0x138b, 0x1395)] {
+                        // `ecx` the node as the leave keeps it
+                        leave(g, w(n), eax);
+                        eax = crate::sa_misc::register_one(g, img, call(c), w(n));
+                    }
+                    eax = leave(g, ebx, eax);
+                    eax = leave(g, w(0x13a1), eax);
+                    End155::Up(eax)
+                }
+            }
+            0x48 => {
+                if count(g) < 2 {
+                    End155::Count(idx)
+                } else {
+                    abs(g, 0x13cc, 0x141c);
+                    let mut eax = fade(g, 0x141d, 0x13c8);
+                    if lay.kind == 164 {
+                        eax = turn_move_0164(g, img, f, base);
+                    }
+                    End155::Up(eax)
+                }
+            }
+            0x18 | 0x21 | 0x2c | 0x49 => {
+                let (wait, to) = match state {
+                    0x18 => (0x49, 0x1e),
+                    0x21 => (0xf, 0x28),
+                    0x2c => (0x78, 0x32),
+                    _ => (if lay.kind == 164 { 0x32 } else { 0x5a }, 0x2710),
+                };
+                if count(g) < wait {
+                    End155::Count(idx)
+                } else {
+                    set(g, to);
+                    End155::Again
+                }
+            }
+            _ => End155::Count(idx),
+        };
+        match next {
+            End155::Again => state = g.read::<u32>(at(0x18)),
+            e => break e,
+        }
+    };
+    let eax = match end {
+        End155::Count(eax) => eax,
+        End155::Up(eax) => {
+            up(g);
+            eax
+        }
+        End155::UpReset(eax) => {
+            up(g);
+            reset(g);
+            eax
+        }
+        End155::Again => 0,
+    };
+    for x in [0x28u32, 0x2c] {
+        let v = g.read::<u32>(at(x)).wrapping_add(1);
+        g.write::<u32>(at(x), v);
+    }
+    Ret::eax(eax)
+}
+
+/// [`summon_main_0155_with`]'s state 0 (`base` the frame below the three
+/// pushes): the summon's model node, a colour node, the camera's move,
+/// the static link, the scene's nodes under `P`, slots 676, the colour
+/// nodes, a pair under the second parent, the static list's node, an
+/// effect node and its flag.
+#[allow(clippy::too_many_lines)] // the original's steps, in order
+fn start_0155<G: Game>(g: &mut G, img: &Image, f: u32, lay: &Main0155, base: u32) {
+    use crate::r25::abs_stores;
+    let o = |x: u32| lay.m(x);
+    let w = |x: u32| img.word(f + o(x));
+    let gw = |g: &G, x: u32| g.read::<u32>(w(x));
+    let call = |x: u32| img.rel32_target(f + o(x));
+    let slot = |g: &G, x: u32, n: u32| slot_target(g, w(x), n);
+    let abs = |g: &mut G, from: u32, to: u32| abs_stores(g, img, f, o(from), o(to));
+    // a node after the parent's last (read before, `old`): its `+8` (the
+    // store at `n8`), the parent's first (the store at `eq`) when `old`
+    // is the parent (operand `cmp`), else `old + 4` (the immediate `ne`)
+    let after = |g: &mut G, old: u32, (n8, cmp, eq, ne): (u32, u32, u32, u32)| {
+        g.write::<u32>(w(n8), old);
+        if old == w(cmp) {
+            abs(g, eq, eq + 10);
+        } else {
+            g.write::<u32>(old.wrapping_add(4), w(ne));
+        }
+    };
+    // a node after a known one (`prev`): the parent's first (the store at
+    // `eq`) when `prev` is the parent (operand `cmp`), else the store at
+    // `ne` (`prev + 4`)
+    let known = |g: &mut G, prev: u32, (cmp, eq, ne): (u32, u32, u32)| {
+        let at = if prev == w(cmp) { eq } else { ne };
+        abs(g, at, at + 10);
+    };
+    // the summon's model node: slot 294's answer as its flags
+    let m = gw(g, 0x4c);
+    // call width: 1
+    let a = g.call(slot(g, 0x46, 294), 0, &[m]).eax;
+    let grp = if a == 0xff {
+        let grp = base + 0x1c;
+        for (i, v) in (0u32..).zip([w(0x66), w(0x6e), 1]) {
+            g.write::<u32>(grp + 4 * i, v);
+        }
+        g.write::<u8>(grp + 0xc, 0);
+        grp
+    } else {
+        let grp = base + 0x2c;
+        g.write::<u32>(grp, w(0x9a));
+        g.write::<u32>(grp + 4, w(0xa2));
+        let m = gw(g, 0x8c);
+        // call width: 1
+        let b = g.call(slot(g, 0x86, 294), 0, &[m]).eax;
+        g.write::<u32>(grp + 8, b);
+        g.write::<u8>(grp + 0xc, 0);
+        grp
+    };
+    abs(g, 0xb8, 0xc2);
+    crate::sa_summon::model_node_init(g, img, call(0xc3), grp);
+    // a colour node from `[N, P]`
+    let cg = base + 0x14;
+    g.write::<u32>(cg, w(0xcf));
+    g.write::<u32>(cg + 4, w(0xd7));
+    abs(g, 0xdb, 0xe5);
+    let cf = Frame {
+        at: call(0xe6),
+        esp: base.wrapping_sub(4),
+        ecx: cg,
+        ..Frame::default()
+    };
+    let eax = crate::s3_misc::colour_node(g, img, &cf);
+    // the camera's move (`xmm2` its time)
+    let x = g.read::<f32>(w(0xee));
+    abs(g, 0xf2, 0x138);
+    crate::sb_misc::move_start(g, img, call(0x139), x, eax);
+    // push ecx (unread): the static link
+    let lf = Frame {
+        at: call(0x13f),
+        esp: base.wrapping_sub(8),
+        ..Frame::default()
+    };
+    crate::s4_small::static_link_word(g, img, &lf);
+    // five nodes under `P`: the old last read once, then each known
+    let old = gw(g, 0x144);
+    abs(g, 0x14b, 0x17c);
+    after(g, old, (0x17d, 0x182, 0x188, 0x197));
+    let x = gw(g, 0x19c);
+    let n = g.read::<u16>(w(0x1a3));
+    g.write::<u32>(w(0x1a8), x);
+    abs(g, 0x1b3, 0x231);
+    known(g, w(0x1ad), (0x232, 0x238, 0x244));
+    abs(g, 0x255, 0x2cc);
+    known(g, w(0x24f), (0x2cd, 0x2d3, 0x2df));
+    abs(g, 0x2f0, 0x371);
+    known(g, w(0x2ea), (0x372, 0x378, 0x384));
+    abs(g, 0x390, 0x3e9);
+    known(g, w(0x21), (0x3eb, 0x3f1, 0x3fd));
+    abs(g, 0x410, 0x41a);
+    g.write::<u16>(w(0x41d), n.wrapping_add(5));
+    abs(g, 0x421, 0x435);
+    let (a1, a2) = if lay.kind == 164 {
+        (0x80, 0x60)
+    } else {
+        (0x60, 0x40)
+    };
+    // call width: 3
+    g.call(slot(g, 0x408, 676), 0, &[w(0x43e), 1, a1]);
+    // call width: 3
+    g.call(slot(g, 0x445, 676), 0, &[w(0x457), 4, a2]);
+    // two colour nodes from 7-word records
+    let rec = base + 0x3c;
+    for (ops, run, c) in [
+        (
+            [0x468u32, 0x470, 0x478, 0x480, 0x488, 0x490, 0x498],
+            0x49cu32,
+            0x4a7u32,
+        ),
+        (
+            [0x4b3, 0x4bb, 0x4c3, 0x4cb, 0x4d3, 0x4db, 0x4e3],
+            0x4e7,
+            0x4f2,
+        ),
+    ] {
+        for (i, x) in (0u32..).zip(ops) {
+            g.write::<u32>(rec + 4 * i, w(x));
+        }
+        abs(g, run, run + 10);
+        crate::sa_misc::colour_node_init(g, img, call(c), rec);
+    }
+    // a pair under the second parent (the second's old last the first)
+    let old = gw(g, 0x4f7);
+    abs(g, 0x4fb, 0x52c);
+    after(g, old, (0x52d, 0x532, 0x538, 0x547));
+    let n = g.read::<u16>(w(0x54d));
+    abs(g, 0x558, 0x5bb);
+    known(g, w(0x552), (0x5bd, 0x5c3, 0x5cf));
+    g.write::<u16>(w(0x5dd), n.wrapping_add(2));
+    // the static list's node (its old last's `+4` always it)
+    let old = gw(g, 0x5e2);
+    abs(g, 0x5e6, 0x636);
+    g.write::<u32>(w(0x637), old);
+    abs(g, 0x63b, 0x645);
+    g.write::<u32>(old.wrapping_add(4), w(0x648));
+    let v = gw(g, 0x64e) & !1;
+    g.write::<u32>(w(0x64e), v);
+    abs(g, 0x657, 0x6a7);
+    // an effect node from `[a, b, c, d, e, 0]`, its vtable after
+    for (i, x) in (0u32..).zip([0x6abu32, 0x6b3, 0x6bb, 0x6c3, 0x6cb]) {
+        g.write::<u32>(rec + 4 * i, w(x));
+    }
+    g.write::<u32>(rec + 0x14, 0);
+    crate::sb_nodes::effect_node(g, img, call(0x6d8), rec);
+    let node = g.read::<u32>(rec);
+    g.write::<u32>(node, w(0x6e2));
+    let v = gw(g, 0x6e8) | 1;
+    g.write::<u32>(w(0x6e8), v);
+}
+
+/// [`summon_main_0155_with`]'s state 0xd past its wait: a node under `P`
+/// (its count up), slot 237 on the summon's model, a second node, a
+/// particle node from `[a, b, c, *G, e, 8]`.
+fn nodes_0155<G: Game>(g: &mut G, img: &Image, f: u32, lay: &Main0155, base: u32) {
+    use crate::r25::abs_stores;
+    let o = |x: u32| lay.m(x);
+    let w = |x: u32| img.word(f + o(x));
+    let gw = |g: &G, x: u32| g.read::<u32>(w(x));
+    let abs = |g: &mut G, from: u32, to: u32| abs_stores(g, img, f, o(from), o(to));
+    let count_up = |g: &mut G, x: u32| {
+        let n = g.read::<u16>(w(x)).wrapping_add(1);
+        g.write::<u16>(w(x), n);
+    };
+    for (i, (run, n8, cmp, eq, ne, cnt)) in [
+        (
+            (0x723u32, 0x754u32),
+            0x755u32,
+            0x75au32,
+            0x760u32,
+            0x76fu32,
+            0x77bu32,
+        ),
+        ((0x7b6, 0x7fb), 0x7fc, 0x801, 0x807, 0x816, 0x822),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let old = gw(g, if i == 0 { 0x71f } else { 0x7af });
+        abs(g, run.0, run.1);
+        g.write::<u32>(w(n8), old);
+        if old == w(cmp) {
+            abs(g, eq, eq + 10);
+        } else {
+            g.write::<u32>(old.wrapping_add(4), w(ne));
+        }
+        if i == 1 {
+            break;
+        }
+        count_up(g, cnt);
+        // slot 237 `(*M, *X, 0, V)`, the last word set between
+        let x = gw(g, 0x788);
+        abs(g, 0x78c, 0x796);
+        let m = gw(g, 0x798);
+        abs(g, 0x79c, 0x7a6);
+        // call width: 4
+        g.call(slot_target(g, w(0x774), 237), 0, &[m, x, 0, w(0x780)]);
+    }
+    let x = gw(g, 0x81b);
+    count_up(g, 0x822);
+    abs(g, 0x82a, 0x863);
+    let rec = base + 0x3c;
+    for (i, v) in (0u32..).zip([w(0x867), w(0x86f), w(0x877), x, w(0x883), 8]) {
+        g.write::<u32>(rec + 4 * i, v);
+    }
+    abs(g, 0x88f, 0x899);
+    crate::sb_nodes::particle_node(g, img, img.rel32_target(f + o(0x89a)), rec);
+}
+
+/// [`summon_main_0155_with`]'s state 0x20 past its wait: the static tail
+/// link, slot 234 on the fade's words, a node, slot 325, a node and its
+/// owned node, a particle node, the part freed, a second particle node,
+/// an effect node and its flag. Returns the effect node.
+fn tail_0155<G: Game>(g: &mut G, img: &Image, f: u32, lay: &Main0155, base: u32) -> u32 {
+    use crate::r25::abs_stores;
+    let o = |x: u32| lay.m(x);
+    let w = |x: u32| img.word(f + o(x));
+    let call = |x: u32| img.rel32_target(f + o(x));
+    let abs = |g: &mut G, from: u32, to: u32| abs_stores(g, img, f, o(from), o(to));
+    let tf = Frame {
+        at: call(0xc6b),
+        esp: base.wrapping_sub(4),
+        ..Frame::default()
+    };
+    crate::s4_small::static_link_tail(g, img, &tf);
+    abs(g, 0xc79, 0xcc9);
+    // call width: 3
+    g.call(
+        slot_target(g, w(0xc70), 234),
+        0,
+        &[w(0xcd5), w(0xcd0), w(0xc75)],
+    );
+    abs(g, 0xce8, 0xd06);
+    crate::sb_misc::node_append(g, img, call(0xd07), w(0xce4), w(0xcdf), 0);
+    // call width: 2
+    g.call(slot_target(g, w(0xd0c), 325), 0, &[w(0xd1c), w(0xd11)]);
+    crate::sb_misc::node_append(g, img, call(0xd2d), w(0xd28), w(0xd23), 0);
+    abs(g, 0xd46, 0xd6e);
+    // slot 325's two words stay under the owned node's four
+    let sp = base.wrapping_sub(0x18);
+    for (i, v) in (0u32..).zip([w(0xd3d), w(0xd38), w(0xd33), w(0xd28)]) {
+        g.write::<u32>(sp + 4 * i, v);
+    }
+    let of = Frame {
+        at: call(0xd6f),
+        esp: sp.wrapping_sub(4),
+        ecx: w(0xd42),
+        edx: w(0xd23),
+        ..Frame::default()
+    };
+    crate::sa_misc::node_append_owned(g, img, &of);
+    let sp = base.wrapping_sub(0x10);
+    let part = |g: &mut G, (c, p): (u32, u32), a: u32, n: u32| {
+        g.write::<u32>(sp, a);
+        g.write::<u32>(sp + 0xc, n);
+        let pf = Frame {
+            at: call(c),
+            esp: sp.wrapping_sub(4),
+            ecx: w(p),
+            ..Frame::default()
+        };
+        crate::s3_nodes::particle_node_with(g, img, &pf)
+    };
+    let eax = part(g, (0xd82, 0xd7d), w(0xd42), 2);
+    abs(g, 0xd8e, 0xdc0);
+    crate::m0070::free_part(g, img, call(0xdc1), w(0xd8a), eax);
+    part(g, (0xdd5, 0xdcb), w(0xdd0), 9);
+    g.write::<u32>(sp, w(0xde5));
+    g.write::<u32>(sp + 4, w(0xde0));
+    g.write::<u32>(sp + 0xc, 1);
+    let ef = Frame {
+        at: call(0xdef),
+        esp: sp.wrapping_sub(4),
+        ecx: w(0xdea),
+        ..Frame::default()
+    };
+    let eax = crate::s3_nodes::effect_node_with(g, img, &ef);
+    let v = g.read::<u32>(w(0xdf5)) | 1;
+    g.write::<u32>(w(0xdf5), v);
+    abs(g, 0xdfa, 0xe0e);
+    eax
+}
+
+/// [`summon_main_0155_with`]'s end (10000): (155) the move's words and the
+/// summon's move from `[N, 0, K, 1.0]`, (164) its words only; the summon's
+/// node leaves, its model set-up through `base + 0x10`, the task unlinked.
+/// Returns the unlink's `eax`.
+fn end_0155<G: Game>(g: &mut G, img: &Image, f: u32, lay: &Main0155, base: u32, task: u32) -> u32 {
+    use crate::r25::abs_stores;
+    let raw = |x: u32| img.word(f + x);
+    let (node, c) = if lay.kind == 164 {
+        abs_stores(g, img, f, 0x144e, 0x146c);
+        (raw(0x144a), 0x147a)
+    } else {
+        abs_stores(g, img, f, 0x1435, 0x14a3);
+        let args = base + 0x2c;
+        for (i, v) in (0u32..).zip([raw(0x14a7), 0, 0x3dcc_cccd, ONE]) {
+            g.write::<u32>(args + 4 * i, v);
+        }
+        crate::sa_misc::move_start(g, args);
+        (raw(0x14c9), 0x14db)
+    };
+    crate::sa_misc::leave(g, node, 0);
+    // `ecx` the node as the leave keeps it
+    let rec = base + 0x10;
+    g.write::<u32>(rec, node);
+    let mf = Frame {
+        at: img.rel32_target(f + c),
+        esp: base.wrapping_sub(4),
+        ecx: rec,
+        ..Frame::default()
+    };
+    crate::sa_summon::model_setup(g, img, &mf);
+    crate::h6_setup::unlink_task(g, task)
+}
+
+/// `magic_0164`'s state 0x48 after the fade (its own offsets): slot 239
+/// `(*G, -5, 0)` (`push ecx` under it: unread), the model's words and its
+/// move from `[N, 0, K, 1.0]`. Returns the move's time.
+fn turn_move_0164<G: Game>(g: &mut G, img: &Image, f: u32, base: u32) -> u32 {
+    let cf = Frame {
+        at: img.rel32_target(f + 0x13c3),
+        esp: base.wrapping_sub(8),
+        edx: 0xffff_fffb,
+        ..Frame::default()
+    };
+    crate::s4_small::call_239_edx(g, img, &cf);
+    crate::r25::abs_stores(g, img, f, 0x13ce, 0x1414);
+    let args = base + 0x2c;
+    for (i, v) in (0u32..).zip([img.word(f + 0x1418), 0, 0x3ca3_d70a, ONE]) {
+        g.write::<u32>(args + 4 * i, v);
+    }
+    crate::sa_misc::move_start(g, args)
+}
+
+/// `magic_0164`'s summon main task (0x1000a770, 5494 bytes with its
+/// tables): [`summon_main_0155_with`] kind 164 on 0164's operands.
+pub fn summon_main_0164<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    summon_main_0155_with(g, img, fr, &MAIN_0164)
+}
+
+/// [`summon_main_0164`]'s map of 0155's code offsets (r46-work's mapgen
+/// pairs; the tables' tail left out).
+const MAIN_0164: Main0155 = Main0155 {
+    map: &[
+        (0x0, 0x0),
+        (0x40e, 0x411),
+        (0xbf7, 0xbfd),
+        (0xc00, 0xc03),
+        (0xeb0, 0xe8f),
+        (0xece, 0xea3),
+        (0xf2d, 0xef0),
+        (0xfc8, 0xf8e),
+        (0xff3, 0xfa4),
+        (0x1151, 0x1105),
+        (0x117c, 0x111b),
+        (0x12fc, 0x12a9),
+        (0x131d, 0x12b8),
+        (0x1421, 0x1439),
+        (0x1435, 0x144e),
+        (0x14cd, 0x146c),
+    ],
+    kind: 164,
+};
+
+/// [`summon_main_0155`] (the `rel32`s: its callees in order).
+pub const SUMMON_MAIN_0155: Sig = Sig {
+    len: 5590,
+    hash: 0xe095_af73_3d3e_f25c,
+    calls: &[
+        (0xc3, Callee::Sig(&crate::sa_summon::MODEL_NODE_INIT)),
+        (0xe6, Callee::Sig(&crate::s3_misc::COLOUR_NODE)),
+        (0x139, Callee::Sig(&crate::sb_misc::MOVE_START)),
+        (0x13f, Callee::Sig(&crate::s4_small::STATIC_LINK_WORD)),
+        (0x4a7, Callee::Sig(&crate::sa_misc::COLOUR_NODE_INIT)),
+        (0x4f2, Callee::Sig(&crate::sa_misc::COLOUR_NODE_INIT)),
+        (0x6d8, Callee::Sig(&crate::sb_nodes::EFFECT_NODE)),
+        (0x89a, Callee::Sig(&crate::sb_nodes::PARTICLE_NODE)),
+        (0x906, Callee::Sig(&crate::nodes::FREE_THEN_UNLINK)),
+        (0xa39, Callee::Sig(&crate::sb_misc::NODE_APPEND)),
+        (0xa7b, Callee::Sig(&crate::sa_misc::NODE_APPEND_OWNED)),
+        (0xa8e, Callee::Sig(&crate::s3_nodes::PARTICLE_NODE_WITH)),
+        (0xaba, Callee::Sig(&crate::sb_misc::NODE_APPEND)),
+        (0xaec, Callee::Sig(&crate::sb_misc::NODE_APPEND)),
+        (0xb01, Callee::Sig(&crate::s4_small::CALL_237)),
+        (0xb31, Callee::Sig(&crate::sa_misc::NODE_APPEND_OWNED)),
+        (0xb44, Callee::Sig(&crate::s3_nodes::PARTICLE_NODE_WITH)),
+        (0xb9e, Callee::Sig(&crate::sb_misc::NODE_APPEND)),
+        (0xbe0, Callee::Sig(&crate::sa_misc::NODE_APPEND_OWNED)),
+        (0xbf3, Callee::Sig(&crate::s3_nodes::PARTICLE_NODE_WITH)),
+        (0xc6b, Callee::Sig(&crate::s4_small::STATIC_LINK_TAIL)),
+        (0xd07, Callee::Sig(&crate::sb_misc::NODE_APPEND)),
+        (0xd2d, Callee::Sig(&crate::sb_misc::NODE_APPEND)),
+        (0xd6f, Callee::Sig(&crate::sa_misc::NODE_APPEND_OWNED)),
+        (0xd82, Callee::Sig(&crate::s3_nodes::PARTICLE_NODE_WITH)),
+        (0xdc1, Callee::Sig(&crate::m0070::FREE_PART)),
+        (0xdd5, Callee::Sig(&crate::s3_nodes::PARTICLE_NODE_WITH)),
+        (0xdef, Callee::Sig(&crate::s3_nodes::EFFECT_NODE_WITH)),
+        (0xe33, Callee::Sig(&crate::sb_misc::NODE_APPEND)),
+        (0xe75, Callee::Sig(&crate::sa_misc::NODE_APPEND_OWNED)),
+        (0xe88, Callee::Sig(&crate::s3_nodes::PARTICLE_NODE_WITH)),
+        (0xf96, Callee::Sig(&crate::m0070::FREE_PART)),
+        (0xfaa, Callee::Sig(&crate::s3_nodes::PARTICLE_NODE_WITH)),
+        (0xfc4, Callee::Sig(&crate::s3_nodes::EFFECT_NODE_WITH)),
+        (0x1074, Callee::Sig(&crate::m0070::FREE_PART)),
+        (0x1088, Callee::Sig(&crate::s3_nodes::PARTICLE_NODE_WITH)),
+        (0x10a2, Callee::Sig(&crate::s3_nodes::EFFECT_NODE_WITH)),
+        (0x111f, Callee::Sig(&crate::m0070::FREE_PART)),
+        (0x1133, Callee::Sig(&crate::s3_nodes::PARTICLE_NODE_WITH)),
+        (0x114d, Callee::Sig(&crate::s3_nodes::EFFECT_NODE_WITH)),
+        (0x1192, Callee::Sig(&crate::s4_misc::STATIC_NODE)),
+        (0x12de, Callee::Sig(&crate::s4_misc::FADE_SET)),
+        (0x132d, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0x133e, Callee::Sig(&crate::nodes::FREE_THEN_UNLINK)),
+        (0x1348, Callee::Sig(&crate::m0070::FREE_PART)),
+        (0x1359, Callee::Sig(&crate::nodes::FREE_THEN_UNLINK)),
+        (0x1363, Callee::Sig(&crate::m0070::FREE_PART)),
+        (0x136d, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0x1377, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0x1381, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0x1386, Callee::Sig(&crate::sa_misc::REGISTER_ONE)),
+        (0x1390, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0x1395, Callee::Sig(&crate::sa_misc::REGISTER_ONE)),
+        (0x139c, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0x13a6, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0x141d, Callee::Sig(&crate::s4_misc::FADE_SET)),
+        (0x14c4, Callee::Sig(&crate::sa_misc::MOVE_START)),
+        (0x14ce, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0x14db, Callee::Sig(&crate::sa_summon::MODEL_SETUP)),
+    ],
+    imports: &[],
+};
+
+/// [`summon_main_0164`] (the `rel32`s: its callees in order).
+pub const SUMMON_MAIN_0164: Sig = Sig {
+    len: 5494,
+    hash: 0x1beb_f329_c6cd_daf3,
+    calls: &[
+        (0xc3, Callee::Sig(&crate::sa_summon::MODEL_NODE_INIT)),
+        (0xe6, Callee::Sig(&crate::s3_misc::COLOUR_NODE)),
+        (0x139, Callee::Sig(&crate::sb_misc::MOVE_START)),
+        (0x13f, Callee::Sig(&crate::s4_small::STATIC_LINK_WORD)),
+        (0x4aa, Callee::Sig(&crate::sa_misc::COLOUR_NODE_INIT)),
+        (0x4f5, Callee::Sig(&crate::sa_misc::COLOUR_NODE_INIT)),
+        (0x6db, Callee::Sig(&crate::sb_nodes::EFFECT_NODE)),
+        (0x89d, Callee::Sig(&crate::sb_nodes::PARTICLE_NODE)),
+        (0x909, Callee::Sig(&crate::nodes::FREE_THEN_UNLINK)),
+        (0xa3c, Callee::Sig(&crate::sb_misc::NODE_APPEND)),
+        (0xa7e, Callee::Sig(&crate::sa_misc::NODE_APPEND_OWNED)),
+        (0xa91, Callee::Sig(&crate::s3_nodes::PARTICLE_NODE_WITH)),
+        (0xabd, Callee::Sig(&crate::sb_misc::NODE_APPEND)),
+        (0xaef, Callee::Sig(&crate::sb_misc::NODE_APPEND)),
+        (0xb04, Callee::Sig(&crate::s4_small::CALL_237)),
+        (0xb34, Callee::Sig(&crate::sa_misc::NODE_APPEND_OWNED)),
+        (0xb47, Callee::Sig(&crate::s3_nodes::PARTICLE_NODE_WITH)),
+        (0xba1, Callee::Sig(&crate::sb_misc::NODE_APPEND)),
+        (0xbe3, Callee::Sig(&crate::sa_misc::NODE_APPEND_OWNED)),
+        (0xbf6, Callee::Sig(&crate::s3_nodes::PARTICLE_NODE_WITH)),
+        (0xc6e, Callee::Sig(&crate::s4_small::STATIC_LINK_TAIL)),
+        (0xd0a, Callee::Sig(&crate::sb_misc::NODE_APPEND)),
+        (0xd30, Callee::Sig(&crate::sb_misc::NODE_APPEND)),
+        (0xd72, Callee::Sig(&crate::sa_misc::NODE_APPEND_OWNED)),
+        (0xd85, Callee::Sig(&crate::s3_nodes::PARTICLE_NODE_WITH)),
+        (0xdc4, Callee::Sig(&crate::m0070::FREE_PART)),
+        (0xdd8, Callee::Sig(&crate::s3_nodes::PARTICLE_NODE_WITH)),
+        (0xdf2, Callee::Sig(&crate::s3_nodes::EFFECT_NODE_WITH)),
+        (0xe36, Callee::Sig(&crate::sb_misc::NODE_APPEND)),
+        (0xe78, Callee::Sig(&crate::sa_misc::NODE_APPEND_OWNED)),
+        (0xf59, Callee::Sig(&crate::m0070::FREE_PART)),
+        (0xf6d, Callee::Sig(&crate::s3_nodes::PARTICLE_NODE_WITH)),
+        (0xf87, Callee::Sig(&crate::s3_nodes::EFFECT_NODE_WITH)),
+        (0x1025, Callee::Sig(&crate::m0070::FREE_PART)),
+        (0x1039, Callee::Sig(&crate::s3_nodes::PARTICLE_NODE_WITH)),
+        (0x1053, Callee::Sig(&crate::s3_nodes::EFFECT_NODE_WITH)),
+        (0x10d0, Callee::Sig(&crate::m0070::FREE_PART)),
+        (0x10e4, Callee::Sig(&crate::s3_nodes::PARTICLE_NODE_WITH)),
+        (0x10fe, Callee::Sig(&crate::s3_nodes::EFFECT_NODE_WITH)),
+        (0x1131, Callee::Sig(&crate::s4_misc::STATIC_NODE)),
+        (0x127d, Callee::Sig(&crate::s4_misc::FADE_SET)),
+        (0x12c8, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0x12d9, Callee::Sig(&crate::nodes::FREE_THEN_UNLINK)),
+        (0x12e3, Callee::Sig(&crate::m0070::FREE_PART)),
+        (0x12f4, Callee::Sig(&crate::nodes::FREE_THEN_UNLINK)),
+        (0x12fe, Callee::Sig(&crate::m0070::FREE_PART)),
+        (0x1308, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0x1312, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0x131c, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0x1321, Callee::Sig(&crate::sa_misc::REGISTER_ONE)),
+        (0x132b, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0x1330, Callee::Sig(&crate::sa_misc::REGISTER_ONE)),
+        (0x1337, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0x1341, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0x13b8, Callee::Sig(&crate::s4_misc::FADE_SET)),
+        (0x13c3, Callee::Sig(&crate::s4_small::CALL_239_EDX)),
+        (0x1435, Callee::Sig(&crate::sa_misc::MOVE_START)),
+        (0x146d, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0x147a, Callee::Sig(&crate::sa_summon::MODEL_SETUP)),
+    ],
+    imports: &[],
+};
