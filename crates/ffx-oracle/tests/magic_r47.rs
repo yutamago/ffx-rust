@@ -40,6 +40,19 @@ fn wf(m: &mut dyn StubMem, at: u32, v: f32) {
     m.w32(at, v.to_bits());
 }
 
+/// The 16 words at `src` appended to the log at `SCRATCH + 0x2_0000`
+/// (32 entries, then over again): what a stub saw in a matrix that only
+/// lives in the caller's frame.
+fn log16(m: &mut dyn StubMem, src: u32) {
+    let k = m.r32(SCRATCH + 0x1_fff0);
+    m.w32(SCRATCH + 0x1_fff0, k + 1);
+    let to = SCRATCH + 0x2_0000 + 0x40 * (k % 32);
+    for i in 0..16 {
+        let x = m.r32(src + 4 * i);
+        m.w32(to + 4 * i, x);
+    }
+}
+
 /// `n` bytes of junk at `at` (varied by `k`).
 fn junk(t: &mut Twin, at: u32, n: u32, k: u32) {
     let b: Vec<u8> = (0..n)
@@ -327,7 +340,7 @@ fn flames_0417() {
     all_stubs(&mut t);
     let f = t.at(0x3cc0);
     // ((wait, count, fade), (records, busy))
-    let cases: [((i32, i32, i32), (u32, u32)); 10] = [
+    let cases: [((i32, i32, i32), (u32, u32)); 12] = [
         ((3, 1, 0), (8, 0)),
         ((0, 0, 4), (8, 0)),
         ((-2, -3, 4), (8, 0)),
@@ -338,6 +351,8 @@ fn flames_0417() {
         ((0, 1, 1), (5, 1)),
         ((0, 3, 12), (6, 1)),
         ((0, 1, 59), (9, 0)),
+        ((0, 1, 2), (2, 1)),
+        ((0, 1, 3), (2, 2)),
     ];
     for (k, (waits, pool)) in (0u32..).zip(cases) {
         flames_0417_setup(&mut t, f, k, waits, pool);
@@ -462,6 +477,7 @@ fn draw_0417() {
         f64::from(f32::from_bits(a[0])) * 1.5 + f64::from(c) * 0.25
     });
     rec(&mut t, 330, 3, |m, a| {
+        log16(m, a[1]);
         let ang = f32::from_bits(a[2]);
         for i in 0..16 {
             let x = rf(m, a[1] + 4 * i) * 0.5 + ang + i as f32;
@@ -484,6 +500,7 @@ fn draw_0417() {
         0x230
     });
     rec(&mut t, 231, 3, |m, a| {
+        log16(m, a[2]);
         for i in 0..16 {
             let x = rf(m, a[1] + 4 * i) - rf(m, a[2] + 4 * i) * 0.25;
             wf(m, a[0] + 4 * i, x);
@@ -505,12 +522,14 @@ fn draw_0417() {
     }
     let w = |t: &Twin, o: u32| t.img.word(f + o);
     let buf = SCRATCH + 0x1_8000;
-    for k in 0..3u32 {
+    // (the counts end the walk after each kind of record: the colour
+    // global keeps the last one's)
+    for (k, n) in (0u32..).zip([0u32, 10, 7, 3, 4, 9]) {
         junk_ops(&mut t, f, &[0x6d, 0x76, 0x148, 0x1ff, 0x427], k);
         t.set_u32(lock, 0x33 + k);
         let at = w(&t, 0x1f);
         t.set_u32(at, buf);
-        let recs: [(bool, i32, f32, (i32, i32), (i32, i32), (bool, bool, bool)); 8] = [
+        let recs: [(bool, i32, f32, (i32, i32), (i32, i32), (bool, bool, bool)); 10] = [
             (false, 0, 0.5, (2, 1), (3, 1), (false, false, false)),
             (true, 3, 0.5, (2, 1), (3, 1), (false, false, false)),
             (true, 0, 0.75, (2, 1), (3, 1), (false, false, false)),
@@ -526,6 +545,8 @@ fn draw_0417() {
             (true, 0, -0.5, (0, 1), (0, 0), (true, true, false)),
             (true, 0, -0.5, (-1, 1), (-2, 0), (false, true, true)),
             (true, 1, 0.5, (2, 1), (3, 1), (false, false, false)),
+            (true, 0, -0.5, (4, 3), (2, 1), (false, false, true)),
+            (true, 0, -0.5, (0, 0), (0, 0), (false, false, true)),
         ];
         for (i, &(on, wait, fade, blend, steps, flags)) in (0u32..).zip(recs.iter()) {
             draw_record(
@@ -540,7 +561,6 @@ fn draw_0417() {
                 flags,
             );
         }
-        let n = [0u32, 8, 7][k as usize];
         let at = w(&t, 0x94);
         t.set_u32(at, n);
         magic_h6::scrub(&mut t);
