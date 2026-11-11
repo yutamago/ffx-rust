@@ -652,19 +652,7 @@ pub fn shot_setup_0387<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let ebp = fr.esp.wrapping_sub(4);
     let (r, r2) = (ebp.wrapping_sub(0x1c), ebp.wrapping_sub(0x20));
     let arg = |g: &G, i: u32| fr.arg(g, i);
-    g.write::<u32>(n + 8, n);
-    g.write::<u32>(n + 4, n);
-    g.write::<u32>(n, w(0x18));
-    g.write::<u32>(n + 0x10, w(0x1f));
-    g.write::<u32>(n + 0x14, n);
-    let last = g.read::<u32>(w(0x27));
-    g.write::<u32>(n + 8, last);
-    g.write::<u32>(n + 4, w(0x31));
-    let last = g.read::<u32>(w(0x36));
-    g.write::<u32>(last.wrapping_add(4), n);
-    let flags = g.read::<u32>(w(0x45));
-    g.write::<u32>(w(0x45), flags & !1);
-    g.write::<u32>(w(0x4c), n);
+    task_link(g, img, f, n, [0x18, 0x1f, 0x27, 0x31, 0x36, 0x45, 0x4c]);
     let root = w(0x5f);
     let b = n + 0xce0;
     root_append(g, b, root, w(0xa5));
@@ -955,27 +943,27 @@ pub const SHOTS_TASK_0387: Sig = Sig {
     imports: &[],
 };
 
-/// `N` becomes a task linked after the DLL's last one (the start-ups'
-/// inlined link: `+8`, `+4` itself, `N[0]` the class `w(c)`, `+0x10` the
-/// callback `w(c + 7)`, `+0x14` itself; `+8` = `*G_LAST` (operand
-/// `l`), `+4` = the head (`l + 8`), the old last's `+4` = `N` (operand
-/// `l + 0xd`), `G_FLAGS` (operand `l + 0x1c`) bit 0 cleared, `*G_LAST`
-/// (operand `l + 0x23`) = `N`).
-fn task_link<G: Game>(g: &mut G, img: &Image, f: u32, n: u32, c: u32, l: u32) {
-    let w = |o: u32| img.word(f + o);
+/// `N` becomes a task linked after the DLL's last one (the set-ups'
+/// inlined link): `+8`, `+4` itself, `N[0]` the class, `+0x10` the
+/// callback, `+0x14` itself; `+8` = `*G_LAST`, `+4` = the head, the old
+/// last's `+4` = `N`, `G_FLAGS` bit 0 cleared, `*G_LAST` = `N`. `ops`:
+/// the operand offsets of the class, the callback, `G_LAST` (read), the
+/// head, `G_LAST` (read again), `G_FLAGS` and `G_LAST` (written).
+fn task_link<G: Game>(g: &mut G, img: &Image, f: u32, n: u32, ops: [u32; 7]) {
+    let w = |i: usize| img.word(f + ops[i]);
     g.write::<u32>(n + 8, n);
     g.write::<u32>(n + 4, n);
-    g.write::<u32>(n, w(c));
-    g.write::<u32>(n + 0x10, w(c + 7));
+    g.write::<u32>(n, w(0));
+    g.write::<u32>(n + 0x10, w(1));
     g.write::<u32>(n + 0x14, n);
-    let last = g.read::<u32>(w(l));
+    let last = g.read::<u32>(w(2));
     g.write::<u32>(n + 8, last);
-    g.write::<u32>(n + 4, w(l + 0xa));
-    let last = g.read::<u32>(w(l + 0xf));
+    g.write::<u32>(n + 4, w(3));
+    let last = g.read::<u32>(w(4));
     g.write::<u32>(last.wrapping_add(4), n);
-    let flags = g.read::<u32>(w(l + 0x1e));
-    g.write::<u32>(w(l + 0x1e), flags & !1);
-    g.write::<u32>(w(l + 0x25), n);
+    let flags = g.read::<u32>(w(5));
+    g.write::<u32>(w(5), flags & !1);
+    g.write::<u32>(w(6), n);
 }
 
 /// `magic_0387`'s pulse set-up (0x1000ba40, 584 bytes; internal, `ecx`
@@ -999,7 +987,7 @@ pub fn pulse_setup_0387<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let w = |o: u32| img.word(f + o);
     let (n, e) = (fr.ecx, fr.edx);
     let ebp = fr.esp.wrapping_sub(4);
-    task_link(g, img, f, n, 0x13, 0x22);
+    task_link(g, img, f, n, [0x13, 0x1a, 0x22, 0x2c, 0x31, 0x40, 0x47]);
     let root = w(0x5a);
     let r = ebp.wrapping_sub(0x18);
     let p = g.read::<u32>(e + 0x54);
@@ -1267,19 +1255,7 @@ pub fn pulse_init_0387<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let ebp = fr.esp.wrapping_sub(4);
     let (v, r) = (ebp.wrapping_sub(0x14), ebp.wrapping_sub(0x2c));
     let a4 = fr.arg(g, 4);
-    g.write::<u32>(n + 8, n);
-    g.write::<u32>(n + 4, n);
-    g.write::<u32>(n, w(0x22));
-    g.write::<u32>(n + 0x10, w(0x29));
-    g.write::<u32>(n + 0x14, n);
-    let last = g.read::<u32>(w(0x31));
-    g.write::<u32>(n + 8, last);
-    g.write::<u32>(n + 4, w(0x3b));
-    let last = g.read::<u32>(w(0x40));
-    g.write::<u32>(last.wrapping_add(4), n);
-    let flags = g.read::<u32>(w(0x4c));
-    g.write::<u32>(w(0x4c), flags & !1);
-    g.write::<u32>(w(0x53), n);
+    task_link(g, img, f, n, [0x22, 0x29, 0x31, 0x3b, 0x40, 0x4c, 0x53]);
     let root = w(0x66);
     let b = n + 0x44;
     root_append(g, b, root, w(0xaa));
@@ -1555,5 +1531,75 @@ pub const PULSE_TASK_0387: Sig = Sig {
         (0x1f2, Callee::Sig(&PULSE_INIT_0387)),
         (0x3f3, Callee::Any),
     ],
+    imports: &[],
+};
+
+/// `magic_0387`'s burst set-up (0x1000a8e0, 678 bytes; internal, `ecx`
+/// = the task `N`, `edx` = the source node `Q`; the record `R` at `ebp -
+/// 0x1c`): `N` is linked as a task (callback the burst task at
+/// 0x10009c20); under the root `G0` ([`root_append`]): `B = N + 0x6c`
+/// (slot 325 `(N + 0x88, Q + 0xcc)`), `C = N + 0x98` (slot 325 `(N +
+/// 0xb4, Q[0x140] + 0x1c)`, `N[0xc0] *= K`), `D = N + 0xc4`
+/// (`N[0xe0..0xe8]` = `Q[0x144]`'s `+0x1c..0x24`, the first plus
+/// 0x8000) and `E = N + 0xf0` (`E[0x13c..0x144] = (B, C, D)`, `E[0x128]`
+/// = `K_O`, byte `E[0x148]` 0); the particle node from `R = (N + 0x240,
+/// K_L, E, *G_P, K_T, 7)`; `N[0x28] = Q`, `N[0x24]` = slot 719 `(K_E, 9,
+/// 0)` (its `eax` returned), the state `N[0x18]` 0.
+pub fn burst_setup_0387<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let (n, q) = (fr.ecx, fr.edx);
+    let r = fr.esp.wrapping_sub(4).wrapping_sub(0x1c);
+    task_link(g, img, f, n, [0x13, 0x1a, 0x22, 0x2c, 0x31, 0x3d, 0x44]);
+    let root = w(0x57);
+    let b = n + 0x6c;
+    root_append(g, b, root, w(0xa6));
+    g.call(slot_target(g, w(0x9a), 325), 0, &[n + 0x88, q + 0xcc]);
+    let c = n + 0x98;
+    root_append(g, c, root, w(0x106));
+    let src = g.read::<u32>(q + 0x140).wrapping_add(0x1c);
+    g.call(slot_target(g, w(0x11c), 325), 0, &[n + 0xb4, src]);
+    let x = mul(g.read::<f32>(n + 0xc0), g.read::<f32>(w(0x134)));
+    g.write::<f32>(n + 0xc0, x);
+    let d = n + 0xc4;
+    root_append(g, d, root, w(0x14b));
+    for (i, off) in [0x1cu32, 0x20, 0x24].into_iter().enumerate() {
+        let p = g.read::<u32>(q + 0x144);
+        let mut x = g.read::<u32>(p.wrapping_add(off));
+        if i == 0 {
+            x = x.wrapping_add(0x8000);
+        }
+        g.write::<u32>(n + 0xe0 + 4 * i as u32, x);
+    }
+    let e = n + 0xf0;
+    root_append(g, e, root, w(0x1d2));
+    let pp = g.read::<u32>(w(0x217));
+    g.write::<u32>(e + 0x144, d);
+    g.write::<u32>(e + 0x13c, b);
+    g.write::<u32>(e + 0x140, c);
+    g.write::<u32>(e + 0x128, w(0x23f));
+    g.write::<u8>(e + 0x148, 0);
+    g.write::<u32>(n + 0x240, w(0x24f));
+    for (i, v) in [n + 0x240, w(0x259), e, pp, w(0x266), 7]
+        .into_iter()
+        .enumerate()
+    {
+        g.write::<u32>(r + 4 * i as u32, v);
+    }
+    crate::sb_nodes::particle_node(g, img, img.rel32_target(f + 0x272), r);
+    g.write::<u32>(n + 0x28, q);
+    let eax = g
+        .call(slot_target(g, w(0x27d), 719), 0, &[w(0x28c), 9, 0])
+        .eax;
+    g.write::<u32>(n + 0x24, eax);
+    g.write::<u32>(n + 0x18, 0);
+    Ret::eax(eax)
+}
+
+/// [`burst_setup_0387`] (the `rel32`: the particle node).
+pub const BURST_SETUP_0387: Sig = Sig {
+    len: 678,
+    hash: 0x14dd_0e9b_7691_87e0,
+    calls: &[(0x272, Callee::Sig(&crate::sb_nodes::PARTICLE_NODE))],
     imports: &[],
 };

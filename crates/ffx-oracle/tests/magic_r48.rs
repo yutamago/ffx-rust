@@ -632,6 +632,8 @@ fn shots_task_0387() {
         }
         junk(&mut t, o, 0x200, k);
         t.set_u32(o + 0x4dc, 2);
+        // (b4 test gap: the matrices slot 229 reads, finite)
+        floats(&mut t, n + 0x9894, 0x60, k);
         // the leaves: parents only on a few nodes
         let nodes: Vec<u32> = (0..2u32)
             .flat_map(|i| [0x9774 + 0x2c * i, 0x9de0 + 0x44 * i])
@@ -708,7 +710,7 @@ fn pulse_setup_0387() {
     }
     let root = w(0x5a);
     for (k, parts) in (0u32..).zip([0u32, 1, 3]) {
-        junk(&mut t, n, 0x8800, k);
+        junk(&mut t, n, 0x8900, k);
         junk(&mut t, e, 0x100, k);
         t.write(e + 0x90, &[k as u8 & 1]);
         junk(&mut t, last, 0x10, k);
@@ -978,5 +980,55 @@ fn pulse_task_0387() {
         }
         ownb::dirty_stack(&mut t, 0xb640 + k, &[]);
         t.check_entry(f, Call::default(), &[tk], Eax::Checked);
+    }
+}
+
+/// `magic_0387` 0x1000a8e0 (`r48::burst_setup_0387`, internal): the task
+/// list and the root with and without children.
+#[test]
+fn burst_setup_0387() {
+    let Some(mut t) = sa::twin(387) else { return };
+    let f = t.at(0xa8e0);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    all_stubs(&mut t);
+    copy_325(&mut t);
+    for (s, n) in [(941u32, 1), (719, 3)] {
+        rec(&mut t, s, n, move |_, a| a[0] ^ (s << 16));
+    }
+    particle_globals(&mut t, f, 0x272);
+    let (n, q, last, kid) = (
+        SCRATCH + 0x1_0000,
+        SCRATCH + 0x1000,
+        SCRATCH + 0x200,
+        SCRATCH + 0x300,
+    );
+    junk_ops(&mut t, f, &[0x134, 0x217]);
+    setf(&mut t, w(0x134), 0.75);
+    let root = w(0x57);
+    let plist = w(0x259);
+    for k in 0..3u32 {
+        junk(&mut t, n, 0x300, k);
+        floats(&mut t, n + 0xc0, 1, k);
+        junk(&mut t, q, 0x200, k);
+        floats(&mut t, q + 0xcc, 4, k);
+        t.set_u32(q + 0x140, SCRATCH + 0x1400);
+        floats(&mut t, SCRATCH + 0x1400 + 0x1c, 4, k + 1);
+        t.set_u32(q + 0x144, SCRATCH + 0x1500);
+        junk(&mut t, SCRATCH + 0x1500, 0x40, k + 2);
+        junk(&mut t, last, 0x10, k);
+        t.set_u32(w(0x22), last);
+        t.set_u32(w(0x3d), 0x0f0f_0f0f + k);
+        junk(&mut t, root, 0x20, k);
+        t.set_u32(root + 0x10, if k == 1 { kid } else { root });
+        junk(&mut t, plist, 0x20, k + 1);
+        t.set_u32(plist + 0x10, if k == 2 { kid } else { plist });
+        let call = Call {
+            ecx: n,
+            edx: q,
+            ..Call::default()
+        };
+        ownb::dirty_stack(&mut t, 0xa8e0 + k, &[]);
+        t.check(f, call, &[], Eax::Checked, ffx_magic::r48::burst_setup_0387);
     }
 }
