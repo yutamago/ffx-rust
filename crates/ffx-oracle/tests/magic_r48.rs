@@ -387,3 +387,98 @@ fn laser_move_0387() {
         }
     }
 }
+
+/// `magic_0387` 0x10008b10 (`r48::start_task_0387`): states 0 and 0x10
+/// (the part flag clear and set; with and without `N[0x1c]`, none or
+/// two parts; the root list empty or not), 0x1000 (gate closed, open:
+/// the leaves, the unlink), an unknown state.
+#[test]
+fn start_task_0387() {
+    let Some(mut t) = sa::twin(387) else { return };
+    let f = t.at(0x8b10);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    all_stubs(&mut t);
+    let (tk, d, prev, next, n, p, root_kid, o) = (
+        SCRATCH + 0x100,
+        SCRATCH + 0x140,
+        SCRATCH + 0x180,
+        SCRATCH + 0x1c0,
+        SCRATCH + 0x4000,
+        SCRATCH + 0x200,
+        SCRATCH + 0x800,
+        SCRATCH + 0x1000,
+    );
+    // slot 941: the part record (also the particle's program table)
+    rec(&mut t, 941, 1, move |_, _| p);
+    for (s, n) in [(685u32, 2), (325, 2), (388, 3), (239, 3)] {
+        rec(&mut t, s, n, move |_, a| a[0] ^ (s << 16));
+    }
+    rec(&mut t, 324, 0, |m, _| {
+        let k = m.r32(SCRATCH + 0x3_e000);
+        m.w32(SCRATCH + 0x3_e000, k + 1);
+        k * 3
+    });
+    // the particle node's globals (r27's particle set-up)
+    let pf = img.rel32_target(f + 0x28c);
+    let wrapper = img.rel32_target(pf + 0x88);
+    t.set_u32(img.word(wrapper + 4), SCRATCH + 0x7f00);
+    t.set_u32(SCRATCH + 0x7f00, 0x77);
+    t.set_u32(img.word(pf + 0x45), SCRATCH + 0x7f10);
+    let root = w(0x7a);
+    let list = w(0x26f);
+    junk_ops(&mut t, f, &[0x250, 0x2f0, 0x21f]);
+    setf(&mut t, w(0x21f), 1.5);
+    // (state, part flag, N[0x1c], parts, root's last (0: itself), gate)
+    for (k, (state, flag, n1c, parts, kid, gate)) in (0u32..).zip([
+        (0u32, 0x0800u16, 1u32, 2u32, false, 4u32),
+        (0, 0x07ff, 1, 2, false, 4),
+        (0x10, 0x0801, 0, 2, true, 4),
+        (0x10, 0x0800, 1, 0, true, 4),
+        (0x1000, 0x0800, 1, 2, false, 0xfb),
+        (0x1000, 0x0800, 1, 2, false, 0xff),
+        (5, 0x0800, 1, 2, false, 4),
+    ]) {
+        junk(&mut t, n, 0x1300, k);
+        t.set_u32(n + 0x18, state);
+        t.set_u32(n + 0x20, 9 + k);
+        t.set_u32(n + 0x1c, n1c);
+        t.set_u32(n + 0x1248, gate);
+        t.set_u32(n + 0x1148, 0x0f0f_0f0f);
+        t.set_u32(n + 0x28, o + 0x400);
+        t.set_u32(n + 0x2c, o);
+        t.set_u32(o + 0x4dc, parts);
+        for j in 0..2u32 {
+            t.set_u32(o + 0x6c + 0x98 * j, 0x0a00 + j + k);
+        }
+        junk(&mut t, p, 0x100, k);
+        t.write(p + 0x3e, &flag.to_le_bytes());
+        t.write(p + 0x36, &[k as u8 % 3]);
+        // the nodes the leaves take out: none with a parent but two
+        for off in [0xd38u32, 0xd64, 0xf08, 0x1260, 0xce0, 0xd0c, 0xd90, 0xdbc] {
+            t.set_u32(n + off + 0x14, 0);
+        }
+        t.set_u32(n + 0x1260, n + 0x1200);
+        t.set_u32(n + 0x1200 + 0x14, 0);
+        for (node, parent) in [(n + 0xd64, SCRATCH + 0x300), (n + 0xd0c, SCRATCH + 0x340)] {
+            t.set_u32(node + 0x14, parent);
+            t.set_u32(node + 4, parent);
+            t.set_u32(node + 8, parent);
+            t.set_u32(parent + 0xc, node);
+            t.set_u32(parent + 0x10, node);
+            t.set_u16(parent + 0x18, 3);
+        }
+        junk(&mut t, root, 0x20, k);
+        t.set_u32(root + 0x10, if kid { root_kid } else { root });
+        junk(&mut t, list, 0x20, k + 1);
+        t.set_u32(list + 0x10, list);
+        t.set_u32(tk, d);
+        t.set_u32(tk + 4, n);
+        for (a, b, c) in [(d, prev, next), (prev, next, d), (next, d, prev)] {
+            t.set_u32(a + 4, b);
+            t.set_u32(a + 8, c);
+        }
+        ownb::dirty_stack(&mut t, 0x8b10 + k, &[]);
+        t.check_entry(f, Call::default(), &[tk], Eax::Checked);
+    }
+}

@@ -438,3 +438,192 @@ pub const CALL_LASER_MOVE_0387: Sig = Sig {
     calls: &[(8, Callee::Sig(&LASER_MOVE_0387))],
     imports: &[],
 };
+
+/// A node `n` set up under the root `root` and appended after its last
+/// child, as the overlays inline it: `u16 +0x1a` = 0xff, `+0x10` and
+/// `+0xc` itself, `+0x14` and `+4` the root, `+8` the root's old last
+/// (`root + 0x10`, read twice), the old last's `+4` (or the root's
+/// `+0xc` when it had none) = `n`, `u16 root + 0x18` up by one, `root +
+/// 0x10` = `n`, then `n[0]` = `class`.
+fn root_append<G: Game>(g: &mut G, n: u32, root: u32, class: u32) {
+    crate::l3_common::node_init(g, n, root);
+    crate::l3_common::attach(g, n, root, crate::l3_common::ListAt::of(root));
+    g.write::<u32>(n, class);
+}
+
+/// `magic_0387`'s start task (0x10008b10, 866 bytes; cdecl `(T)`, `N =
+/// T[4]`; an aligned frame `A`: the cursor at `A - 0x20`, the record
+/// `R` at `A - 0x18`). By the state `N[0x18]` (the count `N[0x20]` drops
+/// at every return):
+/// - 0 becomes 0x10 and runs on;
+/// - 0x10: `p` = slot 941 `(N[0x1290])`; unless `u16 p[0x3e]` has bit
+///   0x800 (then it waits, `eax` 0): `p` again, the nodes `B = N + 0xd38`
+///   and `C = N + 0xd64` set up under the root `G0` ([`root_append`],
+///   class `K_VEC`), slot 685 `(N + 0xd54, p + 0x40 + 48 p[0x36])`,
+///   `N + 0xd60` = 1, slot 325 `(N + 0xd80, N + 0xd28)`, `N[0xd8c] *= K`,
+///   the owned node `N + 0xf08` under `G0`
+///   ([`node_append_owned`](crate::sa_misc::node_append_owned) with
+///   `(K_O, B, K_B, C)`), `N[0x1160]` = `K_CLASS`, the particle node from
+///   `R = (N + 0x1160, K_L, N + 0xf08, *G_P, K_T, 3)`
+///   ([`particle_node`](crate::sb_nodes::particle_node)); then with no
+///   `N[0x1c]` slot 388 `(N[0x28][0x50], TBL[frnd & 1], 1)`, else for
+///   each part `P` of `N[0x2c]` slot 388 `(P, TBL[frnd & 1], 1)` and
+///   slot 239 `(*G_E, P, 6)` (the random bit from slot 324); then the
+///   state is 0x1000;
+/// - 0x1000: once `N[0x1248] & N[0x1148]` has bit 4: the nodes at
+///   `N + 0xd38`, `0xd64`, `0xf08` leave, the cursor on `N + 0x1260` leaves
+///   and registers ([`leave_register`](crate::s4_small::leave_register)),
+///   `0xce0`, `0xd0c`, `0xd90`, `0xdbc` leave; the task `T[0]` is
+///   unlinked from its ring, state 0x2000.
+///
+/// Returns the last value in `eax`.
+#[allow(clippy::too_many_lines)] // the states
+pub fn start_task_0387<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let tk = fr.arg(g, 0);
+    let n = g.read::<u32>(tk + 4);
+    let a = fr.esp.wrapping_sub(4) & !7;
+    let (cursor, r) = (a.wrapping_sub(0x20), a.wrapping_sub(0x18));
+    let done = |g: &mut G, eax: u32| {
+        let c = g.read::<u32>(n + 0x20);
+        g.write::<u32>(n + 0x20, c.wrapping_sub(1));
+        Ret::eax(eax)
+    };
+    let state = g.read::<u32>(n + 0x18);
+    match state {
+        0 | 0x10 => {}
+        0x1000 => {
+            let gate = g.read::<u32>(n + 0x1248) & g.read::<u32>(n + 0x1148);
+            if gate & 4 == 0 {
+                return done(g, gate);
+            }
+            for off in [0xd38, 0xd64, 0xf08] {
+                crate::sa_misc::leave(g, n + off, 0);
+            }
+            g.write::<u32>(cursor, n + 0x1260);
+            crate::s4_small::leave_register(
+                g,
+                img,
+                &Frame {
+                    at: img.rel32_target(f + 0x104),
+                    esp: a.wrapping_sub(0x34),
+                    ecx: cursor,
+                    ..Frame::default()
+                },
+            );
+            for off in [0xce0, 0xd0c, 0xd90, 0xdbc] {
+                crate::sa_misc::leave(g, n + off, 0);
+            }
+            let d = g.read::<u32>(tk);
+            let (next, prev) = (g.read::<u32>(d + 4), g.read::<u32>(d + 8));
+            g.write::<u32>(next + 8, prev);
+            let prev = g.read::<u32>(d + 8);
+            let eax = g.read::<u32>(d + 4);
+            g.write::<u32>(prev + 4, eax);
+            g.write::<u32>(d + 8, d);
+            g.write::<u32>(d + 4, d);
+            let c = g.read::<u32>(n + 0x20);
+            g.write::<u32>(n + 0x20, c.wrapping_sub(1));
+            g.write::<u32>(n + 0x18, 0x2000);
+            return Ret::eax(eax);
+        }
+        _ => return done(g, state),
+    }
+    if state == 0 {
+        g.write::<u32>(n + 0x18, 0x10);
+    }
+    let s941 = |g: &mut G, op: u32| {
+        let x = g.read::<u32>(n + 0x1290);
+        g.call(slot_target(g, w(op), 941), 0, &[x]).eax
+    };
+    let p = s941(g, 0x28);
+    let bit = u32::from(g.read::<u16>(p.wrapping_add(0x3e))) & 0x800;
+    if bit == 0 {
+        return done(g, 0);
+    }
+    let p = s941(g, 0x51);
+    let root = w(0x7a);
+    let class = w(0x171);
+    let b = n + 0xd38;
+    root_append(g, b, root, class);
+    let i = u32::from(g.read::<u8>(p.wrapping_add(0x36)));
+    let src = (i * 0x30 + 0x40).wrapping_add(p);
+    g.call(slot_target(g, w(0x18d), 685), 0, &[n + 0xd54, src]);
+    g.write::<u32>(n + 0xd60, ONE);
+    let c = n + 0xd64;
+    root_append(g, c, root, class);
+    g.call(slot_target(g, w(0x1fb), 325), 0, &[n + 0xd80, n + 0xd28]);
+    let x = mul(g.read::<f32>(n + 0xd8c), g.read::<f32>(w(0x21f)));
+    g.write::<f32>(n + 0xd8c, x);
+    // node_append_owned's four words over slot 325's two
+    let esp = a.wrapping_sub(0x4c);
+    for (i, x) in [w(0x237), b, w(0x22b), c].into_iter().enumerate() {
+        g.write::<u32>(esp + 4 + 4 * i as u32, x);
+    }
+    crate::sa_misc::node_append_owned(
+        g,
+        img,
+        &Frame {
+            at: img.rel32_target(f + 0x24b),
+            esp,
+            ecx: n + 0xf08,
+            edx: w(0x23c),
+            ..Frame::default()
+        },
+    );
+    let pp = g.read::<u32>(w(0x250));
+    g.write::<u32>(n + 0x1160, w(0x260));
+    for (i, x) in [n + 0x1160, w(0x26f), n + 0xf08, pp, w(0x27f), 3]
+        .into_iter()
+        .enumerate()
+    {
+        g.write::<u32>(r + 4 * i as u32, x);
+    }
+    crate::sb_nodes::particle_node(g, img, img.rel32_target(f + 0x28c), r);
+    let pick = |g: &mut G, op: u32| {
+        let bit = g.call(slot_target(g, w(op), 324), 0, &[]).eax & 1;
+        g.read::<u32>(w(op + 0x14).wrapping_add(4 * bit))
+    };
+    let eax = if g.read::<u32>(n + 0x1c) == 0 {
+        let t = pick(g, 0x323);
+        let x = g.read::<u32>(g.read::<u32>(n + 0x28) + 0x50);
+        g.call(slot_target(g, w(0x342), 388), 0, &[x, t, 1]).eax
+    } else {
+        let mut i = 0u32;
+        let mut eax = g.read::<u32>(n + 0x2c);
+        while i.cast_signed() < g.read::<u32>(eax + 0x4dc).cast_signed() {
+            let t = pick(g, 0x2b1);
+            let part = g.read::<u32>(g.read::<u32>(n + 0x2c) + 0x6c + 0x98 * i);
+            g.call(slot_target(g, w(0x2d1), 388), 0, &[part, t, 1]);
+            let part = g.read::<u32>(g.read::<u32>(n + 0x2c) + 0x6c + 0x98 * i);
+            let e = g.read::<u32>(w(0x2f0));
+            g.call(slot_target(g, w(0x2ea), 239), 0, &[e, part, 6]);
+            eax = g.read::<u32>(n + 0x2c);
+            i += 1;
+        }
+        eax
+    };
+    g.write::<u32>(n + 0x18, 0x1000);
+    done(g, eax)
+}
+
+/// [`start_task_0387`] (the `rel32`s: three node leaves, the leave and
+/// register, four node leaves, the owned append, the particle node).
+pub const START_TASK_0387: Sig = Sig {
+    len: 866,
+    hash: 0x63e0_68fb_6514_27d9,
+    calls: &[
+        (0xdb, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0xe6, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0xf1, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0x104, Callee::Sig(&crate::s4_small::LEAVE_REGISTER)),
+        (0x10f, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0x11a, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0x125, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0x130, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0x24b, Callee::Sig(&crate::sa_misc::NODE_APPEND_OWNED)),
+        (0x28c, Callee::Sig(&crate::sb_nodes::PARTICLE_NODE)),
+    ],
+    imports: &[],
+};

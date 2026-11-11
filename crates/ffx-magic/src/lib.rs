@@ -3513,6 +3513,7 @@ ports! {
     "r48 line place thunk 0387" => r48::JMP_LINE_PLACE_0387, r48::jmp_line_place_0387;
     "r48 matrix move thunk 0387" => r48::JMP_MATRIX_MOVE_0387, r48::jmp_matrix_move_0387;
     "r48 laser move call 0387" => r48::CALL_LASER_MOVE_0387, r48::call_laser_move_0387;
+    "r48 start task 0387" => r48::START_TASK_0387, r48::start_task_0387;
     // round 48 (magic-r48): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
