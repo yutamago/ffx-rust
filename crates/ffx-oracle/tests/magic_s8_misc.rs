@@ -96,18 +96,28 @@ fn log_calls(
 /// the half), the drift, the camera set with and without the turn.
 #[test]
 fn camera_rigs_steps() {
-    for (dll, rva) in [
-        (162u16, 0x5370u32),
-        (165, 0x5790),
-        (253, 0x1f20),
-        (434, 0x9f90),
-        (563, 0x5c20),
-        (588, 0x30b0),
-        (596, 0x12a0),
-        (612, 0x12a0),
+    // (DLL, the function, the task-step thunk jumping to it: odd cases
+    // enter through it, `wp1_tiny::tail_thunk`)
+    for (dll, rva, thunk) in [
+        (162u16, 0x5370u32, None),
+        (165, 0x5790, None),
+        (253, 0x1f20, Some(0x2510u32)),
+        (303, 0x1f60, Some(0x2550)),
+        (434, 0x9f90, None),
+        (563, 0x5c20, None),
+        (588, 0x30b0, None),
+        (596, 0x12a0, None),
+        (612, 0x12a0, None),
     ] {
         let Some(mut t) = twin(dll) else { return };
         let f = t.at(rva);
+        let thunk = thunk.map(|r| t.at(r));
+        if let Some(a) = thunk {
+            assert_eq!(
+                ffx_magic::bind(&t.img, a).map(|i| ffx_magic::PORTS[i].0),
+                Some("wp1 thunk to camera rigs step")
+            );
+        }
         let rigs = op(&t, f, 0x14);
         let s_global = op(&t, f, 0x539);
         let (keys, base, ctl) = (SCRATCH + 0x1000, SCRATCH + 0x1400, SCRATCH + 0x1500);
@@ -255,7 +265,8 @@ fn camera_rigs_steps() {
                 ecx: 0x4321_0000 + k,
                 ..Call::default()
             };
-            t.check_entry(f, c, &[], Eax::Checked);
+            let at = thunk.filter(|_| k % 2 == 1).unwrap_or(f);
+            t.check_entry(at, c, &[], Eax::Checked);
         }
     }
 }

@@ -296,7 +296,28 @@ original's `DllMain` attach and detach, takes every word it writes, and
 fails if any is an operand of the DLL's ported functions; those words are
 the only ones left out of the comparison. The initialiser tables of the
 DLLs seen so far hold only the CRT's own functions; a DLL with C++ static
-constructors would need them ported.
+constructors would need them ported. All 581 hold the same two `__xi`
+initialisers and nothing else (`crates/ffx-host/tests/overlay_bind.rs`,
+m5-wp1-bind): no DLL has C++ static constructors.
+
+The CRT's code is never reached with the ports bound. Of each DLL's CRT
+rows (the work list counts about 21,500 as covered), only 9 functions
+have a relocated word pointing at them, and the bind test names each by
+code identity: the initialisers and `atexit` callbacks (run by the
+original `_CRT_INIT` only), `__security_check_cookie` (a `push` operand
+of `_except_handler4`), `_except_handler4` and the `__try` labels of
+`__DllMainCRTStartup` and two other CRT functions (reached only through
+an SEH frame the CRT sets up). The rest of the CRT is reached by `rel32`
+calls from CRT code or from functions whose ports inline or leave out
+the call (the cookie check, `_chkstk`). An `INTERNAL` entry is not
+enough for code the DLL keeps a pointer to: the host and the hook trap
+only `bind`'s `PORTS`, and `call_code`/`method` dispatch through
+`bind` too. The bind test found 14 such stored callbacks (`r45` sparks
+0266, trails 0392 and 0449, …) and moved them to `PORTS`. The work
+list's CRT rule (mnemonic groups) had also swallowed 8 tiny callbacks
+(`mov dword [G], imm32; ret` in `magic_0249`, `0443`, `0530`, `0531` and
+`0562`; `jmp rel32` task-step thunks in `0165`, `0253` and `0303`); they
+are ported in `wp1_tiny.rs`.
 
 **Parity harness** (`crates/ffx-oracle/tests/magic/mod.rs`, one test file
 per DLL: `magic_NNNN.rs`). `Twin::load(n)` loads the DLL in Unicorn

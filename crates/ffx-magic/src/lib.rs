@@ -447,6 +447,8 @@ pub mod m0706;
 pub mod m0707;
 pub mod m0708;
 pub mod m0709;
+// callbacks the overlay-bind test found unbound (m5-wp1-bind)
+pub mod wp1_tiny;
 
 pub use ffx_bridge::Mem;
 // the mutation schemata (tools/mutants.py) call `ffx_core::mutant`
@@ -3928,6 +3930,29 @@ ports! {
     "r13 load 0571" => r13_start::LOAD_0571, r13_start::load_0571;
     "r13 load 0572" => r13_start::LOAD_0572, r13_start::load_0572;
     // round 13 (magic-r13): end of ports
+    // stored callbacks (m5-wp1-bind): code the DLL keeps a pointer to (a
+    // node's or task's callback, a .data table), so the game and the
+    // ports' call_code/method reach it by address; they were INTERNAL
+    "r45 sparks 0266" => r45::SPARKS_0266, r45::sparks_0266;
+    "r45 trails 0392" => r45::TRAILS_0392, r45::trails_0392;
+    "r45 actors tilt 0392" => r45::ACTORS_TILT_0392, r45::actors_tilt_0392;
+    "r26 actor matrix 0430" => r26::ACTOR_MATRIX_0430, m0588::actor_matrix;
+    "r45 throw target 0449" => r45::THROW_TARGET_0449, r45::throw_target_0449;
+    "r45 trails 0449" => r45::TRAILS_0449, r45::trails_0449;
+    "fx reset d74c" => sa_misc::FX_RESET_D74C, sa_misc::fx_reset_d74c_entry;
+    "m0568 sway" => m0568::SWAY, m0568::sway;
+    "m0588 actor matrix" => m0588::ACTOR_MATRIX_0588, m0588::actor_matrix;
+    "m0600 actor matrix" => m0588::ACTOR_MATRIX_0600, m0588::actor_matrix;
+    "m0605 actor part" => m0605::ACTOR_PART, m0605::actor_part_entry;
+    "m0606 start tasks" => m0606::START_TASKS, m0606::start_tasks_entry;
+    "0644 start 0x260, placed" => s4_fam446::START_260_PLACED, s4_fam446::start_260_placed;
+    "m0680 task" => m0680::TASK, m0680::task;
+    "wp1 set global (1)" => wp1_tiny::SET_GLOBAL_1, wp1_tiny::set_global;
+    "wp1 set global (0)" => wp1_tiny::SET_GLOBAL_0, wp1_tiny::set_global;
+    "wp1 set global (0x80)" => wp1_tiny::SET_GLOBAL_80, wp1_tiny::set_global;
+    "wp1 thunk to glow 0165" => wp1_tiny::THUNK_GLOW_0165, wp1_tiny::tail_thunk;
+    "wp1 thunk to camera rigs step" => wp1_tiny::THUNK_CAMERA_RIGS_STEP, wp1_tiny::tail_thunk;
+    // stored callbacks (m5-wp1-bind): end of ports
 }
 
 /// Functions the ports reproduce inside others (no entry of their own:
@@ -4312,7 +4337,6 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r26 start-up 0442", &r26::START_UP_0442),
     ("r26 start-up 0260", &r26::START_UP_0260),
     ("r26 start-up 0305", &r26::START_UP_0305),
-    ("r26 actor matrix 0430", &r26::ACTOR_MATRIX_0430),
     ("r26 trail draw 0543", &r26::TRAIL_DRAW_0543),
     ("r26 start-up 0354", &r26::START_UP_0354),
     ("r26 start-up 0243", &r26::START_UP_0243),
@@ -4517,7 +4541,6 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("m0602 sounds free", &m0602::SOUNDS_FREE),
     ("m0602 sounds stop", &m0602::SOUNDS_STOP),
     ("m0605 move pieces", &m0605::MOVE_PIECES),
-    ("m0605 actor part", &m0605::ACTOR_PART),
     ("m0609 task start", &m0609::TASK_START),
     ("m0610 check targets", &m0610::CHECK_TARGETS),
     ("m0613 task start", &m0613::TASK_START),
@@ -4531,7 +4554,6 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("m0645 mover", &m0645::MOVER),
     ("m0665 timeline reset", &m0665::TIMELINE_RESET),
     ("m0672 camera reset", &m0672::CAMERA_RESET),
-    ("m0680 task", &m0680::TASK),
     ("m0704 fade", &m0704::FADE),
     ("m0704 load", &m0704::LOAD),
     ("m0705 fade", &m0705::FADE),
@@ -4564,15 +4586,11 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("m0577 unlink end", &m0577::UNLINK_END),
     ("m0673 start row", &m0673::START_ROW),
     ("m0585 light object", &m0585::LIGHT_OBJECT),
-    ("m0568 sway", &m0568::SWAY),
     ("m0573 refresh", &m0573::REFRESH),
     ("m0573 motion setup", &m0573::MOTION_SETUP),
     ("m0577 spark setup", &m0577::SPARK_SETUP),
     ("m0577 light node", &m0577::LIGHT_NODE),
-    ("m0588 actor matrix", &m0588::ACTOR_MATRIX_0588),
-    ("m0600 actor matrix", &m0588::ACTOR_MATRIX_0600),
     ("m0585 drift setup", &m0585::DRIFT_SETUP),
-    ("m0606 start tasks", &m0606::START_TASKS),
     // end of magic r6 own (0450 and up) internal functions
     ("m0393 face", &m0393::FACE),
     ("m0394 root", &m0394::ROOT),
@@ -4643,7 +4661,6 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("records init (0x80)", &sa_misc::RECORDS_INIT_80),
     ("ring reserve", &sa_misc::RING_RESERVE),
     ("part matrix", &sa_misc::PART_MATRIX),
-    ("fx reset d74c", &sa_misc::FX_RESET_D74C),
     ("static child", &sa_misc::STATIC_CHILD),
     ("reels match", &sa_misc::REELS_MATCH),
     ("camera target (b)", &sa_misc::CAMERA_TARGET_B),
@@ -4843,7 +4860,6 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("face point", &s4_small::FACE_POINT),
     ("table object", &s4_small::TABLE_OBJECT),
     ("leave and register", &s4_small::LEAVE_REGISTER),
-    ("0644 start 0x260, placed", &s4_fam446::START_260_PLACED),
     ("part drop", &s4_small::PART_DROP),
     ("walk and reset", &s4_small::WALK_RESET),
     ("walk and ring write", &s4_small::WALK_RING),
@@ -5527,7 +5543,6 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r45 actor motions 0431", &r45::ACTOR_MOTIONS_0431),
     ("r45 fading sprite 0266", &r45::FADING_SPRITE_0266),
     ("r45 actors step 0266", &r45::ACTORS_STEP_0266),
-    ("r45 sparks 0266", &r45::SPARKS_0266),
     ("r45 start-up 0266", &r45::START_UP_0266),
     ("r45 project 0434", &r45::PROJECT_0434),
     ("r45 bone matrix 0434", &r45::BONE_MATRIX_0434),
@@ -5538,11 +5553,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r45 throw aim 0392", &r45::THROW_AIM_0392),
     ("r45 aim set-up 0392", &r45::AIM_SETUP_0392),
     ("r45 start-up 0392", &r45::START_UP_0392),
-    ("r45 actors tilt 0392", &r45::ACTORS_TILT_0392),
-    ("r45 trails 0392", &r45::TRAILS_0392),
     ("r45 start-up 0449", &r45::START_UP_0449),
-    ("r45 throw target 0449", &r45::THROW_TARGET_0449),
-    ("r45 trails 0449", &r45::TRAILS_0449),
     ("r45 glow draw 0431", &r45::GLOW_DRAW_0431),
     ("r45 bone place 0387", &r45::BONE_PLACE_0387),
     ("r45 weights task 0387", &r45::WEIGHTS_TASK_0387),

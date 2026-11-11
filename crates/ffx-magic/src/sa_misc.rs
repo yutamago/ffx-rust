@@ -2433,6 +2433,13 @@ pub fn fx_reset_d74c<G: Game>(g: &mut G, img: &Image, f: u32) -> u32 {
     v
 }
 
+/// [`fx_reset_d74c`] as an entry: `magic_0565` and its copies keep its
+/// address in a `.data` table, so it is called by address (cdecl, no
+/// words; `eax` the word it returns).
+pub fn fx_reset_d74c_entry<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    Ret::eax(fx_reset_d74c(g, img, fr.at))
+}
+
 /// `fx_reset_d74c` (103 bytes, 5 overlays).
 pub const FX_RESET_D74C: Sig = Sig {
     len: 103,
