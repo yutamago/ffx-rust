@@ -1710,3 +1710,60 @@ fn actors_start_0397() {
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
+
+/// `magic_0396` 0x100047d0 (`r48::load_0396`, the r9 load step over
+/// `r45::start_up_0396`): busy, loading, loaded and the start-up run.
+#[test]
+fn load_0396() {
+    let Some(mut t) = sa::twin(396) else { return };
+    let load = t.at(0x47d0);
+    let f = t.img.rel32_target(load + 0x5b);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    let fc = t.img.rel32_target(f + 0xee);
+    let fw = |o: u32| img.word(fc + o);
+    for (k, (busy, loaded, ready)) in
+        (0u32..).zip([(1u32, 0u32, 1u32), (0, 0, 0), (0, 1, 1), (0, 0, 2)])
+    {
+        all_stubs(&mut t);
+        for (s, n) in [(719u32, 3usize), (710, 4), (271, 1), (711, 3)] {
+            rec(&mut t, s, n, move |_, a| (s << 16) ^ a[0] ^ k);
+        }
+        rec(&mut t, 262, 4, |m, a| {
+            for i in 1..4 {
+                wf(m, a[i], (a[0] & 0xf) as f32 * 0.75 + i as f32 - 3.0);
+            }
+            0x262
+        });
+        rec(&mut t, 333, 1, |_, a| 0x0333_0000 ^ a[0]);
+        t.stub_st0(333, move |_, _| 0.5 + f64::from(k) * 2.75 - 4.0);
+        rec(&mut t, 225, 1, move |_, _| busy);
+        rec(&mut t, 226, 2, |_, a| 0x0226_0000 ^ a[0]);
+        rec(&mut t, 227, 1, move |_, _| ready);
+        let state = SCRATCH + 0x3000;
+        junk(&mut t, state, 0x400, k);
+        t.set_u32(fw(0x08), state);
+        t.set_u32(fw(0x22), 0x0c0c_0022);
+        let lock = SCRATCH + 0x5e0;
+        t.set_u32(w(0x74), lock);
+        t.set_u32(lock, 0x77 + k);
+        magic_r11::ring(&mut t, w(0x128), w(0x13f), 5, SCRATCH + 0x5000);
+        t.write(SCRATCH + 0x600, &[0x44; 0x20]);
+        t.set_u32(w(0x1a1), SCRATCH + 0x600);
+        t.set_u32(w(0x1b4), SCRATCH + 0x600);
+        junk_ops(
+            &mut t,
+            f,
+            &[0xb, 0x15, 0x1f, 0x29, 0xc7, 0xd1, 0xdb, 0xe5, 0xf9, 0x103],
+        );
+        let at = t.img.word(load + 0x18);
+        t.set_u32(at, loaded);
+        for o in [0x26u32, 0x46] {
+            let at = t.img.word(load + o);
+            t.set_u32(at, 0x0b0b_0000 + o);
+        }
+        junk_ops(&mut t, load, &[0x61, 0x6b]);
+        ownb::dirty_stack(&mut t, 0x47d0 + k, &[]);
+        t.check_entry(load, Call::default(), &[], Eax::Checked);
+    }
+}

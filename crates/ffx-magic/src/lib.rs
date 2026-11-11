@@ -3521,6 +3521,7 @@ ports! {
     "r48 lasers task 0387" => r48::LASERS_TASK_0387, r48::lasers_task_0387;
     "r48 main task 0387" => r48::MAIN_TASK_0387, r48::main_task_0387;
     "r48 actors start 0397" => r48::ACTORS_START_0397, r48::actors_start_0397;
+    "r48 load step 0396" => r48::LOAD_0396, r48::load_0396;
     // round 48 (magic-r48): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;

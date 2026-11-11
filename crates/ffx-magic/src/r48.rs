@@ -2928,3 +2928,23 @@ pub const ACTORS_START_0397: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `magic_0396`'s load step (0x100047d0, the 118-byte shape) running
+/// [`start_up_0396`](crate::r45::start_up_0396).
+pub fn load_0396<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    crate::r9_load::load_step(
+        g,
+        img,
+        fr,
+        crate::r9_load::Shape::Zero,
+        crate::r45::start_up_0396,
+    )
+}
+
+/// [`load_0396`].
+pub const LOAD_0396: Sig = Sig {
+    len: 118,
+    hash: 0xf93b_1968_cd8e_f184,
+    calls: &[(0x5b, Callee::Sig(&crate::r45::START_UP_0396))],
+    imports: &[],
+};
