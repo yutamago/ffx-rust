@@ -243,7 +243,7 @@ pub const MATRIX_MOVE_0387: Sig = Sig {
 /// The visit thunk over an internal visit with the visitor in `ecx`
 /// (`push ebp; mov ebp, esp; mov ecx, [ebp + 8]; pop ebp; jmp target`):
 /// the target runs on the thunk's own stack.
-fn thunk_to<G: Game>(
+pub(crate) fn thunk_to<G: Game>(
     g: &mut G,
     img: &Image,
     fr: &Frame,

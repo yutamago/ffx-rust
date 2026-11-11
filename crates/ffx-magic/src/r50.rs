@@ -339,3 +339,262 @@ pub const STRIP_MESH_0387: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// [`laser_visit_0387`]'s new particles: `O[0x3f8]` = `j` up to the
+/// count `c = u8 O[0x3e8]` (below 0x30): particle `j + i` (of
+/// `m = c - j`) gets a random vector `O + 0x1c + 16 (j + i)` (slot 307
+/// four times, each `r K - K'`, the last `r K + K'`) and its record
+/// `O + 0x31c + 4 (j + i)` = `(0, i 0x200 / m)` (`u16` each); then
+/// `O[0x3f8]` = `c`.
+fn new_particles<G: Game>(g: &mut G, img: &Image, f: u32, o: u32) {
+    let w = |o: u32| img.word(f + o);
+    let rf = |g: &G, a: u32| g.read::<f32>(a);
+    let c = g.read::<u8>(o + 0x3e8);
+    let j = g.read::<u32>(o + 0x3f8).cast_signed();
+    if j >= i32::from(c) || c >= 0x30 {
+        return;
+    }
+    let m = i32::from(c) - j;
+    let q = 0x200 / m;
+    // (slot word, scale, offset; the last adds)
+    let parts = [
+        (0x111, 0x12b, 0x138),
+        (0x130, 0x157, 0x164),
+        (0x15c, 0x182, 0x18f),
+        (0x187, 0x1ae, 0x1be),
+    ];
+    for i in 0..m {
+        let n = j.wrapping_add(i).cast_unsigned();
+        let p = o.wrapping_add(0x1c).wrapping_add(n << 4);
+        for (d, (s, k, k2)) in (0u32..).zip(parts) {
+            let r = crate::m0018::st0_f32(g.call(slot_target(g, w(s), 307), 0, &[]).st0);
+            let x = mul(r, rf(g, w(k)));
+            let x = if d == 3 {
+                add(x, rf(g, w(k2)))
+            } else {
+                sub(x, rf(g, w(k2)))
+            };
+            g.write::<f32>(p + 4 * d, x);
+        }
+        let rec = o.wrapping_add(0x31c).wrapping_add(n << 2);
+        g.write::<u16>(rec, 0);
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // `mov word`
+        g.write::<u16>(rec + 2, q.wrapping_mul(i) as u16);
+    }
+    let c = g.read::<u8>(o + 0x3e8);
+    g.write::<u32>(o + 0x3f8, u32::from(c));
+}
+
+/// One live particle of [`laser_visit_0387`] (`b` the frame base, `o`
+/// the node, `pt` its strip point's `+0xc`, `x` its vector's `+8`, `rec`
+/// its record, `last` whether the point is the head's last): the
+/// strip's direction there `D` (`b + 0x48`; slot 234 of this point and
+/// the next, or of the one before and this one at the end; slot 232,
+/// slot 233 by 4.0) moves the particle's x, y, z; the point's half width
+/// drops by `K` (0 at or below 0); the point (slot 325, `b + 0xa8`), the
+/// particle (slot 248 into `b + 0x98`, `w` 1.0) and slot 229 give the
+/// matrix `b + 0x58` (scale = the particle's `w`, its last row lowered by
+/// `K2` in y), slot 231 `(b + 0xb8, G_M, b + 0x58)`; then the record's
+/// phase `+2` grows by `flag << 9`, and past the frame's length (`i16
+/// Q[0x12 + 8 frame]`, `Q = O[0x3ec]`) goes to the next frame.
+#[allow(clippy::too_many_arguments)]
+fn particle<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    b: u32,
+    pt: u32,
+    x: u32,
+    rec: u32,
+    q: u32,
+    flag: u32,
+    last: bool,
+) {
+    let w = |o: u32| img.word(f + o);
+    let rf = |g: &G, a: u32| g.read::<f32>(a);
+    let d = b + 0x48;
+    let (p0, p1) = if last {
+        (pt.wrapping_sub(0x1c), pt.wrapping_sub(0xc))
+    } else {
+        (pt.wrapping_sub(0xc), pt.wrapping_add(4))
+    };
+    // call width: 3
+    g.call(slot_target(g, w(0x2ed), 234), 0, &[d, p0, p1]);
+    // call width: 2
+    g.call(slot_target(g, w(0x303), 232), 0, &[d, d]);
+    // call width: 3
+    g.call(slot_target(g, w(0x320), 233), 0, &[d, d, 0x4080_0000]);
+    let v = x.wrapping_sub(8);
+    for i in 0..3 {
+        let s = add(rf(g, d + 4 * i), rf(g, v + 4 * i));
+        g.write::<f32>(v + 4 * i, s);
+    }
+    let half = sub(rf(g, pt), rf(g, w(0x372)));
+    g.write::<f32>(pt, half);
+    let frame = g.read::<u16>(rec);
+    // comiss 0, half; jb: above 0 or unordered stays
+    if !(half.is_nan() || 0.0 < half) {
+        g.write::<u32>(pt, 0);
+    }
+    // call width: 2
+    g.call(
+        slot_target(g, w(0x399), 325),
+        0,
+        &[b + 0xa8, pt.wrapping_sub(0xc)],
+    );
+    let scale = g.read::<u32>(x + 4);
+    for o in [0x80, 0x6c, 0x58] {
+        g.write::<u32>(b + o, scale);
+    }
+    // call width: 3
+    g.call(slot_target(g, w(0x3c3), 248), 0, &[b + 0x98, b + 0xa8, v]);
+    g.write::<u32>(b + 0xa4, 0x3f80_0000);
+    // call width: 3
+    g.call(
+        slot_target(g, w(0x400), 229),
+        0,
+        &[b + 0x88, w(0x3fa), b + 0x98],
+    );
+    let y = sub(rf(g, b + 0x90), rf(g, w(0x424)));
+    g.write::<f32>(b + 0x90, y);
+    // call width: 3
+    g.call(
+        slot_target(g, w(0x43e), 231),
+        0,
+        &[b + 0xb8, w(0x438), b + 0x58],
+    );
+    #[allow(clippy::cast_possible_truncation)] // `add word`
+    let phase = g.read::<u16>(rec + 2).wrapping_add((flag << 9) as u16);
+    g.write::<u16>(rec + 2, phase);
+    let len = g.read::<u16>(q + 0x12 + 8 * u32::from(frame));
+    if i32::from(phase) >= i32::from(len.cast_signed()) {
+        g.write::<u16>(rec + 2, phase.wrapping_sub(len));
+        let n = g.read::<u16>(rec).wrapping_add(1);
+        g.write::<u16>(rec, n);
+    }
+}
+
+/// `magic_0387`'s laser visit (0x100037a0, 1226 bytes; internal, `ecx` =
+/// the visitor `V`; an 8-aligned frame, `b` its base below the saved
+/// `esi`/`edi`). After the [`walk`](crate::r48::walk) (none: its `eax`),
+/// the node `O`'s strip `S = O[0x3dc]` is moved with the visitor `L =
+/// (S, mode)` at `b + 0x28`
+/// ([`laser_move_0387`](crate::r48::laser_move_0387)), meshed when its
+/// window holds 2 points or more ([`strip_mesh_0387`]; with `ecx` = `O`)
+/// and windowed again into `b + 0x38`
+/// ([`strip_window`](crate::s4_small::strip_window)). New particles
+/// start ([`new_particles`]); with `flag` = (`*G_F` == 0) the first
+/// `min(c, n)` particles (`c = u8 O[0x3e8]`, `n` the head's points) whose
+/// frame `u16` is below `i16 Q[6]` move along the strip ([`particle`]).
+/// `*G_B` (the draw's handle, which the mesh's draw overwrote) gets its
+/// old value back and is returned.
+pub fn laser_visit_0387<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let v = fr.ecx;
+    let a = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0xf8);
+    let b = a.wrapping_sub(8);
+    // the cookie word (`ds:__security_cookie ^ esp`)
+    let cookie = g.read::<u32>(w(0xd)) ^ a;
+    g.write::<u32>(b + 0xfc, cookie);
+    let o = g.read::<u32>(v);
+    let (eax, o) = crate::r48::walk(g, img, v, b.wrapping_sub(8), o, cookie);
+    let Some(o) = o else {
+        return Ret::eax(eax);
+    };
+    let l = b + 0x28;
+    let s = g.read::<u32>(o + 0x3dc);
+    g.write::<u32>(l, s);
+    let mode = g.read::<u8>(v + 5);
+    g.write::<u8>(l + 5, mode);
+    let esp = b.wrapping_sub(4);
+    crate::r48::laser_move_0387(
+        g,
+        img,
+        &Frame {
+            at: img.rel32_target(f + 0x8c),
+            esp,
+            ecx: l,
+            ..Frame::default()
+        },
+    );
+    let s = g.read::<u32>(o + 0x3dc);
+    if g.read::<u16>(s + 0x26) >= 2 {
+        strip_mesh_0387(
+            g,
+            img,
+            &Frame {
+                at: img.rel32_target(f + 0xa0),
+                esp,
+                ecx: o,
+                edx: s,
+                ..Frame::default()
+            },
+        );
+    }
+    let l2 = b + 0x38;
+    let s = g.read::<u32>(o + 0x3dc);
+    g.write::<u32>(l2, s);
+    crate::s4_small::strip_window(
+        g,
+        img,
+        &Frame {
+            at: img.rel32_target(f + 0xb3),
+            esp,
+            ecx: l2,
+            ..Frame::default()
+        },
+    );
+    new_particles(g, img, f, o);
+    let saved = g.read::<u32>(w(0x201));
+    let flag = u32::from(g.read::<u32>(w(0x216)) == 0);
+    for z in [0x5c, 0x60, 0x64, 0x68, 0x70, 0x74, 0x78, 0x7c, 0x84] {
+        g.write::<u32>(b + z, 0);
+    }
+    let c = u16::from(g.read::<u8>(o + 0x3e8));
+    let n = g.read::<u16>(l2 + 4);
+    let count = u32::from(c.min(n));
+    let mut pt = g.read::<u32>(l2 + 8).wrapping_add(0xc);
+    let (mut x, mut rec) = (o + 0x24, o + 0x31c);
+    for i in 0..count {
+        let q = g.read::<u32>(o + 0x3ec);
+        let frames = i32::from(g.read::<i16>(q + 6));
+        if i32::from(g.read::<u16>(rec)) < frames {
+            let last = i + 1 == u32::from(g.read::<u16>(l2 + 4));
+            particle(g, img, f, b, pt, x, rec, q, flag, last);
+        }
+        x = x.wrapping_add(0x10);
+        pt = pt.wrapping_add(0x10);
+        rec = rec.wrapping_add(4);
+    }
+    g.write::<u32>(w(0x4b2), saved);
+    Ret::eax(saved)
+}
+
+/// [`laser_visit_0387`] (the `rel32`s: the laser move, the strip mesh,
+/// the strip window, the cookie check).
+pub const LASER_VISIT_0387: Sig = Sig {
+    len: 1226,
+    hash: 0x805e_d95c_e85b_e6cd,
+    calls: &[
+        (0x8c, Callee::Sig(&crate::r48::LASER_MOVE_0387)),
+        (0xa0, Callee::Sig(&STRIP_MESH_0387)),
+        (0xb3, Callee::Sig(&crate::s4_small::STRIP_WINDOW)),
+        (0x4c2, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// `magic_0387` 0x100046b0: `EgoLzr`'s visit, the thunk over
+/// [`laser_visit_0387`].
+pub fn jmp_laser_visit_0387<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    crate::r48::thunk_to(g, img, fr, laser_visit_0387)
+}
+
+/// [`jmp_laser_visit_0387`].
+pub const JMP_LASER_VISIT_0387: Sig = Sig {
+    len: 12,
+    hash: 0x896f_4fde_1224_a07f,
+    calls: &[(8, Callee::Sig(&LASER_VISIT_0387))],
+    imports: &[],
+};
