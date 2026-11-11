@@ -3235,3 +3235,117 @@ pub const LANDING_0397: Sig = Sig {
     ],
     imports: &[(0x1fe, "rand")],
 };
+
+/// `magic_0431`'s orbs start (0x10003ef0, 815 bytes; a table callback,
+/// no arguments; a /GS frame: the matrix `M` at `ebp - 0x94`, `M2` at
+/// `ebp - 0x54`, the centre `V` at `ebp - 0x14`). With `S = *G_S`: a
+/// task at `S[0xc64]` goes back to the free ring
+/// ([`give_back`](crate::sa_pool::give_back)) and the word is cleared;
+/// slot 257 `(A1, 1)` and slot 210 `(A0, M)` for the selection's first two
+/// actors; then for the three orbs `k` (the objects `S + 0x390 + 0x130 k`,
+/// the point records `C = S + 0xc94 + 0x30 k`): `M2` = slot 231 `(M2, M,
+/// C[-8])`; `V` = the mean of the three points `C[-4]`, `C[0]`, `C[4]`
+/// (summed in that order, each over `K`; `w` from `C[-4]`); the object
+/// starts ([`start_object_anim`](crate::s4_misc::start_object_anim),
+/// scale `(frnd(0.5) + K1) K2`, part 2, the previous orb's draw `r`) at
+/// `M2 V` (slot 229), `+0xe8` 5, `+0xdc` 1, its step `CB`, `+0x120 = k`;
+/// the first one's trail `S + 0xc30` reset; `r = rand rem 5`. Then slot
+/// 239 `(*G_E, -5, 0)`, `S[0xd08..0xd0c] = (0x28, 0x14)` and a task node
+/// (callback the orbs' task) from the free ring
+/// ([`pool_take_0587`](crate::r27::pool_take_0587)) goes last on the
+/// task list, kept at `S[0xc68]`. Returns the list's old tail or 0xffff.
+pub fn orbs_start_0431<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let c = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let ebp = fr.esp.wrapping_sub(4);
+    let (m, m2, v) = (
+        ebp.wrapping_sub(0x94),
+        ebp.wrapping_sub(0x54),
+        ebp.wrapping_sub(0x14),
+    );
+    let s = g.read::<u32>(w(0x18));
+    let back = g.read::<u32>(s + 0xc64);
+    if back != 0 {
+        crate::sa_pool::give_back(g, img, img.rel32_target(f + 0x27), back);
+        g.write::<u32>(s + 0xc64, 0);
+    }
+    let sel = |g: &G, sel: u32, table: u32, i: u32| {
+        let b = u32::from(g.read::<u8>(g.read::<u32>(w(sel)).wrapping_add(i)));
+        g.read::<u32>(w(table).wrapping_add(4 * b))
+    };
+    let a1 = sel(g, 0x36, 0x43, 1);
+    g.call(t(g, 0x48, 257), 0, &[a1, 1]);
+    let a0 = sel(g, 0x5c, 0x66, 0);
+    g.call(t(g, 0x6b, 210), 0, &[a0, m]);
+    let mut r = 0u32;
+    for k in 0..3u32 {
+        let obj = s + 0x390 + 0x130 * k;
+        let cp = s + 0xc94 + 0x30 * k;
+        let x = g.read::<u32>(cp - 8);
+        g.call(t(g, 0xaf, 231), 0, &[m2, m, x]);
+        let (pa, pb, pc) = (
+            g.read::<u32>(cp - 4),
+            g.read::<u32>(cp),
+            g.read::<u32>(cp + 4),
+        );
+        let at = |g: &G, p: u32, i: u32| g.read::<f32>(p + 4 * i);
+        let kk = c(g, 0x122);
+        let mut mean = [0.0f32; 3];
+        for i in 0..3u32 {
+            let sab = add(at(g, pa, i), at(g, pb, i));
+            mean[i as usize] = div(add(at(g, pc, i), sab), kk);
+        }
+        let ww = g.read::<u32>(pa + 0xc);
+        for (i, x) in mean.into_iter().enumerate() {
+            g.write::<f32>(v + 4 * i as u32, x);
+        }
+        g.write::<u32>(v + 0xc, ww);
+        let fr = st0_f32(g.call(t(g, 0x141, 404), 0, &[0x3f00_0000]).st0);
+        let scale = mul(add(fr, c(g, 0x175)), c(g, 0x181));
+        crate::s4_misc::start_object_anim(g, img, img.rel32_target(f + 0x186), obj, scale, 2, r);
+        let x = g.read::<u32>(s + 0xd00);
+        g.write::<u32>(obj + 0xc4, x);
+        g.write::<u32>(obj + 0xe8, 0x40a0_0000);
+        g.call(t(g, 0x1a6, 229), 0, &[obj + 0xd0, m2, v]);
+        g.write::<u32>(obj + 0xdc, ONE);
+        g.write::<u32>(obj + 0x104, w(0x1cf));
+        g.write::<u32>(obj + 0x120, k);
+        if k == 0 {
+            let tr = s + 0xc30;
+            for off in [0x18u32, 0x14, 0x10, 0x1c] {
+                g.write::<u32>(tr + off, 0);
+            }
+            g.write::<u32>(tr + 0x20, w(0x1f4));
+            g.write::<u32>(tr + 0x24, w(0x1fb));
+            g.write::<u32>(tr + 0x28, 0);
+            g.write::<u32>(tr + 0x2c, 0);
+            g.write::<u16>(tr + 0x30, 0);
+            g.write::<u32>(obj + 0x110, tr);
+        }
+        r = g.rand().cast_signed().wrapping_rem(5).cast_unsigned();
+    }
+    let e = g.read::<u32>(w(0x253));
+    let eax = g.call(t(g, 0x243, 239), 0, &[e, 0xffff_fffb, 0]).eax;
+    g.write::<u32>(s + 0xd08, 0x28);
+    g.write::<u32>(s + 0xd0c, 0x14);
+    let (node, eax) =
+        crate::r27::pool_take_0587(g, img, f, [0x25c, 0x282, 0x29f, 0x2a7, 0x2d8, 0x2e3], eax);
+    g.write::<u32>(s + 0xc68, node);
+    let eax = crate::r32::append_last(g, img, f, node, [0x2e9, 0x301, 0x314, 0x31f], eax);
+    Ret::eax(eax)
+}
+
+/// [`orbs_start_0431`] (the `rel32`s: the give back, the object start,
+/// the cookie check; `rand` through the IAT).
+pub const ORBS_START_0431: Sig = Sig {
+    len: 815,
+    hash: 0x3d6e_989a_48c1_1b85,
+    calls: &[
+        (0x27, Callee::Sig(&crate::sa_pool::GIVE_BACK)),
+        (0x186, Callee::Sig(&crate::s4_misc::START_OBJECT_ANIM)),
+        (0x327, Callee::Any),
+    ],
+    imports: &[(0x211, "rand")],
+};

@@ -1842,6 +1842,8 @@ fn landing_0397() {
         (1, 0, true),
         (0, 1, true),
         (2, 0, false),
+        // (b13 test gap: no actors and an empty list: the settle task heads it)
+        (0, 0, false),
     ]) {
         t.set_u32(w(0x13), s);
         t.set_u32(w(0x27), count.cast_unsigned());
@@ -1861,6 +1863,83 @@ fn landing_0397() {
         t.set_u32(w(0x429), if listed { SCRATCH + 0x600 } else { 0 });
         t.set_u32(w(0x43f), SCRATCH + 0x600);
         ownb::dirty_stack(&mut t, 0x58d0 + k, &[]);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// `magic_0431` 0x10003ef0 (`r48::orbs_start_0431`): a task to give back
+/// and none; the task list empty and not.
+#[test]
+fn orbs_start_0431() {
+    let Some(mut t) = sa::twin(431) else { return };
+    all_stubs(&mut t);
+    let f = t.at(0x3ef0);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    magic_r11::object_slots(&mut t);
+    magic_r11::object_start_auto(&mut t, img.rel32_target(f + 0x186));
+    rec(&mut t, 404, 1, |_, a| 0x0404_0000 ^ a[0]);
+    t.stub_st0(404, |_, a| f64::from(f32::from_bits(a[0])) * 0.75);
+    rec(&mut t, 231, 3, |m, a| {
+        for i in 0..16 {
+            let x = rf(m, a[1] + 4 * i) * 0.5 + (a[2] & 0xff) as f32;
+            wf(m, a[0] + 4 * i, x);
+        }
+        0x231
+    });
+    rec(&mut t, 229, 3, |m, a| {
+        for i in 0..4 {
+            let log = SCRATCH + 0x3_e100 + 4 * i;
+            m.w32(log, m.r32(log) ^ m.r32(a[2] + 4 * i));
+            let x = rf(m, a[1] + 4 * i) + rf(m, a[2] + 4 * i) * 0.5;
+            wf(m, a[0] + 4 * i, x);
+        }
+        0x229
+    });
+    rec(&mut t, 210, 2, |m, a| {
+        for i in 0..16 {
+            wf(m, a[1] + 4 * i, (a[0] & 0xf) as f32 + i as f32 * 0.25);
+        }
+        0x210
+    });
+    for (s, n) in [(257u32, 2), (239, 3)] {
+        rec(&mut t, s, n, move |_, a| (s << 16) ^ a[0] ^ a[1]);
+    }
+    t.set_u32(w(0x36), SCRATCH + 0x700);
+    t.write(SCRATCH + 0x700, &[3, 2]);
+    for i in 0..4 {
+        t.set_u32(w(0x43) + 4 * i, 0x0b00_0010 + 3 * i);
+    }
+    junk_ops(&mut t, f, &[0x122, 0x175, 0x181, 0x253]);
+    for (op, x) in [(0x122, 3.0f32), (0x175, 0.5), (0x181, 1.5)] {
+        setf(&mut t, w(op), x);
+    }
+    let s = SCRATCH + 0x1_0000;
+    let pts = SCRATCH + 0x6000;
+    for (k, (back, listed)) in (0u32..).zip([(true, false), (false, true), (true, true)]) {
+        t.set_u32(w(0x18), s);
+        junk(&mut t, s, 0xd40, k);
+        let bn = SCRATCH + 0x4000;
+        junk(&mut t, bn, 0x20, k);
+        t.set_u32(bn, 0);
+        t.set_u32(bn + 4, 0);
+        t.set_u32(bn + 8, bn);
+        t.set_u32(bn + 0xc, 0);
+        t.set_u32(s + 0xc64, if back { bn } else { 0 });
+        floats(&mut t, pts, 0x30, k);
+        for j in 0..3u32 {
+            let cp = s + 0xc94 + 0x30 * j;
+            t.set_u32(cp - 8, 0x10 + j);
+            t.set_u32(cp - 4, pts + 0x10 * j);
+            t.set_u32(cp, pts + 0x40 + 0x10 * j);
+            t.set_u32(cp + 4, pts + 0x80 + 0x10 * j);
+        }
+        magic_r11::pools(&mut t, f, 815);
+        magic_r11::ring(&mut t, w(0x25c), w(0x282), 4, SCRATCH + 0x5000);
+        t.write(SCRATCH + 0x600, &[0x44; 0x20]);
+        t.set_u32(w(0x2e9), if listed { SCRATCH + 0x600 } else { 0 });
+        t.set_u32(w(0x301), SCRATCH + 0x600);
+        ownb::dirty_stack(&mut t, 0x3ef0 + k, &[]);
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
