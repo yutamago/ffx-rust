@@ -3457,3 +3457,167 @@ pub const MODEL_BOUNDS_0431: Sig = Sig {
     calls: &[(0x43d, Callee::Any)],
     imports: &[],
 };
+
+/// `magic_0431`'s facing triangles (0x10001ee0, 1215 bytes; internal,
+/// `ecx` = the output records `O`, `edx` = the eye `P`, stack `(A0, A1,
+/// B, r, scaled, aimed, front)`; an aligned /GS frame `S`). The height
+/// `y = A0.y + (A1.y - A0.y) K` (`scaled` 1; else unscaled) is the
+/// limit. For each model of the set `*G_SET` (as
+/// [`model_bounds_0431`], `B` its projected vertices, moving on by each
+/// model's count; the argument word `B` keeps the cursor) and each
+/// triangle `(a, b, c)` of its type-0x10 groups:
+/// - with `front` 1 only a clockwise one (`(c.y - a.y)(b.x - a.x) - (c.x -
+///   a.x)(b.y - a.y)` below 0);
+/// - its centre within `r` of `P` (`_libm_sse2_sqrt_precise`);
+/// - its normal `(c - a) x (b - a)` normalised (slot 232) and scaled by
+///   `K4`: the pitch `atan2(n.y, |n.xz|)` and the yaw `K5 - atan2(n.z,
+///   n.x)` (wrapped once; `_CIatan2`), with `aimed` 1 both within
+///   `[K7, K6]` / `[K7, K8]`;
+/// - the centre's height not above the limit;
+///
+/// gives a record `(slot 941 (E[4]), the vertices, the triangle)`.
+/// Returns the records' count.
+#[allow(clippy::too_many_lines)] // the original's tests, one by one
+pub fn facing_tris_0431<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::ob_model::wrap_once;
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let c = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let rf = |g: &G, at: u32| g.read::<f32>(at);
+    let (mut out, eye) = (fr.ecx, fr.edx);
+    let a = fr.esp.wrapping_sub(4) & !7;
+    let s0 = a.wrapping_sub(0x98);
+    let nv4 = s0 + 0x84;
+    let arg = |g: &G, i: u32| fr.arg(g, i);
+    let (a0, a1) = (arg(g, 0), arg(g, 1));
+    let y0 = rf(g, a0 + 4);
+    let dy = sub(rf(g, a1 + 4), y0);
+    let dy = if arg(g, 4) == 1 {
+        mul(dy, c(g, 0x41))
+    } else {
+        dy
+    };
+    let limit = add(dy, y0);
+    let set = g.read::<u32>(w(0x47));
+    let mut count = 0u32;
+    let mut i = 0u32;
+    while i < u32::from(g.read::<u16>(set + 4)) {
+        let e = set + 0x10 + 0x10 * i;
+        let m = g.call(t(g, 0x81, 941), 0, &[g.read::<u32>(e)]).eax;
+        let verts = m.wrapping_add(g.read::<u32>(m + 8));
+        let mut grp = m.wrapping_add(g.read::<u32>(m + 4));
+        let mut left = i32::from(g.read::<i16>(m + 0x10));
+        let buf = arg(g, 2);
+        while left > 0 {
+            let mut tri = grp + 0x20;
+            if g.read::<u8>(grp + 1) == 0x10 {
+                let mut tn = 0i32;
+                while tn < i32::from(g.read::<i16>(grp + 2)) {
+                    let corner = |g: &G, k: u32| {
+                        (u32::from(g.read::<u16>(tri + 2 * k)) << 4).wrapping_add(buf)
+                    };
+                    let (pa, pb, pc) = (corner(g, 0), corner(g, 1), corner(g, 2));
+                    let p = |g: &G, v: u32, k: u32| rf(g, v + 4 * k);
+                    let keep = 'test: {
+                        if arg(g, 6) == 1 {
+                            let cyay = sub(p(g, pc, 1), p(g, pa, 1));
+                            let bxax = sub(p(g, pb, 0), p(g, pa, 0));
+                            let cxax = sub(p(g, pc, 0), p(g, pa, 0));
+                            let byay = sub(p(g, pb, 1), p(g, pa, 1));
+                            let cross = sub(mul(cyay, bxax), mul(cxax, byay));
+                            if !(0.0 > cross) {
+                                break 'test false;
+                            }
+                        }
+                        let k3 = c(g, 0x1b2);
+                        let sx = add(add(p(g, pa, 0), p(g, pb, 0)), p(g, pc, 0));
+                        let sy = add(add(p(g, pa, 1), p(g, pb, 1)), p(g, pc, 1));
+                        let sz = add(add(p(g, pa, 2), p(g, pb, 2)), p(g, pc, 2));
+                        let (cx, cy, cz) = (div(sx, k3), div(sy, k3), div(sz, k3));
+                        let ddx = sub(rf(g, eye), cx);
+                        let ddy = sub(rf(g, eye + 4), cy);
+                        let ddz = sub(rf(g, eye + 8), cz);
+                        let d2 = add(add(mul(ddy, ddy), mul(ddx, ddx)), mul(ddz, ddz));
+                        #[allow(clippy::cast_possible_truncation)]
+                        let d = f64::from(d2).sqrt() as f32;
+                        if d > f32::from_bits(arg(g, 3)) {
+                            break 'test false;
+                        }
+                        let cyay = sub(p(g, pc, 1), p(g, pa, 1));
+                        let czaz = sub(p(g, pc, 2), p(g, pa, 2));
+                        let cxax = sub(p(g, pc, 0), p(g, pa, 0));
+                        let byay = sub(p(g, pb, 1), p(g, pa, 1));
+                        let bzaz = sub(p(g, pb, 2), p(g, pa, 2));
+                        let bxax = sub(p(g, pb, 0), p(g, pa, 0));
+                        let nx = sub(mul(czaz, byay), mul(cyay, bzaz));
+                        let ny = sub(mul(cxax, bzaz), mul(czaz, bxax));
+                        let nz = sub(mul(cyay, bxax), mul(cxax, byay));
+                        for (k, x) in [nx, ny, nz, 1.0].into_iter().enumerate() {
+                            g.write::<f32>(nv4 + 4 * k as u32, x);
+                        }
+                        g.call(t(g, 0x287, 232), 0, &[nv4, nv4]);
+                        let k4 = c(g, 0x2bd);
+                        let ny = mul(rf(g, nv4 + 4), k4);
+                        let nx = mul(rf(g, nv4), k4);
+                        let nz = mul(rf(g, nv4 + 8), k4);
+                        g.write::<f32>(nv4 + 4, ny);
+                        g.write::<f32>(nv4 + 8, nz);
+                        g.write::<f32>(nv4, nx);
+                        let (ny, nz, nx) = (sub(ny, 0.0), sub(nz, 0.0), sub(nx, 0.0));
+                        let h = f64::from(add(mul(nz, nz), mul(nx, nx))).sqrt();
+                        let pitch = g.atan2(f64::from(ny), h);
+                        let yaw = g.atan2(f64::from(nz), f64::from(nx));
+                        #[allow(clippy::cast_possible_truncation)]
+                        let ya = sub(c(g, 0x394), yaw as f32);
+                        let ya = wrap_once(g, img, f, ya, [0x3a3, 0x3ad, 0x3b7, 0x3c4]);
+                        if arg(g, 5) == 1 {
+                            let k7 = c(g, 0x3db);
+                            if ya > c(g, 0x3d1) || k7 > ya {
+                                break 'test false;
+                            }
+                            #[allow(clippy::cast_possible_truncation)]
+                            let pf = pitch as f32;
+                            if pf > c(g, 0x3f1) || k7 > pf {
+                                break 'test false;
+                            }
+                        }
+                        // comiss limit, cy; jb: below or unordered rejects
+                        limit >= cy
+                    };
+                    if keep {
+                        let id = g.call(t(g, 0x411, 941), 0, &[g.read::<u32>(e + 4)]).eax;
+                        g.write::<u32>(out, id);
+                        g.write::<u32>(out + 4, verts);
+                        g.write::<u32>(out + 8, tri);
+                        out += 0xc;
+                        count += 1;
+                    }
+                    tn += 1;
+                    tri += 0x1c;
+                }
+            }
+            left -= i32::from(g.read::<i16>(grp + 2));
+            grp = tri;
+        }
+        let nv = i32::from(g.read::<i16>(m + 0x12)).cast_unsigned();
+        g.write::<u32>(fr.esp + 0xc, buf.wrapping_add(nv << 4));
+        i += 1;
+    }
+    Ret::eax(count)
+}
+
+/// [`facing_tris_0431`] (the `rel32`s: `_libm_sse2_sqrt_precise` twice,
+/// `_CIatan2` twice, the cookie check).
+pub const FACING_TRIS_0431: Sig = Sig {
+    len: 1215,
+    hash: 0x1071_1c83_a094_543e,
+    calls: &[
+        (0x1fe, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x340, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x353, Callee::Import("_CIatan2")),
+        (0x382, Callee::Import("_CIatan2")),
+        (0x4b7, Callee::Any),
+    ],
+    imports: &[],
+};

@@ -2018,6 +2018,13 @@ fn model_bounds_0431() {
                 }
             }
         }
+        // (b15 test gap: a triangle group past the counted ones, on a
+        // vertex past the model's, never read)
+        t.write(p + 1, &[0x10]);
+        t.write(p + 2, &1i16.to_le_bytes());
+        for c in 0..3u32 {
+            t.write(p + 0x20 + 2 * c, &(nv + 3).to_le_bytes());
+        }
     };
     for (k, n) in (0u32..).zip([0u16, 2, 1]) {
         junk(&mut t, set, 0x40, k);
@@ -2031,7 +2038,9 @@ fn model_bounds_0431() {
         floats(&mut t, models + 0x800 * 3, 16, k);
         floats(&mut t, models + 0x800 * 2 + 0x400, 16, k);
         floats(&mut t, xm, 16, k + 1);
-        junk(&mut t, buf, 0x200, k);
+        for i in 0..0x80u32 {
+            setf(&mut t, buf + 4 * i, if i % 2 == 0 { 900.0 } else { -900.0 });
+        }
         junk(&mut t, lo, 0x40, k);
         let call = Call {
             ecx: set,
@@ -2045,6 +2054,123 @@ fn model_bounds_0431() {
             &[buf, lo, hi],
             Eax::Checked,
             ffx_magic::r48::model_bounds_0431,
+        );
+    }
+}
+
+/// `magic_0431` 0x10001ee0 (`r48::facing_tris_0431`, internal): the
+/// tests on and off (front, aimed, scaled), the reach small and large,
+/// the height limit low and high, two models (a type-0x10 group and
+/// another).
+#[test]
+fn facing_tris_0431() {
+    let Some(mut t) = sa::twin(431) else { return };
+    let f = t.at(0x1ee0);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    all_stubs(&mut t);
+    let models = SCRATCH + 0x8000;
+    rec(&mut t, 941, 1, move |_, a| models + 0x800 * (a[0] & 3));
+    rec(&mut t, 232, 2, |m, a| {
+        let v: Vec<f32> = (0..3).map(|i| rf(m, a[1] + 4 * i)).collect();
+        let n = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt().max(1e-3);
+        for i in 0..3 {
+            wf(m, a[0] + 4 * i as u32, v[i] / n);
+        }
+        0x232
+    });
+    let ops = [
+        0x41u32, 0x1b2, 0x2bd, 0x394, 0x3a3, 0x3ad, 0x3b7, 0x3c4, 0x3d1, 0x3db, 0x3f1,
+    ];
+    junk_ops(&mut t, f, &ops);
+    for (op, x) in [
+        (0x41u32, 0.5f32),
+        (0x1b2, 3.0),
+        (0x2bd, 1.0),
+        (0x394, 1.5),
+        (0x3a3, std::f32::consts::PI),
+        (0x3ad, std::f32::consts::TAU),
+        (0x3b7, -std::f32::consts::PI),
+        (0x3c4, std::f32::consts::TAU),
+        (0x3d1, 1.2),
+        (0x3db, -1.2),
+        (0x3f1, 0.9),
+    ] {
+        setf(&mut t, w(op), x);
+    }
+    let (set, out, eye, buf, a0, a1) = (
+        SCRATCH + 0x100,
+        SCRATCH + 0x2000,
+        SCRATCH + 0x200,
+        SCRATCH + 0x4000,
+        SCRATCH + 0x300,
+        SCRATCH + 0x320,
+    );
+    t.set_u32(w(0x47), set);
+    let model = |t: &mut Twin, n: u32, nv: u16, groups: &[(u8, i16)], k: u32| {
+        let at = models + 0x800 * n;
+        junk(t, at, 0x800, k + n);
+        t.set_u32(at + 4, 0x40);
+        t.set_u32(at + 8, 0x400);
+        t.write(at + 0x12, &nv.to_le_bytes());
+        let prims: i16 = groups.iter().map(|g| g.1).sum();
+        t.write(at + 0x10, &prims.to_le_bytes());
+        let mut p = at + 0x40;
+        for &(kind, cnt) in groups {
+            t.write(p + 1, &[kind]);
+            t.write(p + 2, &cnt.to_le_bytes());
+            p += 0x20;
+            if kind == 0x10 {
+                for tn in 0..cnt.max(0) as u32 {
+                    for c in 0..3u32 {
+                        let idx = ((tn * 2 + c * (1 + k) + k) % u32::from(nv.max(1))) as u16;
+                        t.write(p + 2 * c, &idx.to_le_bytes());
+                    }
+                    p += 0x1c;
+                }
+            }
+        }
+    };
+    // (front, aimed, scaled, reach, A1.y)
+    for (k, (front, aimed, scaled, reach, top)) in (0u32..).zip([
+        (0u32, 0u32, 0u32, 100.0f32, 50.0f32),
+        (1, 0, 0, 100.0, 50.0),
+        (0, 1, 0, 100.0, 50.0),
+        (0, 0, 1, 100.0, 1.0),
+        (1, 1, 1, 4.0, 50.0),
+        (0, 0, 0, 100.0, 1.0),
+        (0, 0, 0, 100.0, -50.0),
+    ]) {
+        junk(&mut t, set, 0x40, k);
+        t.write(set + 4, &2u16.to_le_bytes());
+        for i in 0..2u32 {
+            t.set_u32(set + 0x10 + 0x10 * i, i + 1);
+            t.set_u32(set + 0x14 + 0x10 * i, 3 - i);
+        }
+        model(&mut t, 1, 6, &[(0x10, 4), (0x07, 3), (0x10, 3)], k);
+        model(&mut t, 2, 5, &[(0x10, 5)], k);
+        for i in 0..0x80u32 {
+            let v = ((i * 7 + k * 5) % 23) as f32 * 0.5 - 5.5;
+            setf(&mut t, buf + 4 * i, v);
+        }
+        floats(&mut t, eye, 4, k);
+        floats(&mut t, a0, 4, k + 1);
+        floats(&mut t, a1, 4, k + 2);
+        setf(&mut t, a1 + 4, top);
+        junk(&mut t, out, 0x200, k);
+        let call = Call {
+            ecx: out,
+            edx: eye,
+            ..Call::default()
+        };
+        ownb::dirty_stack(&mut t, 0x1ee0 + k, &[]);
+        let args = [a0, a1, buf, reach.to_bits(), scaled, aimed, front];
+        t.check(
+            f,
+            call,
+            &args,
+            Eax::Checked,
+            ffx_magic::r48::facing_tris_0431,
         );
     }
 }
