@@ -94,6 +94,7 @@ pub mod r40;
 pub mod r41;
 pub mod r42;
 pub mod r43;
+pub mod r44;
 pub mod r9_load;
 pub mod r9_misc;
 pub mod r9_summon;
@@ -3432,6 +3433,21 @@ ports! {
     "r43 curve task 0251" => r43::CURVE_TASK_0251, r43::curve_task_0251;
     "r43 end task 0348" => r43::END_TASK_0348, r43::end_task_0348;
     // round 43 (magic-r43): end
+    // round 44 (magic-r44)
+    "r44 throw task 0155" => r44::THROW_TASK_0155, r44::throw_task_0155;
+    "r44 frame 0184" => r44::FRAME_0184, r44::frame_0184;
+    "r44 motion 0184" => r44::MOTION_0184, r44::motion_0184;
+    "r44 load step 0072" => r44::LOAD_0072, r44::load_0072;
+    "r44 frame 0072" => r44::FRAME_0072, r44::frame_0072;
+    "r44 load step 0009" => r44::LOAD_0009, r44::load_0009;
+    "r44 trail task 0009" => r44::TRAIL_TASK_0009, r44::trail_task_0009;
+    "r44 stage task 0150" => r44::STAGE_TASK_0150, r44::stage_task_0150;
+    "r44 node sparks thunk 0071" => r44::JMP_NODE_SPARKS_0071, r44::jmp_node_sparks_0071;
+    "r44 scene 0042" => r44::SCENE_0042, r44::scene_0042;
+    "r44 camera task 0042" => r44::CAMERA_TASK_0042, r44::camera_task_0042;
+    "r44 summon task 0164" => r44::SUMMON_TASK_0164, r44::summon_task_0164;
+    "r44 summon task 0155" => r44::SUMMON_TASK_0155, r44::summon_task_0155;
+    // round 44 (magic-r44): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
     // round 34 (magic-r34)
@@ -3829,6 +3845,16 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r42 summon set-up 0201", &r42::SUMMON_SETUP_0201),
     ("r42 light visit 0042", &r42::LIGHT_VISIT_0042),
     // round 42 (magic-r42): end of INTERNAL
+    // round 44 (magic-r44)
+    ("r44 summon set-up 0155", &r44::SUMMON_SETUP_0155),
+    ("r44 summon set-up 0164", &r44::SUMMON_SETUP_0164),
+    ("r44 summon start 0155", &r44::SUMMON_START_0155),
+    ("r44 summon start 0164", &r44::SUMMON_START_0164),
+    ("r44 start-up 0072", &r44::START_UP_0072),
+    ("r44 flames 0072", &r44::FLAMES_0072),
+    ("r44 start-up 0009", &r44::START_UP_0009),
+    ("r44 node sparks 0071", &r44::NODE_SPARKS_0071),
+    // round 44 (magic-r44): end of INTERNAL
     // round 13 (magic-r13)
     ("r13 two objects 0318", &r13_start::TWO_OBJECTS_0318),
     ("r13 object task 0610", &r13_misc::OBJECT_TASK_0610),
