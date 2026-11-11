@@ -211,7 +211,7 @@ pub const LOAD_0162: Sig = Sig {
 };
 
 /// The index of `x` in the -1-ended word table at `table`, or -1.
-fn find_word<G: Game>(g: &G, table: u32, x: u32) -> u32 {
+pub(crate) fn find_word<G: Game>(g: &G, table: u32, x: u32) -> u32 {
     let mut i = 0u32;
     loop {
         let v = g.read::<u32>(table.wrapping_add(4 * i));
@@ -717,7 +717,7 @@ fn yaw_to<G: Game>(
 /// limits): with `a` below 0, `c` above 0 and `c - a` above `hi`, `lo -
 /// (hi - c)`; with `a` not below 0, `c` below 0 and `a - c` above `hi`,
 /// `c + hi + hi`.
-fn unwrap_to(a: f32, c: f32, hi: f32, lo: f32) -> f32 {
+pub(crate) fn unwrap_to(a: f32, c: f32, hi: f32, lo: f32) -> f32 {
     use crate::sb_sse::{add, sub};
     if 0.0 > a {
         if c > 0.0 && sub(c, a) > hi {

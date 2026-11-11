@@ -219,7 +219,12 @@ pub fn task_step_pass<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         esp: fr.esp.wrapping_sub(0x10),
         ..*fr
     };
-    actors_pass(g, img, &pass);
+    // `magic_0392`'s copy calls its own pass
+    if img.matches(pass.at, &ACTORS_PASS) {
+        actors_pass(g, img, &pass);
+    } else {
+        crate::r45::actors_pass_0392(g, img, &pass);
+    }
     let node = fr.arg(g, 0);
     Ret::eax(crate::sa_pool::give_back(
         g,

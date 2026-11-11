@@ -363,9 +363,12 @@ pub fn start<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
             esp: fr.esp.wrapping_sub(16),
             ..Frame::default()
         };
-        // (`magic_0434`'s copy calls its own check, `r34::check_targets_0434`)
+        // (`magic_0434`'s copy calls its own check, `r34::check_targets_0434`;
+        // `magic_0392`'s its aim set-up, `r45::aim_setup_0392`)
         if img.matches(check.at, &crate::r34::CHECK_TARGETS_0434) {
             crate::r34::check_targets_0434(g, img, &check);
+        } else if img.matches(check.at, &crate::r45::AIM_SETUP_0392) {
+            crate::r45::aim_setup_0392(g, img, &check);
         } else {
             crate::m0610::check_targets(g, img, &check);
         }
