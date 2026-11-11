@@ -5209,3 +5209,261 @@ pub const TRAILS_0449: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `magic_0449`'s landing (0x10007150, 2002 bytes; a table entry, no
+/// arguments; an aligned /GS frame, `B` its base after the pushes: the
+/// turn `V` at `B + 0x50`, the matrices `M3` at `B + 0x60` and `M2` at
+/// `B + 0xa0`). [`landing_0392`]'s steps on its layout. With `S = *G_S`:
+/// - the object `O = S + 0x130 k` (index `k`: 0 with `S + 0x56f8` set,
+///   else 9) at `S + 0xfc0..`, its record `S + 0x56a8`; the light and the
+///   fader; `M2` = slot 235, `V` = `(0, 0, 1.2, 1)`;
+/// - each actor `i` below `*G_N` (record `R = S + 0x4f40 + 0xe0 i`): slot
+///   210, `R + 0xa0..` = `R + 0x70..`, its mode, the counts `45 + rand() %
+///   6`, `R + 0xdc` = 1 when slot 533 `(b)` answers 0: then from `P = R +
+///   0xa0` to `T = S + 0xfc0` the pitch `atan2(T.y - P.y, d)` (`d` the
+///   distance in `x`/`z`) and the yaw `K - atan2(T.z - P.z, T.x - P.x)`
+///   wrapped once, `M3` = `M2` turned by X the pitch and Y the yaw (slots
+///   328, 329), `R + 0xb0..` = `M3 V` (slot 229) and the step `R + 0xc0..`
+///   = that over `n K` (`w` copied), slot 230 `(R, R + 0x40)` and the rest
+///   as `magic_0392`'s (`R + 0xd8` from the height); otherwise `R + 0xd0`
+///   = 4;
+/// - the two task nodes ([`take_pair_0266`]'s shape, the block `E = S +
+///   0x1200`); slot 624 `(S[0x56f4])`, `S + 0x56f4` -1.
+///
+/// Each slot call passes the words the original leaves on the stack.
+/// Returns slot 624's `eax`.
+#[allow(clippy::too_many_lines)] // the object, the actors, the nodes
+pub fn landing_0449<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let b = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0xdc + 0xc);
+    let (v, m3, m2) = (b + 0x50, b + 0x60, b + 0xa0);
+    let s = g.read::<u32>(w(0x1f));
+    g.write::<u32>(b + 0x18, s);
+    let (idx, cb) = if g.read::<u32>(s + 0x56f8) != 0 {
+        (0u32, w(0x33))
+    } else {
+        (9, w(0x3f))
+    };
+    let o = s + 0x130 * idx;
+    crate::s4_misc::start_object_plain(g, img, img.rel32_target(f + 0x5c), o, k(g, 0x47), idx);
+    let yaw = g.read::<u32>(s + 0xfb4);
+    g.write::<u32>(o + 0xc4, yaw);
+    for j in 0..4u32 {
+        let x = g.read::<u32>(s + 0xfc0 + 4 * j);
+        g.write::<u32>(o + 0xd0 + 4 * j, x);
+    }
+    let y = sub(g.read::<f32>(o + 0xd4), k(g, 0x96));
+    g.write::<f32>(o + 0xd4, y);
+    let rec = s + 0x56a8;
+    for d in [0x18u32, 0x14, 0x10, 0x1c] {
+        g.write::<u32>(rec + d, 0);
+    }
+    g.write::<u32>(rec + 0x20, w(0xd9));
+    g.write::<u32>(rec + 0x24, cb);
+    g.write::<u32>(rec + 0x28, 0);
+    g.write::<u32>(rec + 0x2c, 0);
+    g.write::<u16>(rec + 0x30, 0);
+    g.write::<u32>(o + 0x110, rec);
+    let l = s + 0x1090;
+    g.write::<u32>(l + 0x88, 0);
+    g.write::<u32>(l + 0x94, 0);
+    g.write::<u32>(l + 0x80, 0x8080_8080);
+    g.write::<u32>(l + 0x84, 0x0080_8080);
+    g.write::<u16>(l + 0x98, 0x48);
+    g.write::<u32>(l + 0x90, 0x14);
+    g.write::<u32>(l + 0x8c, 0x14);
+    let node = crate::sa_pool::take(g, img, img.rel32_target(f + 0x146), w(0x110));
+    let listed = g.read::<u32>(w(0x14c)) != 0;
+    g.write::<u32>(node.wrapping_add(0x14), l);
+    g.write::<u32>(node.wrapping_add(4), 0);
+    if listed {
+        let tail = g.read::<u32>(w(0x15f));
+        g.write::<u32>(node, tail);
+        g.write::<u32>(tail.wrapping_add(4), node);
+    } else {
+        g.write::<u32>(node, 0);
+        g.write::<u32>(w(0x171), node);
+    }
+    g.write::<u32>(node.wrapping_add(8), node);
+    g.write::<u32>(w(0x181), node);
+    let fd = s + 0x1130;
+    let fade = Frame {
+        at: img.rel32_target(f + 0x186),
+        esp: b.wrapping_sub(4),
+        ecx: fd,
+        ..Frame::default()
+    };
+    crate::s4_small::fader_task(g, img, &fade);
+    let flags = g.read::<u16>(fd + 0x2c);
+    g.write::<u16>(fd + 0x2c, flags | 3);
+    for (d, x) in [
+        (4u32, 0u32),
+        (8, 0x3e4c_cccd),
+        (0xc, 0),
+        (0x10, 0x4040_0000),
+        (0x14, 0x3fc0_0000),
+        (0x18, 0),
+    ] {
+        g.write::<u32>(fd + d, x);
+    }
+    g.write::<u32>(v, 0);
+    g.write::<u32>(v + 4, 0);
+    g.write::<u32>(v + 0xc, 0x3f80_0000);
+    g.call(t(g, 0x198, 235), 0, &[m2]);
+    let sel =
+        |g: &G, op: u32, i: u32| u32::from(g.read::<u8>(g.read::<u32>(w(op)).wrapping_add(i)));
+    let mut i = 0u32;
+    let mut r = s + 0x4f40;
+    while i.cast_signed() < g.read::<u32>(w(0x1f7)).cast_signed() {
+        g.write::<u32>(b + 0x1c, r);
+        let chr = g.read::<u32>(w(0x21f).wrapping_add(4 * sel(g, 0x214, i)));
+        let m = r + 0x40;
+        g.call(t(g, 0x229, 210), 0, &[chr, m]);
+        for j in 0..4u32 {
+            let x = g.read::<u32>(r + 0x70 + 4 * j);
+            g.write::<u32>(r + 0xa0 + 4 * j, x);
+        }
+        let mode = Frame {
+            at: img.rel32_target(f + 0x254),
+            esp: b.wrapping_sub(4),
+            ecx: i,
+            edx: m,
+            ..Frame::default()
+        };
+        crate::sa_script::actor_mode(g, img, &mode);
+        let n = (g.rand().cast_signed() % 6 + 0x2d).cast_unsigned();
+        g.write::<u32>(r + 0xd4, n);
+        g.write::<u32>(r + 0xd0, n);
+        let bt = sel(g, 0x27c, i);
+        let free = u32::from(g.call(t(g, 0x286, 533), 0, &[bt]).eax == 0);
+        g.write::<u32>(r + 0xdc, free);
+        if free == 1 {
+            let s = g.read::<u32>(b + 0x18);
+            let dy = sub(g.read::<f32>(s + 0xfc4), g.read::<f32>(r + 0xa4));
+            let dx = sub(g.read::<f32>(s + 0xfc0), g.read::<f32>(r + 0xa0));
+            let dz = sub(g.read::<f32>(s + 0xfc8), g.read::<f32>(r + 0xa8));
+            let flat = f64::from(add(mul(dz, dz), mul(dx, dx))).sqrt();
+            // fstp qword; cvtpd2ps
+            #[allow(clippy::cast_possible_truncation)]
+            let pitch = g.atan2(f64::from(dy), flat) as f32;
+            #[allow(clippy::cast_possible_truncation)]
+            let a = g.atan2(f64::from(dz), f64::from(dx)) as f32;
+            let yaw = sub(k(g, 0x353), a);
+            let yaw = wrap_once(g, img, f, yaw, [0x362, 0x372, 0x37c, 0x389]);
+            g.write::<f32>(b + 0x10, yaw);
+            g.write::<u32>(v + 8, 0x3f99_999a);
+            let mut st = Pushes::default();
+            st.push(pitch.to_bits());
+            st.push_all(&[m2, m3]);
+            st.call(g, t(g, 0x3b1, 328), 0);
+            st.pop(2);
+            st.set_top(yaw.to_bits());
+            st.push_all(&[m3, m3]);
+            st.call(g, t(g, 0x3da, 329), 0);
+            st.push_all(&[v, m3, r + 0xb0]);
+            st.call(g, t(g, 0x3f1, 229), 0);
+            let nk = mul(crate::sb_sse::cvt(g.read::<u32>(r + 0xd0)), k(g, 0x411));
+            for d in [0u32, 4, 8] {
+                let x = div(g.read::<f32>(r + 0xb0 + d), nk);
+                g.write::<f32>(r + 0xc0 + d, x);
+            }
+            let x = g.read::<u32>(r + 0xbc);
+            g.write::<u32>(r + 0xcc, x);
+            st.push_all(&[m, r]);
+            st.call(g, t(g, 0x445, 230), 0);
+            for d in [0x80u32, 0x84, 0x88] {
+                g.write::<u32>(r + d, 0);
+            }
+            let turn = if g.rand() & 1 == 0 {
+                0x40c9_0fdb
+            } else {
+                0xc0c9_0fdb
+            };
+            g.write::<u32>(r + 0x90, turn);
+            let a = st0_f32(g.call(t(g, 0x488, 314), 0, &[0x3ea0_d97c]).st0);
+            g.write::<f32>(r + 0x94, a);
+            let a = st0_f32(g.call(t(g, 0x4a0, 314), 0, &[0x3fc9_0fdb]).st0);
+            g.write::<f32>(r + 0x98, a);
+            let byte = sel(g, 0x4b8, i);
+            let h = if g.read::<u32>(w(0x4c1)) == 0 && byte.cast_signed() < 0x20 {
+                st0_f32(g.call(t(g, 0x4dd, 251), 0, &[byte]).st0)
+            } else {
+                let c = g.read::<u32>(w(0x50c).wrapping_add(4 * byte));
+                let h1 = st0_f32(g.call(t(g, 0x511, 19), 0, &[c]).st0);
+                let h2 = st0_f32(g.call(t(g, 0x520, 17), 0, &[c, c]).st0);
+                mul(h2, h1)
+            };
+            g.write::<f32>(b + 0x10, h);
+            let c = g.read::<u32>(w(0x55c).wrapping_add(4 * sel(g, 0x551, i)));
+            let x = st0_f32(g.call(t(g, 0x561, 364), 0, &[c]).st0);
+            let y = st0_f32(g.call(t(g, 0x573, 16), 0, &[c, c]).st0);
+            let p = mul(y, x);
+            // comiss K, v; jb: above K (unordered too) fails
+            let low = k(g, 0x585) >= h && k(g, 0x5a3) >= p;
+            g.write::<u32>(r + 0xd8, u32::from(low));
+        } else {
+            g.write::<u32>(r + 0xd0, 4);
+        }
+        i += 1;
+        r += 0xe0;
+    }
+    take_pair_0266(
+        g,
+        img,
+        f,
+        [
+            0x5e7, 0x5fc, 0x626, 0x64b, 0x656, 0x65c, 0, 0x66f, 0x682, 0x718, 0x720, 0x751, 0x75c,
+            0x762, 0x786, 0x7aa,
+        ],
+        1,
+        1,
+    );
+    g.write::<u32>(w(0x691), 0x3f00_0000);
+    g.write::<u32>(w(0x69b), 0x3f80_0000);
+    let e = s + 0x1200;
+    for (d, x) in [
+        (8u32, 0x3f00_0000u32),
+        (4, 0x3f00_0000),
+        (0, 0x3f00_0000),
+        (0xc, 0x3f80_0000),
+        (0x18, 0x3f80_0000),
+        (0x14, 0x3f80_0000),
+        (0x10, 0x3f80_0000),
+        (0x1c, 0x3f80_0000),
+        (0x28, 0x32),
+        (0x34, 0),
+        (0x30, 0x1e),
+        (0x2c, 0x1e),
+    ] {
+        g.write::<u32>(e + d, x);
+    }
+    let second = g.read::<u32>(w(0x7aa));
+    g.write::<u32>(second.wrapping_add(0x14), e);
+    g.write::<u32>(e, 0x3f19_999a);
+    let x = g.read::<u32>(s + 0x56f4);
+    let h = g.call(t(g, 0x78f, 624), 0, &[x]).eax;
+    g.write::<u32>(s + 0x56f4, u32::MAX);
+    Ret::eax(h)
+}
+
+/// [`landing_0449`] (the `rel32`s: the object start, the pool take, the
+/// fader, the actors' modes, the square root, `_CIatan2` twice, the
+/// cookie check; `rand` twice).
+pub const LANDING_0449: Sig = Sig {
+    len: 2002,
+    hash: 0xb309_1ab4_5db5_0074,
+    calls: &[
+        (0x5c, Callee::Sig(&crate::s4_misc::START_OBJECT_PLAIN)),
+        (0x146, Callee::Sig(&crate::sa_pool::TAKE)),
+        (0x186, Callee::Sig(&crate::s4_small::FADER_TASK_50)),
+        (0x254, Callee::Sig(&crate::sa_script::ACTOR_MODE)),
+        (0x2ff, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x312, Callee::Import("_CIatan2")),
+        (0x341, Callee::Import("_CIatan2")),
+        (0x7ca, Callee::Any),
+    ],
+    imports: &[(0x25a, "rand"), (0x46f, "rand")],
+};

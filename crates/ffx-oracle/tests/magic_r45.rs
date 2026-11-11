@@ -3218,3 +3218,119 @@ fn throw_target_0449() {
         });
     }
 }
+
+/// `magic_0449` 0x10007150 (`r45::landing_0449`): `S + 0x56f8` set and
+/// not (objects 0 and 9); the task list empty and not; actors free and
+/// held (slot 533), short and tall, in a battle and past 32, aimed at the
+/// target from either side.
+#[test]
+fn landing_0449() {
+    let Some(mut t) = sa::twin(449) else { return };
+    let f = t.at(0x7150);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    all_stubs(&mut t);
+    magic_r11::object_slots(&mut t);
+    let start = t.img.rel32_target(f + 0x5c);
+    magic_r11::object_start_auto(&mut t, start);
+    for (s, n) in [
+        (210u32, 2usize),
+        (211, 2),
+        (217, 2),
+        (255, 2),
+        (230, 2),
+        (624, 1),
+    ] {
+        rec(&mut t, s, n, move |_, a| (s << 16) ^ a[0]);
+    }
+    rec(&mut t, 235, 1, |m, a| {
+        for i in 0..16 {
+            wf(m, a[0] + 4 * i, if i % 5 == 0 { 1.0 } else { 0.25 });
+        }
+        0x235
+    });
+    for s in [328u32, 329] {
+        rec(&mut t, s, 3, move |m, a| {
+            let x = f32::from_bits(a[2]);
+            for i in 0..16 {
+                let v = rf(m, a[1] + 4 * i) + x * ((i + s) % 3) as f32;
+                wf(m, a[0] + 4 * i, v);
+            }
+            s
+        });
+    }
+    rec(&mut t, 229, 3, |m, a| {
+        for i in 0..4 {
+            let mut v = 0.0f32;
+            for j in 0..4 {
+                v += rf(m, a[1] + 16 * i + 4 * j) * rf(m, a[2] + 4 * j);
+            }
+            wf(m, a[0] + 4 * i, v + i as f32 * 0.5);
+        }
+        0x229
+    });
+    let held = SCRATCH + 0x7e50;
+    rec(&mut t, 533, 1, move |m, a| {
+        u32::from(m.r32(held) >> (a[0] & 7) & 1 != 0)
+    });
+    let height = SCRATCH + 0x7e54;
+    for s in [251u32, 19, 17, 364, 16, 314] {
+        rec(&mut t, s, 1, move |_, a| (s << 16) ^ a[0]);
+        t.stub_st0(s, move |m, a| {
+            let x = f64::from(m.r32(height)) * 0.75;
+            if s == 314 {
+                f64::from(f32::from_bits(a[0])) * 0.5
+            } else {
+                x + f64::from((a[0] ^ s) & 3) * 0.25
+            }
+        });
+    }
+    let sel = SCRATCH + 0x180;
+    for o in [0x214, 0x27c, 0x4b8, 0x551] {
+        t.set_u32(w(o), sel);
+    }
+    for o in [0x21f, 0x50c, 0x55c] {
+        for i in 0..0x30 {
+            t.set_u32(w(o) + 4 * i, 0x0c00 + 3 * i);
+        }
+    }
+    let am = t.img.rel32_target(f + 0x254);
+    t.set_u32(t.img.word(am + 0x15), sel);
+    for i in 0..0x30 {
+        t.set_u32(t.img.word(am + 0x2e) + 4 * i, 0x0d00 + i);
+    }
+    let s = SCRATCH + 0x1_0000;
+    t.set_u32(w(0x1f), s);
+    // (56f8, listed, actors, held mask, height, battle, bytes)
+    let cases: [(u32, bool, u32, u32, u32, u32, [u8; 4]); 5] = [
+        (0, false, 0, 0, 0, 0, [3, 1, 4, 1]),
+        (1, true, 3, 0b0010, 1, 0, [3, 1, 4, 2]),
+        (0, true, 2, 0, 9, 1, [5, 2, 0, 0]),
+        (2, false, 3, 0, 0, 0, [0x24, 6, 7, 1]),
+        (0, true, 1, 0b1000, 2, 0, [3, 1, 0, 0]),
+    ];
+    for (k, (sx, listed, n, mask, h, battle, bytes)) in (0u32..).zip(cases) {
+        junk(&mut t, s, 0x2000, k);
+        junk(&mut t, s + 0x4f00, 0x400, k);
+        junk(&mut t, s + 0x5600, 0x100, k);
+        for j in 0..3u32 {
+            floats(&mut t, s + 0x4f40 + 0xe0 * j + 0x70, 4, k + j);
+        }
+        t.set_u32(s + 0x56f8, sx);
+        floats(&mut t, s + 0xfb0, 0x10, k + 3);
+        t.set_u32(w(0x1f7), n);
+        t.set_u32(held, mask);
+        t.set_u32(height, h);
+        t.set_u32(w(0x4c1), battle);
+        t.write(sel, &bytes);
+        let tail = SCRATCH + 0x1800;
+        junk(&mut t, tail, 0x20, k);
+        t.set_u32(w(0x14c), if listed { tail } else { 0 });
+        t.set_u32(w(0x15f), tail);
+        magic_r11::pools(&mut t, f, 2002);
+        magic_r11::ring(&mut t, w(0x5e7), w(0x5fc), 6, SCRATCH + 0x5000);
+        junk_ops(&mut t, f, &[0x691, 0x69b]);
+        ownb::dirty_stack(&mut t, 0x7150 + k, &[]);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
