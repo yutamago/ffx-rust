@@ -2471,7 +2471,7 @@ fn summon_task_0155() {
     let slb = call(&t, 0x109);
     let link_b_last = t.img.word(slb + 0x1);
     // (state, the wait `R + 0x38`, slot 520's two answers, the flag)
-    let cases: [(u32, u32, u32, u32, u8); 36] = [
+    let cases: [(u32, u32, u32, u32, u8); 38] = [
         (0, 0, 0, 0, 0),
         (100, 5, 0x024f_000a, 0, 0),
         (101, 7, 7, 0, 0),
@@ -2493,6 +2493,8 @@ fn summon_task_0155() {
         (200, 0, 0x024b_0005, 0, 0),
         (200, 0, 0x024f_000a, 0, 0),
         (200, 0, 3, 0, 0),
+        (200, 0, 0x016b_0003, 0, 0),
+        (200, 0, 0x016b_0004, 0, 0),
         (201, 0, 0, 0, 0),
         (0x190, 0, 0x024b_0005, 0, 0),
         (0x190, 0, 7, 0, 0),
@@ -2514,7 +2516,7 @@ fn summon_task_0155() {
     // the globals the states store to (the block the code names): floats
     // first, the pointers and lists set after
     // (from the summon block's page up)
-    let lo = t.img.word(t.at(0x8eb0) + 0x11) & !0xfff;
+    let lo = (t.img.word(t.at(0x8eb0) + 0x11) & !0xfff) - 0x1000;
     for (k, (state, n38, r1, r2, flag)) in (0u32..).zip(cases.into_iter().chain(more)) {
         for i in 0..0x1800u32 {
             let x = 1.25 + ((i * 13 + k) % 61) as f32 * 0.0625;
