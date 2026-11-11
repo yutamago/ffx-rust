@@ -825,9 +825,17 @@ fn summon_main_case(n: u16, rva: u32, is_0164: bool) {
             f,
             &[
                 0x19c, 0x4c, 0x8c, 0x788, 0x798, 0x81b, 0x1197, 0x6e8, 0x10a8, 0xdf5,
-            ],
+            ]
+            .map(o),
             k,
         );
+        // the static list's flag word (bit 0 cleared), the part's
+        // environment pointer and its value
+        t.set_u32(w(&t, 0x64e), 0x5a5a_0f0f ^ (k << 4));
+        let env = SCRATCH + 0x7a80;
+        t.set_u32(w(&t, 0x914), env);
+        t.set_u32(env, 0x1111);
+        t.set_u32(w(&t, 0x91a), 0x2222 + k);
         ownb::dirty_stack(&mut t, rva + k, &[]);
         t.check_entry(f, Call::default(), &[a], Eax::Checked);
     }
