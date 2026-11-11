@@ -6524,3 +6524,119 @@ pub const ACTORS_SETTLE_0397: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `magic_0396`'s start-up (0x10007da0, 660 bytes; internal, no
+/// arguments): four words 0; five block pointers set; slot 719 `(CB0, 8,
+/// 0)`, its handle kept; slot 711 `(h, CB1, 0)` with the lock `**G_L`
+/// held; slot 710 `(BLK, h, P, 0x40000)` (`P` the first block pointer);
+/// four words 0; the summon's facing ([`face`](crate::ob_summon::face));
+/// a callback word, two words 0 and a flag 1; slot 271 `(4)`; a task node
+/// (kind 1, callback `CB2`) taken and appended, the record block `R`
+/// set up ([`records_init`](crate::sa_misc::records_init)), a second
+/// node (kind 2, callback `CB3`) taken and appended. Each slot call passes
+/// the words the original leaves on the stack. Returns 0.
+pub fn start_up_0396<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    for o in [0xbu32, 0x15, 0x1f, 0x29] {
+        g.write::<u32>(w(o), 0);
+    }
+    for o in [0x40u32, 0x4a, 0x54, 0x5e, 0x68] {
+        g.write::<u32>(w(o), w(o + 4));
+    }
+    let mut st = Pushes::default();
+    st.push_all(&[0, 8, w(0x3a)]);
+    let h = st.call(g, t(g, 0x1, 719), 0).eax;
+    let lock = g.read::<u32>(w(0x74));
+    let p = g.read::<u32>(w(0x7a));
+    g.write::<u32>(w(0x81), h);
+    let saved = g.read::<u32>(lock);
+    st.push_all(&[0, w(0x88), h]);
+    g.write::<u32>(lock, 1);
+    st.call(g, t(g, 0x8e, 711), 0);
+    let lock = g.read::<u32>(w(0xa1));
+    g.write::<u32>(lock, saved);
+    let h = g.read::<u32>(w(0xb4));
+    st.push_all(&[0x4_0000, p, h, w(0xbf)]);
+    st.call(g, t(g, 0xad, 710), 0);
+    for o in [0xc7u32, 0xd1, 0xdb, 0xe5] {
+        g.write::<u32>(w(o), 0);
+    }
+    crate::ob_summon::face(g, img, img.rel32_target(f + 0xee));
+    g.write::<u32>(w(0xf9), w(0xfd));
+    g.write::<u32>(w(0x103), 0);
+    g.write::<u16>(w(0x10e), 0);
+    g.write::<u8>(w(0x116), 1);
+    st.push(4);
+    st.call(g, t(g, 0xf3, 271), 0);
+    // a node off the free ring (u16 count, head), reset with its callback
+    // and kind, appended to the task list (first, last)
+    let take_append = |g: &mut G, ops: [u32; 9], kind: u8| {
+        let count = g.read::<u16>(w(ops[0]));
+        // with an empty ring the original goes on with node 0
+        let mut node = 0;
+        if count != 0 {
+            node = g.read::<u32>(w(ops[1]));
+            let (a, b) = (g.read::<u32>(node), g.read::<u32>(node + 4));
+            g.write::<u32>(a.wrapping_add(4), b);
+            let (b, a) = (g.read::<u32>(node + 4), g.read::<u32>(node));
+            g.write::<u32>(b, a);
+            if count > 1 {
+                let next = g.read::<u32>(node + 4);
+                g.write::<u32>(w(ops[2]), next);
+            } else {
+                g.write::<u32>(w(ops[3]), 0);
+            }
+            for d in [0u32, 4, 0xc, 0x14] {
+                g.write::<u32>(node + d, 0);
+            }
+            g.write::<u32>(node + 8, node);
+            g.write::<u32>(node + 0x10, w(ops[4]));
+            g.write::<u8>(node + 0x18, 0);
+            g.write::<u16>(w(ops[5]), count - 1);
+        }
+        let listed = g.read::<u32>(w(ops[6])) != 0;
+        g.write::<u8>(node.wrapping_add(0x18), kind);
+        g.write::<u32>(node.wrapping_add(4), 0);
+        if listed {
+            let tail = g.read::<u32>(w(ops[7]));
+            g.write::<u32>(node, tail);
+            g.write::<u32>(tail.wrapping_add(4), node);
+        } else {
+            g.write::<u32>(node, 0);
+            g.write::<u32>(w(ops[8]), node);
+        }
+        g.write::<u32>(node.wrapping_add(8), node);
+        node
+    };
+    let n1 = take_append(
+        g,
+        [
+            0x128, 0x13f, 0x15c, 0x164, 0x190, 0x19b, 0x1a1, 0x1b4, 0x1c7,
+        ],
+        1,
+    );
+    g.write::<u32>(w(0x1d5), n1);
+    crate::sa_misc::records_init(g, img, img.rel32_target(f + 0x1da), w(0x1cc));
+    let n2 = take_append(
+        g,
+        [
+            0x1e1, 0x1f0, 0x20d, 0x215, 0x241, 0x24c, 0x252, 0x267, 0x284,
+        ],
+        2,
+    );
+    g.write::<u32>(w(0x275), n2);
+    Ret::eax(0)
+}
+
+/// [`start_up_0396`] (the `rel32`s: the facing, the records).
+pub const START_UP_0396: Sig = Sig {
+    len: 660,
+    hash: 0x5557_3806_c5db_ff37,
+    calls: &[
+        (0xee, Callee::Sig(&crate::ob_summon::FACE_0396)),
+        (0x1da, Callee::Sig(&crate::sa_misc::RECORDS_INIT)),
+    ],
+    imports: &[],
+};

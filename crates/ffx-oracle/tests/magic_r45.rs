@@ -3969,3 +3969,50 @@ fn actors_settle_0397() {
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
+
+/// `magic_0396` 0x10007da0 (`r45::start_up_0396`, internal): the task
+/// list empty and not; the free ring with room to spare and just enough
+/// (the last take emptying it).
+#[test]
+fn start_up_0396() {
+    let Some(mut t) = sa::twin(396) else { return };
+    let f = t.at(0x7da0);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    let fc = t.img.rel32_target(f + 0xee);
+    let fw = |o: u32| img.word(fc + o);
+    for (k, (listed, free)) in (0u32..).zip([(false, 5u16), (true, 5), (true, 3), (false, 3)]) {
+        all_stubs(&mut t);
+        for (s, n) in [(719u32, 3usize), (711, 3), (710, 4), (271, 1)] {
+            rec(&mut t, s, n, move |_, a| (s << 16) ^ a[0] ^ k);
+        }
+        rec(&mut t, 262, 4, |m, a| {
+            for i in 1..4 {
+                wf(m, a[i], (a[0] & 0xf) as f32 * 0.75 + i as f32 - 3.0);
+            }
+            0x262
+        });
+        rec(&mut t, 333, 1, |_, a| 0x0333_0000 ^ a[0]);
+        t.stub_st0(333, move |_, _| 0.5 + f64::from(k) * 2.75 - 4.0);
+        let state = SCRATCH + 0x3000;
+        junk(&mut t, state, 0x400, k);
+        t.set_u32(fw(0x08), state);
+        t.set_u32(fw(0x22), 0x0c0c_0022);
+        let lock = SCRATCH + 0x5e0;
+        t.set_u32(w(0x74), lock);
+        t.set_u32(lock, 0x77 + k);
+        magic_r11::ring(&mut t, w(0x128), w(0x13f), free, SCRATCH + 0x5000);
+        t.write(SCRATCH + 0x600, &[0x44; 0x20]);
+        t.set_u32(w(0x1a1), if listed { SCRATCH + 0x600 } else { 0 });
+        t.set_u32(w(0x1b4), SCRATCH + 0x600);
+        junk_ops(
+            &mut t,
+            f,
+            &[0xb, 0x15, 0x1f, 0x29, 0xc7, 0xd1, 0xdb, 0xe5, 0xf9, 0x103],
+        );
+        ownb::dirty_stack(&mut t, 0x7da0 + k, &[]);
+        t.check(f, Call::default(), &[], Eax::Checked, |g, img, fr| {
+            ffx_magic::r45::start_up_0396(g, img, fr)
+        });
+    }
+}

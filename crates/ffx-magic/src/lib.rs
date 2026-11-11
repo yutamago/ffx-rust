@@ -5455,6 +5455,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r45 glow draw 0431", &r45::GLOW_DRAW_0431),
     ("r45 bone place 0387", &r45::BONE_PLACE_0387),
     ("r45 weights task 0387", &r45::WEIGHTS_TASK_0387),
+    ("r45 start-up 0396", &r45::START_UP_0396),
     // round 45 (magic-r45): end of INTERNAL
 ];
 
