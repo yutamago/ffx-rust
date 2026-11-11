@@ -1,0 +1,1139 @@
+//! Round 46's ports (own rows of the DLLs below `magic_0250`): the DLLs'
+//! own code written out, in tested pieces.
+
+// `comiss` with `jb`/`jbe`: an unordered compare takes one side
+#![allow(clippy::neg_cmp_op_on_partial_ord)]
+
+use crate::r25::abs_stores;
+use crate::runtime::slot_target;
+use crate::sb_sse::{add, cvtt, div, mul, sub};
+use crate::{Callee, Frame, Game, Image, Ret, Sig};
+
+const ONE: u32 = 0x3f80_0000;
+
+/// [`camera_task_0070`]'s code offset, frame and record: `base` is `E -
+/// 0xc` (the aligned frame `E` below the three pushes, so `[esp + x]` is
+/// `base + x` with nothing pushed), `r` the task's record. Its locals as
+/// `magic_0570`'s camera task's, but the move's `to` sits at `base +
+/// 0x3c` and the axes' steps at `base + 0x4c` (the other way round there).
+struct Ctx {
+    f: u32,
+    base: u32,
+    r: u32,
+}
+
+impl Ctx {
+    fn w(&self, img: &Image, o: u32) -> u32 {
+        img.word(self.f + o)
+    }
+
+    fn k<G: Game>(&self, g: &G, img: &Image, o: u32) -> f32 {
+        g.read::<f32>(self.w(img, o))
+    }
+
+    fn target(&self, img: &Image, o: u32) -> u32 {
+        img.rel32_target(self.f + o)
+    }
+
+    /// Slot `n` through the imports pointer the instruction at operand
+    /// `op` reads.
+    fn slot<G: Game>(&self, g: &G, img: &Image, op: u32, n: u32) -> u32 {
+        slot_target(g, self.w(img, op), n)
+    }
+
+    /// Slot 520 (no arguments) through the imports pointer at operand
+    /// `op`: its answer.
+    fn s520<G: Game>(&self, g: &mut G, img: &Image, op: u32) -> u32 {
+        // call width: 0
+        g.call(self.slot(g, img, op, 520), 0, &[]).eax
+    }
+
+    fn rf<G: Game>(&self, g: &G, o: u32) -> f32 {
+        g.read::<f32>(self.r.wrapping_add(o))
+    }
+
+    fn wf<G: Game>(&self, g: &mut G, o: u32, x: f32) {
+        g.write::<f32>(self.r.wrapping_add(o), x);
+    }
+
+    /// The state `R + 0x18` up by one.
+    fn up<G: Game>(&self, g: &mut G) {
+        let s = g.read::<u32>(self.r + 0x18).wrapping_add(1);
+        g.write::<u32>(self.r + 0x18, s);
+    }
+
+    /// The count `R + 0x38` (the wait every state tests).
+    fn count<G: Game>(&self, g: &G) -> i32 {
+        g.read::<i32>(self.r + 0x38)
+    }
+
+    fn reset<G: Game>(&self, g: &mut G) {
+        g.write::<u32>(self.r + 0x38, 0);
+    }
+
+    /// The camera's vector `V = E + 0x10` (`base + 0x1c`).
+    fn p(&self) -> u32 {
+        self.base + 0x1c
+    }
+
+    /// The vector `v` into `V`, then slot 229 `(V, M, V)` (`M` operand
+    /// `m`, the imports pointer operand `imp`). Returns slot 229's `eax`.
+    fn vec229<G: Game>(&self, g: &mut G, img: &Image, (imp, m): (u32, u32), v: [u32; 4]) -> u32 {
+        let p = self.p();
+        for (i, x) in (0u32..).zip(v) {
+            g.write::<u32>(p + 4 * i, x);
+        }
+        // call width: 3
+        g.call(self.slot(g, img, imp, 229), 0, &[p, self.w(img, m), p])
+            .eax
+    }
+
+    /// Slot 248 `(V, M, V)` (`M` operand `m`, the imports pointer operand
+    /// `imp`). Returns its `eax`.
+    fn aim248<G: Game>(&self, g: &mut G, img: &Image, (imp, m): (u32, u32)) -> u32 {
+        let p = self.p();
+        // call width: 3
+        g.call(self.slot(g, img, imp, 248), 0, &[p, self.w(img, m), p])
+            .eax
+    }
+
+    /// The four words of `V` into the globals the operands `ops` name.
+    fn copy4<G: Game>(&self, g: &mut G, img: &Image, ops: [u32; 4]) {
+        for (i, o) in (0u32..).zip(ops) {
+            let x = g.read::<u32>(self.p() + 4 * i);
+            g.write::<u32>(self.w(img, o), x);
+        }
+    }
+
+    /// The light set (the call at `c`) on `V` with the radius at operand
+    /// `k`. Returns its `eax`.
+    fn light<G: Game>(&self, g: &mut G, img: &Image, c: u32, k: u32) -> u32 {
+        let r = u128::from(g.read::<u32>(self.w(img, k)));
+        let lf = Frame {
+            at: self.target(img, c),
+            esp: self.base.wrapping_sub(4),
+            edx: self.p(),
+            xmm: [0, 0, r, 0],
+            ..Frame::default()
+        };
+        crate::s4_small::light_set(g, img, &lf).eax
+    }
+
+    /// The move set-up (the call at `c`) of the node at operand `node`
+    /// with `xmm2`/`xmm3` the floats at operands `k2`/`k3`. Returns its
+    /// `eax` (`eax` as it came in).
+    fn setup<G: Game>(
+        &self,
+        g: &mut G,
+        img: &Image,
+        (c, node): (u32, u32),
+        (k2, k3): (u32, u32),
+        eax: u32,
+    ) -> u32 {
+        let x2 = u128::from(g.read::<u32>(self.w(img, k2)));
+        let x3 = u128::from(g.read::<u32>(self.w(img, k3)));
+        let mf = Frame {
+            at: self.target(img, c),
+            esp: self.base.wrapping_sub(4),
+            ecx: self.w(img, node),
+            eax,
+            xmm: [0, 0, x2, x3],
+            ..Frame::default()
+        };
+        crate::s4_small::move_setup(g, img, &mf).eax
+    }
+
+    /// The move's ends of the DLL's object (the call at `c`): `from` =
+    /// `V` (`x`, `y` as given; its `z` as the frame holds it), `to` = `E +
+    /// 0x30` (`base + 0x3c`, its `x`, `y` as given), pushed under the word
+    /// `push ecx` leaves (never read). Returns its `eax`.
+    fn ends<G: Game>(
+        &self,
+        g: &mut G,
+        img: &Image,
+        c: u32,
+        (fx, fy, tx, ty): (u32, u32, u32, u32),
+    ) -> u32 {
+        let p = self.p();
+        let to = self.base + 0x3c;
+        g.write::<u32>(self.base.wrapping_sub(8), to);
+        for (a, v) in [(p, fx), (p + 4, fy), (to, tx), (to + 4, ty)] {
+            g.write::<u32>(a, v);
+        }
+        // junk read: [esp+0x4c] (`to`'s z, E + 0x38) is never written; 0
+        // (brief 2026-10-24)
+        g.write::<u32>(to + 8, 0);
+        let ef = Frame {
+            at: self.target(img, c),
+            esp: self.base.wrapping_sub(0xc),
+            edx: p,
+            ..Frame::default()
+        };
+        crate::s6_misc::move_ends_of(g, img, &ef).eax
+    }
+
+    /// The axes' record `[O, steps, sizes, mode]` at `E + 0x20` (`base +
+    /// 0x2c`; `O` operand `obj`, the steps `E + 0x40`, the sizes `V`)
+    /// with the steps `(0, 0, z)` and the sizes `(0, 0, s)`, then the
+    /// signed axes (the call at `c`). Returns its `eax`.
+    fn axes<G: Game>(
+        &self,
+        g: &mut G,
+        img: &Image,
+        (c, obj): (u32, u32),
+        (z, s, mode): (u32, u32, u32),
+    ) -> u32 {
+        let b = self.base;
+        for (o, v) in [
+            (0x30u32, b + 0x4c),
+            (0x4c, 0),
+            (0x1c, 0),
+            (0x50, 0),
+            (0x20, 0),
+            (0x54, z),
+            (0x24, s),
+            (0x2c, self.w(img, obj)),
+            (0x34, b + 0x1c),
+            (0x38, mode),
+        ] {
+            g.write::<u32>(b + o, v);
+        }
+        let af = Frame {
+            at: self.target(img, c),
+            esp: b.wrapping_sub(4),
+            ecx: b + 0x2c,
+            ..Frame::default()
+        };
+        crate::s5_misc::signed_axes(g, img, &af).eax
+    }
+}
+
+/// `magic_0070`'s camera task (0x10009e30, 6308 bytes with its tables; a
+/// task callback `(A)`, cdecl; an aligned /GS frame `E` of 0x54 bytes
+/// below three pushes): `magic_0570`'s camera task
+/// ([`camera_task_0570`](crate::r37::camera_task_0570)) with its own
+/// blocks. The record `R = A[4]` keeps the state `R + 0x18`, a float `R +
+/// 0x1c`, the counts `R + 0x34`/`R + 0x38` (both up at every exit; `R +
+/// 0x38` is the wait) and a step `R + 0x3c`. The same three dispatch
+/// tables and states; what differs from 0570's:
+/// - 0x96: slot 520's answer nudges the model's place (0x2350000 and
+///   0x2360000: `x - K`, `z + K'`; 0x2370000: `z - K''`; 0x2380000: `x -
+///   K`) and is the part call's `eax`; a second answer of 0x2370000 takes
+///   0x4000 off a word; the summon's bones (`bone_plain` on the owned
+///   node), slot 228 `(byte, 0xd8)` and the release of a handle before the
+///   small node; slot 288's list is walked only when a third answer is not
+///   0x2370000;
+/// - 0x97: the node ease of the DLL's object after the static link (its
+///   `eax` returned);
+/// - 0x2bc: no move's ends and axes; 0x384: no static node;
+/// - the move's `to` and the axes' steps trade places in the frame.
+///
+/// Returns `eax` as the original leaves it.
+#[allow(clippy::too_many_lines)] // the original's dispatch, in order
+pub fn camera_task_0070<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    // push ebp; and esp, -8; sub esp, 0x54; three pushes
+    let e = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0x54);
+    g.write::<u32>(e + 0x50, g.read::<u32>(w(0xa)) ^ e);
+    let task = fr.arg(g, 0);
+    let r = g.read::<u32>(task + 4);
+    let c = Ctx {
+        f,
+        base: e.wrapping_sub(0xc),
+        r,
+    };
+    let state = g.read::<u32>(r + 0x18);
+    let set = |g: &mut G, s: u32| g.write::<u32>(r + 0x18, s);
+    let eax = if state <= 0xc9 {
+        let tb = img.word(w(0x41) + state) & 0xff;
+        match state {
+            0 | 0xb4 => {
+                set(g, state + 1);
+                state + 1
+            }
+            0x96 => {
+                start_0070(g, img, &c, state);
+                c.up(g);
+                c.reset(g);
+                second_0070(g, img, &c)
+            }
+            0x97 => second_0070(g, img, &c),
+            0x98 => fade_0070(g, img, &c),
+            0xa0 => {
+                c.reset(g);
+                set(g, state + 1);
+                state + 1
+            }
+            0xa1 => {
+                if c.count(g) < 0x19 {
+                    tb
+                } else {
+                    root_0070(g, img, &c)
+                }
+            }
+            0xc8 => nodes_0070(g, img, &c),
+            0xc9 => {
+                let x = sub(c.k(g, img, 0x833), c.rf(g, 0x1c));
+                g.write::<f32>(w(0x840), x);
+                let y = mul(c.rf(g, 0x1c), c.k(g, img, 0x84d));
+                c.wf(g, 0x1c, y);
+                if c.k(g, img, 0x85a) >= c.k(g, img, 0x861) {
+                    abs_stores(g, img, f, 0x86b, 0x875);
+                    c.up(g);
+                }
+                tb
+            }
+            0xaa => {
+                let eax = light_0070(g, img, &c);
+                c.up(g);
+                climb_0070(g, img, &c);
+                eax
+            }
+            0xab => {
+                c.up(g);
+                climb_0070(g, img, &c);
+                tb
+            }
+            0xac => {
+                climb_0070(g, img, &c);
+                tb
+            }
+            _ => tb,
+        }
+    } else if state < 0x190 {
+        state
+    } else if state <= 0x192 {
+        if state == 0x190 {
+            c.reset(g);
+            set(g, 0x191);
+        }
+        if state <= 0x191 && c.count(g) >= 4 {
+            move_globals_0070(g, img, &c);
+            c.up(g);
+        }
+        grow_0070(g, img, &c)
+    } else if state < 0x19a {
+        state - 0x192
+    } else if state == 0x19a {
+        static_0070(g, img, &c, state)
+    } else if state == 0x19b {
+        if c.count(g) < 0xa {
+            0
+        } else {
+            let eax = ends_axes_0070(g, img, &c, state);
+            abs_stores(g, img, f, 0xdc1, 0xdd2);
+            c.up(g);
+            eax
+        }
+    } else if state <= 0x19d {
+        if state == 0x19c && c.count(g) >= 0x19 {
+            g.write::<u32>(r + 0x1c, 0);
+            g.write::<u32>(r + 0x3c, 0x10);
+            set(g, 0x19d);
+        }
+        step_0070(g, img, &c, (0xcf0, 0xcf8, 0xd05, 0xd16));
+        let s = g.read::<u32>(r + 0x3c);
+        let x = g.read::<u32>(w(0xd23)).wrapping_add(s);
+        g.write::<u32>(w(0xd23), x);
+        s
+    } else if state < 0x2bc {
+        state - 0x19d
+    } else if state == 0x2bc {
+        turn_0070(g, img, &c)
+    } else if state == 0x2be {
+        away_0070(g, img, &c)
+    } else if state == 0x2c0 || state == 0x320 {
+        set(g, state + 1);
+        state + 1
+    } else if state < 0x320 {
+        state.wrapping_sub(0x2c0)
+    } else if state < 0x3e8 {
+        match state.wrapping_sub(0x384) {
+            0 => slide_0070(g, img, &c),
+            1 => {
+                let x = sub(c.k(g, img, 0x11f8), c.k(g, img, 0x1200));
+                g.write::<f32>(w(0x1208), x);
+                if c.count(g) < 0x46 {
+                    1
+                } else {
+                    near_0070(g, img, &c)
+                }
+            }
+            2 => {
+                // (`R + 0x1c` first here: 0570 adds the other way round)
+                let x = add(c.rf(g, 0x1c), c.k(g, img, 0x1398));
+                g.write::<f32>(w(0x13a0), x);
+                let n = c.count(g);
+                let y = add(c.rf(g, 0x1c), c.k(g, img, 0x13b1));
+                c.wf(g, 0x1c, y);
+                if n < 0x14 {
+                    2
+                } else {
+                    let v = [0xc0e0_0000, 0xc220_0000, 0xc28c_0000, ONE];
+                    c.vec229(g, img, (0x13cc, 0x13c6), v);
+                    let eax = c.light(g, img, 0x1408, 0x13fc);
+                    c.up(g);
+                    eax
+                }
+            }
+            3 => {
+                if c.count(g) < 0x41 {
+                    3
+                } else {
+                    let v = [0xc0e0_0000, 0xc1a0_0000, 0xc28c_0000, ONE];
+                    c.vec229(g, img, (0x142a, 0x1424), v);
+                    let eax = c.light(g, img, 0x1466, 0x145a);
+                    abs_stores(g, img, f, 0x147f, 0x1489);
+                    let eax = c.setup(g, img, (0x148a, 0x147b), (0x1476, 0x146e), eax);
+                    c.up(g);
+                    eax
+                }
+            }
+            x => x,
+        }
+    } else if state == 0x3e8 {
+        sights_0070(g, img, &c)
+    } else if state < 0x2710 {
+        let i = state - 0x3e9;
+        if i > 3 {
+            i
+        } else {
+            sweep_0070(g, img, &c, state)
+        }
+    } else if state == 0x2710 {
+        let eax = crate::sa_misc::leave(g, w(0x1742), 0x2710);
+        let eax = crate::l3_common::list_unlink_current(g, img, c.target(img, 0x174c), eax);
+        crate::l3_common::list_unlink_current(g, img, c.target(img, 0x1751), eax);
+        crate::h6_setup::unlink_task(g, task)
+    } else {
+        state
+    };
+    for o in [0x34u32, 0x38] {
+        let x = g.read::<u32>(r + o).wrapping_add(1);
+        g.write::<u32>(r + o, x);
+    }
+    Ret::eax(eax)
+}
+
+/// [`camera_task_0070`]'s state 0x96 up to its first step: the model node
+/// with the summon's byte, slot 292 on `V` and slot 520's nudge, the
+/// part's slot 255, slot 666 unless the flag, the motion's state, appends,
+/// the model's place, the time left, slot 520's cut, an owned node and its
+/// bones, the model state, a second owned node and the summon's bones,
+/// slots 211 and 3, slot 228 and the release, the small node, the sound
+/// node, the camera's first vectors (slot 229) and, unless slot 520
+/// answers 0x2370000, slot 296 for every byte slot 288 lists but the DLL's
+/// own, the last's and 0xff.
+#[allow(clippy::too_many_lines)] // the original's steps, in order
+fn start_0070<G: Game>(g: &mut G, img: &Image, c: &Ctx, state: u32) {
+    let f = c.f;
+    let w = |o: u32| img.word(f + o);
+    let gw = |g: &G, o: u32| g.read::<u32>(w(o));
+    let call = |o: u32| img.rel32_target(f + o);
+    let base = c.base;
+    let below = base.wrapping_sub(4);
+    let grp = base + 0x10;
+    let p = c.p();
+    // push ecx (the state, unread); push the summon's byte
+    let b = u32::from(g.read::<u8>(w(0x5a)));
+    g.write::<u32>(base.wrapping_sub(4), state);
+    g.write::<u32>(base.wrapping_sub(8), b);
+    let mf = Frame {
+        at: call(0x6b),
+        esp: base.wrapping_sub(0xc),
+        ecx: w(0x66),
+        edx: w(0x61),
+        ..Frame::default()
+    };
+    crate::s4_misc::model_node_with(g, img, &mf);
+    // call width: 1 (the model node's words stay under it)
+    g.call(c.slot(g, img, 0x75, 292), 0, &[p]);
+    // slot 520's answer nudges the place `V`
+    let a = c.s520(g, img, 0x82);
+    match a {
+        0x0235_0000 | 0x0236_0000 => {
+            let x = sub(g.read::<f32>(p), c.k(g, img, 0xb2));
+            g.write::<f32>(p, x);
+            let z = add(g.read::<f32>(p + 8), c.k(g, img, 0xc6));
+            g.write::<f32>(p + 8, z);
+        }
+        0x0237_0000 => {
+            let z = sub(g.read::<f32>(p + 8), c.k(g, img, 0xdc));
+            g.write::<f32>(p + 8, z);
+        }
+        0x0238_0000 => {
+            let x = sub(g.read::<f32>(p), c.k(g, img, 0xf9));
+            g.write::<f32>(p, x);
+        }
+        _ => {}
+    }
+    crate::m0070::part_call(g, img, call(0x10d), 255, [a, w(0x108), p]);
+    if g.read::<u8>(w(0x113)) & 1 == 0 {
+        let m = gw(g, 0x12f);
+        // call width: 2
+        g.call(c.slot(g, img, 0x11b, 666), 0, &[m, 0]);
+    }
+    // the motion's cursor `[E + 4]`: the node, the mark byte
+    let mark = g.read::<u8>(w(0x139));
+    g.write::<u32>(grp, w(0x145));
+    g.write::<u8>(grp + 5, mark);
+    let sf = Frame {
+        at: call(0x14e),
+        esp: below,
+        ecx: grp,
+        ..Frame::default()
+    };
+    let eax = crate::s4_summon::motion_state(g, img, &sf).eax;
+    crate::sb_misc::node_append(g, img, call(0x15d), w(0x158), w(0x153), eax);
+    let eax = crate::m0070::model_position(g, img, call(0x167), w(0x162));
+    abs_stores(g, img, f, 0x175, 0x17f);
+    crate::sa_misc::node_append(g, img, call(0x180), w(0x171), w(0x16c), eax);
+    g.write::<u32>(grp, w(0x18c));
+    g.write::<u32>(grp + 4, w(0x194));
+    crate::m0042::time_left(g, img, call(0x199), grp, below);
+    if c.s520(g, img, 0x19e) == 0x0237_0000 {
+        let x = gw(g, 0x1b3).wrapping_sub(0x4000);
+        g.write::<u32>(w(0x1b3), x);
+    }
+    // four pushes: the owned node's words (they stay to 0x2db)
+    let sp = base.wrapping_sub(0x10);
+    for (i, o) in (0u32..).zip([0x1cbu32, 0x1c6, 0x1c1, 0x1bc]) {
+        g.write::<u32>(sp + 4 * i, w(o));
+    }
+    let of = Frame {
+        at: call(0x1da),
+        esp: sp.wrapping_sub(4),
+        ecx: w(0x1d5),
+        edx: w(0x1d0),
+        ..Frame::default()
+    };
+    crate::sa_misc::node_append_owned(g, img, &of);
+    // the bones of the owned node (`ecx` as the append leaves it)
+    let bf = Frame {
+        at: call(0x1df),
+        esp: sp.wrapping_sub(4),
+        ecx: w(0x1d5),
+        ..Frame::default()
+    };
+    crate::s4_small::bone_rate(g, img, &bf);
+    let eax = crate::sb_misc::node_append(g, img, call(0x1ee), w(0x1e9), w(0x1e4), 0);
+    abs_stores(g, img, f, 0x1f7, 0x21f);
+    crate::sb_misc::node_append(g, img, call(0x220), w(0x1f3), w(0x1e4), eax);
+    // the model state's record `[E + 4]` (`[esp + 0x20]` four words down)
+    g.write::<u32>(grp, w(0x22c));
+    g.write::<u32>(grp + 4, w(0x234));
+    let eax = crate::m0070::model_state(g, img, call(0x239), grp);
+    crate::sa_misc::node_append(g, img, call(0x248), w(0x243), w(0x23e), eax);
+    // four more pushes (the third `ecx`, the node just appended)
+    let sp2 = base.wrapping_sub(0x20);
+    for (i, v) in (0u32..).zip([w(0x258), w(0x253), w(0x243), w(0x24d)]) {
+        g.write::<u32>(sp2 + 4 * i, v);
+    }
+    abs_stores(g, img, f, 0x261, 0x27f);
+    let of = Frame {
+        at: call(0x280),
+        esp: sp2.wrapping_sub(4),
+        ecx: w(0x25d),
+        edx: w(0x23e),
+        ..Frame::default()
+    };
+    crate::sa_misc::node_append_owned(g, img, &of);
+    // the bones' cursor `[E + 4]`: the owned node, the mark byte
+    let mark = g.read::<u8>(w(0x285));
+    g.write::<u32>(grp, w(0x25d));
+    g.write::<u8>(grp + 5, mark);
+    let bf = Frame {
+        at: call(0x296),
+        esp: sp2.wrapping_sub(4),
+        ecx: grp,
+        ..Frame::default()
+    };
+    crate::sa_summon::bone_plain(g, img, &bf);
+    let m = gw(g, 0x2a6);
+    // call width: 2
+    g.call(c.slot(g, img, 0x29b, 211), 0, &[m, w(0x2a0)]);
+    let fl = g.read::<u16>(w(0x2ba)) | 0x10;
+    g.write::<u16>(w(0x2ba), fl);
+    let m = gw(g, 0x2c1);
+    abs_stores(g, img, f, 0x2c5, 0x2cf);
+    // call width: 1
+    g.call(c.slot(g, img, 0x2b3, 3), 0, &[m]);
+    // slot 228 (the byte, 0xd8), the release of the handle
+    let b = u32::from(g.read::<u8>(w(0x2d7)));
+    // call width: 2
+    g.call(c.slot(g, img, 0x2e5, 228), 0, &[b, 0xd8]);
+    let h = gw(g, 0x2f3);
+    crate::m0042::release(g, img, call(0x2f8), h);
+    // the small node's word, pushed under slot 228's two
+    g.write::<u32>(base.wrapping_sub(0xc), w(0x2fd));
+    crate::m0070::node_init_small(g, img, call(0x30c), w(0x307), w(0x302), w(0x2fd));
+    abs_stores(g, img, f, 0x317, 0x321);
+    // the sound node `[N, parent, 700.0]` (the parent `edx` as the node
+    // set-up leaves it)
+    for (i, v) in (0u32..).zip([w(0x325), w(0x302), 0x442f_0000]) {
+        g.write::<u32>(grp + 4 * i, v);
+    }
+    abs_stores(g, img, f, 0x335, 0x33f);
+    crate::o6_fam_node::node_reset_sound(g, img, call(0x340), grp);
+    abs_stores(g, img, f, 0x34e, 0x369);
+    // the camera's first vectors: `E + 0x20` through slot 229, both copies
+    let v = base + 0x2c;
+    for (i, x) in (0u32..).zip([0, 0xc180_0000, 0xc080_0000, ONE]) {
+        g.write::<u32>(v + 4 * i, x);
+    }
+    // call width: 3
+    g.call(c.slot(g, img, 0x38b, 229), 0, &[v, w(0x34a), v]);
+    for (i, (a, b)) in (0u32..).zip([
+        (0x3a6u32, 0x3aeu32),
+        (0x3bc, 0x3c4),
+        (0x3d2, 0x3da),
+        (0x3e8, 0x3f0),
+    ]) {
+        let x = g.read::<u32>(v + 4 * i);
+        g.write::<u32>(w(a), x);
+        g.write::<u32>(w(b), x);
+    }
+    abs_stores(g, img, f, 0x3f4, 0x430);
+    for (i, x) in (0u32..).zip([0x4120_0000, 0, 0]) {
+        g.write::<u32>(v + 4 * i, x);
+    }
+    if c.s520(g, img, 0x39e) == 0x0237_0000 {
+        return;
+    }
+    // slot 296 for each byte slot 288 lists (the count at `E + 4`)
+    let n_at = grp;
+    // call width: 2
+    let list = g.call(c.slot(g, img, 0x460, 288), 0, &[0x10, n_at]).eax;
+    let mut n = g.read::<i32>(n_at);
+    let mut i = 0i32;
+    let mut at = list;
+    while i < n {
+        let b = g.read::<u8>(at);
+        if b != g.read::<u8>(w(0x484)) && u32::from(b) != gw(g, 0x48f) && b != 0xff {
+            // call width: 2
+            g.call(c.slot(g, img, 0x49e, 296), 0, &[u32::from(b), 0]);
+            n = g.read::<i32>(n_at);
+        }
+        i += 1;
+        at = at.wrapping_add(1);
+    }
+}
+
+/// [`camera_task_0070`]'s state 0x97 (and 0x96's end): the camera's second
+/// vector (slot 229) into its globals, the static link, flags and words,
+/// the node ease of the DLL's object (its cursor `[E + 4]` with the mark
+/// byte); the state on, the wait reset. Returns the node ease's `eax`.
+fn second_0070<G: Game>(g: &mut G, img: &Image, c: &Ctx) -> u32 {
+    let f = c.f;
+    c.vec229(g, img, (0x4cd, 0x4c7), [0, 0xbf80_0000, 0xc248_0000, ONE]);
+    c.copy4(g, img, [0x503, 0x511, 0x51f, 0x530]);
+    abs_stores(g, img, f, 0x534, 0x545);
+    let lf = Frame {
+        at: c.target(img, 0x546),
+        esp: c.base.wrapping_sub(4),
+        ..Frame::default()
+    };
+    crate::s4_small::static_link_last_word(g, img, &lf);
+    let mark = g.read::<u8>(c.w(img, 0x54b));
+    abs_stores(g, img, f, 0x553, 0x56e);
+    let grp = c.base + 0x10;
+    g.write::<u32>(grp, c.w(img, 0x572));
+    g.write::<u8>(grp + 5, mark);
+    let ef = Frame {
+        at: c.target(img, 0x57b),
+        esp: c.base.wrapping_sub(4),
+        ecx: grp,
+        ..Frame::default()
+    };
+    let eax = crate::s9_misc::node_ease(g, img, &ef).eax;
+    c.up(g);
+    c.reset(g);
+    eax
+}
+
+/// [`camera_task_0070`]'s state 0x98: the fade byte `(70 - wait) / K *
+/// K'` (truncated; its low byte kept), on when it is 0. Returns the
+/// truncated value.
+fn fade_0070<G: Game>(g: &mut G, img: &Image, c: &Ctx) -> u32 {
+    let n = 0x46i32.wrapping_sub(c.count(g));
+    #[allow(clippy::cast_precision_loss)] // cvtdq2ps
+    let x = mul(div(n as f32, c.k(g, img, 0x5a1)), c.k(g, img, 0x5a9));
+    let v = cvtt(x).cast_unsigned();
+    g.write::<u8>(c.w(img, 0x5b2), v as u8);
+    if v as u8 == 0 {
+        c.up(g);
+    }
+    v
+}
+
+/// [`camera_task_0070`]'s state 0xa1 past its wait: the root node and its
+/// start (`xmm1` the rate), the camera's vector (slot 229) into its
+/// globals, two flags; state 0xc8. Returns slot 229's `eax`.
+fn root_0070<G: Game>(g: &mut G, img: &Image, c: &Ctx) -> u32 {
+    let f = c.f;
+    let node = c.w(img, 0x5e3);
+    crate::m0070::node_init_root(g, img, c.target(img, 0x5e8), node);
+    let rate = u128::from(g.read::<u32>(c.w(img, 0x5f0)));
+    abs_stores(g, img, f, 0x5f4, 0x644);
+    let nf = Frame {
+        at: c.target(img, 0x645),
+        esp: c.base.wrapping_sub(4),
+        ecx: node,
+        xmm: [0, rate, 0, 0],
+        ..Frame::default()
+    };
+    crate::sa_misc::node_start(g, img, &nf);
+    let v = [0xc234_0000, 0xc1f0_0000, 0xc22c_0000, ONE];
+    let eax = c.vec229(g, img, (0x655, 0x64f), v);
+    c.copy4(g, img, [0x68b, 0x699, 0x6a7, 0x6b5]);
+    abs_stores(g, img, f, 0x6b9, 0x6ca);
+    g.write::<u32>(c.r + 0x18, 0xc8);
+    eax
+}
+
+/// [`camera_task_0070`]'s state 0xc8: two appends, an owned node, the
+/// small node under it, its word kept, the axes `(0, 0, 0xe000)` /
+/// `(0, 0, 0.98)` and the move's ends `(160, 0, -) -> (0.98, 0, -)`; on,
+/// `R + 0x1c` 3.0. Returns the move's ends' `eax`.
+fn nodes_0070<G: Game>(g: &mut G, img: &Image, c: &Ctx) -> u32 {
+    let f = c.f;
+    let w = |o: u32| img.word(f + o);
+    let call = |o: u32| img.rel32_target(f + o);
+    let base = c.base;
+    let list = w(0x6da);
+    crate::sa_misc::node_append(g, img, call(0x6e4), w(0x6df), list, 0);
+    abs_stores(g, img, f, 0x6ed, 0x70b);
+    crate::sb_misc::node_append(g, img, call(0x70c), w(0x6e9), list, 0);
+    // four pushes (the third `ecx`, the node just appended)
+    let sp = base.wrapping_sub(0x10);
+    for (i, v) in (0u32..).zip([w(0x71c), w(0x6e9), w(0x716), w(0x711)]) {
+        g.write::<u32>(sp + 4 * i, v);
+    }
+    abs_stores(g, img, f, 0x725, 0x74d);
+    let owned = w(0x721);
+    let of = Frame {
+        at: call(0x74e),
+        esp: sp.wrapping_sub(4),
+        ecx: owned,
+        edx: list,
+        ..Frame::default()
+    };
+    crate::sa_misc::node_append_owned(g, img, &of);
+    // push ecx (the owned node, as the append leaves it): the small node's
+    // word
+    g.write::<u32>(sp.wrapping_sub(4), owned);
+    abs_stores(g, img, f, 0x758, 0x75f);
+    let small = w(0x754);
+    crate::m0070::node_init_small(g, img, call(0x760), small, list, owned);
+    g.write::<u32>(w(0x76e), small);
+    abs_stores(g, img, f, 0x77d, 0x7a5);
+    c.axes(g, img, (0x7ea, 0x7d9), (0xe000, 0x3f7a_e148, 0));
+    let eax = c.ends(g, img, 0x819, (0x4320_0000, 0, 0x3f7a_e148, 0));
+    c.up(g);
+    g.write::<u32>(c.r + 0x1c, 0x4040_0000);
+    eax
+}
+
+/// [`camera_task_0070`]'s state 0xaa: the camera's place (slot 229) and
+/// the light set, the move globals, the camera's way `(-2000, 0, 0)`; on,
+/// `R + 0x1c` -100.0. Returns the light set's `eax`.
+fn light_0070<G: Game>(g: &mut G, img: &Image, c: &Ctx) -> u32 {
+    let f = c.f;
+    c.vec229(g, img, (0x889, 0x883), [0, 0xc160_0000, 0, ONE]);
+    let eax = c.light(g, img, 0x8c5, 0x8b9);
+    abs_stores(g, img, f, 0x8c9, 0x94f);
+    let p = c.p();
+    for (i, v) in (0u32..).zip([0xc4fa_0000, 0, 0]) {
+        g.write::<u32>(p + 4 * i, v);
+    }
+    abs_stores(g, img, f, 0x967, 0x9a3);
+    c.up(g);
+    g.write::<u32>(c.r + 0x1c, 0xc2c8_0000);
+    eax
+}
+
+/// [`camera_task_0070`]'s states 0xab/0xac: the step `+0x60` on, the
+/// camera's way `(R + 0x1c, 0, 0)` into its globals, `R + 0x1c` up by
+/// `K - K'` and the light's level down by `K''`.
+fn climb_0070<G: Game>(g: &mut G, img: &Image, c: &Ctx) {
+    let f = c.f;
+    let w = |o: u32| img.word(f + o);
+    let x = g.read::<u32>(w(0x9b2)).wrapping_add(0x60);
+    g.write::<u32>(w(0x9b2), x);
+    let v = c.rf(g, 0x1c);
+    let p = c.p();
+    g.write::<f32>(p, v);
+    g.write::<f32>(w(0x9c6), v);
+    g.write::<f32>(w(0x9ce), v);
+    g.write::<u32>(p + 4, 0);
+    g.write::<u32>(p + 8, 0);
+    abs_stores(g, img, f, 0x9e2, 0xa0a);
+    let y = sub(add(c.rf(g, 0x1c), c.k(g, img, 0xa13)), c.k(g, img, 0xa1b));
+    c.wf(g, 0x1c, y);
+    let z = sub(c.k(g, img, 0xa28), c.k(g, img, 0xa30));
+    g.write::<f32>(w(0xa38), z);
+}
+
+/// [`camera_task_0070`]'s state 0x191 past its wait: the move globals
+/// (the way `to - from`, the flags' bit 1 cleared and bit 0 set, the
+/// rates). Returns the flags.
+fn move_globals_0070<G: Game>(g: &mut G, img: &Image, c: &Ctx) -> u32 {
+    let f = c.f;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let a = sub(k(g, 0xa5c), k(g, 0xa64));
+    let fl = (g.read::<u32>(w(0xa69)) & !2) | 1;
+    let b = sub(0.0, k(g, 0xa74));
+    g.write::<f32>(w(0xa7f), a);
+    let x = sub(k(g, 0xa87), k(g, 0xa8f));
+    abs_stores(g, img, f, 0xa96, 0xab4);
+    g.write::<f32>(w(0xab8), x);
+    let y = sub(k(g, 0xac0), k(g, 0xac8));
+    g.write::<f32>(w(0xad0), b);
+    abs_stores(g, img, f, 0xad4, 0xae8);
+    g.write::<u32>(w(0xae9), fl);
+    g.write::<f32>(w(0xaf1), y);
+    let z = sub(k(g, 0xaf9), k(g, 0xb01));
+    g.write::<f32>(w(0xb09), z);
+    fl
+}
+
+/// A light's growth: `R + 0x1c` up by `K` (operand `ka`); while `K'`
+/// (`kb`) is above the level `L` (`kl`), `L` (`ks`) becomes `R + 0x1c +
+/// L`; then the step `R + 0x3c` up by 8.
+fn step_0070<G: Game>(g: &mut G, img: &Image, c: &Ctx, (ka, kb, kl, ks): (u32, u32, u32, u32)) {
+    let x = add(c.rf(g, 0x1c), c.k(g, img, ka));
+    let limit = c.k(g, img, kb);
+    c.wf(g, 0x1c, x);
+    let level = c.k(g, img, kl);
+    if limit > level {
+        g.write::<f32>(c.w(img, ks), add(x, level));
+    }
+    let s = g.read::<u32>(c.r + 0x3c).wrapping_add(8);
+    g.write::<u32>(c.r + 0x3c, s);
+}
+
+/// [`camera_task_0070`]'s state 0x192 (and 0x191's end): the light's
+/// growth, then the move's `x` down by the step while above -0x800 and
+/// its `y` up by it while below 0x5800. Returns the last `y` read or
+/// stored.
+fn grow_0070<G: Game>(g: &mut G, img: &Image, c: &Ctx) -> u32 {
+    let w = |o: u32| c.w(img, o);
+    step_0070(g, img, c, (0xb19, 0xb21, 0xb2e, 0xb3f));
+    let x = g.read::<i32>(w(0xb48));
+    if x > -0x800 {
+        let s = g.read::<i32>(c.r + 0x3c);
+        g.write::<i32>(w(0xb57), x.wrapping_sub(s));
+    }
+    let y = g.read::<i32>(w(0xb5c));
+    if y >= 0x5800 {
+        return y.cast_unsigned();
+    }
+    let y = y.wrapping_add(g.read::<i32>(c.r + 0x3c));
+    g.write::<i32>(w(0xb6f), y);
+    y.cast_unsigned()
+}
+
+/// [`camera_task_0070`]'s state 0x19a: the static node (one stack word,
+/// over the state `push ecx` leaves), the move globals (the flags' bit 1
+/// cleared and bit 0 set, `K - 0.0`); on, the wait reset. Returns the
+/// flags.
+fn static_0070<G: Game>(g: &mut G, img: &Image, c: &Ctx, state: u32) -> u32 {
+    let f = c.f;
+    let base = c.base;
+    g.write::<u32>(base.wrapping_sub(4), state);
+    g.write::<u32>(base.wrapping_sub(8), c.w(img, 0xbaf));
+    let sf = Frame {
+        at: c.target(img, 0xbb9),
+        esp: base.wrapping_sub(0xc),
+        ecx: c.w(img, 0xbb4),
+        ..Frame::default()
+    };
+    crate::s4_misc::static_node(g, img, &sf);
+    let fl = (g.read::<u32>(c.w(img, 0xbbe)) & !2) | 1;
+    let x = sub(c.k(g, img, 0xbc6), 0.0);
+    abs_stores(g, img, f, 0xbd7, 0xc6d);
+    g.write::<f32>(c.w(img, 0xc71), x);
+    abs_stores(g, img, f, 0xc75, 0xc93);
+    g.write::<u32>(c.w(img, 0xc94), fl);
+    c.up(g);
+    c.reset(g);
+    fl
+}
+
+/// [`camera_task_0070`]'s state 0x19b past its wait: the move's ends
+/// `(-200, -20, -) -> (0.98, 0.98, -)` (over the state `push ecx`
+/// leaves), then the axes `(0, 0, 0x2000)` / `(0, 0, 0.025)` in mode 1.
+/// Returns the axes' `eax`.
+fn ends_axes_0070<G: Game>(g: &mut G, img: &Image, c: &Ctx, state: u32) -> u32 {
+    g.write::<u32>(c.base.wrapping_sub(4), state);
+    // junk read: [esp+0x24] (`from`'s z, E + 0x18) is never written before
+    // the move's ends read it; 0 (brief 2026-10-24)
+    g.write::<u32>(c.p() + 8, 0);
+    c.ends(
+        g,
+        img,
+        0xd61,
+        (0xc348_0000, 0xc1a0_0000, 0x3f7a_e148, 0x3f7a_e148),
+    );
+    c.axes(g, img, (0xdbd, 0xdac), (0x2000, 0x3ccc_cccd, 1))
+}
+
+/// [`camera_task_0070`]'s state 0x2bc: the flags (bit 0 set, bits 1 and 3
+/// cleared), the camera's place and aim (slots 229 and 248 twice, into
+/// its globals and the two vectors), its way `(60, -10, 0)`; on. Returns
+/// the two vectors' `eax`.
+fn turn_0070<G: Game>(g: &mut G, img: &Image, c: &Ctx) -> u32 {
+    let f = c.f;
+    let w = |o: u32| img.word(f + o);
+    let p = c.p();
+    let fl = (g.read::<u32>(w(0xddb)) | 1) & !0xa;
+    g.write::<u32>(w(0xde6), fl);
+    abs_stores(g, img, f, 0xdfa, 0xe0b);
+    c.vec229(
+        g,
+        img,
+        (0xdf6, 0xdf0),
+        [0x41f0_0000, 0xc110_0000, 0xc1c8_0000, 0],
+    );
+    c.aim248(g, img, (0xe42, 0xe3c));
+    c.copy4(g, img, [0xe58, 0xe6e, 0xe7c, 0xe95]);
+    abs_stores(g, img, f, 0xe99, 0xebe);
+    c.vec229(g, img, (0xe8d, 0xe87), [0, 0x4020_0000, 0, 0]);
+    let eax = c.aim248(g, img, (0xef5, 0xeef));
+    let tf = Frame {
+        at: c.target(img, 0xf09),
+        esp: c.base.wrapping_sub(4),
+        edx: p,
+        eax,
+        ..Frame::default()
+    };
+    let eax = crate::s4_small::two_vectors(g, img, &tf).eax;
+    for (i, v) in (0u32..).zip([0x4270_0000, 0xc120_0000, 0]) {
+        g.write::<u32>(p + 4 * i, v);
+    }
+    abs_stores(g, img, f, 0xf25, 0xf61);
+    c.up(g);
+    eax
+}
+
+/// [`camera_task_0070`]'s state 0x2be: the camera's place and aim (slots
+/// 229 and 248) into its globals, the light words (`L - K`), the angle
+/// word 0; on. Returns 0.
+fn away_0070<G: Game>(g: &mut G, img: &Image, c: &Ctx) -> u32 {
+    let f = c.f;
+    let w = |o: u32| img.word(f + o);
+    c.vec229(g, img, (0xf90, 0xf8a), [0x4120_0000, 0, 0xc28c_0000, 0]);
+    c.aim248(g, img, (0xfcb, 0xfc5));
+    c.copy4(g, img, [0xfe1, 0xfef, 0xffd, 0x100b]);
+    let x = sub(c.k(g, img, 0x1013), c.k(g, img, 0x101b));
+    abs_stores(g, img, f, 0x1024, 0x1053);
+    g.write::<f32>(w(0x1057), x);
+    g.write::<u16>(w(0x105d), 0);
+    c.up(g);
+    0
+}
+
+/// [`camera_task_0070`]'s state 0x384: the move set-up (`xmm2 = xmm3 =
+/// K`, `eax` 0), the camera's place (slot 229) and the light set, the
+/// move globals, the move's ends `(0, 0, -) -> (0, 0, -)`, the light
+/// words; on, the wait reset. Returns 0.
+fn slide_0070<G: Game>(g: &mut G, img: &Image, c: &Ctx) -> u32 {
+    let f = c.f;
+    let w = |o: u32| img.word(f + o);
+    abs_stores(g, img, f, 0x109f, 0x10a9);
+    c.setup(g, img, (0x10aa, 0x109b), (0x1093, 0x1093), 0);
+    let v = [0xc000_0000, 0xc1a0_0000, 0xc28c_0000, ONE];
+    c.vec229(g, img, (0x10ba, 0x10b4), v);
+    c.light(g, img, 0x10f6, 0x10ea);
+    abs_stores(g, img, f, 0x1104, 0x1183);
+    c.ends(g, img, 0x11a4, (0, 0, 0, 0));
+    let x = sub(c.k(g, img, 0x11ac), c.k(g, img, 0x11b4));
+    abs_stores(g, img, f, 0x11ba, 0x11d8);
+    g.write::<f32>(w(0x11dc), x);
+    g.write::<u16>(w(0x11e2), 0);
+    c.up(g);
+    c.reset(g);
+    0
+}
+
+/// [`camera_task_0070`]'s state 0x385 past its wait: the camera's place
+/// (slot 229) and the light set, the light words, the move globals (the
+/// angles -pi/8, the word 0xf800) and set-up; on, `R + 0x1c` 0, the wait
+/// reset. Returns the set-up's `eax` (0xfffff800).
+fn near_0070<G: Game>(g: &mut G, img: &Image, c: &Ctx) -> u32 {
+    let f = c.f;
+    let w = |o: u32| img.word(f + o);
+    let v = [0xc140_0000, 0xc1c8_0000, 0xc28c_0000, ONE];
+    c.vec229(g, img, (0x1222, 0x121c), v);
+    c.light(g, img, 0x125e, 0x1252);
+    let x = sub(c.k(g, img, 0x1266), c.k(g, img, 0x126e));
+    g.write::<u16>(w(0x1286), 0);
+    abs_stores(g, img, f, 0x1294, 0x1316);
+    g.write::<f32>(w(0x131a), x);
+    abs_stores(g, img, f, 0x131e, 0x1332);
+    g.write::<u16>(w(0x1334), 0xf800);
+    abs_stores(g, img, f, 0x1338, 0x1374);
+    let eax = c.setup(g, img, (0x1375, 0x1290), (0x127e, 0x1276), 0xffff_f800);
+    c.up(g);
+    g.write::<u32>(c.r + 0x1c, 0);
+    c.reset(g);
+    eax
+}
+
+/// [`camera_task_0070`]'s state 0x3e8: the flags (bit 0 set, bits 1 and 3
+/// cleared), the camera's place (slot 229 of the DLL's vector) into both
+/// copies, slot 325, the move globals, the camera's way `(160, 0, 0)`;
+/// on, the wait reset, `R + 0x1c` 0.05. Returns slot 325's `eax`.
+fn sights_0070<G: Game>(g: &mut G, img: &Image, c: &Ctx) -> u32 {
+    let f = c.f;
+    let w = |o: u32| img.word(f + o);
+    let p = c.p();
+    let fl = (g.read::<u32>(w(0x1497)) | 1) & !0xa;
+    g.write::<u32>(w(0x14a2), fl);
+    abs_stores(g, img, f, 0x14ba, 0x14c4);
+    // call width: 3
+    g.call(c.slot(g, img, 0x14b6, 229), 0, &[p, w(0x14b0), w(0x14a7)]);
+    for (i, (a, b)) in (0u32..).zip([(0x14dbu32, 0x14e3u32), (0x14f1, 0x14f9), (0x150a, 0x1512)]) {
+        let x = g.read::<u32>(p + 4 * i);
+        g.write::<u32>(w(a), x);
+        g.write::<u32>(w(b), x);
+    }
+    let x = g.read::<u32>(p + 0xc);
+    abs_stores(g, img, f, 0x151c, 0x152d);
+    g.write::<u32>(w(0x1531), x);
+    g.write::<u32>(w(0x1539), x);
+    // call width: 2
+    let eax = g
+        .call(c.slot(g, img, 0x14d3, 325), 0, &[w(0x1549), w(0x1544)])
+        .eax;
+    abs_stores(g, img, f, 0x154f, 0x15b0);
+    for (i, v) in (0u32..).zip([0x4320_0000, 0, 0]) {
+        g.write::<u32>(p + 4 * i, v);
+    }
+    abs_stores(g, img, f, 0x15c8, 0x1604);
+    c.up(g);
+    c.reset(g);
+    g.write::<u32>(c.r + 0x1c, 0x3d4c_cccd);
+    eax
+}
+
+/// [`camera_task_0070`]'s states 0x3e9..0x3ec (`xmm3` the float at
+/// `+0x1640` in all): 0x3e9 on into 0x3ea; 0x3ea past its wait the move
+/// set-up, on; 0x3eb `R + 0x1c` up by `xmm3`, the light's place moved, on
+/// past its wait; 0x3ec slot 325, the camera's place (slot 229, `z` up by
+/// `K`, `y` down by `R + 0x1c`) and the two vectors. Returns the two
+/// vectors' `eax`.
+fn sweep_0070<G: Game>(g: &mut G, img: &Image, c: &Ctx, state: u32) -> u32 {
+    let f = c.f;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    // `eax`: 0x3ea (0x3e9's step) or 1 (the dispatch's)
+    let eax = if state == 0x3e9 {
+        g.write::<u32>(c.r + 0x18, 0x3ea);
+        0x3ea
+    } else {
+        state - 0x3e9
+    };
+    if state <= 0x3ea && c.count(g) >= 0xa {
+        abs_stores(g, img, f, 0x1664, 0x1678);
+        c.setup(g, img, (0x1679, 0x1660), (0x165b, 0x1640), eax);
+        c.up(g);
+    }
+    if state <= 0x3eb {
+        let x = add(c.rf(g, 0x1c), k(g, 0x1640));
+        c.wf(g, 0x1c, x);
+        for (a, kk, b, plus) in [
+            (0x1692u32, 0x169au32, 0x16a2u32, true),
+            (0x16aa, 0x16b2, 0x16ba, true),
+            (0x16c2, 0x16ca, 0x16d2, false),
+        ] {
+            let y = if plus {
+                add(k(g, a), k(g, kk))
+            } else {
+                sub(k(g, a), k(g, kk))
+            };
+            g.write::<f32>(w(b), y);
+        }
+        if c.count(g) >= 0x1e {
+            c.up(g);
+        }
+    }
+    let p = c.p();
+    // call width: 2
+    g.call(c.slot(g, img, 0x16ea, 325), 0, &[p, w(0x16e4)]);
+    let z = add(g.read::<f32>(p + 8), k(g, 0x1700));
+    g.write::<f32>(p + 8, z);
+    let y = sub(g.read::<f32>(p + 4), c.rf(g, 0x1c));
+    g.write::<f32>(p + 4, y);
+    // call width: 3
+    let eax = g
+        .call(c.slot(g, img, 0x1710, 229), 0, &[p, w(0x170a), p])
+        .eax;
+    let tf = Frame {
+        at: c.target(img, 0x173b),
+        esp: c.base.wrapping_sub(4),
+        edx: p,
+        eax,
+        ..Frame::default()
+    };
+    crate::s4_small::two_vectors(g, img, &tf).eax
+}
+
+/// [`camera_task_0070`] (the `rel32`s: its callees in order,
+/// `__security_check_cookie`).
+pub const CAMERA_TASK_0070: Sig = Sig {
+    len: 6308,
+    hash: 0xde53_99d6_6317_6348,
+    calls: &[
+        (0x6b, Callee::Sig(&crate::s4_misc::MODEL_NODE_WITH)),
+        (0x10d, Callee::Sig(&crate::m0070::PART_CALL_255)),
+        (0x14e, Callee::Sig(&crate::s4_summon::MOTION_STATE)),
+        (0x15d, Callee::Sig(&crate::sb_misc::NODE_APPEND)),
+        (0x167, Callee::Sig(&crate::m0070::MODEL_POSITION)),
+        (0x180, Callee::Sig(&crate::sa_misc::NODE_APPEND)),
+        (0x199, Callee::Sig(&crate::m0042::TIME_LEFT)),
+        (0x1da, Callee::Sig(&crate::sa_misc::NODE_APPEND_OWNED)),
+        (0x1df, Callee::Sig(&crate::s4_small::BONE_RATE)),
+        (0x1ee, Callee::Sig(&crate::sb_misc::NODE_APPEND)),
+        (0x220, Callee::Sig(&crate::sb_misc::NODE_APPEND)),
+        (0x239, Callee::Sig(&crate::m0070::MODEL_STATE)),
+        (0x248, Callee::Sig(&crate::sa_misc::NODE_APPEND)),
+        (0x280, Callee::Sig(&crate::sa_misc::NODE_APPEND_OWNED)),
+        (0x296, Callee::Sig(&crate::sa_summon::BONE)),
+        (0x2f8, Callee::Sig(&crate::m0042::RELEASE)),
+        (0x30c, Callee::Sig(&crate::m0070::NODE_INIT_SMALL)),
+        (0x340, Callee::Any),
+        (0x546, Callee::Sig(&crate::s4_small::STATIC_LINK_LAST_WORD)),
+        (0x57b, Callee::Sig(&crate::s9_misc::NODE_EASE_0070)),
+        (0x5e8, Callee::Sig(&crate::m0070::NODE_INIT_ROOT)),
+        (0x645, Callee::Sig(&crate::sa_misc::NODE_START)),
+        (0x6e4, Callee::Sig(&crate::sa_misc::NODE_APPEND)),
+        (0x70c, Callee::Sig(&crate::sb_misc::NODE_APPEND)),
+        (0x74e, Callee::Sig(&crate::sa_misc::NODE_APPEND_OWNED)),
+        (0x760, Callee::Sig(&crate::m0070::NODE_INIT_SMALL)),
+        (0x7ea, Callee::Sig(&crate::s5_misc::SIGNED_AXES)),
+        (0x819, Callee::Sig(&crate::s6_misc::MOVE_ENDS_OF)),
+        (0x8c5, Callee::Sig(&crate::s4_small::LIGHT_SET)),
+        (0xbb9, Callee::Sig(&crate::s4_misc::STATIC_NODE)),
+        (0xd61, Callee::Sig(&crate::s6_misc::MOVE_ENDS_OF)),
+        (0xdbd, Callee::Sig(&crate::s5_misc::SIGNED_AXES)),
+        (0xf09, Callee::Sig(&crate::s4_small::TWO_VECTORS)),
+        (0x10aa, Callee::Sig(&crate::s4_small::MOVE_SETUP)),
+        (0x10f6, Callee::Sig(&crate::s4_small::LIGHT_SET)),
+        (0x11a4, Callee::Sig(&crate::s6_misc::MOVE_ENDS_OF)),
+        (0x125e, Callee::Sig(&crate::s4_small::LIGHT_SET)),
+        (0x1375, Callee::Sig(&crate::s4_small::MOVE_SETUP)),
+        (0x1408, Callee::Sig(&crate::s4_small::LIGHT_SET)),
+        (0x1466, Callee::Sig(&crate::s4_small::LIGHT_SET)),
+        (0x148a, Callee::Sig(&crate::s4_small::MOVE_SETUP)),
+        (0x1679, Callee::Sig(&crate::s4_small::MOVE_SETUP)),
+        (0x173b, Callee::Sig(&crate::s4_small::TWO_VECTORS)),
+        (0x1747, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0x174c, Callee::Sig(&crate::l3_common::LIST_UNLINK_CURRENT)),
+        (0x1751, Callee::Sig(&crate::l3_common::LIST_UNLINK_CURRENT)),
+        (0x177f, Callee::Any),
+    ],
+    imports: &[],
+};
