@@ -2177,6 +2177,7 @@ fn mesh_0434() {
     rec(&mut t, 829, 5, move |m, a| {
         m.w32(a[3], 0x0829_0000 ^ m.r32(lock));
         m.w32(a[4], a[1]);
+        m.w32(SCRATCH + 0x7f50, m.r32(lock));
         0x829
     });
     for o in [0x51u32, 0x6e, 0x3f9, 0x426, 0xbeb, 0xc15, 0xd65, 0xd89] {
@@ -2212,6 +2213,11 @@ fn mesh_0434() {
         for o in [0x1a4u32, 0x196] {
             let at = w(&t, o);
             junk(&mut t, at, 0x1a60, k + o);
+        }
+        // the header's qwords
+        for o in [0xa2u32, 0xaa, 0xbc] {
+            let at = w(&t, o);
+            junk(&mut t, at, 8, k + o);
         }
         t.set_u32(model, 0x0941_0001);
         t.set_u32(model + 4, 0x0941_0002);
