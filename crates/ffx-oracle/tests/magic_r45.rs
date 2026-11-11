@@ -2929,3 +2929,79 @@ fn landing_0392() {
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
+
+/// `magic_0392` 0x10002950 (`r45::trails_start_0392`): the task list
+/// empty and not; the randoms and the matrix slots varied so the yaws
+/// wrap both ways; the free ring of two nodes and more.
+#[test]
+fn trails_start_0392() {
+    let Some(mut t) = sa::twin(392) else { return };
+    let f = t.at(0x2950);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    all_stubs(&mut t);
+    rec(&mut t, 235, 1, |m, a| {
+        for i in 0..16 {
+            wf(m, a[0] + 4 * i, if i % 5 == 0 { 1.0 } else { 0.0 });
+        }
+        0x235
+    });
+    for s in [330u32, 328, 329] {
+        rec(&mut t, s, 3, move |m, a| {
+            let x = f32::from_bits(a[2]);
+            for i in 0..16 {
+                let v = rf(m, a[1] + 4 * i) + x * ((i + s) % 3) as f32;
+                wf(m, a[0] + 4 * i, v);
+            }
+            s
+        });
+    }
+    rec(&mut t, 231, 3, |m, a| {
+        for i in 0..16 {
+            let v = rf(m, a[1] + 4 * i) * 0.5 + rf(m, a[2] + 4 * i);
+            wf(m, a[0] + 4 * i, v);
+        }
+        0x231
+    });
+    rec(&mut t, 229, 3, |m, a| {
+        for i in 0..4 {
+            let mut v = 0.0f32;
+            for j in 0..4 {
+                v += rf(m, a[1] + 16 * i + 4 * j) * rf(m, a[2] + 4 * j);
+            }
+            wf(m, a[0] + 4 * i, v + i as f32 * 0.125);
+        }
+        0x229
+    });
+    let k314 = SCRATCH + 0x7e10;
+    for s in [314u32, 404] {
+        rec(&mut t, s, 1, move |m, a| {
+            let c = m.r32(k314);
+            m.w32(k314, c + 1);
+            (s << 16) ^ a[0] ^ c
+        });
+        t.stub_st0(s, move |m, a| {
+            f64::from(f32::from_bits(a[0])) * 0.125 * f64::from(m.r32(k314) % 7) - 0.375
+        });
+    }
+    let p = SCRATCH + 0x700;
+    t.set_u32(w(0xe6), p);
+    let s = SCRATCH + 0x1_0000;
+    t.set_u32(w(0x1d), s);
+    for (k, (listed, free)) in (0u32..).zip([(false, 4u16), (true, 2), (true, 6)]) {
+        junk(&mut t, s + 0xf50, 0x100, k);
+        floats(&mut t, s + 0xf60, 0x4, k);
+        floats(&mut t, s + 0xfc0, 0x4, k + 3);
+        setf(&mut t, s + 0xfb4, 0.75 * k as f32 - 1.0);
+        junk(&mut t, s + 0x1100, 0x3a00, k);
+        t.set_u32(p + 0x10, 0x0c01_0000 + k);
+        magic_r11::ring(&mut t, w(0x65a), w(0x674), free, SCRATCH + 0x5000);
+        t.write(SCRATCH + 0x600, &[0x44; 0x20]);
+        t.set_u32(w(0x6cf), if listed { SCRATCH + 0x600 } else { 0 });
+        t.set_u32(w(0x6de), SCRATCH + 0x600);
+        junk_ops(&mut t, f, &[0x704, 0x70e]);
+        junk(&mut t, w(0x163), 0x40, k);
+        ownb::dirty_stack(&mut t, 0x2950 + k, &[]);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}

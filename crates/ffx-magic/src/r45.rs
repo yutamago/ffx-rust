@@ -4320,3 +4320,256 @@ pub const LANDING_0392: Sig = Sig {
     ],
     imports: &[(0x220, "rand"), (0x2da, "rand")],
 };
+
+/// `magic_0392`'s trails start (0x10002950, 2082 bytes; a table entry, no
+/// arguments; an aligned /GS frame, `E` its aligned base: the yaw `E`,
+/// `S` kept at `E + 0x10`, the start `O1` at `E + 0x3c`, the end `O2` at
+/// `E + 0x4c`, `V1` = `(0, 0, -8, 1)` at `E + 0x5c`, `V2` at `E + 0x6c`,
+/// the lift `O3` at `E + 0x7c`, the matrices `MB` at `E + 0x8c`, `MC` at
+/// `E + 0xcc`, `MA` at `E + 0x10c`). With `S = *G_S` and the yaw `a = S +
+/// 0xfb4`:
+/// - `MA` = slot 235, `MB` = `MA` turned by `a` (slot 329), `O1` = `MB V1`
+///   (slot 229) plus `S + 0xf60..` (`y` less `K`); the colour word `c =
+///   (*G_P)[4]`; `MC` = slot 235 with `MC[10]` 0.5 turned by `a`;
+/// - for 16 records `Q = S + 0x1210 + 0x3a0 j` (the actors' table `T[j]`
+///   their trails `Q + 0x170`): `V1.z` = `frnd(50)`; `MB` = `MA` turned by
+///   `frnd(pi)`, then `MC MB` (slot 231); `O2` = `MB V1` plus `S +
+///   0xfc0..`; `Q..` = `O1`, `Q + 0x30..` = `(O2, 1)`; `d = O2 - O1`;
+///   `Q + 0x10..` = `O1 + K7 d` (`w` 1.0); the pitch `atan2(d.y, |d.xz|)`
+///   and the yaw `K8 - atan2(d.z, d.x)` wrapped once; `MB` = `MA` turned
+///   by Z `frnd(pi)`, X the pitch, Y the yaw (slots 330, 328, 329), `O3`
+///   = `MB (0, frnd2(100), 0, 1)` added to `Q + 0x10..`, copied to `Q +
+///   0x20..`; the counts `Q + 0x398`, `+0x39c` = `20 + rand() % 6`; the
+///   trail `Q + 0x170` set up (its colour `c`, 32 points `O1`, sizes,
+///   flags; the trail's own words written in the original's order);
+/// - two task nodes (kinds 0 and 1; the second holding the block `E2 = S +
+///   0x1198` with `(0.5, 0.5, 0.5, 1)` twice, 45, 0, 20, 20, then `E2 +
+///   0x10` 0.6) appended to the list ([`take_pair_0266`]'s shape); two
+///   globals 0.5.
+///
+/// Each slot call passes the words the original leaves on the stack.
+/// Returns 0xffff (the second take's count step left in `eax`).
+#[allow(clippy::too_many_lines)] // the original's set-up and its 16 trails
+pub fn trails_start_0392<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let e = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0x154);
+    let at = |o: u32| e.wrapping_add(o);
+    let (o1, o2, v1, v2, o3) = (at(0x3c), at(0x4c), at(0x5c), at(0x6c), at(0x7c));
+    let (mb, mc, ma) = (at(0x8c), at(0xcc), at(0x10c));
+    let s = g.read::<u32>(w(0x1d));
+    let mut st = Pushes::default();
+    st.push(ma);
+    g.write::<u32>(at(0x10), s);
+    st.call(g, t(g, 0x2c, 235), 0);
+    let yaw = g.read::<u32>(s + 0xfb4);
+    st.set_top(yaw);
+    st.push_all(&[ma, mb]);
+    for (o, x) in [
+        (0x5cu32, 0u32),
+        (0x60, 0),
+        (0x68, 0x3f80_0000),
+        (0x6c, 0),
+        (0x74, 0),
+        (0x78, 0x3f80_0000),
+        (0x64, 0xc100_0000),
+    ] {
+        g.write::<u32>(at(o), x);
+    }
+    st.call(g, t(g, 0x5a, 329), 0);
+    st.push_all(&[v1, mb, o1]);
+    st.call(g, t(g, 0xbd, 229), 0);
+    let x = add(g.read::<f32>(s + 0xf60), g.read::<f32>(o1));
+    let y = add(g.read::<f32>(s + 0xf64), g.read::<f32>(o1 + 4));
+    let p = g.read::<u32>(w(0xe6));
+    g.write::<f32>(o1, x);
+    let z = add(g.read::<f32>(s + 0xf68), g.read::<f32>(o1 + 8));
+    let y = sub(y, k(g, 0x102));
+    g.write::<f32>(o1 + 8, z);
+    g.write::<f32>(o1 + 4, y);
+    let colour = g.read::<u32>(p.wrapping_add(0x10));
+    g.write::<u32>(at(0xc), colour);
+    st.push(mc);
+    st.call(g, t(g, 0x122, 235), 0);
+    let yaw = g.read::<u32>(s + 0xfb4);
+    st.pop(6);
+    st.set_top(yaw);
+    st.push_all(&[mc, mc]);
+    g.write::<u32>(mc + 0x28, 0x3f00_0000);
+    st.call(g, t(g, 0x148, 329), 0);
+    st.pop(3);
+    let table = w(0x163);
+    let mut q = s + 0x1210;
+    for j in 0..16u32 {
+        let mut st = Pushes::default();
+        st.push(0x4248_0000);
+        let r1 = st0_f32(st.call(g, t(g, 0x171, 314), 0).st0);
+        g.write::<f32>(v1 + 8, r1);
+        st.set_top(0x4049_0fdb);
+        let r2 = st0_f32(st.call(g, t(g, 0x18a, 314), 0).st0);
+        g.write::<f32>(e, r2);
+        st.set_top(r2.to_bits());
+        st.push_all(&[ma, mb]);
+        st.call(g, t(g, 0x1bd, 329), 0);
+        st.push_all(&[mb, mc, mb]);
+        st.call(g, t(g, 0x1e2, 231), 0);
+        st.push_all(&[v1, mb, o2]);
+        st.call(g, t(g, 0x204, 229), 0);
+        let px = add(g.read::<f32>(s + 0xfc0), g.read::<f32>(o2));
+        let py = add(g.read::<f32>(s + 0xfc4), g.read::<f32>(o2 + 4));
+        let pz = add(g.read::<f32>(s + 0xfc8), g.read::<f32>(o2 + 8));
+        let (ax, ay) = (g.read::<f32>(o1), g.read::<f32>(o1 + 4));
+        let k7 = k(g, 0x256);
+        for i in 0..4u32 {
+            let x = g.read::<u32>(o1 + 4 * i);
+            g.write::<u32>(q + 4 * i, x);
+        }
+        g.write::<f32>(q + 0x30, px);
+        g.write::<f32>(q + 0x34, py);
+        g.write::<f32>(q + 0x38, pz);
+        g.write::<f32>(o2, px);
+        let dx = sub(px, ax);
+        g.write::<u32>(q + 0x3c, 0x3f80_0000);
+        g.write::<f32>(o2 + 4, py);
+        g.write::<f32>(o2 + 8, pz);
+        let dz = sub(pz, g.read::<f32>(o1 + 8));
+        let dy = sub(py, ay);
+        g.write::<f32>(q + 0x18, dz);
+        g.write::<f32>(q + 0x14, dy);
+        g.write::<u32>(q + 0x1c, 0x3f80_0000);
+        g.write::<f32>(q + 0x10, mul(dx, k7));
+        let v = mul(g.read::<f32>(q + 0x14), k7);
+        g.write::<u32>(o2 + 0xc, 0x3f80_0000);
+        g.write::<f32>(q + 0x14, v);
+        let v = mul(g.read::<f32>(q + 0x18), k7);
+        g.write::<f32>(at(4), dx);
+        g.write::<f32>(e, dz);
+        g.write::<f32>(q + 0x18, v);
+        let x = add(ax, g.read::<f32>(q + 0x10));
+        g.write::<f32>(q + 0x10, x);
+        let y = add(ay, g.read::<f32>(q + 0x14));
+        g.write::<f32>(q + 0x14, y);
+        let z = add(g.read::<f32>(q + 0x18), g.read::<f32>(o1 + 8));
+        g.write::<f32>(q + 0x18, z);
+        let flat = f64::from(add(mul(dz, dz), mul(dx, dx))).sqrt();
+        // fstp qword; cvtpd2ps
+        #[allow(clippy::cast_possible_truncation)]
+        let pitch = g.atan2(f64::from(dy), flat) as f32;
+        #[allow(clippy::cast_possible_truncation)]
+        let a = g.atan2(f64::from(dz), f64::from(dx)) as f32;
+        let yaw2 = sub(k(g, 0x3ca), a);
+        let yaw2 = wrap_once(g, img, f, yaw2, [0x3d9, 0x3e9, 0x3f3, 0x400]);
+        let mut st = Pushes::default();
+        st.push(0x4049_0fdb);
+        let r3 = st0_f32(st.call(g, t(g, 0x40b, 314), 0).st0);
+        st.set_top(r3.to_bits());
+        st.push_all(&[ma, mb]);
+        st.call(g, t(g, 0x43f, 330), 0);
+        st.pop(2);
+        st.set_top(pitch.to_bits());
+        st.push_all(&[mb, mb]);
+        st.call(g, t(g, 0x467, 328), 0);
+        st.pop(2);
+        st.set_top(yaw2.to_bits());
+        st.push_all(&[mb, mb]);
+        st.call(g, t(g, 0x48b, 329), 0);
+        st.pop(2);
+        st.set_top(0x42c8_0000);
+        let r4 = st0_f32(st.call(g, t(g, 0x498, 404), 0).st0);
+        g.write::<f32>(v2 + 4, r4);
+        st.push_all(&[v2, mb, o3]);
+        st.call(g, t(g, 0x4cb, 229), 0);
+        for d in [0u32, 4] {
+            let v = add(g.read::<f32>(o3 + d), g.read::<f32>(q + 0x10 + d));
+            g.write::<f32>(q + 0x10 + d, v);
+        }
+        let v = add(g.read::<f32>(q + 0x18), g.read::<f32>(o3 + 8));
+        g.write::<f32>(q + 0x18, v);
+        g.write::<u32>(q + 0x1c, 0x3f80_0000);
+        for i in 0..4u32 {
+            let x = g.read::<u32>(q + 0x10 + 4 * i);
+            g.write::<u32>(q + 0x20 + 4 * i, x);
+        }
+        let n = (g.rand().cast_signed() % 6 + 0x14).cast_unsigned();
+        g.write::<u32>(q + 0x39c, n);
+        g.write::<u32>(q + 0x398, n);
+        let tr = q + 0x170;
+        g.write::<u32>(table + 4 * j, tr);
+        let colour = g.read::<u32>(at(0xc));
+        g.write::<u32>(tr, colour);
+        g.write::<u32>(q + 0x174, 1);
+        let pt: [u32; 4] = core::array::from_fn(|i| g.read::<u32>(o1 + 4 * i as u32));
+        g.write::<u16>(q + 0x178, 0xffff);
+        g.write::<u16>(q + 0x17a, 0x200);
+        g.write::<u32>(q + 0x37c, 0x8080_8080);
+        g.write::<u32>(q + 0x380, 0);
+        g.write::<u32>(q + 0x390, 0);
+        g.write::<u32>(q + 0x384, 0x3f80_0000);
+        g.write::<u32>(q + 0x388, 0x3f80_0000);
+        for p in 0..32u32 {
+            for (i, x) in (0u32..).zip(pt) {
+                g.write::<u32>(q + 0x17c + 16 * p + 4 * i, x);
+            }
+        }
+        g.write::<u16>(q + 0x37d, 0x8020);
+        g.write::<u8>(q + 0x37f, 0x80);
+        g.write::<u16>(q + 0x381, 0x2000);
+        g.write::<u8>(q + 0x383, 0);
+        g.write::<u32>(q + 0x394, 0x32);
+        g.write::<u32>(q + 0x38c, 0x3f40_0000);
+        g.write::<u8>(tr + 0x20c, 0x20);
+        g.write::<u8>(tr + 0x210, 0x40);
+        g.write::<u32>(tr + 0x218, 0x4000_0000);
+        q += 0x3a0;
+    }
+    take_pair_0266(
+        g,
+        img,
+        f,
+        [
+            0x65a, 0x674, 0x699, 0x6be, 0x6c9, 0x6cf, 0, 0x6de, 0x6f1, 0x78b, 0x793, 0x7c4, 0x7cf,
+            0x7d5, 0x7f9, 0x815,
+        ],
+        0,
+        1,
+    );
+    let e2 = g.read::<u32>(at(0x10)).wrapping_add(0x1198);
+    g.write::<u32>(w(0x704), 0x3f00_0000);
+    g.write::<u32>(w(0x70e), 0x3f00_0000);
+    for (d, x) in [
+        (8u32, 0x3f00_0000u32),
+        (4, 0x3f00_0000),
+        (0, 0x3f00_0000),
+        (0xc, 0x3f80_0000),
+        (0x18, 0x3f00_0000),
+        (0x14, 0x3f00_0000),
+        (0x10, 0x3f00_0000),
+        (0x1c, 0x3f80_0000),
+        (0x28, 0x2d),
+        (0x34, 0),
+        (0x30, 0x14),
+        (0x2c, 0x14),
+    ] {
+        g.write::<u32>(e2 + d, x);
+    }
+    let second = g.read::<u32>(w(0x815));
+    g.write::<u32>(second.wrapping_add(0x14), e2);
+    g.write::<u32>(e2 + 0x10, 0x3f19_999a);
+    Ret::eax(0xffff)
+}
+
+/// [`trails_start_0392`] (the `rel32`s: `_libm_sse2_sqrt_precise`,
+/// `_CIatan2` twice, the cookie check; `rand`).
+pub const TRAILS_START_0392: Sig = Sig {
+    len: 2082,
+    hash: 0xae8a_13cb_adf0_8a67,
+    calls: &[
+        (0x376, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x389, Callee::Import("_CIatan2")),
+        (0x3b8, Callee::Import("_CIatan2")),
+        (0x81a, Callee::Any),
+    ],
+    imports: &[(0x561, "rand")],
+};
