@@ -29,6 +29,23 @@ fn every_ported_line_is_an_entry() {
     );
     assert!(all.len() > 15_000);
     assert_eq!(kept.len() + held, all.len());
+    // every shim's locals are game memory now (StackFrame, AlignedFrame,
+    // AllocaFrame, with_frame): none held (tools/host-ports.py)
+    assert_eq!(held, 0, "held shims: crates/ffx-host-ports/src/held.rs");
+    // the wrapper-owned ports (`ported/wrapped_ports.rs`)
+    for (addr, name, conv, words) in [
+        (0x007b_c110, "MsScreenProcess", Conv::Cdecl, 1),
+        (0x0091_da80, "rcbgGuideUpdateEx", Conv::Cdecl, 2),
+        (
+            0x009f_3c30,
+            "Phyre_PRendering_PRenderer_renderWorldCulledSorted",
+            Conv::Thiscall,
+            4,
+        ),
+    ] {
+        let e = table.get(addr).expect(name);
+        assert_eq!((e.name, e.conv, e.words), (name, conv, words));
+    }
     // a few conventions and word counts, as the lines declare them
     let e = table.get(0x0079_a0c0).expect("MsCheckRange");
     assert_eq!((e.name, e.conv, e.words), ("MsCheckRange", Conv::Cdecl, 3));
@@ -42,6 +59,9 @@ fn every_ported_line_is_an_entry() {
 enum Res {
     Eax,
     St0,
+    /// The memory alone: `eax` is what a void port's callee left (no
+    /// caller reads it, `tools/check-clobber.py`).
+    Mem,
 }
 
 /// One call: the original's address, convention, `ecx`, stack words
@@ -248,6 +268,32 @@ fn ported_functions_match_unicorn_through_the_table() {
             words: &[B(1)],
             res: Res::Eax,
         },
+        // formerly held (their locals were Rust arrays), now in the
+        // table with an AlignedFrame on the game stack
+        Case {
+            name: "rcuiClampVector",
+            addr: 0x0093_cd20,
+            conv: Conv::Cdecl,
+            ecx: W(0),
+            words: &[B(0), B(1), W(0xbf80_0000), W(0x3f80_0000)],
+            res: Res::Mem,
+        },
+        Case {
+            name: "rcuiInvertRigidMatrix",
+            addr: 0x0093_d090,
+            conv: Conv::Cdecl,
+            ecx: W(0),
+            words: &[B(0), B(1)],
+            res: Res::Mem,
+        },
+        Case {
+            name: "rcuiProjectToInt",
+            addr: 0x0093_d710,
+            conv: Conv::Cdecl,
+            ecx: W(0),
+            words: &[B(0), B(1), B(2), W(1)],
+            res: Res::St0,
+        },
     ];
     let mut ported = ffx_host::boot_with(&exe, ffx_host::ports::ported()).unwrap();
     let mut original = ffx_host::boot_with(&exe, Table::new()).unwrap();
@@ -281,6 +327,7 @@ fn ported_functions_match_unicorn_through_the_table() {
                 );
                 assert_eq!(x, y, "{}: ST0", case.name);
             }
+            Res::Mem => {}
         }
         assert_eq!(
             snapshot(&ported, &pb),

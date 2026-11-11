@@ -240,9 +240,30 @@ the table: on x86_64 that address is outside the arena, and even on i686
 Unicorn doesn't map the host stack. `tools/host-ports.py` lists them
 (their bodies, or same-file helpers and `macro_rules!` macros they name,
 transitively) in `crates/ffx-host-ports/src/held.rs`; they stay out of the
-table and their originals run in Unicorn. 305 on 2026-10-29: each becomes
-portable when its local becomes a `StackFrame`. Rerun the tool after
-merging `ported!` lines; check-ported fails while the list is stale.
+table and their originals run in Unicorn. 305 on 2026-10-29, **0 since
+WP6 (2026-11-12)**: every such local is game memory now, through the
+frame types of `ported/mod.rs`, which live on the thread's stack in the
+hook and on the game thread's stack in the arena here
+(`Router::frame_alloc`):
+
+- `StackFrame::<W>`: `W` zeroed words (a scalar out-parameter, a word
+  array);
+- `AlignedFrame::<N>`: `N` zeroed bytes, 16-byte aligned (the
+  `#[repr(align(16))]` work blocks and `Locals` of the originals that
+  align their frames; an offset into it is the original's `ebp`);
+- `AllocaFrame`: `alloca`s sized part-way through a bridge (a callback
+  that gets the size: `Settings_Save`/`Load`, the modifier network's
+  blocks, the Phyre pointer arrays past 64 entries); each `alloc` lives
+  until the frame drops (heap blocks in the hook, as before);
+- `with_frame(bytes, f)`: a run-time size known before the call
+  (`yiPartChainToOMD`'s 16 KB VIF buffer);
+- `shim_scratch()`: two words per thread that outlive the call
+  (`TOGetChangeMacroAddress` returns a pointer into them; the router's
+  `Scratch::Shim` block here).
+
+A value the port reads back from such a frame is read through `mem()`
+(the hook read the Rust local). The tool still runs in check-ported, so a
+new shim that takes a local's address shows up as held again.
 
 The tool missed one until host-battle (2026-10-29): battle.rs's
 `regist_signal`, which every shim using its `script!` macro reaches
@@ -1877,12 +1898,15 @@ runs past the third frame (the Unicorn abort).
    the D3D11 layer, the AS3 calls get the game's answers, the value refs
    and paths work ("Iggy", "Iggy's screens drawn"). Left: Ruffle draws no
    Change parameters rows (iggy-menus-9).
-4. **The `ported!` lists in the table**: done (2026-10-29, above, "One
+4. Done: **the `ported!` lists in the table** (2026-10-29, above, "One
    source of truth"), and the speed-up the profile promised (below,
-   "With the table"). Left: the held shims (their locals to
-   `StackFrame`), the hook-only wrappers that aren't `ported!` lines
-   (`MsScreenProcess`'s `gfx::live`, `rcbgGuideUpdateEx`'s minimap,
-   `renderWorldCulledSorted`).
+   "With the table"). WP6 (2026-11-12): the held shims are 0 (above,
+   "Held shims"), and the three hook-only wrappers' ports
+   (`MsScreenProcess` inside `gfx::live`, `rcbgGuideUpdateEx` inside the
+   minimap, `renderWorldCulledSorted` inside the capture's
+   `world::render_world`) are `wrapper_owned!` lines
+   (`ported/wrapped_ports.rs`): no hook in the 32-bit game, where the
+   wrappers keep the addresses, and table entries here.
 5. Done (2026-10-29): the DLLs' x87 maths is exact (above, "x87"), and
    structured exceptions and C++ `throw`/`catch` dispatch through the SEH
    chain (above, "Exceptions").

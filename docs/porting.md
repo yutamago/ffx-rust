@@ -271,7 +271,14 @@ Both are ported without new machinery in the bridges (M5 round
 - **Locals at fixed offsets** next to the alloca (the adapter, output and
   count `Renderer_SetDisplayMode` hands the DXGI calls, the screenshot's
   writer object) stay a `StackFrame` laid out at the original's `ebp`
-  offsets, as before.
+  offsets, as before. A block the original aligns to 16 bytes, or sizes
+  in bytes, is an `AlignedFrame::<N>`.
+- **An alloca the bridge sizes itself** (it calls a `buffer(n)` callback
+  part-way through, after the calls that give `n`): an `AllocaFrame`
+  (`let mut a = AllocaFrame::new(); bridge(.., |n| a.alloc(n))`), whose
+  blocks live until it drops. Never a `Vec`'s address: `ffx-host` can't
+  run a shim that hands the game a Rust address (`docs/host.md`, "Held
+  shims"; `tools/host-ports.py`, run by check-ported).
 - **A `va_list`** is a pointer into the caller's argument words: declare
   the named arguments and take `slots` (`fn shim(a, b; slots: u32)`,
   `docs/workflow.md`, "Argument slots"); the first variable word is at
