@@ -95,6 +95,7 @@ pub mod r41;
 pub mod r42;
 pub mod r43;
 pub mod r44;
+pub mod r46;
 pub mod r9_load;
 pub mod r9_misc;
 pub mod r9_summon;
@@ -3448,6 +3449,16 @@ ports! {
     "r44 summon task 0164" => r44::SUMMON_TASK_0164, r44::summon_task_0164;
     "r44 summon task 0155" => r44::SUMMON_TASK_0155, r44::summon_task_0155;
     // round 44 (magic-r44): end
+    // round 46 (magic-r46)
+    "r46 camera task 0070" => r46::CAMERA_TASK_0070, r46::camera_task_0070;
+    "r46 main task 0152" => r46::MAIN_TASK_0152, r46::main_task_0152;
+    "r46 summon main 0155" => r46::SUMMON_MAIN_0155, r46::summon_main_0155;
+    "r46 summon main 0164" => r46::SUMMON_MAIN_0164, r46::summon_main_0164;
+    "r46 main task 0042" => r46::MAIN_TASK_0042, r46::main_task_0042;
+    "r46 main task 0071" => r46::MAIN_TASK_0071, r46::main_task_0071;
+    "r46 scene task 0071" => r46::SCENE_TASK_0071, r46::scene_task_0071;
+    "r46 main task 0070" => r46::MAIN_TASK_0070, r46::main_task_0070;
+    // round 46 (magic-r46): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
     // round 34 (magic-r34)

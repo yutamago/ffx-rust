@@ -14,15 +14,16 @@ const ONE: u32 = 0x3f80_0000;
 /// [`main_task_0533`]'s code offset, frame and record: `base` is `E -
 /// 0xc` (the aligned frame `E` below the three pushes, so `[esp + x]` is
 /// `base + x` with nothing pushed), `r` the task's record `R`.
-struct Ctx {
+struct Ctx<'a> {
     f: u32,
     base: u32,
     r: u32,
+    lay: &'a Main0533,
 }
 
-impl Ctx {
+impl Ctx<'_> {
     fn w(&self, img: &Image, o: u32) -> u32 {
-        img.word(self.f + o)
+        img.word(self.f + self.lay.m(o))
     }
 
     fn k<G: Game>(&self, g: &G, img: &Image, o: u32) -> f32 {
@@ -34,7 +35,23 @@ impl Ctx {
     }
 
     fn target(&self, img: &Image, o: u32) -> u32 {
-        img.rel32_target(self.f + o)
+        img.rel32_target(self.f + self.lay.m(o))
+    }
+
+    /// The run of constant stores from `from` to `to` (0533's offsets).
+    fn abs<G: Game>(&self, g: &mut G, img: &Image, from: u32, to: u32) {
+        abs_stores(g, img, self.f, self.lay.m(from), self.lay.m(to));
+    }
+
+    /// The frame local `base + o` (0533's place): 152's frame is 8 bytes
+    /// bigger, its locals below `+0x1c` 4 bytes on, the others 8.
+    fn l(&self, o: u32) -> u32 {
+        self.base
+            + if self.lay.kind == 152 {
+                o + if o >= 0x1c { 8 } else { 4 }
+            } else {
+                o
+            }
     }
 
     /// Slot `n` through the imports pointer the instruction at operand
@@ -132,7 +149,7 @@ impl Ctx {
     /// Returns the flags.
     fn flags<G: Game>(&self, g: &mut G, img: &Image, (o, wo): (u32, u32), run: (u32, u32)) -> u32 {
         let fl = self.gw(g, img, o) | 7;
-        abs_stores(g, img, self.f, run.0, run.1);
+        self.abs(g, img, run.0, run.1);
         g.write::<u32>(self.w(img, wo), fl);
         fl
     }
@@ -162,7 +179,7 @@ impl Ctx {
     /// The node `n` freed and unlinked through the local `base + loc` (the
     /// call at `c`). Returns its `eax`.
     fn free<G: Game>(&self, g: &mut G, img: &Image, c: u32, loc: u32, n: u32, eax: u32) -> u32 {
-        let p = self.base + loc;
+        let p = self.l(loc);
         g.write::<u32>(p, n);
         let ff = Frame {
             at: self.target(img, c),
@@ -223,11 +240,40 @@ impl Ctx {
 
     /// A record `[a, b, c, d, e, n]` at `base + 0x28`.
     fn rec6<G: Game>(&self, g: &mut G, words: [u32; 6]) -> u32 {
-        let rec = self.base + 0x28;
+        let rec = self.l(0x28);
         for (i, v) in (0u32..).zip(words) {
             g.write::<u32>(rec + 4 * i, v);
         }
         rec
+    }
+}
+
+/// [`main_task_0533`]'s layout in a copy: the piecewise map of 0533's
+/// code offsets onto the copy's (`(start, here)`: from `start` on an
+/// offset `o` is `o - start + here`) and the copy's kind (533, or 152 for
+/// `magic_0152`'s copy: [`main_task_0533_with`]).
+pub struct Main0533 {
+    pub map: &'static [(u32, u32)],
+    pub kind: u16,
+}
+
+impl Main0533 {
+    /// `magic_0533`'s own.
+    pub const OWN: Main0533 = Main0533 {
+        map: &[],
+        kind: 533,
+    };
+
+    /// `magic_0533`'s offset `o` in this copy.
+    #[must_use]
+    pub fn m(&self, o: u32) -> u32 {
+        let mut r = o;
+        for &(start, here) in self.map {
+            if o >= start {
+                r = o - start + here;
+            }
+        }
+        r
     }
 }
 
@@ -256,16 +302,47 @@ impl Ctx {
 ///   unlinked.
 ///
 /// Returns `eax` as the original leaves it.
-#[allow(clippy::too_many_lines)] // the original's dispatch, in order
 pub fn main_task_0533<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    main_task_0533_with(g, img, fr, &Main0533::OWN)
+}
+
+/// [`main_task_0533`] on a copy's layout ([`Main0533`]). Kind 152
+/// (`magic_0152`'s main task, 0x10009a90, 7490 bytes): a frame 8 bytes
+/// bigger; every exit runs slot 531 `(G, &K)` and sets a float word to
+/// 1.0 (slot 531's `eax` returned); the character shown inline (0x5a's
+/// slot 257/296); 0x5a's effect node on a fixed word; 0x14's last bone
+/// sets `G_S` 10 at count 0x2c, before its wait; 0x20's slot 288 asks
+/// for 0xb and slot 296 runs on every byte listed; 0x28 takes `K` off
+/// `R + 0xd3c` when slot 520 answers 0x18b0046; 0x33 sets `G_S` after
+/// the release.
+pub fn main_task_0533_with<G: Game>(g: &mut G, img: &Image, fr: &Frame, lay: &Main0533) -> Ret {
     let f = fr.at;
-    // push ebp; and esp, -8; sub esp, 0x34; three pushes
-    let e = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0x34);
+    // push ebp; and esp, -8; sub esp, 0x34 (0x3c in 152); three pushes
+    let size = if lay.kind == 152 { 0x3c } else { 0x34 };
+    let e = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(size);
     let base = e.wrapping_sub(0xc);
     let task = fr.arg(g, 0);
     let r = g.read::<u32>(task + 4);
-    g.write::<u32>(base + 0xc, r);
-    let c = Ctx { f, base, r };
+    let c = Ctx { f, base, r, lay };
+    g.write::<u32>(c.l(0xc), r);
+    let eax = main_body(g, img, &c, task);
+    if lay.kind != 152 {
+        return Ret::eax(eax);
+    }
+    // the common exit: slot 531 `(G, &K)`, a float word 1.0
+    // (152's own offsets: 0533 has no such block)
+    let w = |o: u32| img.word(f + o);
+    let a = g.read::<u32>(w(0x156));
+    // call width: 2
+    let eax = g.call(slot_target(g, w(0x14b), 531), 0, &[a, w(0x150)]).eax;
+    abs_stores(g, img, f, 0x165, 0x16f);
+    Ret::eax(eax)
+}
+
+/// [`main_task_0533_with`]'s states. Returns `eax` as the original leaves
+/// it at its exit.
+#[allow(clippy::too_many_lines)] // the original's dispatch, in order
+fn main_body<G: Game>(g: &mut G, img: &Image, c: &Ctx, task: u32) -> u32 {
     let x = add(c.rf(g, 0x290c), c.k(g, img, 0x22));
     let n = c.rd(g, 0x2918).wrapping_add(1);
     c.wr(g, 0x2918, n);
@@ -278,14 +355,14 @@ pub fn main_task_0533<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         if state >= 0x2710 {
             if state == 0x2710 {
                 c.set(g, 0x2711);
-                abs_stores(g, img, f, 0x1c01, 0x1c0b);
+                c.abs(g, img, 0x1c01, 0x1c0b);
             } else if state != 0x2711 {
-                return Ret::eax(state);
+                return state;
             }
-            return Ret::eax(end_0533(g, img, &c, task));
+            return end_0533(g, img, c, task);
         }
         if state > 0x65 {
-            return Ret::eax(state);
+            return state;
         }
         let tb = img.word(c.w(img, 0x72) + state) & 0xff;
         eax = tb;
@@ -304,7 +381,7 @@ pub fn main_task_0533<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
             }
             0x65 => {
                 if c.count(g) < 0x3c {
-                    return Ret::eax(tb);
+                    return tb;
                 }
                 c.wr(g, 0x290c, 0);
                 c.set(g, 0x5a);
@@ -319,60 +396,60 @@ pub fn main_task_0533<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
                     0,
                 );
                 let fl = (c.gw(g, img, 0x169) | 6) | 1;
-                abs_stores(g, img, f, 0x176, 0x180);
+                c.abs(g, img, 0x176, 0x180);
                 g.write::<u32>(c.w(img, 0x181), fl);
                 c.wr(g, 0x2918, 0);
                 c.up(g);
-                return Ret::eax(fl);
+                return fl;
             }
             0x1e => {
                 c.up(g);
-                return Ret::eax(tb);
+                return tb;
             }
             0x5a => {
-                eax = show_0533(g, img, &c);
+                eax = show_0533(g, img, c);
                 if c.before_t1(g, img, 0x2ac) {
-                    return Ret::eax(eax);
+                    return eax;
                 }
-                return Ret::eax(model_0533(g, img, &c));
+                return model_0533(g, img, c);
             }
             0x5b => {
                 if c.before_t1(g, img, 0x2ac) {
-                    return Ret::eax(tb);
+                    return tb;
                 }
-                return Ret::eax(model_0533(g, img, &c));
+                return model_0533(g, img, c);
             }
-            0x14 => return Ret::eax(bones_0533(g, img, &c, tb)),
+            0x14 => return bones_0533(g, img, c, tb),
             0x1f => {
                 if c.count(g) < 7 {
-                    return Ret::eax(tb);
+                    return tb;
                 }
-                return Ret::eax(fade_0533(g, img, &c));
+                return fade_0533(g, img, c);
             }
-            0x20 => return Ret::eax(down_0533(g, img, &c)),
-            0x28 => return Ret::eax(handles_or_wait_0533(g, img, &c, tb)),
-            0x32 => return Ret::eax(check_0533(g, img, &c)),
-            0x33 => return Ret::eax(steps_0533(g, img, &c, tb)),
-            0x34 => return Ret::eax(step_up_0533(g, img, &c)),
-            0x35 => return Ret::eax(step_down_0533(g, img, &c, tb)),
-            0x36 => return Ret::eax(handles_off_0533(g, img, &c)),
-            0x37 => return Ret::eax(frees_0533(g, img, &c, tb)),
-            0x38 => return Ret::eax(statics_0533(g, img, &c)),
-            0x39 | 0x3a => return Ret::eax(waits_0533(g, img, &c, state, tb)),
+            0x20 => return down_0533(g, img, c),
+            0x28 => return handles_or_wait_0533(g, img, c, tb),
+            0x32 => return check_0533(g, img, c),
+            0x33 => return steps_0533(g, img, c, tb),
+            0x34 => return step_up_0533(g, img, c),
+            0x35 => return step_down_0533(g, img, c, tb),
+            0x36 => return handles_off_0533(g, img, c),
+            0x37 => return frees_0533(g, img, c, tb),
+            0x38 => return statics_0533(g, img, c),
+            0x39 | 0x3a => return waits_0533(g, img, c, state, tb),
             0x46 => {
                 let h = c.gw(g, img, 0x1b18);
                 // call width: 1
                 let eax = g.call(c.slot(g, img, 0x1b12, 546), 0, &[h]).eax;
                 c.up(g);
-                abs_stores(g, img, f, 0x1b2d, 0x1b37);
+                c.abs(g, img, 0x1b2d, 0x1b37);
                 c.wr(g, 0x2910, 0);
-                return Ret::eax(eax);
+                return eax;
             }
             0x47 => {
                 if c.count(g) < 0xb2 {
-                    return Ret::eax(tb);
+                    return tb;
                 }
-                abs_stores(g, img, f, 0x1b63, 0x1b6d);
+                c.abs(g, img, 0x1b63, 0x1b6d);
                 c.call_release(g, img, (0x1b6e, 0x1b5a, 0xc8), (0x1b7c, 0x1b74), 0);
                 let z = c.wait_549(g, img, 0x1b81);
                 c.effect(
@@ -385,16 +462,16 @@ pub fn main_task_0533<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
                 let fl = c.flags(g, img, (0x1bad, 0x1bc5), (0x1bba, 0x1bc4));
                 c.set(g, 0x50);
                 c.wr(g, 0x2918, 0);
-                return Ret::eax(fl);
+                return fl;
             }
             0x50 => {
                 if c.count(g) <= 0x7d {
-                    return Ret::eax(tb);
+                    return tb;
                 }
                 c.set(g, 0x2710);
                 state = 0x2710;
             }
-            _ => return Ret::eax(eax),
+            _ => return eax,
         }
     }
 }
@@ -407,7 +484,7 @@ fn end_0533<G: Game>(g: &mut G, img: &Image, c: &Ctx, task: u32) -> u32 {
     // call width: 1
     let eax = g.call(c.slot(g, img, 0x108, 30), 0, &[h]).eax;
     crate::l3_common::list_unlink_current(g, img, c.target(img, 0x11b), eax);
-    let rec = c.base + 0x24;
+    let rec = c.l(0x24);
     g.write::<u32>(rec, c.w(img, 0x127));
     let mf = Frame {
         at: c.target(img, 0x12c),
@@ -426,9 +503,13 @@ fn end_0533<G: Game>(g: &mut G, img: &Image, c: &Ctx, task: u32) -> u32 {
 fn show_0533<G: Game>(g: &mut G, img: &Image, c: &Ctx) -> u32 {
     let f = c.f;
     let w = |o: u32| c.w(img, o);
-    crate::l3_common::chr_show(g, img, c.target(img, 0x19d));
+    if c.lay.kind == 152 {
+        chr_show_152(g, img, c.f);
+    } else {
+        crate::l3_common::chr_show(g, img, c.target(img, 0x19d));
+    }
     let a = c.at(0xd1c);
-    abs_stores(g, img, f, 0x1ae, 0x1cc);
+    c.abs(g, img, 0x1ae, 0x1cc);
     crate::sb_misc::node_append(g, img, c.target(img, 0x1cd), a, w(0x1a8), 0);
     // call width: 2
     g.call(c.slot(g, img, 0x1de, 325), 0, &[c.at(0xd38), w(0x1d8)]);
@@ -449,11 +530,35 @@ fn show_0533<G: Game>(g: &mut G, img: &Image, c: &Ctx) -> u32 {
     c.owned(g, img, (0x237, ebx, list), [w(0x208), a, w(0x1fc), b], sp);
     c.particle(g, img, (0x24b, c.at(0xad0)), (ebx, 4));
     c.wait_549(g, img, 0x253);
-    c.effect(g, img, (0x277, w(0x272)), (ebx, w(0x26c), 6), 0);
+    // (152 pushes the word the record's `+0xbd0` is in the game: an
+    // immediate)
+    let a = if c.lay.kind == 152 {
+        img.word(f + 0x2cf)
+    } else {
+        ebx
+    };
+    c.effect(g, img, (0x277, w(0x272)), (a, w(0x26c), 6), 0);
     let fl = c.flags(g, img, (0x27c, 0x294), (0x289, 0x293));
     c.up(g);
-    abs_stores(g, img, f, 0x29e, 0x2a8);
+    c.abs(g, img, 0x29e, 0x2a8);
     fl
+}
+
+/// [`main_task_0533_with`] kind 152's character shown, inline
+/// ([`chr_show`](crate::l3_common::chr_show) on 152's operands at `+0x1bc`):
+/// slot 257 `(G_CHR, 1)` with bit 0 of the flag byte, else slot 296
+/// `(G_ID, 0)`. Returns the slot's `eax`.
+fn chr_show_152<G: Game>(g: &mut G, img: &Image, f: u32) -> u32 {
+    let w = |o: u32| img.word(f + o);
+    if g.read::<u8>(w(0x1be)) & 1 != 0 {
+        let chr = g.read::<u32>(w(0x1d4));
+        // call width: 2
+        g.call(slot_target(g, w(0x1c4), 257), 0, &[chr, 1]).eax
+    } else {
+        let id = g.read::<u32>(w(0x1e4));
+        // call width: 2
+        g.call(slot_target(g, w(0x1c4), 296), 0, &[id, 0]).eax
+    }
 }
 
 /// [`main_task_0533`]'s state 0x5b past its wait: the summon's handle
@@ -462,7 +567,6 @@ fn show_0533<G: Game>(g: &mut G, img: &Image, c: &Ctx) -> u32 {
 /// then the four bones of state 0x14. Returns 0x14's `eax`.
 #[allow(clippy::too_many_lines)] // the original's steps, in order
 fn model_0533<G: Game>(g: &mut G, img: &Image, c: &Ctx) -> u32 {
-    let f = c.f;
     let w = |o: u32| c.w(img, o);
     let base = c.base;
     // call width: 2
@@ -501,7 +605,7 @@ fn model_0533<G: Game>(g: &mut G, img: &Image, c: &Ctx) -> u32 {
         c.wr(g, o, v);
     }
     // the bones: four words in the frame step on per bone
-    let (p10, p14, p18) = (base + 0x10, base + 0x14, base + 0x18);
+    let (p10, p14, p18) = (c.l(0x10), c.l(0x14), c.l(0x18));
     g.write::<u32>(p18, w(0x406));
     g.write::<u32>(p14, w(0x40e));
     g.write::<u32>(p10, w(0x416));
@@ -581,7 +685,7 @@ fn model_0533<G: Game>(g: &mut G, img: &Image, c: &Ctx) -> u32 {
             break;
         }
     }
-    abs_stores(g, img, f, 0x50d, 0x535);
+    c.abs(g, img, 0x50d, 0x535);
     for o in [0x2914u32, 0x2918, 0x2910] {
         c.wr(g, o, 0);
     }
@@ -665,7 +769,7 @@ fn bones_0533<G: Game>(g: &mut G, img: &Image, c: &Ctx, eax_in: u32) -> u32 {
         let out = g.call(c.slot(g, img, 0x740, 307), 0, &[]);
         let s = f32::from_bits(crate::sa_summon::st0_f32(out));
         // fstp [esp + 0x34]: `E + 0x10`
-        g.write::<f32>(base + 0x1c, s);
+        g.write::<f32>(c.l(0x1c), s);
         let x = add(
             mul(sub(s, c.k(g, img, 0x75a)), c.k(g, img, 0x76b)),
             c.k(g, img, 0x778),
@@ -707,6 +811,13 @@ fn bones_0533<G: Game>(g: &mut G, img: &Image, c: &Ctx, eax_in: u32) -> u32 {
         c.wr(g, 0x2910, 0);
         eax = i.wrapping_mul(5);
     }
+    if c.lay.kind == 152 {
+        // mov eax, G_S; cmp count, 0x2c; cmove eax, 10; mov G_S, eax
+        let n = c.count(g);
+        let gs = img.word(f + 0x88c);
+        eax = if n == 0x2c { 0xa } else { g.read::<u32>(gs) };
+        g.write::<u32>(gs, eax);
+    }
     if c.count(g) < 0x2d {
         return eax;
     }
@@ -716,16 +827,18 @@ fn bones_0533<G: Game>(g: &mut G, img: &Image, c: &Ctx, eax_in: u32) -> u32 {
     g.write::<u32>(w(0x851), x);
     let x = sub(c.k(g, img, 0x859), c.k(g, img, 0x861));
     let h = c.gw(g, img, 0x86e);
-    abs_stores(g, img, f, 0x872, 0x87c);
+    c.abs(g, img, 0x872, 0x87c);
     g.write::<f32>(w(0x880), x);
-    abs_stores(g, img, f, 0x884, 0x88e);
-    abs_stores(g, img, f, 0x894, 0x89e);
+    c.abs(g, img, 0x884, 0x88e);
+    if c.lay.kind != 152 {
+        c.abs(g, img, 0x894, 0x89e);
+    }
     // call width: 3
     g.call(c.slot(g, img, 0x839, 37), 0, &[h, 1, 0xb3]);
     let h = c.gw(g, img, 0x8b2);
     // call width: 2
     g.call(c.slot(g, img, 0x8a1, 670), 0, &[h, 0]);
-    let p = base + 0x1c;
+    let p = c.l(0x1c);
     for k in 0..4u32 {
         g.write::<u32>(p, c.at(0x924 + 0x28 * k));
         crate::m0042::unlink(g, img, c.target(img, 0x8d9), p);
@@ -769,9 +882,8 @@ fn bones_0533<G: Game>(g: &mut G, img: &Image, c: &Ctx, eax_in: u32) -> u32 {
 /// effect node, slot 719's handle into slot 551, a second effect node;
 /// on, `G_S` 0x64. Returns the second node's flags.
 fn fade_0533<G: Game>(g: &mut G, img: &Image, c: &Ctx) -> u32 {
-    let f = c.f;
     let w = |o: u32| c.w(img, o);
-    abs_stores(g, img, f, 0xb20, 0xb2a);
+    c.abs(g, img, 0xb20, 0xb2a);
     c.wr(g, 0x4c, 0);
     c.wr(g, 0x20, 0);
     // call width: 2
@@ -789,7 +901,7 @@ fn fade_0533<G: Game>(g: &mut G, img: &Image, c: &Ctx) -> u32 {
     c.effect(g, img, (0xbb5, w(0xbb0)), (ebx, w(0xbaa), 7), 0);
     let fl = c.gw(g, img, 0xbba) | 7;
     g.write::<u32>(w(0xbc5), fl);
-    abs_stores(g, img, f, 0xbd0, 0xbda);
+    c.abs(g, img, 0xbd0, 0xbda);
     // call width: 3
     let h = g.call(c.slot(g, img, 0xbca, 719), 0, &[w(0xbe3), 6, 8]).eax;
     // call width: 3
@@ -797,7 +909,7 @@ fn fade_0533<G: Game>(g: &mut G, img: &Image, c: &Ctx) -> u32 {
     c.effect(g, img, (0xc10, w(0xc0b)), (ebx, w(0xc05), 2), 0);
     let fl = c.flags(g, img, (0xc15, 0xc2d), (0xc22, 0xc2c));
     c.up(g);
-    abs_stores(g, img, f, 0xc37, 0xc41);
+    c.abs(g, img, 0xc37, 0xc41);
     fl
 }
 
@@ -809,7 +921,6 @@ fn fade_0533<G: Game>(g: &mut G, img: &Image, c: &Ctx) -> u32 {
 fn down_0533<G: Game>(g: &mut G, img: &Image, c: &Ctx) -> u32 {
     let f = c.f;
     let w = |o: u32| c.w(img, o);
-    let base = c.base;
     let m = c.rd(g, 0x78);
     if m.cast_signed() >= 0 {
         let m = m.wrapping_add(0xffff_ffc0);
@@ -818,7 +929,7 @@ fn down_0533<G: Game>(g: &mut G, img: &Image, c: &Ctx) -> u32 {
     }
     let mut eax = m;
     if c.count(g) == 0x77 {
-        abs_stores(g, img, f, 0xc6c, 0xc76);
+        c.abs(g, img, 0xc6c, 0xc76);
         crate::sa_misc::leave(g, c.at(0x58), eax);
         let x1 = mul(c.k(g, img, 0xc7f), c.k(g, img, 0xc87));
         let x = sub(c.k(g, img, 0xc8f), x1);
@@ -827,11 +938,33 @@ fn down_0533<G: Game>(g: &mut G, img: &Image, c: &Ctx) -> u32 {
         c.wr(g, 0x20, 0);
         c.call_release(g, img, (0xcb9, 0xc95, 0xb0), (0xcc7, 0xcbf), 0);
         // slot 296 for each byte slot 288 lists (the count at `E + 0xc`)
-        let n_at = base + 0x18;
+        let n_at = if c.lay.kind == 152 {
+            c.base + 0x20
+        } else {
+            c.l(0x18)
+        };
+        let ask = if c.lay.kind == 152 { 0xb } else { 0x10 };
         // call width: 2
-        let list = g.call(c.slot(g, img, 0xcd1, 288), 0, &[0x10, n_at]).eax;
+        let list = g.call(c.slot(g, img, 0xcd1, 288), 0, &[ask, n_at]).eax;
         eax = list;
-        let mut n = g.read::<i32>(n_at);
+        if c.lay.kind == 152 {
+            let mut i = 0i32;
+            let mut at = list;
+            while i < g.read::<i32>(n_at) {
+                let b = u32::from(g.read::<u8>(at));
+                // call width: 2
+                eax = g
+                    .call(slot_target(g, img.word(f + 0xd64), 296), 0, &[b, 0])
+                    .eax;
+                i += 1;
+                at = at.wrapping_add(1);
+            }
+        }
+        let mut n = if c.lay.kind == 152 {
+            0
+        } else {
+            g.read::<i32>(n_at)
+        };
         let mut i = 0i32;
         let mut at = list;
         while i < n {
@@ -868,7 +1001,6 @@ fn down_0533<G: Game>(g: &mut G, img: &Image, c: &Ctx) -> u32 {
 /// the original leaves it.
 #[allow(clippy::too_many_lines)] // the original's steps, in order
 fn handles_or_wait_0533<G: Game>(g: &mut G, img: &Image, c: &Ctx, eax: u32) -> u32 {
-    let f = c.f;
     let w = |o: u32| c.w(img, o);
     let base = c.base;
     if c.before(g, img, 0xd99) {
@@ -881,6 +1013,16 @@ fn handles_or_wait_0533<G: Game>(g: &mut G, img: &Image, c: &Ctx, eax: u32) -> u
     let x = add(c.rf(g, 0xd3c), c.k(g, img, 0xdde));
     c.wr(g, 0xd70, 0x3e19_999a);
     g.write::<f32>(c.at(0xd3c), x);
+    if c.lay.kind == 152 {
+        // call width: 0
+        let a = g
+            .call(slot_target(g, img.word(c.f + 0xe41), 520), 0, &[])
+            .eax;
+        if a == 0x018b_0046 {
+            let y = sub(c.rf(g, 0xd3c), g.read::<f32>(img.word(c.f + 0xe75)));
+            g.write::<f32>(c.at(0xd3c), y);
+        }
+    }
     c.particle(g, img, (0xe0a, c.at(0xad0)), (c.at(0xbd0), 6));
     let y = mul(c.k(g, img, 0xe12), c.k(g, img, 0xe1a));
     g.write::<f32>(w(0xe29), y);
@@ -888,7 +1030,7 @@ fn handles_or_wait_0533<G: Game>(g: &mut G, img: &Image, c: &Ctx, eax: u32) -> u
     g.call(c.slot(g, img, 0xe1f, 26), 0, &[0x3010, 1]);
     let list = w(0xe41);
     let (a, b) = (c.at(0x1218), c.at(0x1244));
-    g.write::<u32>(base + 0x24, a);
+    g.write::<u32>(c.l(0x24), a);
     crate::sb_misc::node_append(g, img, c.target(img, 0xe4c), a, list, 0);
     for (o, v) in [
         (0x1234u32, 0),
@@ -898,9 +1040,9 @@ fn handles_or_wait_0533<G: Game>(g: &mut G, img: &Image, c: &Ctx, eax: u32) -> u
     ] {
         c.wr(g, o, v);
     }
-    g.write::<u32>(base + 0x20, b);
+    g.write::<u32>(c.l(0x20), b);
     crate::sb_misc::node_append(g, img, c.target(img, 0xe85), b, list, 0);
-    g.write::<u32>(base + 0x1c, c.at(0xf80));
+    g.write::<u32>(c.l(0x1c), c.at(0xf80));
     for (o, v) in [
         (0x1260u32, ONE),
         (0x1264, ONE),
@@ -909,7 +1051,7 @@ fn handles_or_wait_0533<G: Game>(g: &mut G, img: &Image, c: &Ctx, eax: u32) -> u
     ] {
         c.wr(g, o, v);
     }
-    let (p10, p14, p18, p1c) = (base + 0x10, base + 0x14, base + 0x18, base + 0x1c);
+    let (p10, p14, p18, p1c) = (c.l(0x10), c.l(0x14), c.l(0x18), c.l(0x1c));
     g.write::<u32>(p14, 0);
     g.write::<u32>(p18, c.at(0xd80));
     g.write::<u32>(p10, 0);
@@ -1002,9 +1144,9 @@ fn handles_or_wait_0533<G: Game>(g: &mut G, img: &Image, c: &Ctx, eax: u32) -> u
         );
         let words = [
             owned,
-            g.read::<u32>(base + 0x24),
+            g.read::<u32>(c.l(0x24)),
             w(0x107a),
-            g.read::<u32>(base + 0x20),
+            g.read::<u32>(c.l(0x20)),
         ];
         let ebx = g.read::<u32>(p1c);
         let sp = base.wrapping_sub(0x28);
@@ -1025,7 +1167,7 @@ fn handles_or_wait_0533<G: Game>(g: &mut G, img: &Image, c: &Ctx, eax: u32) -> u
             break;
         }
     }
-    abs_stores(g, img, f, 0x1101, 0x110b);
+    c.abs(g, img, 0x1101, 0x110b);
     c.set(g, 0x32);
     check_0533(g, img, c)
 }
@@ -1061,11 +1203,16 @@ fn steps_0533<G: Game>(g: &mut G, img: &Image, c: &Ctx, tb: u32) -> u32 {
     let w = |o: u32| c.w(img, o);
     let mut eax = tb;
     if c.count(g) == 1 {
-        abs_stores(g, img, f, 0x1170, 0x117a);
+        if c.lay.kind != 152 {
+            c.abs(g, img, 0x1170, 0x117a);
+        }
         // call width: 2
         g.call(c.slot(g, img, 0x116c, 325), 0, &[c.at(0xa0c), w(0x1166)]);
         // slot 325's words stay under slot 37's
         eax = c.call_release(g, img, (0x118e, 0x1184, 0xb1), (0x119c, 0x1194), 8);
+        if c.lay.kind == 152 {
+            abs_stores(g, img, f, 0x1224, 0x122e);
+        }
     }
     if c.count(g) < 2 {
         return eax;
@@ -1084,7 +1231,7 @@ fn steps_0533<G: Game>(g: &mut G, img: &Image, c: &Ctx, tb: u32) -> u32 {
     c.effect(g, img, (0x1257, w(0x1252)), (ebx, w(0x124c), 8), 0);
     let fl = c.gw(g, img, 0x125c) | 7;
     g.write::<u32>(w(0x1267), fl);
-    abs_stores(g, img, f, 0x1272, 0x127c);
+    c.abs(g, img, 0x1272, 0x127c);
     // call width: 3
     let h = g
         .call(c.slot(g, img, 0x126c, 719), 0, &[w(0x1285), 6, 9])
@@ -1104,11 +1251,10 @@ fn steps_0533<G: Game>(g: &mut G, img: &Image, c: &Ctx, tb: u32) -> u32 {
 /// Returns `eax` as the original leaves it.
 #[allow(clippy::too_many_lines)] // the original's steps, in order
 fn step_up_0533<G: Game>(g: &mut G, img: &Image, c: &Ctx) -> u32 {
-    let f = c.f;
     let w = |o: u32| c.w(img, o);
     let base = c.base;
     let n = c.rd(g, 0x2914);
-    g.write::<u32>(base + 0x1c, n);
+    g.write::<u32>(c.l(0x1c), n);
     let mut eax = n;
     if n.cast_signed() > 0 && c.timer(g) >= c.k(g, img, 0x12d0) {
         let j = n - 1;
@@ -1117,7 +1263,7 @@ fn step_up_0533<G: Game>(g: &mut G, img: &Image, c: &Ctx) -> u32 {
         let node = at(0x24d0);
         c.wr(g, 0x2910, 0);
         c.wr(g, 0x2914, j);
-        g.write::<u32>(base + 0x24, node);
+        g.write::<u32>(c.l(0x24), node);
         let list = w(0x12eb);
         crate::sb_misc::node_append(g, img, c.target(img, 0x1306), node, list, 0);
         #[allow(clippy::cast_precision_loss)] // cvtdq2ps
@@ -1176,7 +1322,7 @@ fn step_up_0533<G: Game>(g: &mut G, img: &Image, c: &Ctx) -> u32 {
     }
     let x = mul(c.k(g, img, 0x1458), c.k(g, img, 0x1460));
     g.write::<f32>(w(0x1479), x);
-    abs_stores(g, img, f, 0x1483, 0x148d);
+    c.abs(g, img, 0x1483, 0x148d);
     // call width: 2
     g.call(c.slot(g, img, 0x1471, 325), 0, &[c.at(0x9e0), w(0x146b)]);
     let h = c.gw(g, img, 0x1496);
@@ -1259,10 +1405,9 @@ fn step_down_0533<G: Game>(g: &mut G, img: &Image, c: &Ctx, eax_in: u32) -> u32 
 /// and 211 on the summon's handle, slot 384 on both handles; the timer
 /// reset, the count reset, on. Returns slot 384's `eax`.
 fn handles_off_0533<G: Game>(g: &mut G, img: &Image, c: &Ctx) -> u32 {
-    let f = c.f;
     let w = |o: u32| c.w(img, o);
     let a = c.gw(g, img, 0x165c);
-    abs_stores(g, img, f, 0x1666, 0x1670);
+    c.abs(g, img, 0x1666, 0x1670);
     // call width: 2
     g.call(c.slot(g, img, 0x1654, 296), 0, &[a, 1]);
     let h = c.gw(g, img, 0x1686);
@@ -1339,25 +1484,24 @@ fn frees_0533<G: Game>(g: &mut G, img: &Image, c: &Ctx, tb: u32) -> u32 {
 /// handle into slot 551, slot 222; on, then 0x39. Returns `eax` as the
 /// original leaves it.
 fn statics_0533<G: Game>(g: &mut G, img: &Image, c: &Ctx) -> u32 {
-    let f = c.f;
     let w = |o: u32| c.w(img, o);
     let last = c.gw(g, img, 0x183e);
-    abs_stores(g, img, f, 0x1842, 0x187d);
+    c.abs(g, img, 0x1842, 0x187d);
     g.write::<u32>(w(0x187e), last);
     if last == w(0x1883) {
-        abs_stores(g, img, f, 0x1889, 0x1893);
+        c.abs(g, img, 0x1889, 0x1893);
     } else {
         g.write::<u32>(last + 4, w(0x1898));
     }
     let k = g.read::<u16>(w(0x189f)).wrapping_add(1);
     g.write::<u16>(w(0x189f), k);
-    abs_stores(g, img, f, 0x18a8, 0x18f5);
+    c.abs(g, img, 0x18a8, 0x18f5);
     c.wr(g, 0x20, 0);
     let x = mul(c.k(g, img, 0x1900), c.k(g, img, 0x1908));
     let h = c.gw(g, img, 0x1915);
     g.write::<f32>(w(0x191d), x);
     let y = mul(c.k(g, img, 0x1925), c.k(g, img, 0x192d));
-    abs_stores(g, img, f, 0x1931, 0x193b);
+    c.abs(g, img, 0x1931, 0x193b);
     g.write::<f32>(w(0x193f), y);
     let z = mul(c.k(g, img, 0x1947), c.k(g, img, 0x194f));
     g.write::<f32>(w(0x1957), z);
@@ -1380,7 +1524,7 @@ fn statics_0533<G: Game>(g: &mut G, img: &Image, c: &Ctx) -> u32 {
     g.write::<u32>(n, w(0x1a43));
     let fl = c.gw(g, img, 0x1a48) | 7;
     g.write::<u32>(w(0x1a53), fl);
-    abs_stores(g, img, f, 0x1a5c, 0x1a66);
+    c.abs(g, img, 0x1a5c, 0x1a66);
     // call width: 3
     let h = g
         .call(c.slot(g, img, 0x1a58, 719), 0, &[w(0x1a6f), 6, 0])
@@ -1405,7 +1549,7 @@ fn waits_0533<G: Game>(g: &mut G, img: &Image, c: &Ctx, state: u32, eax: u32) ->
             return eax;
         }
         c.up(g);
-        abs_stores(g, img, c.f, 0x1ad3, 0x1add);
+        c.abs(g, img, 0x1ad3, 0x1add);
     }
     if c.before(g, img, 0x1ae1) {
         return eax;
