@@ -3877,3 +3877,95 @@ fn actors_sway_0397() {
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
+
+/// `magic_0397` 0x10005480 (`r45::actors_settle_0397`): no actors (the
+/// cookie word back), one and three, each delayed, with no steps, with
+/// steps running out (the actor's mode and slot 528) and left, the spin
+/// reset or not, the yaw and the angles wrapping both ways.
+#[test]
+fn actors_settle_0397() {
+    let Some(mut t) = sa::twin(397) else { return };
+    let f = t.at(0x5480);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    all_stubs(&mut t);
+    rec(&mut t, 235, 1, |m, a| {
+        for i in 0..16 {
+            wf(m, a[0] + 4 * i, if i % 5 == 0 { 1.0 } else { 0.125 });
+        }
+        0x235
+    });
+    for s in [330u32, 328, 329] {
+        rec(&mut t, s, 3, move |m, a| {
+            let x = f32::from_bits(a[2]);
+            for i in 0..16 {
+                let v = rf(m, a[1] + 4 * i) + x * ((i + s) % 3) as f32;
+                wf(m, a[0] + 4 * i, v);
+            }
+            s
+        });
+    }
+    rec(&mut t, 229, 3, |m, a| {
+        let mut x = 0x229u32;
+        for i in 0..4 {
+            x = x.rotate_left(5) ^ m.r32(a[2] + 4 * i) ^ m.r32(a[1] + 4 * i);
+        }
+        x
+    });
+    for (s, n) in [(210u32, 2usize), (211, 2), (217, 2), (255, 2), (528, 2)] {
+        rec(&mut t, s, n, move |_, a| (s << 16) ^ a[0] ^ a[1]);
+    }
+    for s in [277u32, 15, 16, 17] {
+        rec(&mut t, s, 1, move |_, a| (s << 16) ^ a[0]);
+        t.stub_st0(s, move |_, a| 1.0 + f64::from((a[0] ^ s) & 3) * 0.25);
+    }
+    let sel = SCRATCH + 0x180;
+    t.write(sel, &[3, 1, 4, 2]);
+    t.set_u32(w(0x15b), sel);
+    let sc = t.img.rel32_target(f + 0x237);
+    let scw = |o: u32| img.word(sc + o);
+    for (l, objs) in [(0x28, 0x33), (0x74, 0x7f)] {
+        t.set_u32(scw(l), sel);
+        for i in 0..8 {
+            t.set_u32(scw(objs) + 4 * i, 0x0c00 + 3 * i);
+        }
+    }
+    let am = t.img.rel32_target(f + 0x14a);
+    t.set_u32(t.img.word(am + 0x15), sel);
+    for i in 0..0x10 {
+        t.set_u32(t.img.word(am + 0x2e) + 4 * i, 0x0d00 + i);
+    }
+    let s = SCRATCH + 0x1_0000;
+    t.set_u32(w(0x12), s);
+    // (actors, per actor (delay, steps, spin, angles))
+    let cases: [(u32, [(i32, i32, f32, f32); 3]); 5] = [
+        (0, [(0, 3, 0.0, 0.0); 3]),
+        (1, [(0, 5, 0.25, 3.1); 3]),
+        (3, [(2, 0, 0.0, 0.0), (0, 1, -1.0, -3.1), (0, 0, 0.5, 0.0)]),
+        (
+            3,
+            [(0, 1, 3.5, 3.13), (-1, 7, -0.05, -3.13), (1, 2, 0.0, 0.0)],
+        ),
+        (3, [(0, 2, 0.0, 1.0), (0, 2, 0.1, -1.0), (0, 2, -0.2, 2.0)]),
+    ];
+    for (k, (n, recs)) in (0u32..).zip(cases) {
+        t.set_u32(w(0x39), n);
+        for (j, (delay, steps, spin, ang)) in (0u32..).zip(recs) {
+            let m = s + 0x1e90 + 0xac * j;
+            let r = m + 0x14;
+            junk(&mut t, m, 0xac, k + j);
+            floats(&mut t, r + 0x2c, 0x18, k + j);
+            floats(&mut t, r + 0x5c, 0xc, k + j + 3);
+            setf(&mut t, r + 0x4c, ang);
+            setf(&mut t, r + 0x50, -ang);
+            setf(&mut t, r + 0x7c, 3.0 - j as f32 * 3.2);
+            setf(&mut t, r + 0x80, spin);
+            setf(&mut t, r + 0x88, 1.5 + j as f32);
+            setf(&mut t, r + 0x8c, 0.75 * k as f32 - 1.0);
+            t.set_u32(r + 0x90, steps.cast_unsigned());
+            t.set_u32(r + 0x94, delay.cast_unsigned());
+        }
+        ownb::dirty_stack(&mut t, 0x5480 + k, &[]);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}

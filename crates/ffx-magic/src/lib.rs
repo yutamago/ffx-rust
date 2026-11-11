@@ -3479,6 +3479,7 @@ ports! {
     "r45 objects start 0396" => r45::OBJECTS_START_0396, r45::objects_start_0396;
     "r45 weights step 0387" => r45::WEIGHTS_STEP_0387, r45::weights_step_0387;
     "r45 actors sway 0397" => r45::ACTORS_SWAY_0397, r45::actors_sway_0397;
+    "r45 actors settle 0397" => r45::ACTORS_SETTLE_0397, r45::actors_settle_0397;
     // round 45 (magic-r45): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
