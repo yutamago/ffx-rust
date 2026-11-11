@@ -5991,3 +5991,212 @@ pub const BONE_PLACE_0387: Sig = Sig {
     calls: &[(0xa6, Callee::Any)],
     imports: &[],
 };
+
+/// `magic_0387`'s weights task (0x1000be10, 249 bytes; internal, `ecx` =
+/// the task `N`, `edx` = the owner `O`; a frame of three locals, `l` at
+/// `ebp - 4`): `N` becomes a task (its vtable `VT`, callback `CB`, `N +
+/// 0x14` itself) linked after `*G_LAST` (`N + 4` = `G_HEAD`, the old last
+/// one's `+4` = `N`, `*G_LAST` = `N`, `G_FLAGS` bit 0 cleared); for each
+/// of the owner's `O[0x4dc]` parts (records `O + 0x6c + 0x98 i`) the
+/// count `N[0x28 + 4 i]` = slot 291 `(*G_E, part[0], &l, &l, &l)` less 2,
+/// summed into `N[0x24]`; then each part's weight `N[0x34 + 4 i]` = its
+/// count over the sum (`cvtdq2ps`); `N + 0x40` = `O`, `N + 0x18` 0.
+/// Returns the last weight's end (else the parts' end, else the old
+/// `*G_LAST`).
+pub fn weights_task_0387<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let (n, o) = (fr.ecx, fr.edx);
+    let l = fr.esp.wrapping_sub(8);
+    g.write::<u32>(n + 8, n);
+    g.write::<u32>(n + 4, n);
+    g.write::<u32>(n, w(0x12));
+    g.write::<u32>(n + 0x10, w(0x19));
+    g.write::<u32>(n + 0x14, n);
+    let last = g.read::<u32>(w(0x21));
+    g.write::<u32>(n + 8, last);
+    g.write::<u32>(n + 4, w(0x2b));
+    let last = g.read::<u32>(w(0x30));
+    g.write::<u32>(last.wrapping_add(4), n);
+    let flags = g.read::<u32>(w(0x3b));
+    g.write::<u32>(w(0x3b), flags & !1);
+    g.write::<u32>(w(0x42), n);
+    g.write::<u32>(n + 0x24, 0);
+    let count = |g: &G| g.read::<u32>(o + 0x4dc).cast_signed();
+    let mut eax = last;
+    let mut i = 0i32;
+    let mut p = o + 0x6c;
+    while i < count(g) {
+        let e = g.read::<u32>(w(0x76));
+        let part = g.read::<u32>(p);
+        let c = g
+            .call(slot_target(g, w(0x70), 291), 0, &[e, part, l, l, l])
+            .eax
+            .wrapping_sub(2);
+        g.write::<u32>(n + 0x28 + 4 * i.cast_unsigned(), c);
+        let sum = g.read::<u32>(n + 0x24).wrapping_add(c);
+        g.write::<u32>(n + 0x24, sum);
+        i += 1;
+        p += 0x98;
+        eax = p;
+    }
+    let sum = crate::sb_sse::cvt(g.read::<u32>(n + 0x24));
+    let mut i = 0i32;
+    while i < count(g) {
+        let at = n + 0x28 + 4 * i.cast_unsigned();
+        let x = div(crate::sb_sse::cvt(g.read::<u32>(at)), sum);
+        g.write::<f32>(at + 0xc, x);
+        i += 1;
+        eax = at + 0x10;
+    }
+    g.write::<u32>(n + 0x40, o);
+    g.write::<u32>(n + 0x18, 0);
+    Ret::eax(eax)
+}
+
+/// [`weights_task_0387`].
+pub const WEIGHTS_TASK_0387: Sig = Sig {
+    len: 249,
+    hash: 0x4cd2_38ec_297a_f968,
+    calls: &[],
+    imports: &[],
+};
+
+/// `magic_0387`'s weights step (0x1000bc90, 377 bytes; the callback of
+/// [`weights_task_0387`], cdecl `(T)`, `N = T[4]` the task, `O = N[0x40]`
+/// its owner). By the state `N[0x18]`, with the wait `N[0x1c]`:
+/// - 0: the wait 90, state 1; 1: once the wait is out, state 10;
+/// - 10: the step `N[0x20]` = `0x70 / N[0x24]`, the wait 0, state 11;
+/// - 11 (once the wait is out): `x = frnd() - K` (slot 307; its `f32`
+///   stored over the argument), the first part `i` below `O[0x4dc] - 1`
+///   whose weight `N[0x34 + 4 i]` is above what is left of `x` (each
+///   weight taken off), slot 239 `(*G_E, O[0x6c + 0x98 i], 6)`; the total
+///   `N[0x24]` drops: at 0 the state is 10000, else the part's count
+///   `N[0x28 + 4 i]` drops, the weights are recomputed (count over total)
+///   and the wait is the step;
+/// - 10000: the node `T[0]` is unlinked from its ring (made its own),
+///   state 20000.
+///
+/// States 1 and 10 run on into 10 and 11 the same call. Each pass not
+/// returning early ends with the wait down by one. Returns the last
+/// value in `eax` (the caller's for an unknown state).
+#[allow(clippy::too_many_lines)] // the states
+pub fn weights_step_0387<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let tk = fr.arg(g, 0);
+    let n = g.read::<u32>(tk.wrapping_add(4));
+    let mut eax = fr.eax;
+    let wait_down = |g: &mut G| {
+        let c = g.read::<u32>(n + 0x1c);
+        g.write::<u32>(n + 0x1c, c.wrapping_sub(1));
+    };
+    loop {
+        let state = g.read::<u32>(n + 0x18);
+        match state {
+            0 => {
+                eax = 1;
+                g.write::<u32>(n + 0x1c, 0x5a);
+                g.write::<u32>(n + 0x18, 1);
+                if g.read::<u32>(n + 0x1c).cast_signed() > 0 {
+                    wait_down(g);
+                    return Ret::eax(eax);
+                }
+                g.write::<u32>(n + 0x18, 10);
+            }
+            1 => {
+                eax = 0;
+                if g.read::<u32>(n + 0x1c).cast_signed() > 0 {
+                    wait_down(g);
+                    return Ret::eax(eax);
+                }
+                g.write::<u32>(n + 0x18, 10);
+            }
+            2..=9 => {
+                wait_down(g);
+                return Ret::eax(state - 1);
+            }
+            10 | 11 => {
+                if state == 10 {
+                    let total = g.read::<u32>(n + 0x24).cast_signed();
+                    // idiv: a zero total faults in the original
+                    eax = (0x70 / total).cast_unsigned();
+                    g.write::<u32>(n + 0x1c, 0);
+                    g.write::<u32>(n + 0x20, eax);
+                    eax = 11;
+                    g.write::<u32>(n + 0x18, 11);
+                }
+                if g.read::<u32>(n + 0x1c).cast_signed() > 0 {
+                    wait_down(g);
+                    return Ret::eax(eax);
+                }
+                let r = st0_f32(g.call(slot_target(g, w(0x79), 307), 0, &[]).st0);
+                g.write::<f32>(fr.esp + 4, r);
+                let o = g.read::<u32>(n + 0x40);
+                let mut x = sub(r, g.read::<f32>(w(0x9a)));
+                let last = g.read::<u32>(o + 0x4dc).wrapping_sub(1).cast_signed();
+                let mut i = 0i32;
+                while i < last {
+                    let wt = g.read::<f32>(n + 0x34 + 4 * i.cast_unsigned());
+                    // comiss wt, x; ja: above (ordered) stops
+                    if wt > x {
+                        break;
+                    }
+                    i += 1;
+                    x = sub(x, wt);
+                }
+                let i = i.cast_unsigned();
+                let part = g.read::<u32>((0x98 * i).wrapping_add(o).wrapping_add(0x6c));
+                let e = g.read::<u32>(w(0xda));
+                g.call(slot_target(g, w(0xd4), 239), 0, &[e, part, 6]);
+                let total = g.read::<u32>(n + 0x24).wrapping_sub(1);
+                g.write::<u32>(n + 0x24, total);
+                if total.cast_signed() <= 0 {
+                    g.write::<u32>(n + 0x18, 10000);
+                    continue;
+                }
+                let at = n + 0x28 + 4 * i;
+                let c = g.read::<u32>(at);
+                g.write::<u32>(at, c.wrapping_sub(1));
+                let mut j = 0u32;
+                while j.cast_signed() < g.read::<u32>(g.read::<u32>(n + 0x40) + 0x4dc).cast_signed()
+                {
+                    let c = crate::sb_sse::cvt(g.read::<u32>(n + 0x28 + 4 * j));
+                    let t = crate::sb_sse::cvt(g.read::<u32>(n + 0x24));
+                    g.write::<f32>(n + 0x34 + 4 * j, div(c, t));
+                    j += 1;
+                }
+                eax = g.read::<u32>(n + 0x20);
+                g.write::<u32>(n + 0x1c, eax);
+                wait_down(g);
+                return Ret::eax(eax);
+            }
+            10000 => {
+                let d = g.read::<u32>(tk);
+                let c = g.read::<u32>(d + 4);
+                let x = g.read::<u32>(d + 8);
+                g.write::<u32>(c.wrapping_add(8), x);
+                let c = g.read::<u32>(d + 8);
+                eax = g.read::<u32>(d + 4);
+                g.write::<u32>(c.wrapping_add(4), eax);
+                g.write::<u32>(d + 8, d);
+                g.write::<u32>(d + 4, d);
+                g.write::<u32>(n + 0x18, 20000);
+                wait_down(g);
+                return Ret::eax(eax);
+            }
+            _ => {
+                wait_down(g);
+                return Ret::eax(eax);
+            }
+        }
+    }
+}
+
+/// [`weights_step_0387`].
+pub const WEIGHTS_STEP_0387: Sig = Sig {
+    len: 377,
+    hash: 0x74c2_9d56_50a3_57f8,
+    calls: &[],
+    imports: &[],
+};

@@ -3687,3 +3687,103 @@ fn bone_place_0387() {
         });
     }
 }
+
+/// `magic_0387` 0x1000be10 (`r45::weights_task_0387`, internal): no
+/// parts, one and three (slot 291's counts varied).
+#[test]
+fn weights_task_0387() {
+    let Some(mut t) = sa::twin(387) else { return };
+    let f = t.at(0xbe10);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    all_stubs(&mut t);
+    rec(&mut t, 291, 5, |_, a| 3 + (a[1] & 0xf));
+    let (n, o, last) = (SCRATCH + 0x100, SCRATCH + 0x1000, SCRATCH + 0x200);
+    for (k, parts) in (0u32..).zip([0u32, 1, 3]) {
+        junk(&mut t, n, 0x60, k);
+        junk(&mut t, last, 0x10, k);
+        t.set_u32(w(0x21), last);
+        t.set_u32(w(0x3b), 0x0f0f_0f0f + k);
+        t.set_u32(w(0x76), 0x0e0e_0076);
+        t.set_u32(o + 0x4dc, parts);
+        for j in 0..3u32 {
+            t.set_u32(o + 0x6c + 0x98 * j, 0x0a00 + 5 * j + k);
+        }
+        ownb::dirty_stack(&mut t, 0xbe10 + k, &[]);
+        let call = Call {
+            ecx: n,
+            edx: o,
+            ..Call::default()
+        };
+        t.check(f, call, &[], Eax::Checked, |g, img, fr| {
+            ffx_magic::r45::weights_task_0387(g, img, fr)
+        });
+    }
+}
+
+/// `magic_0387` 0x1000bc90 (`r45::weights_step_0387`): each state (0, 1
+/// waiting and out, 5, 10, 11 waiting and out, the total running out,
+/// 10000, 20000); the random draw landing on each part.
+#[test]
+fn weights_step_0387() {
+    let Some(mut t) = sa::twin(387) else { return };
+    let f = t.at(0xbc90);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    all_stubs(&mut t);
+    let draw = SCRATCH + 0x7e70;
+    rec(&mut t, 307, 0, |_, _| 0x307);
+    t.stub_st0(307, move |m, _| f64::from(f32::from_bits(m.r32(draw))));
+    rec(&mut t, 239, 3, |_, a| 0x0239_0000 ^ a[1]);
+    let (tk, n, o, d) = (
+        SCRATCH + 0x100,
+        SCRATCH + 0x200,
+        SCRATCH + 0x1000,
+        SCRATCH + 0x300,
+    );
+    let (prev, next) = (SCRATCH + 0x340, SCRATCH + 0x380);
+    t.set_u32(w(0xda), 0x0e0e_00da);
+    // (state, wait, total, draw)
+    for (k, (state, wait, total, x)) in (0u32..).zip([
+        (0u32, 0u32, 6u32, 0.0f32),
+        (1, 3, 6, 0.0),
+        (1, 0, 7, 0.2),
+        (5, 2, 6, 0.0),
+        (10, 9, 4, 0.9),
+        (11, 2, 6, 0.0),
+        (11, 0, 6, 0.5),
+        (11, 0, 6, 1.5),
+        (11, 0, 1, 0.1),
+        (10000, 4, 6, 0.0),
+        (20000, 4, 6, 0.0),
+    ]) {
+        junk(&mut t, n, 0x60, k);
+        t.set_u32(n + 0x18, state);
+        t.set_u32(n + 0x1c, wait);
+        t.set_u32(n + 0x24, total);
+        for (j, c) in (0u32..).zip([3u32, 2, 1]) {
+            t.set_u32(n + 0x28 + 4 * j, c);
+            setf(&mut t, n + 0x34 + 4 * j, c as f32 / 6.0);
+        }
+        t.set_u32(n + 0x40, o);
+        t.set_u32(o + 0x4dc, 3);
+        for j in 0..3u32 {
+            t.set_u32(o + 0x6c + 0x98 * j, 0x0a00 + j);
+        }
+        t.set_u32(tk, d);
+        t.set_u32(tk + 4, n);
+        for (a, b, c) in [(d, prev, next), (prev, next, d), (next, d, prev)] {
+            t.set_u32(a + 4, b);
+            t.set_u32(a + 8, c);
+        }
+        setf(&mut t, draw, x);
+        ownb::dirty_stack(&mut t, 0xbc90 + k, &[]);
+        let call = Call {
+            eax: 0x0eaa_0000 + k,
+            ..Call::default()
+        };
+        t.check(f, call, &[tk], Eax::Checked, |g, img, fr| {
+            ffx_magic::r45::weights_step_0387(g, img, fr)
+        });
+    }
+}
