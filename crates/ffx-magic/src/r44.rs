@@ -3440,3 +3440,308 @@ pub const JMP_NODE_SPARKS_0071: Sig = Sig {
     calls: &[(8, Callee::Sig(&NODE_SPARKS_0071))],
     imports: &[],
 };
+
+/// A node appended under the parent `P` as `magic_0042`'s scene inlines
+/// it: the store run `run` (the node's pass halfword, child list, parent
+/// and link), `+8` = the old last `last` (the `mov [G], eax` at operand
+/// `lb`), then `P`'s first (the store at `eq`) when `last` is `P`
+/// (operand `cmp`), else `last + 4` = the node (the immediate at `ll`).
+fn append_0042<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    last: u32,
+    run: (u32, u32),
+    [lb, cmp, eq, ll]: [u32; 4],
+) {
+    let w = |o: u32| img.word(f + o);
+    crate::r25::abs_stores(g, img, f, run.0, run.1);
+    g.write::<u32>(w(lb), last);
+    if last == w(cmp) {
+        crate::r25::abs_stores(g, img, f, eq, eq + 10);
+    } else {
+        g.write::<u32>(last.wrapping_add(4), w(ll));
+    }
+}
+
+/// A node appended as [`append_0042`] when the old last is a known node
+/// (its `+8` among the store run, the address compared from `ecx`): `P`'s
+/// first (the store at `eq`) when `last` is `P` (operand `cmp`), else the
+/// store at `ne` (`last + 4`).
+fn append_known_0042<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    last: u32,
+    run: (u32, u32),
+    [cmp, eq, ne]: [u32; 3],
+) {
+    crate::r25::abs_stores(g, img, f, run.0, run.1);
+    let at = if last == img.word(f + cmp) { eq } else { ne };
+    crate::r25::abs_stores(g, img, f, at, at + 10);
+}
+
+/// `magic_0042`'s scene set-up (0x1000a610, 2637 bytes; a table entry,
+/// cdecl `(task)`; an 8-aligned frame, `S` = `esp` after the push): the
+/// task kept, the static nodes ([`static_nodes_init`](crate::sb_misc::static_nodes_init)),
+/// slots 718 twice, the part (slot 719's handle, 711 under the lock word,
+/// 710), slots 222 and 221; the scene's nodes under the DLL's parent `P`
+/// one after the other (the store runs in the code; [`append_0042`]):
+/// the summon's model node ([`model_node_init`](crate::sa_summon::model_node_init))
+/// and its place (slot 262), a copy (325) lowered by `K`, a node placed
+/// by slot 262, one given slot 10, a pair holding the place's words, the
+/// model state ([`model_state`](crate::m0070::model_state)), the time
+/// left ([`time_left`](crate::m0042::time_left)), a node set up with the
+/// handle ([`node_init`](crate::m0042::node_init)), three more copying the
+/// time, a copy (325), three with the scaled height; then the DLL's
+/// start-up ([`start_up`](crate::m0042::start_up)) and the static link
+/// ([`static_node_link_b`](crate::s4_small::static_node_link_b)).
+/// Returns 0.
+#[allow(clippy::too_many_lines)] // the original's steps, in order
+pub fn scene_0042<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::r25::abs_stores;
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let gw = |g: &G, o: u32| g.read::<u32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let call = |o: u32| img.rel32_target(f + o);
+    // push ebp; and esp, -8; sub esp, 0x14; push esi
+    let s = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0x18);
+    let task = fr.arg(g, 0);
+    g.write::<u32>(w(0xe), task);
+    crate::sb_misc::static_nodes_init(g, img, call(0x13), task);
+    g.write::<u32>(w(0x29), w(0x2d));
+    // call width: 1
+    g.call(t(g, 0x18, 718), 0, &[w(0x1d)]);
+    // call width: 1
+    g.call(t(g, 0x34, 718), 0, &[w(0x42)]);
+    // call width: 3
+    let h = g.call(t(g, 0x49, 719), 0, &[w(0x5b), 8, 0]).eax;
+    let lock = gw(g, 0x63);
+    let old = g.read::<u32>(lock);
+    g.write::<u32>(w(0x6f), h);
+    g.write::<u32>(lock, 1);
+    // call width: 3
+    g.call(t(g, 0x7a, 711), 0, &[h, w(0x74), 0]);
+    let lock = gw(g, 0x8d);
+    g.write::<u32>(lock, old);
+    let x = gw(g, 0xad);
+    // call width: 4
+    g.call(t(g, 0x97, 710), 0, &[w(0xb2), x, w(0xa7), 0x10_0000]);
+    // call width: 4
+    g.call(t(g, 0xb9, 222), 0, &[w(0xca), 0, 0xb, 2]);
+    // call width: 4
+    g.call(t(g, 0xd1, 221), 0, &[w(0xe5), 0, 0x3e8, 2]);
+    abs_stores(g, img, f, 0xef, 0x183);
+    // the summon's model node
+    let args = s + 8;
+    for (i, v) in (0u32..).zip([w(0x187), w(0x18f), 0x14]) {
+        g.write::<u32>(args + 4 * i, v);
+    }
+    g.write::<u8>(args + 0xc, 1);
+    abs_stores(g, img, f, 0x1a0, 0x1aa);
+    crate::sa_summon::model_node_init(g, img, call(0x1ab), args);
+    let x = gw(g, 0x1c5);
+    // call width: 4
+    g.call(t(g, 0x1bf, 262), 0, &[x, w(0x1ba), w(0x1b5), w(0x1b0)]);
+    // A: a node placed by a copy
+    let last = gw(g, 0x1d2);
+    abs_stores(g, img, f, 0x1d9, 0x1e3);
+    append_0042(
+        g,
+        img,
+        f,
+        last,
+        (0x1e3, 0x214),
+        [0x215, 0x21a, 0x220, 0x22f],
+    );
+    let n = g.read::<u16>(w(0x23b)).wrapping_add(1);
+    g.write::<u16>(w(0x23b), n);
+    abs_stores(g, img, f, 0x23f, 0x253);
+    // call width: 2
+    g.call(t(g, 0x234, 325), 0, &[w(0x25f), w(0x25a)]);
+    let y = sub(g.read::<f32>(w(0x269)), g.read::<f32>(w(0x271)));
+    // B: a node at slot 262's place
+    let last = gw(g, 0x276);
+    abs_stores(g, img, f, 0x27d, 0x290);
+    g.write::<f32>(w(0x294), y);
+    append_0042(
+        g,
+        img,
+        f,
+        last,
+        (0x298, 0x2b6),
+        [0x2b7, 0x2bc, 0x2c2, 0x2d1],
+    );
+    let n = g.read::<u16>(w(0x2dd)).wrapping_add(1);
+    g.write::<u16>(w(0x2dd), n);
+    let x = gw(g, 0x2f2);
+    abs_stores(g, img, f, 0x2f6, 0x30a);
+    // call width: 4
+    g.call(t(g, 0x2d6, 262), 0, &[x, w(0x2ec), w(0x2e7), w(0x2e2)]);
+    // C: a node given slot 10
+    let last = gw(g, 0x313);
+    append_0042(
+        g,
+        img,
+        f,
+        last,
+        (0x31a, 0x35f),
+        [0x360, 0x365, 0x36b, 0x37a],
+    );
+    let n = g.read::<u16>(w(0x386)).wrapping_add(1);
+    g.write::<u16>(w(0x386), n);
+    let x = gw(g, 0x38e);
+    abs_stores(g, img, f, 0x392, 0x3cb);
+    // call width: 2
+    g.call(t(g, 0x37f, 10), 0, &[x, 0]);
+    // D and E: the place's words and the model state
+    let last = gw(g, 0x3d1);
+    append_0042(
+        g,
+        img,
+        f,
+        last,
+        (0x3d8, 0x409),
+        [0x40a, 0x40f, 0x415, 0x424],
+    );
+    let lo = g.read::<u64>(w(0x42c));
+    let mut count = g.read::<u16>(w(0x432));
+    g.write::<u64>(w(0x43a), lo);
+    let hi = g.read::<u64>(w(0x442));
+    let d = w(0x447);
+    count = count.wrapping_add(1);
+    abs_stores(g, img, f, 0x44d, 0x457);
+    g.write::<u64>(w(0x45b), hi);
+    append_known_0042(g, img, f, d, (0x45f, 0x49a), [0x49c, 0x4a2, 0x4ae]);
+    count = count.wrapping_add(1);
+    abs_stores(g, img, f, 0x4be, 0x4c8);
+    g.write::<u16>(w(0x4ca), count);
+    abs_stores(g, img, f, 0x4ce, 0x4d8);
+    g.write::<u32>(args, w(0x4dc));
+    g.write::<u32>(args + 4, w(0x4e4));
+    crate::m0070::model_state(g, img, call(0x4e9), args);
+    // F: the time left
+    let last = gw(g, 0x4ee);
+    append_0042(
+        g,
+        img,
+        f,
+        last,
+        (0x4f2, 0x52d),
+        [0x52e, 0x533, 0x539, 0x548],
+    );
+    let n = g.read::<u16>(w(0x54f)).wrapping_add(1);
+    g.write::<u16>(w(0x54f), n);
+    abs_stores(g, img, f, 0x557, 0x561);
+    g.write::<u32>(args, w(0x565));
+    g.write::<u32>(args + 4, w(0x56d));
+    crate::m0042::time_left(g, img, call(0x572), args, s.wrapping_sub(4));
+    // G: a node set up with the handle
+    let last = gw(g, 0x577);
+    append_0042(
+        g,
+        img,
+        f,
+        last,
+        (0x57b, 0x5b6),
+        [0x5b7, 0x5bc, 0x5c2, 0x5d1],
+    );
+    let hh = gw(g, 0x5d6);
+    let n = g.read::<u16>(w(0x5dd)).wrapping_add(1);
+    g.write::<u16>(w(0x5dd), n);
+    abs_stores(g, img, f, 0x5e5, 0x61e);
+    for (i, v) in (0u32..).zip([w(0x622), w(0x62a), hh, 0x6b]) {
+        g.write::<u32>(args + 4 * i, v);
+    }
+    crate::m0042::node_init(g, img, call(0x63b), args);
+    // H, I, J, K: the time copied, the lists
+    let last = gw(g, 0x640);
+    append_0042(
+        g,
+        img,
+        f,
+        last,
+        (0x644, 0x67f),
+        [0x680, 0x685, 0x68b, 0x69a],
+    );
+    let x = gw(g, 0x69f);
+    let mut count = g.read::<u16>(w(0x6a6));
+    g.write::<u32>(w(0x6ab), x);
+    let x = gw(g, 0x6b0);
+    g.write::<u32>(w(0x6b5), x);
+    let x = gw(g, 0x6ba);
+    g.write::<u32>(w(0x6bf), x);
+    let hn = w(0x6c4);
+    count = count.wrapping_add(1);
+    append_known_0042(g, img, f, hn, (0x6ca, 0x70f), [0x710, 0x716, 0x722]);
+    let i_n = w(0x72d);
+    count = count.wrapping_add(1);
+    abs_stores(g, img, f, 0x733, 0x762);
+    append_known_0042(g, img, f, i_n, (0x762, 0x7a7), [0x7a8, 0x7ae, 0x7ba]);
+    let j_n = w(0x7c5);
+    count = count.wrapping_add(1);
+    append_known_0042(g, img, f, j_n, (0x7cb, 0x824), [0x825, 0x82b, 0x837]);
+    count = count.wrapping_add(1);
+    abs_stores(g, img, f, 0x848, 0x852);
+    g.write::<u16>(w(0x855), count);
+    abs_stores(g, img, f, 0x859, 0x863);
+    // call width: 2
+    g.call(t(g, 0x842, 325), 0, &[w(0x86f), w(0x86a)]);
+    // L, M, N: the scaled height
+    let last = gw(g, 0x876);
+    append_0042(
+        g,
+        img,
+        f,
+        last,
+        (0x87d, 0x8ae),
+        [0x8af, 0x8b4, 0x8ba, 0x8c9],
+    );
+    let x = mul(g.read::<f32>(w(0x8d1)), g.read::<f32>(w(0x8d9)));
+    let mut count = g.read::<u16>(w(0x8df));
+    let l_n = w(0x8e4);
+    count = count.wrapping_add(1);
+    abs_stores(g, img, f, 0x8ea, 0x8fe);
+    g.write::<f32>(w(0x902), x);
+    append_known_0042(g, img, f, l_n, (0x906, 0x955), [0x957, 0x95d, 0x969]);
+    let m_n = w(0x974);
+    count = count.wrapping_add(1);
+    append_known_0042(g, img, f, m_n, (0x97a, 0x9dd), [0x9df, 0x9e5, 0x9f1]);
+    count = count.wrapping_add(1);
+    abs_stores(g, img, f, 0x9fd, 0xa07);
+    g.write::<u16>(w(0xa09), count);
+    abs_stores(g, img, f, 0xa0d, 0xa3c);
+    // the start-up and the static link
+    let sf = Frame {
+        at: call(0xa3d),
+        esp: s.wrapping_sub(4),
+        ..*fr
+    };
+    crate::m0042::start_up(g, img, &sf);
+    let lf = Frame {
+        at: call(0xa42),
+        esp: s.wrapping_sub(4),
+        ..*fr
+    };
+    crate::s4_small::static_node_link_b(g, img, &lf);
+    Ret::eax(0)
+}
+
+/// [`scene_0042`] (the `rel32`s: the static nodes, the model node, the
+/// model state, the time left, the node set-up, the start-up, the static
+/// link).
+pub const SCENE_0042: Sig = Sig {
+    len: 2637,
+    hash: 0xf187_f675_a775_38ea,
+    calls: &[
+        (0x13, Callee::Sig(&crate::sb_misc::STATIC_NODES_INIT)),
+        (0x1ab, Callee::Sig(&crate::sa_summon::MODEL_NODE_INIT)),
+        (0x4e9, Callee::Sig(&crate::m0070::MODEL_STATE)),
+        (0x572, Callee::Sig(&crate::m0042::TIME_LEFT)),
+        (0x63b, Callee::Sig(&crate::m0042::NODE_INIT)),
+        (0xa3d, Callee::Sig(&crate::m0042::START_UP)),
+        (0xa42, Callee::Sig(&crate::s4_small::STATIC_NODE_LINK_B)),
+    ],
+    imports: &[],
+};

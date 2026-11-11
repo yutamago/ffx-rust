@@ -1941,7 +1941,8 @@ fn node_sparks_0071() {
                 let v = (j as f32 - 3.5) * 0.25 + case as f32;
                 t.set_u32(n + 0x38 + 4 * j, v.to_bits());
             }
-            t.set_u16(n + 0x1c, 0x20);
+            // a ring that holds every request (up to 0x2f sparks)
+            t.set_u16(n + 0x1c, 0x40);
             t.set_u16(n + 0x1e, 0x40);
             t.set_u32(n + 0x20, recs);
             t.set_u32(n + 0x24, recs + 0x40 * 3);
@@ -1971,7 +1972,7 @@ fn node_sparks_0071() {
                 }
             }
             // the records: live or not, the fade below and near its cap
-            for i in 0..0x20u32 {
+            for i in 0..0x40u32 {
                 let r = recs + 0x40 * i;
                 for j in 0..0x10u32 {
                     let x = ((j * 37 + (i + case) * 11) % 41) as f32 - 20.0;
@@ -1996,5 +1997,106 @@ fn node_sparks_0071() {
                 Eax::Checked,
             );
         }
+    }
+}
+
+/// `magic_0042` 0x1000a610 (`r44::scene_0042`, a table entry): the scene
+/// built three times, the start-up's ring and roots as its own test
+/// varies them, the handles and the lock word per case; the slots as
+/// data flow and logged.
+#[test]
+fn scene_0042() {
+    let Some(mut t) = twin(42) else { return };
+    all_stubs(&mut t);
+    let f = t.at(0xa610);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let su = t.img.rel32_target(f + 0xa3d);
+    let sw = |t: &Twin, o: u32| t.img.word(su + o);
+    // the start-up's slots (its test's answers)
+    t.stub(557, |_, _| 0x0000_00ff);
+    t.stub_st0(790, |_, _| 0.25);
+    t.stub(558, |m, a| {
+        for i in 0..4 {
+            m.w32(a[0] + 4 * i, 3 + i);
+        }
+        0x558
+    });
+    rec(&mut t, 262, 4, |m, a| {
+        for i in 0..3u32 {
+            let v = (a[0] & 0xff) as f32 * 0.5 + i as f32 * 1.25 - 2.0;
+            m.w32(a[1 + i as usize], v.to_bits());
+        }
+        0x262
+    });
+    rec(&mut t, 325, 2, |m, a| {
+        for i in 0..4 {
+            let x = m.r32(a[1] + 4 * i);
+            m.w32(a[0] + 4 * i, x);
+        }
+        0x325
+    });
+    // slot 711 logs the lock word it sees
+    let lock = SCRATCH + 0x7e10;
+    rec(&mut t, 711, 3, move |m, a| {
+        m.w32(SCRATCH + 0x7e14, m.r32(lock));
+        0x0711_0000 ^ a[0]
+    });
+    rec(&mut t, 719, 3, |_, a| 0x0719_0000 ^ a[0] ^ (a[1] << 8));
+    // the model state's float slots (15, 16, 17, 277) and 290's vector
+    for (s, x) in [(15u32, 1.5f64), (16, -0.75), (17, 3.0), (277, 40.0)] {
+        rec(&mut t, s, 1, move |_, a| (s << 16) ^ a[0]);
+        t.stub_st0(s, move |_, a| x + f64::from(a[0] & 3));
+    }
+    rec(&mut t, 290, 2, |m, a| {
+        for i in 0..4 {
+            wf(m, a[1] + 4 * i, 1.5 - i as f32);
+        }
+        0x290
+    });
+    // the time left's float slots
+    rec(&mut t, 333, 1, |_, a| 0x0333_0000 ^ a[0]);
+    t.stub_st0(333, |_, a| f64::from(a[0] & 0xf) * 0.25 + 0.5);
+    rec(&mut t, 601, 2, |m, a| {
+        wf(m, a[1], 0.25 * (a[0] & 0xf) as f32 - 1.0);
+        0x601
+    });
+    let tail = SCRATCH + 0x500;
+    let other = SCRATCH + 0x600;
+    let link = SCRATCH + 0x700;
+    let sl = t.img.rel32_target(f + 0xa42);
+    for (k, (root, second)) in (0u32..).zip([(false, false), (true, true), (false, true)]) {
+        let at = w(&t, 0x63);
+        t.set_u32(at, lock);
+        t.set_u32(lock, 0x40 + k);
+        for o in [0x1c5u32, 0x2f2, 0x38e, 0x5d6] {
+            let at = w(&t, o);
+            t.set_u32(at, 0x00a0_0000 + o + k);
+        }
+        for o in [0x269u32, 0x271, 0x8d1, 0x8d9] {
+            let at = w(&t, o);
+            t.set_u32(
+                at,
+                (0.75 + 0.5 * k as f32 + (o & 0xf) as f32 * 0.125).to_bits(),
+            );
+        }
+        // the start-up's ring and roots
+        t.write(tail, &[0x55; 0x10]);
+        t.write(other, &[0x66; 0x20]);
+        let at = sw(&t, 0x04);
+        t.set_u32(at, tail);
+        let r = sw(&t, 0x96);
+        let at = sw(&t, 0x3d);
+        t.set_u32(at, if root { other } else { r });
+        let r2 = sw(&t, 0x338);
+        let at = sw(&t, 0x2e9);
+        t.set_u32(at, if second { other + 0x10 } else { r2 });
+        let at = sw(&t, 0xb1);
+        t.set_u16(at, 7 + k as u16);
+        // the static link's last node
+        t.write(link, &[0x77; 0x20]);
+        let at = t.img.word(sl + 0x1);
+        t.set_u32(at, link);
+        magic_h6::scrub(&mut t);
+        t.check_entry(f, Call::default(), &[SCRATCH + 0x7c00 + k], Eax::Checked);
     }
 }
