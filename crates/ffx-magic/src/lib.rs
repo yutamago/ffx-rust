@@ -97,6 +97,7 @@ pub mod r43;
 pub mod r44;
 pub mod r45;
 pub mod r46;
+pub mod r47;
 pub mod r9_load;
 pub mod r9_misc;
 pub mod r9_summon;
@@ -3508,6 +3509,11 @@ ports! {
     "r45 actors sway 0397" => r45::ACTORS_SWAY_0397, r45::actors_sway_0397;
     "r45 actors settle 0397" => r45::ACTORS_SETTLE_0397, r45::actors_settle_0397;
     // round 45 (magic-r45): end
+    // round 47 (magic-r47)
+    "r47 load step 0417" => r47::LOAD_0417, r47::load_0417;
+    "r47 frame 0417" => r47::FRAME_0417, r47::frame_0417;
+    "r47 draw 0417" => r47::DRAW_0417, r47::draw_0417;
+    // round 47 (magic-r47): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
     // round 34 (magic-r34)
@@ -5494,6 +5500,10 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r45 weights task 0387", &r45::WEIGHTS_TASK_0387),
     ("r45 start-up 0396", &r45::START_UP_0396),
     // round 45 (magic-r45): end of INTERNAL
+    // round 47 (magic-r47)
+    ("r47 start-up 0417", &r47::START_UP_0417),
+    ("r47 flames 0417", &r47::FLAMES_0417),
+    // round 47 (magic-r47): end of INTERNAL
 ];
 
 /// What covers the function at `addr`: a port's name (an entry
