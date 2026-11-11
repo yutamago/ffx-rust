@@ -3621,3 +3621,100 @@ pub const FACING_TRIS_0431: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `magic_0431`'s triangle pick (0x100023a0, 282 bytes; internal, `ecx` =
+/// the output records, `edx` = the view matrix, stack `(P)`; a frame:
+/// `MIN` at `ebp - 0x28`, `MAX` at `ebp - 0x18`): the actor's colours
+/// reset ([`colour_reset`](crate::m0431::colour_reset)); `B` = slot 562;
+/// the bounds of `*G_SET` through the view
+/// ([`model_bounds_0431`]); with three primitives or more, the facing
+/// triangles ([`facing_tris_0431`], eye `P`, `(MIN, MAX, B, r, scaled,
+/// aimed, front)`) are tried with the tests `(10, 1, 1, 1)`, `(10, 0, 1,
+/// 1)`, `(10, 0, 0, 1)`, `(1000, 0, 0, 1)` and `(1000, 0, 0, 0)` until
+/// one gives three or more. Returns the last count.
+pub fn tri_pick_0431<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let (out, view) = (fr.ecx, fr.edx);
+    let ebp = fr.esp.wrapping_sub(4);
+    let (lo, hi) = (ebp.wrapping_sub(0x28), ebp.wrapping_sub(0x18));
+    g.write::<u32>(ebp.wrapping_sub(8), out);
+    let esp = ebp.wrapping_sub(0x38);
+    crate::m0431::colour_reset(
+        g,
+        img,
+        &Frame {
+            at: img.rel32_target(f + 0xf),
+            esp,
+            ..Frame::default()
+        },
+    );
+    let set = g.read::<u32>(w(0x1a));
+    let b = g.call(slot_target(g, w(0x14), 562), 0, &[]).eax;
+    let call_esp = esp.wrapping_sub(0xc);
+    for (i, x) in [b, lo, hi].into_iter().enumerate() {
+        g.write::<u32>(call_esp + 4 + 4 * i as u32, x);
+    }
+    let n = model_bounds_0431(
+        g,
+        img,
+        &Frame {
+            at: img.rel32_target(f + 0x36),
+            esp: call_esp,
+            ecx: set,
+            edx: view,
+            ..Frame::default()
+        },
+    )
+    .eax;
+    if n.cast_signed() < 3 {
+        return Ret::eax(n);
+    }
+    let eye = fr.arg(g, 0);
+    let mut eax = n;
+    let call_esp = esp.wrapping_sub(0x1c);
+    for (at, r, scaled, aimed, front) in [
+        (0x68u32, 0x4120_0000u32, 1u32, 1u32, 1u32),
+        (0x94, 0x4120_0000, 0, 1, 1),
+        (0xbc, 0x4120_0000, 0, 0, 1),
+        (0xe4, 0x447a_0000, 0, 0, 1),
+        (0x10c, 0x447a_0000, 0, 0, 0),
+    ] {
+        for (i, x) in [lo, hi, b, r, scaled, aimed, front].into_iter().enumerate() {
+            g.write::<u32>(call_esp + 4 + 4 * i as u32, x);
+        }
+        eax = facing_tris_0431(
+            g,
+            img,
+            &Frame {
+                at: img.rel32_target(f + at),
+                esp: call_esp,
+                ecx: out,
+                edx: eye,
+                ..Frame::default()
+            },
+        )
+        .eax;
+        if eax.cast_signed() >= 3 {
+            break;
+        }
+    }
+    Ret::eax(eax)
+}
+
+/// [`tri_pick_0431`] (the `rel32`s: the colour reset, the bounds, five
+/// facing-triangle passes).
+pub const TRI_PICK_0431: Sig = Sig {
+    len: 282,
+    hash: 0xcb51_f945_98ec_5f88,
+    calls: &[
+        (0xf, Callee::Sig(&crate::m0431::COLOUR_RESET)),
+        (0x36, Callee::Sig(&MODEL_BOUNDS_0431)),
+        (0x68, Callee::Sig(&FACING_TRIS_0431)),
+        (0x94, Callee::Sig(&FACING_TRIS_0431)),
+        (0xbc, Callee::Sig(&FACING_TRIS_0431)),
+        (0xe4, Callee::Sig(&FACING_TRIS_0431)),
+        (0x10c, Callee::Sig(&FACING_TRIS_0431)),
+    ],
+    imports: &[],
+};

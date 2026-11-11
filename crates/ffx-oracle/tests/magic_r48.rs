@@ -2140,6 +2140,14 @@ fn facing_tris_0431() {
         (1, 1, 1, 4.0, 50.0),
         (0, 0, 0, 100.0, 1.0),
         (0, 0, 0, 100.0, -50.0),
+        // (b16 test gaps: reaches and tests splitting the triangles)
+        (0, 0, 0, 3.0, 50.0),
+        (0, 0, 0, 5.0, 50.0),
+        (0, 0, 0, 7.0, 50.0),
+        (1, 0, 0, 100.0, 50.0),
+        (0, 1, 0, 100.0, 50.0),
+        (1, 1, 0, 6.0, 0.5),
+        (0, 1, 1, 100.0, 2.0),
     ]) {
         junk(&mut t, set, 0x40, k);
         t.write(set + 4, &2u16.to_le_bytes());
@@ -2172,5 +2180,128 @@ fn facing_tris_0431() {
             Eax::Checked,
             ffx_magic::r48::facing_tris_0431,
         );
+    }
+}
+
+/// `magic_0431` 0x100023a0 (`r48::tri_pick_0431`, internal): too few
+/// primitives; enough, with the reach and height putting the first pass
+/// over three and running all five.
+#[test]
+fn tri_pick_0431() {
+    let Some(mut t) = sa::twin(431) else { return };
+    let f = t.at(0x23a0);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    let ft = img.rel32_target(f + 0x68);
+    let wt = |o: u32| img.word(ft + o);
+    let fb = img.rel32_target(f + 0x36);
+    let cr = img.rel32_target(f + 0xf);
+    all_stubs(&mut t);
+    let models = SCRATCH + 0x8000;
+    let buf = SCRATCH + 0x4000;
+    rec(&mut t, 941, 1, move |_, a| models + 0x800 * (a[0] & 3));
+    rec(&mut t, 562, 0, move |_, _| buf);
+    rec(&mut t, 230, 2, |m, a| {
+        for i in 0..16 {
+            let x = rf(m, a[1] + 4 * i);
+            wf(m, a[0] + 4 * i, x);
+        }
+        0x230
+    });
+    rec(&mut t, 231, 3, |m, a| {
+        for i in 0..16 {
+            let x = rf(m, a[1] + 4 * i) * 0.5 + rf(m, a[2] + 4 * i);
+            wf(m, a[0] + 4 * i, x);
+        }
+        0x231
+    });
+    rec(&mut t, 229, 3, |m, a| {
+        let mut out = [0.0f32; 4];
+        for i in 0..4 {
+            for j in 0..4 {
+                out[i as usize] += rf(m, a[1] + 16 * j + 4 * i) * rf(m, a[2] + 4 * j);
+            }
+        }
+        out[3] = out[3].abs() + 1.0;
+        for i in 0..4 {
+            wf(m, a[0] + 4 * i, out[i as usize]);
+        }
+        0x229
+    });
+    rec(&mut t, 232, 2, |m, a| {
+        let v: Vec<f32> = (0..3).map(|i| rf(m, a[1] + 4 * i)).collect();
+        let n = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt().max(1e-3);
+        for i in 0..3 {
+            wf(m, a[0] + 4 * i as u32, v[i] / n);
+        }
+        0x232
+    });
+    t.set_u32(img.word(cr + 1), SCRATCH + 0x700);
+    t.write(SCRATCH + 0x700, &[2, 1]);
+    junk_ops(&mut t, cr, &[0x11, 0x4c]);
+    junk_ops(&mut t, fb, &[0xee, 0x172]);
+    setf(&mut t, img.word(fb + 0xee), 0.5);
+    setf(&mut t, img.word(fb + 0x172), 2.0);
+    for (op, x) in [
+        (0x41u32, 0.5f32),
+        (0x1b2, 3.0),
+        (0x2bd, 1.0),
+        (0x394, 1.5),
+        (0x3a3, std::f32::consts::PI),
+        (0x3ad, std::f32::consts::TAU),
+        (0x3b7, -std::f32::consts::PI),
+        (0x3c4, std::f32::consts::TAU),
+        (0x3d1, 1.2),
+        (0x3db, -1.2),
+        (0x3f1, 0.9),
+    ] {
+        setf(&mut t, wt(op), x);
+    }
+    let (set, out, view, eye) = (
+        SCRATCH + 0x100,
+        SCRATCH + 0x2000,
+        SCRATCH + 0x200,
+        SCRATCH + 0x300,
+    );
+    t.set_u32(w(0x1a), set);
+    t.set_u32(wt(0x47), set);
+    for (k, (prims, spread)) in (0u32..).zip([(2i16, 1.0f32), (8, 1.0), (8, 40.0)]) {
+        junk(&mut t, set, 0x40, k);
+        t.write(set + 4, &1u16.to_le_bytes());
+        t.set_u32(set + 0x10, 1);
+        t.set_u32(set + 0x14, 3);
+        let at = models + 0x800;
+        junk(&mut t, at, 0x800, k);
+        t.set_u32(at + 4, 0x40);
+        t.set_u32(at + 8, 0x400);
+        t.write(at + 0x12, &6u16.to_le_bytes());
+        t.write(at + 0x10, &prims.to_le_bytes());
+        t.write(at + 0x41, &[0x10]);
+        t.write(at + 0x42, &prims.to_le_bytes());
+        for tn in 0..prims as u32 {
+            for c in 0..3u32 {
+                t.write(
+                    at + 0x60 + 0x1c * tn + 2 * c,
+                    &(((tn + c * 2) % 6) as u16).to_le_bytes(),
+                );
+            }
+        }
+        for i in 0..24u32 {
+            let v = ((i * 7 + k * 5) % 23) as f32 * 0.25 * spread - 2.75 * spread;
+            setf(&mut t, at + 0x400 + 4 * i, v);
+        }
+        floats(&mut t, models + 0x800 * 3, 16, k);
+        for i in 0..16u32 {
+            setf(&mut t, view + 4 * i, if i % 5 == 0 { 1.0 } else { 0.0 });
+        }
+        floats(&mut t, eye, 4, k);
+        junk(&mut t, out, 0x200, k);
+        let call = Call {
+            ecx: out,
+            edx: view,
+            ..Call::default()
+        };
+        ownb::dirty_stack(&mut t, 0x23a0 + k, &[]);
+        t.check(f, call, &[eye], Eax::Checked, ffx_magic::r48::tri_pick_0431);
     }
 }
