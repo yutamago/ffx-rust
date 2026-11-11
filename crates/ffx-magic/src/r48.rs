@@ -4110,3 +4110,194 @@ pub const ORBS_SETUP_0431: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `magic_0431`'s orbs task (0x100035a0, 1925 bytes; a table callback,
+/// no arguments; an aligned /GS frame `A`, `S = A - 0x218`: the view
+/// `M0` at `S + 0x1d0`, `M1` at `S + 0x150`, `M2` at `S + 0x60`, `M3` at
+/// `S + 0xd0`, `M4` at `S + 0x190`, `M5` at `S + 0x110`, the corners at
+/// `S + 0xa0`, `+0xb0`, `+0xc0`, the normal `N` at `S + 0x50`, `U` at
+/// `S + 0x40`). With `S0 = *G_S`: the delays `S0[0xd08]` (else
+/// `S0[0xd0c]`) count down; `M0` = slot 210 `(A0)`; the actor `A2`'s
+/// motions stop (slots 357, 356, 355, 354). For each orb record
+/// `R = S0 + 0xc6c + 0x30 k`: `M1` = the turn by its roll and -PI/2
+/// (slots 235, 329, 328), `M2` = its pitch and yaw (slots 235, 328, 329)
+/// times `M1` (slot 231); `M4` = `M0` times its model's matrix (slot 230,
+/// translation times `K`, slot 231); the corners through `M4` (slot 229)
+/// give the face normal (slot 232, times `K4`): its pitch `p` and yaw `y`
+/// (wrapped); `M2`'s translation moves by `M2 (0, -6, 0, 1)`; `M5` = the
+/// turn by `p - R[0x10]` and `y - R[0x14]` (each wrapped; slots 235, 328,
+/// 329), `M2` = `M5 M2` (slot 231), its translation then by the corners'
+/// centre through `M4` (slot 229), its `w` 1 and its rows times `K2`; the
+/// glow is drawn with it
+/// ([`glow_draw_0431`](crate::r45::glow_draw_0431)). Returns the last
+/// glow draw's `eax`.
+#[allow(clippy::too_many_lines)] // the original's steps, one by one
+pub fn orbs_task_0431<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::ob_model::wrap_once;
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let c = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let rf = |g: &G, at: u32| g.read::<f32>(at);
+    let a = fr.esp.wrapping_sub(4) & !7;
+    let s = a.wrapping_sub(0x218);
+    let at = |o: u32| s.wrapping_add(o);
+    let (m0, m1, m2, m3, m4, m5) = (
+        at(0x1d0),
+        at(0x150),
+        at(0x60),
+        at(0xd0),
+        at(0x190),
+        at(0x110),
+    );
+    let (nv, u) = (at(0x50), at(0x40));
+    let s0 = g.read::<u32>(w(0x1e));
+    let d1 = g.read::<u32>(s0 + 0xd08).cast_signed();
+    if d1 > 0 {
+        g.write::<u32>(s0 + 0xd08, (d1 - 1).cast_unsigned());
+    } else {
+        let d2 = g.read::<u32>(s0 + 0xd0c).cast_signed();
+        if d2 > 0 {
+            g.write::<u32>(s0 + 0xd0c, (d2 - 1).cast_unsigned());
+        }
+    }
+    let sel = |g: &G, list: u32, table: u32, i: u32| {
+        let b = u32::from(g.read::<u8>(g.read::<u32>(w(list)).wrapping_add(i)));
+        g.read::<u32>(w(table).wrapping_add(4 * b))
+    };
+    let a0 = sel(g, 0x4f, 0x59, 0);
+    g.call(t(g, 0x5e, 210), 0, &[a0, m0]);
+    let a2 = sel(g, 0x6b, 0x7d, 2);
+    g.call(t(g, 0x82, 357), 0, &[a2, u32::MAX, 0x3c00]);
+    g.call(t(g, 0x90, 356), 0, &[a2, u32::MAX, 0x2ee0]);
+    g.call(t(g, 0xa8, 355), 0, &[a2, u32::MAX]);
+    g.call(t(g, 0xbb, 354), 0, &[a2, u32::MAX]);
+    let wrap = |g: &G, x: f32, ops: [u32; 4]| wrap_once(g, img, f, x, ops);
+    let mut eax = 0;
+    for k in 0..3u32 {
+        let r = s0 + 0xc6c + 0x30 * k;
+        g.call(t(g, 0xe9, 235), 0, &[m1]);
+        let roll = g.read::<u32>(r + 8);
+        g.call(t(g, 0x109, 329), 0, &[m1, m1, roll]);
+        g.call(t(g, 0x129, 328), 0, &[m1, m1, 0xbfc9_0fdb]);
+        g.call(t(g, 0x13e, 235), 0, &[m2]);
+        let pitch = g.read::<u32>(r);
+        g.call(t(g, 0x15b, 328), 0, &[m2, m2, pitch]);
+        let yaw = g.read::<u32>(r + 4);
+        g.call(t(g, 0x17a, 329), 0, &[m2, m2, yaw]);
+        g.call(t(g, 0x198, 231), 0, &[m2, m2, m1]);
+        let model = g.read::<u32>(r + 0x20);
+        g.call(t(g, 0x1b3, 230), 0, &[m3, model]);
+        let kk = c(g, 0x1cc);
+        for off in [0x30u32, 0x34, 0x38] {
+            let v = mul(rf(g, m3 + off), kk);
+            g.write::<f32>(m3 + off, v);
+        }
+        g.call(t(g, 0x219, 231), 0, &[m4, m0, m3]);
+        let corner = [at(0xa0), at(0xb0), at(0xc0)];
+        for (i, (op, off)) in [(0x245u32, 0x24u32), (0x268, 0x28), (0x28b, 0x2c)]
+            .into_iter()
+            .enumerate()
+        {
+            let src = g.read::<u32>(r + off);
+            g.call(t(g, op, 229), 0, &[corner[i], m4, src]);
+        }
+        let cv = |g: &G, i: usize, ax: u32| rf(g, corner[i] + 4 * ax);
+        let e2y = sub(cv(g, 2, 1), cv(g, 0, 1));
+        let e2z = sub(cv(g, 2, 2), cv(g, 0, 2));
+        let e2x = sub(cv(g, 2, 0), cv(g, 0, 0));
+        let e1y = sub(cv(g, 1, 1), cv(g, 0, 1));
+        let e1z = sub(cv(g, 1, 2), cv(g, 0, 2));
+        let e1x = sub(cv(g, 1, 0), cv(g, 0, 0));
+        let nx = sub(mul(e2z, e1y), mul(e2y, e1z));
+        let ny = sub(mul(e2x, e1z), mul(e2z, e1x));
+        let nz = sub(mul(e2y, e1x), mul(e2x, e1y));
+        for (i, x) in [nx, ny, nz, 1.0].into_iter().enumerate() {
+            g.write::<f32>(nv + 4 * i as u32, x);
+        }
+        g.call(t(g, 0x33a, 232), 0, &[nv, nv]);
+        let k4 = c(g, 0x364);
+        let ny = mul(rf(g, nv + 4), k4);
+        let nz = mul(rf(g, nv + 8), k4);
+        let nx = mul(rf(g, nv), k4);
+        g.write::<f32>(nv + 4, ny);
+        g.write::<f32>(nv + 8, nz);
+        g.write::<f32>(nv, nx);
+        let (ny, nz, nx) = (sub(ny, 0.0), sub(nz, 0.0), sub(nx, 0.0));
+        let h = f64::from(add(mul(nz, nz), mul(nx, nx))).sqrt();
+        #[allow(clippy::cast_possible_truncation)]
+        let p = g.atan2(f64::from(ny), h) as f32;
+        #[allow(clippy::cast_possible_truncation)]
+        let yw = g.atan2(f64::from(nz), f64::from(nx)) as f32;
+        let yw = wrap(g, sub(c(g, 0x439), yw), [0x448, 0x458, 0x462, 0x46f]);
+        for (i, x) in [0u32, 0xc0c0_0000, 0, ONE].into_iter().enumerate() {
+            g.write::<u32>(u + 4 * i as u32, x);
+        }
+        g.call(t(g, 0x489, 229), 0, &[u, m2, u]);
+        for i in 0..3u32 {
+            let v = add(rf(g, m2 + 0x30 + 4 * i), rf(g, u + 4 * i));
+            g.write::<f32>(m2 + 0x30 + 4 * i, v);
+        }
+        g.call(t(g, 0x4d0, 235), 0, &[m5]);
+        let b = wrap(g, sub(p, rf(g, r + 0x10)), [0x526, 0x530, 0x53a, 0x547]);
+        g.call(t(g, 0x55b, 328), 0, &[m5, m5, b.to_bits()]);
+        let cc = wrap(g, sub(yw, rf(g, r + 0x14)), [0x578, 0x582, 0x58c, 0x599]);
+        g.call(t(g, 0x5ad, 329), 0, &[m5, m5, cc.to_bits()]);
+        g.call(t(g, 0x5cf, 231), 0, &[m2, m5, m2]);
+        let (pa, pb, pc) = (
+            g.read::<u32>(r + 0x24),
+            g.read::<u32>(r + 0x28),
+            g.read::<u32>(r + 0x2c),
+        );
+        let kc = c(g, 0x5f0);
+        let c0 = div(add(add(rf(g, pb), rf(g, pa)), rf(g, pc)), kc);
+        let c1 = div(add(add(rf(g, pa + 4), rf(g, pb + 4)), rf(g, pc + 4)), kc);
+        let c2 = div(add(add(rf(g, pa + 8), rf(g, pb + 8)), rf(g, pc + 8)), kc);
+        for (i, x) in [c0, c1, c2, 1.0].into_iter().enumerate() {
+            g.write::<f32>(u + 4 * i as u32, x);
+        }
+        g.call(t(g, 0x640, 229), 0, &[u, m4, u]);
+        let k2 = c(g, 0x671);
+        let t0 = add(rf(g, m2 + 0x30), rf(g, u));
+        g.write::<u32>(m2 + 0x3c, ONE);
+        g.write::<f32>(m2 + 0x30, t0);
+        for i in 1..3u32 {
+            let v = add(rf(g, m2 + 0x30 + 4 * i), rf(g, u + 4 * i));
+            g.write::<f32>(m2 + 0x30 + 4 * i, v);
+        }
+        for row in 0..3u32 {
+            for col in 0..3u32 {
+                let at = m2 + 0x10 * row + 4 * col;
+                let v = mul(rf(g, at), k2);
+                g.write::<f32>(at, v);
+            }
+        }
+        eax = crate::r45::glow_draw_0431(
+            g,
+            img,
+            &Frame {
+                at: img.rel32_target(f + 0x763),
+                esp: s.wrapping_sub(4),
+                ecx: m2,
+                ..Frame::default()
+            },
+        )
+        .eax;
+    }
+    Ret::eax(eax)
+}
+
+/// [`orbs_task_0431`] (the `rel32`s: `_libm_sse2_sqrt_precise`, `_CIatan2`
+/// twice, the glow draw, the cookie check).
+pub const ORBS_TASK_0431: Sig = Sig {
+    len: 1925,
+    hash: 0xb261_00b3_95fb_8d28,
+    calls: &[
+        (0x3d5, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x3e8, Callee::Import("_CIatan2")),
+        (0x427, Callee::Import("_CIatan2")),
+        (0x763, Callee::Sig(&crate::r45::GLOW_DRAW_0431)),
+        (0x77d, Callee::Any),
+    ],
+    imports: &[],
+};

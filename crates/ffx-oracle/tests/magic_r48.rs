@@ -2722,3 +2722,177 @@ fn orbs_setup_0431() {
         t.check_entry(f0, Call::default(), &[], Eax::Checked);
     }
 }
+
+/// `magic_0431` 0x100035a0 (`r48::orbs_task_0431`): the delays counting
+/// (first, second, both out); three orbs with corners giving normals
+/// whose angles wrap.
+#[test]
+fn orbs_task_0431() {
+    let Some(mut t) = sa::twin(431) else { return };
+    let f = t.at(0x35a0);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    let gd = img.rel32_target(f + 0x763);
+    all_stubs(&mut t);
+    for s in [723u32, 724] {
+        rec(&mut t, s, 1, move |m, a| {
+            for i in 0..16 {
+                wf(
+                    m,
+                    a[0] + 4 * i,
+                    (i as f32 + 1.0) * if s == 723 { 1.0 } else { 0.5 },
+                );
+            }
+            s
+        });
+    }
+    rec(&mut t, 544, 2, |m, a| {
+        for i in 0..4 {
+            wf(m, a[1] + 4 * i, a[0] as f32 + i as f32 * 0.25);
+        }
+        0x544
+    });
+    rec(&mut t, 567, 5, |m, a| {
+        let mut x = 0x567u32;
+        for i in 0..0x14 {
+            x = x.rotate_left(3) ^ m.r32(a[1] + 4 * i);
+        }
+        // the glow's matrix and record, kept where the comparison sees them
+        for i in 0..16 {
+            let v = m.r32(a[2] + 4 * i);
+            m.w32(SCRATCH + 0x3_d800 + 4 * i, v);
+        }
+        for i in 0..0x14 {
+            let v = m.r32(a[1] + 4 * i);
+            m.w32(SCRATCH + 0x3_d900 + 4 * i, v);
+        }
+        0x567
+    });
+    // (slots 562 and 545 read no words: the answers ignore the stack)
+    for s in [562u32, 545] {
+        rec(&mut t, s, 0, move |_, _| s << 16);
+    }
+    rec(&mut t, 553, 5, |_, a| 0x0553_0000 ^ a[0]);
+    for s in [230u32, 210] {
+        rec(&mut t, s, 2, move |m, a| {
+            let (dst, src) = if s == 230 { (a[0], a[1]) } else { (a[1], a[0]) };
+            for i in 0..16 {
+                let x = ((src >> 4) & 0xf) as f32 * 0.125 + i as f32 * 0.0625;
+                wf(m, dst + 4 * i, x);
+            }
+            s
+        });
+    }
+    rec(&mut t, 235, 1, |m, a| {
+        for i in 0..16 {
+            wf(m, a[0] + 4 * i, if i % 5 == 0 { 1.0 } else { 0.0 });
+        }
+        0x235
+    });
+    for s in [231u32, 329, 328] {
+        rec(&mut t, s, 3, move |m, a| {
+            for i in 0..16 {
+                let y = if s == 231 {
+                    rf(m, a[2] + 4 * i)
+                } else {
+                    f32::from_bits(a[2])
+                };
+                let x = rf(m, a[1] + 4 * i) * 0.5 + y;
+                wf(m, a[0] + 4 * i, x);
+            }
+            s
+        });
+    }
+    rec(&mut t, 229, 3, |m, a| {
+        let mut out = [0.0f32; 4];
+        for i in 0..4 {
+            for j in 0..4 {
+                out[i as usize] += rf(m, a[1] + 16 * j + 4 * i) * rf(m, a[2] + 4 * j);
+            }
+        }
+        for i in 0..4 {
+            let log = SCRATCH + 0x3_e100 + 4 * i;
+            m.w32(log, m.r32(log) ^ m.r32(a[2] + 4 * i));
+            wf(m, a[0] + 4 * i, out[i as usize]);
+        }
+        0x229
+    });
+    rec(&mut t, 232, 2, |m, a| {
+        let v: Vec<f32> = (0..3).map(|i| rf(m, a[1] + 4 * i)).collect();
+        let n = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt().max(1e-3);
+        for i in 0..3 {
+            wf(m, a[0] + 4 * i as u32, v[i] / n);
+        }
+        0x232
+    });
+    for (s, n) in [(357u32, 3), (356, 3), (355, 2), (354, 2)] {
+        rec(&mut t, s, n, move |_, a| (s << 16) ^ a[0] ^ a[n - 1]);
+    }
+    for o in [0x4fu32, 0x6b] {
+        t.set_u32(w(o), SCRATCH + 0x700);
+    }
+    t.write(SCRATCH + 0x700, &[3, 2, 1, 0]);
+    for o in [0x59u32, 0x7d] {
+        for i in 0..8 {
+            t.set_u32(w(o) + 4 * i, 0x0b00_0010 + 3 * i);
+        }
+    }
+    let ops = [
+        0x1cc, 0x364, 0x439, 0x448, 0x458, 0x462, 0x46f, 0x5f0, 0x671,
+    ];
+    junk_ops(&mut t, f, &ops);
+    for (op, x) in [
+        (0x1cc, 0.5f32),
+        (0x364, 1.5),
+        (0x439, 1.5),
+        (0x448, std::f32::consts::PI),
+        (0x458, std::f32::consts::TAU),
+        (0x462, -std::f32::consts::PI),
+        (0x46f, std::f32::consts::TAU),
+        (0x5f0, 3.0),
+        (0x671, 0.75),
+    ] {
+        setf(&mut t, w(op), x);
+    }
+    for op in [0x526u32, 0x578] {
+        setf(&mut t, w(op), std::f32::consts::PI);
+    }
+    for op in [0x530u32, 0x582, 0x547, 0x599] {
+        setf(&mut t, w(op), std::f32::consts::TAU);
+    }
+    for op in [0x53au32, 0x58c] {
+        setf(&mut t, w(op), -std::f32::consts::PI);
+    }
+    let s0 = SCRATCH + 0x1_0000;
+    t.set_u32(w(0x1e), s0);
+    t.set_u32(img.word(gd + 0x34), s0);
+    let pts = SCRATCH + 0x6000;
+    for (k, (d1, d2)) in (0u32..).zip([(3u32, 2u32), (0, 2), (0, 0)]) {
+        junk(&mut t, s0, 0xd40, k);
+        t.set_u32(s0 + 0xd08, d1);
+        t.set_u32(s0 + 0xd0c, d2);
+        t.set_u32(img.word(gd + 0x18f), 0x0e0e_018f + k);
+        for i in 0..0x30u32 {
+            let v = ((i * 11 + k * 7) % 19) as f32 * 0.5 - 4.5;
+            setf(&mut t, pts + 4 * i, v);
+        }
+        for j in 0..3u32 {
+            let r = s0 + 0xc6c + 0x30 * j;
+            for (o, x) in [
+                (0u32, 0.25f32 + j as f32),
+                (4, -1.5 + k as f32),
+                (8, 2.0),
+                (0x10, 0.5),
+                (0x14, -0.75 * j as f32),
+            ] {
+                setf(&mut t, r + o, x);
+            }
+            t.set_u32(r + 0x20, j + 1);
+            t.set_u32(r + 0x24, pts + 0x30 * j);
+            t.set_u32(r + 0x28, pts + 0x30 * j + 0x10);
+            t.set_u32(r + 0x2c, pts + 0x30 * j + 0x20);
+        }
+        ownb::dirty_stack(&mut t, 0x35a0 + k, &[]);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
