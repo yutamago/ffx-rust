@@ -68,6 +68,14 @@
 # check), stores them in ~/ffx-work/replay-audio (FFX_REPLAY_AUDIO; never
 # in git); without it the Rust replacements run and are compared with both
 # references. Traces and screenshots are not compared in this mode.
+# Unicorn profile (docs/harness.md, "Unicorn coverage in ffx-rust"):
+#   FFX_HARNESS_EXE=rust FFX_HOST_PROFILE=1 tools/replays/run-all.sh [--extra|--audio] [replay...]
+# has each ffx-rust.exe write every function that ran in Unicorn
+# (`--profile`, at the harness's quit), keeps it as
+# <run>/rust/<replay>.profile.tsv and prints the summed report at the end
+# (tools/unicorn-report.py, also written to <run>/rust/unicorn-report.txt
+# and unicorn-summed.tsv). The exit code stays the comparison's.
+# `run-all.sh [--extra|--audio] --list` prints the list's replays and exits.
 set -u
 repo="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$repo"
@@ -116,6 +124,14 @@ if [ -n "$extra" ]; then
     eye+=(devsave-22-luca)
 fi
 
+# the audio list (--audio, below)
+audio_replays=(event-besaid battle-attack menu-browse battle-ifrit movie-fmv)
+if [[ "${1:-}" == --list || ( "${1:-}" == --audio && "${2:-}" == --list ) ]]; then
+    [[ "$1" == --audio ]] && replays=("${audio_replays[@]}")
+    printf '%s\n' "${replays[@]}"
+    exit 0
+fi
+
 # ffx-rust.exe instead of FFX.exe with the hook (FFX_HARNESS_EXE=rust,
 # docs/harness.md "Two processes"; the 64-bit build, x86_64-pc-windows-msvc):
 # the Rust runs only, against the same recordings, which only the original
@@ -127,6 +143,33 @@ if [[ "${FFX_HARNESS_EXE:-}" == rust ]]; then
         [[ "$a" == --record ]] && { echo "--record runs the original code: unset FFX_HARNESS_EXE" >&2; exit 2; }
     done
 fi
+# The Unicorn profile, one per replay: each replay's ffx-rust.exe writes
+# ffx-rust.profile.tsv in its slot's folder (tools/run-game.sh), copied out
+# below; a path would be shared by the replays running side by side.
+profile=""
+if [[ -n "${FFX_HOST_PROFILE:-}" ]]; then
+    if [[ -z "$host" ]]; then
+        echo "FFX_HOST_PROFILE needs FFX_HARNESS_EXE=rust (FFX.exe has no Unicorn); ignored" >&2
+        unset FFX_HOST_PROFILE
+    else
+        [[ "$FFX_HOST_PROFILE" != 1 ]] && echo "FFX_HOST_PROFILE=$FFX_HOST_PROFILE: one file per replay instead (<run>/rust/<replay>.profile.tsv)" >&2
+        export FFX_HOST_PROFILE=1
+        profile=1
+    fi
+fi
+# The summed Unicorn report over this run's profiles (FFX_HOST_PROFILE).
+profile_report() { # tag
+    [[ -n "$profile" ]] || return 0
+    local d="$runs/$1"
+    local files=("$d"/*.profile.tsv)
+    if [[ ! -f "${files[0]}" ]]; then
+        echo "== unicorn profile: none written (the replays' ffx-rust.log say why)"
+        return 0
+    fi
+    echo "== unicorn profile: ${#files[@]} of ${#replays[@]} replays ($d/unicorn-report.txt)"
+    python3 -I tools/unicorn-report.py "${files[@]}" --brief --top 20 --out "$d/unicorn-report.txt" \
+        --tsv "$d/unicorn-summed.tsv" | sed 's/^/   /'
+}
 
 # Build once, not three times side by side. With FFX_NO_BUILD=1 already set,
 # ffx-rust.exe is the one in target/ (built elsewhere and copied in: PC2 has
@@ -165,6 +208,10 @@ run() { # replay, tag, [original]
         slot="$(sed -n 's/^replay: slot \([0-9]*\),.*/\1/p' "$dir/$1.out" | head -1)"
         [[ -n "$slot" ]] && cp "${FFX_INSTANCES_DIR:-$HOME/ffx-work/instances}/$slot/ffx-rust.log" "$dir/$1.ffx-rust.log" 2>/dev/null
         grep -h '^overlay calls in all' "$dir/$1.ffx-rust.log" 2>/dev/null | sed "s/^/$1: /"
+        if [[ -n "$profile" && -n "$slot" ]]; then
+            cp "${FFX_INSTANCES_DIR:-$HOME/ffx-work/instances}/$slot/ffx-rust.profile.tsv" "$dir/$1.profile.tsv" 2>/dev/null ||
+                echo "$1: no Unicorn profile (ended before the harness's quit?)"
+        fi
     fi
 }
 # Runs `run` for each replay with these arguments, side by side unless
@@ -187,7 +234,7 @@ audio=""
 if [ "${1:-}" = --audio ]; then
     audio=1
     shift
-    replays=(event-besaid battle-attack menu-browse battle-ifrit movie-fmv)
+    replays=("${audio_replays[@]}")
     audio_dir="${FFX_REPLAY_AUDIO:-$HOME/ffx-work/replay-audio}"  # never in git
     mkdir -p "$audio_dir"
     wavcmp() { # label, a, b
@@ -233,6 +280,7 @@ if [ "${1:-}" = --audio ]; then
         wavcmp "$r Rust against original" "$audio_dir/$r-orig.wav" "$runs/rust/$r-rust.wav" || bad=1
         [ -f "$audio_dir/$r-orig2.wav" ] && { wavcmp "$r Rust against original 2" "$audio_dir/$r-orig2.wav" "$runs/rust/$r-rust.wav" || bad=1; }
     done
+    profile_report rust
     exit $bad
 fi
 while [ "${1:-}" = --hits ] || [ "${1:-}" = --iggy-log ] || [ "${1:-}" = --rust-map ] || [ "${1:-}" = --rust-map=build ]; do
@@ -325,6 +373,7 @@ for r in "${eye[@]}"; do
     [[ " ${replays[*]} " == *" $r "* ]] || continue
     echo "== $r screenshots, by eye: $runs/rust/$r-*.bmp against $shots/orig/eye and $shots/orig2/eye"
 done
+profile_report rust
 if [ -n "$hits" ]; then
     # the coverage session on every save entry, one game at a time
     for e in ${FFX_HITS_SAVES:-0 1 2 3 5}; do

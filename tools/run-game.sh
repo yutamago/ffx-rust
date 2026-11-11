@@ -42,6 +42,14 @@
 #               (the 64-bit build, x86_64-pc-windows-msvc, the only one);
 #               FFX_HOST_GFX_RECORD=1 keeps the draw recording (gfxcapture),
 #               FFX_HOST_NOTES=1, FFX_HOST_TRACE=n, FFX_HOST_WATCH, FFX_HOST_DISABLE, FFX_HOST_ONLY and FFX_HOST_IGGY_OUT reach it (docs/host.md)
+# FFX_HOST_PROFILE=1|FILE in the environment (with --rust): ffx-rust.exe
+#               --profile: every function that ran in Unicorn (FFX.exe by
+#               symbols/ffx.sym, the C runtime DLLs, the spell overlays),
+#               written at the harness's quit to ffx-rust.profile.tsv in the
+#               game folder (1) or to FILE (a WSL path); docs/harness.md,
+#               "Unicorn coverage in ffx-rust"
+# FFX_RUN_GAME_DRY=1 in the environment: print what would start (program,
+#               arguments, WSLENV) after the options are read, start nothing
 # FFX_NO_BUILD=1 in the environment: install the dinput8.dll / ffx-rust.exe
 #               already built instead of building first (cargo-xwin builds
 #               queue for one lock shared by every worktree)
@@ -81,6 +89,24 @@ while [[ $# -gt 0 ]]; do
     esac
     shift
 done
+# ffx-rust.exe's Unicorn profile (FFX_HOST_PROFILE, above): --profile and
+# the repo's ffx.sym, so FFX.exe's blocks are named by function. The file is
+# a Windows path (the program's), relative to the game folder for "1".
+rust_args=()
+if [[ -n "${FFX_HOST_PROFILE:-}" ]]; then
+    if [[ -z "${rust:-}" ]]; then
+        echo "FFX_HOST_PROFILE needs --rust (FFX.exe has no Unicorn); ignored" >&2
+    elif [[ "$FFX_HOST_PROFILE" == 1 ]]; then
+        rust_args+=(--profile ffx-rust.profile.tsv)
+    else
+        profile_file="$(realpath -m "$FFX_HOST_PROFILE")"
+        mkdir -p "$(dirname "$profile_file")"
+        rust_args+=(--profile "$(wslpath -w "$(dirname "$profile_file")")\\$(basename "$profile_file")")
+    fi
+    if [[ ${#rust_args[@]} -gt 0 ]]; then
+        rust_args+=(--sym "$(wslpath -w "$repo/symbols/ffx.sym")")
+    fi
+fi
 # FFX_HOOK_ONLY (ffx-dinput8): only these replacements are installed
 if [[ -n "${FFX_HOOK_ONLY:-}" ]]; then
     export WSLENV="${WSLENV:+$WSLENV:}FFX_HOOK_ONLY"
@@ -141,6 +167,12 @@ case "$lang" in jp|en|fr|de|it|es|kr|ch) ;; *) echo "unknown language $lang" >&2
 # ffx-rust.exe opens a real window: never in the foreground (docs/harness.md)
 if [[ -n "${rust:-}" && "${FFX_HARNESS_BACKGROUND:-}" != 1 ]]; then
     echo "--rust needs --background" >&2; exit 2
+fi
+if [[ "${FFX_RUN_GAME_DRY:-}" == 1 ]]; then
+    if [[ -n "${rust:-}" ]]; then echo "program: ffx-rust.exe"; else echo "program: FFX.exe (hooks $hooks)"; fi
+    echo "arguments:${rust_args[*]:+ ${rust_args[*]}}"
+    echo "WSLENV: ${WSLENV:-}"
+    exit 0
 fi
 if [[ -n "$instance" ]]; then
     game="$("$repo/tools/instance.sh" "$instance" ${mods[@]+"${mods[@]}"})"
@@ -273,8 +305,8 @@ cd "$game"
 if [[ -n "${rust:-}" ]]; then
     # ffx-rust.exe's game addresses are its arena's (docs/host.md, "The
     # arena"), the same in every run, so --fixed-addresses needs no launcher.
-    rm -f "$game/ffx-rust.log"
-    ./ffx-rust.exe > "$game/ffx-rust.log" 2>&1 &
+    rm -f "$game/ffx-rust.log" "$game/ffx-rust.profile.tsv" "$game/ffx-rust.profile.part"
+    ./ffx-rust.exe ${rust_args[@]+"${rust_args[@]}"} > "$game/ffx-rust.log" 2>&1 &
     echo "ffx-rust.exe started (language $lang, pid $!, report in $game/ffx-rust.log)"
 elif [[ -n "${fixed:-}" ]]; then
     [[ "${FFX_NO_BUILD:-}" == 1 && -f "$repo/target/x86_64-pc-windows-msvc/release/ffx-launch.exe" ]] ||
