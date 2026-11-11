@@ -10,8 +10,8 @@
 #    g_BtlShoutStreams (0x00c42510) gives stream 1, and
 #    `SndStartShoutStream(1, 0x3f, 0x7f)` plays the Shout bank's
 #    `210101td` (ffx_us_voice_btl_iop_bank00.fsb, System::playSound on the
-#    Shout channel). The reply is the function's: 0 played, -1 a shout
-#    still loading.
+#    Shout channel). The reply is the function's eax: 0x0 played,
+#    0xffffffff a shout still loading.
 # 2. A battle voice: `SndStandbyStream(0x23)` (0x00887570; VoiceIDMapper
 #    0x23 = 210701rk, Rikku, ffx_us_voice_btl), then `SndStartStream()`
 #    (0x00887630), as Native_VoiceStandby_End and Native_7065_BtlStreamStart
