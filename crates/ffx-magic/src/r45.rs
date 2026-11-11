@@ -3349,29 +3349,77 @@ pub const GLIDE_RUN_0392: Sig = Sig {
 /// 255) instead of slot 210; `S + 0xd10` is never 0, but it is kept.)
 /// Returns slot 211's `eax`.
 pub fn summon_place_0392<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    // `magic_0449`'s copy (0x10005660) has the object `S + 0x980`
+    // (index 8), the yaw `S + 0x56dc` and a record `S + 0x5640` set up
+    // into `O + 0x110` (74 bytes more, the operands after it later)
+    let layout = if img.word(fr.at + 0x7f) & 0xffff == 0x878d {
+        PlaceLayout {
+            obj: 0x980,
+            index: 8,
+            yaw: 0x56dc,
+            rec: Some(0x5640),
+            d: 0x4a,
+        }
+    } else {
+        PlaceLayout {
+            obj: 0x850,
+            index: 7,
+            yaw: 0x5378,
+            rec: None,
+            d: 0,
+        }
+    };
+    summon_place_with(g, img, fr, &layout)
+}
+
+/// Where a copy of [`summon_place_0392`] keeps its object, its yaw and
+/// its record, and how much later its operands are from the record on.
+struct PlaceLayout {
+    obj: u32,
+    index: u32,
+    yaw: u32,
+    rec: Option<u32>,
+    d: u32,
+}
+
+/// [`summon_place_0392`] on the layout `l`.
+fn summon_place_with<G: Game>(g: &mut G, img: &Image, fr: &Frame, l: &PlaceLayout) -> Ret {
     let f = fr.at;
     let w = |o: u32| img.word(f + o);
-    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let v = |o: u32| img.word(f + o + l.d);
+    let t = |g: &G, o: u32, n: u32| slot_target(g, v(o), n);
     let s = g.read::<u32>(w(0x1d));
-    let o = s + 0x850;
+    let o = s + l.obj;
     let scale = g.read::<f32>(w(0x14));
-    crate::s4_misc::start_object_plain(g, img, img.rel32_target(f + 0x2f), o, scale, 7);
+    crate::s4_misc::start_object_plain(g, img, img.rel32_target(f + 0x2f), o, scale, l.index);
     for j in 0..4u32 {
         let x = g.read::<u32>(s + 0xf70 + 4 * j);
         g.write::<u32>(o + 0xd0 + 4 * j, x);
     }
-    let yaw = g.read::<u32>(s + 0x5378);
+    let yaw = g.read::<u32>(s + l.yaw);
     let y = sub(g.read::<f32>(o + 0xd4), g.read::<f32>(w(0x75)));
     g.write::<u32>(o + 0xc4, yaw);
     let a = s + 0xf50;
     let m = s + 0xd10;
     g.write::<f32>(o + 0xd4, y);
+    if let Some(r) = l.rec {
+        let r = s + r;
+        for d in [0x18u32, 0x14, 0x10, 0x1c] {
+            g.write::<u32>(r + d, 0);
+        }
+        g.write::<u16>(r + 0x30, 0);
+        g.write::<u32>(r + 0x20, w(0xb8));
+        g.write::<u32>(r + 0x24, w(0xbf));
+        g.write::<u32>(r + 0x28, 0);
+        g.write::<u32>(r + 0x2c, 0);
+        g.write::<u32>(o + 0x110, r);
+    }
     g.write::<u32>(a, 0);
-    let yaw = g.read::<u32>(s + 0x5378);
+    let yaw = g.read::<u32>(s + l.yaw);
     g.write::<u32>(a + 4, yaw);
     g.write::<u32>(a + 8, 0);
     g.write::<u32>(a + 0xc, 0);
-    crate::sa_misc::scale_rotate(g, img, img.rel32_target(f + 0xbd), m, a);
+    crate::sa_misc::scale_rotate(g, img, img.rel32_target(f + 0xbd + l.d), m, a);
     for j in 0..4u32 {
         let x = g.read::<u32>(s + 0xf70 + 4 * j);
         g.write::<u32>(s + 0xd40 + 4 * j, x);
@@ -3380,19 +3428,19 @@ pub fn summon_place_0392<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         let x = g.read::<u32>(s + 0xf70 + 4 * j);
         g.write::<u32>(s + 0xf60 + 4 * j, x);
     }
-    let c = g.read::<u32>(w(0x126));
+    let c = g.read::<u32>(v(0x126));
     let mut st = Pushes::default();
     if m != 0 {
         st.push_all(&[m, c]);
         st.call(g, t(g, 0x12f, 210), 0);
         st.pop(2);
-    } else if g.read::<u32>(w(0x144)) == 0 {
-        let i = g.read::<u32>(w(0x14d));
+    } else if g.read::<u32>(v(0x144)) == 0 {
+        let i = g.read::<u32>(v(0x14d));
         if i.cast_signed() < 0x20 {
-            let v = fr.esp.wrapping_sub(4).wrapping_sub(0x14);
-            st.push_all(&[v, i]);
+            let p = fr.esp.wrapping_sub(4).wrapping_sub(0x14);
+            st.push_all(&[p, i]);
             st.call(g, t(g, 0x15b, 217), 0);
-            st.push_all(&[v, i]);
+            st.push_all(&[p, i]);
             st.call(g, t(g, 0x16d, 255), 0);
             st.pop(4);
         }
@@ -3410,6 +3458,18 @@ pub const SUMMON_PLACE_0392: Sig = Sig {
         (0x2f, Callee::Sig(&crate::s4_misc::START_OBJECT_PLAIN)),
         (0xbd, Callee::Sig(&crate::sa_misc::SCALE_ROTATE)),
         (0x198, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// [`summon_place_0392`]'s copy in `magic_0449` (0x10005660, 490 bytes).
+pub const SUMMON_PLACE_0449: Sig = Sig {
+    len: 490,
+    hash: 0xaf30_f35d_502a_6b05,
+    calls: &[
+        (0x2f, Callee::Sig(&crate::s4_misc::START_OBJECT_PLAIN)),
+        (0x107, Callee::Sig(&crate::sa_misc::SCALE_ROTATE)),
+        (0x1e2, Callee::Any),
     ],
     imports: &[],
 };
@@ -4572,4 +4632,90 @@ pub const TRAILS_START_0392: Sig = Sig {
         (0x81a, Callee::Any),
     ],
     imports: &[(0x561, "rand")],
+};
+
+/// `magic_0449`'s start-up (0x10007930, 648 bytes; internal, no
+/// arguments, run by its load step): [`start_up_0392`]'s steps without
+/// the mesh flags and the actor's slots: the actors' table cleared, four
+/// words set; slots 719, 711 (the lock held), 710; four words 0; the
+/// camera's start ([`camera_start`](crate::m0449::camera_start)); a block
+/// of words, slot 271 `(4)`; two task nodes (kinds 1 and 2,
+/// [`take_pair_0266`]'s shape). Each slot call passes the words the
+/// original leaves on the stack. Returns 0.
+pub fn start_up_0449<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    for o in [0x11u32, 0x19, 0x21, 0x29, 0x31, 0x39, 0x41, 0x49] {
+        g.write::<u32>(w(o), 0);
+        g.write::<u32>(w(o) + 4, 0);
+    }
+    let mut st = Pushes::default();
+    st.push_all(&[0, 8, w(0x56)]);
+    g.write::<u32>(w(0x5c), 0);
+    for (dst, src) in [(0x66, 0x6a), (0x70, 0x74), (0x7a, 0x7e)] {
+        g.write::<u32>(w(dst), w(src));
+    }
+    let h = st.call(g, t(g, 0x1, 719), 0).eax;
+    let lock = g.read::<u32>(w(0x86));
+    g.write::<u32>(w(0x8d), h);
+    let saved = g.read::<u32>(lock);
+    st.push_all(&[0, w(0x94), h]);
+    g.write::<u32>(lock, 1);
+    st.call(g, t(g, 0x9a, 711), 0);
+    let lock = g.read::<u32>(w(0xad));
+    g.write::<u32>(lock, saved);
+    let h = g.read::<u32>(w(0xc4));
+    st.push_all(&[0x4_0000, w(0xbe), h, w(0xcf)]);
+    st.call(g, t(g, 0xb9, 710), 0);
+    for o in [0xd7u32, 0xe1, 0xeb, 0xf5] {
+        g.write::<u32>(w(o), 0);
+    }
+    let cam = Frame {
+        at: img.rel32_target(f + 0xfe),
+        // three pushes, ten words, the call
+        esp: fr.esp.wrapping_sub(0x38),
+        ..*fr
+    };
+    crate::m0449::camera_start(g, img, &cam);
+    g.write::<u32>(w(0x109), w(0x10d));
+    g.write::<u32>(w(0x113), 0);
+    g.write::<u16>(w(0x11e), 0);
+    g.write::<u8>(w(0x126), 1);
+    st.push(4);
+    st.call(g, t(g, 0x103, 271), 0);
+    take_pair_0266(
+        g,
+        img,
+        f,
+        [
+            0x138, 0x155, 0x17a, 0x19f, 0x1aa, 0x1b0, 0, 0x1c4, 0x1d9, 0x202, 0x20a, 0x23b, 0x246,
+            0x1b0, 0x277, 0x265,
+        ],
+        1,
+        2,
+    );
+    Ret::eax(0)
+}
+
+/// [`start_up_0449`] (the `rel32`: the camera's start).
+pub const START_UP_0449: Sig = Sig {
+    len: 648,
+    hash: 0xcd15_2a0a_fe50_5beb,
+    calls: &[(0xfe, Callee::Sig(&crate::m0449::CAMERA_START))],
+    imports: &[],
+};
+
+/// `magic_0449`'s load step (0x100052b0, the 118-byte shape) running
+/// [`start_up_0449`].
+pub fn load_0449<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    crate::r9_load::load_step(g, img, fr, crate::r9_load::Shape::Zero, start_up_0449)
+}
+
+/// [`load_0449`].
+pub const LOAD_0449: Sig = Sig {
+    len: 118,
+    hash: 0xf93b_1968_cd8e_f184,
+    calls: &[(0x5b, Callee::Sig(&START_UP_0449))],
+    imports: &[],
 };

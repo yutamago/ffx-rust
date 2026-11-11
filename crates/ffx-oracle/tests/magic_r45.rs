@@ -2264,8 +2264,19 @@ fn glide_run_0392() {
 /// empty and not; the scaled turn's slots write what they read.
 #[test]
 fn summon_place_0392() {
-    let Some(mut t) = sa::twin(392) else { return };
-    let f = t.at(0x1e50);
+    summon_place(392, 0x1e50, 0);
+}
+
+/// `magic_0449` 0x10005660 (`r45::summon_place_0392` through
+/// `r45::SUMMON_PLACE_0449`): the same cases on its layout.
+#[test]
+fn summon_place_0449() {
+    summon_place(449, 0x5660, 0x4a);
+}
+
+fn summon_place(n: u16, rva: u32, d: u32) {
+    let Some(mut t) = sa::twin(n) else { return };
+    let f = t.at(rva);
     let img = t.img.clone();
     let w = |o: u32| img.word(f + o);
     all_stubs(&mut t);
@@ -2295,14 +2306,15 @@ fn summon_place_0392() {
     rec(&mut t, 210, 2, |_, a| 0x0210_0000 ^ a[0] ^ a[1]);
     let s = SCRATCH + 0x1_0000;
     t.set_u32(w(0x1d), s);
-    t.set_u32(w(0x126), 0x0c0c_0126);
+    t.set_u32(w(0x126 + d), 0x0c0c_0126);
     for k in 0..3u32 {
         junk(&mut t, s + 0x800, 0x200, k);
         junk(&mut t, s + 0xd00, 0x300, k);
         floats(&mut t, s + 0xf70, 4, k);
         setf(&mut t, s + 0x5378, 0.75 * k as f32 - 0.5);
-        magic_r11::pools(&mut t, f, 416);
-        ownb::dirty_stack(&mut t, 0x1e50 + k, &[]);
+        magic_r11::pools(&mut t, f, 416 + d);
+        ownb::dirty_stack(&mut t, rva + k, &[]);
+        junk(&mut t, s + 0x5600, 0x100, k);
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
@@ -3003,5 +3015,67 @@ fn trails_start_0392() {
         junk(&mut t, w(0x163), 0x40, k);
         ownb::dirty_stack(&mut t, 0x2950 + k, &[]);
         t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// `magic_0449` 0x10007930 (`r45::start_up_0449`, internal) and its load
+/// step 0x100052b0 (`r45::load_0449`): the task list empty and not, the
+/// free ring with room for more nodes and for just the two.
+#[test]
+fn start_up_0449() {
+    let Some(mut t) = sa::twin(449) else { return };
+    let f = t.at(0x7930);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    let cam = t.img.rel32_target(f + 0xfe);
+    let setup = |t: &mut Twin, k: u32, listed: bool, free: u16| {
+        all_stubs(t);
+        for (s, n) in [(711u32, 3usize), (710, 4), (622, 2), (271, 1), (719, 3)] {
+            rec(t, s, n, move |_, a| (s << 16) ^ a[0]);
+        }
+        rec(t, 262, 4, |m, a| {
+            for i in 1..4 {
+                wf(m, a[i], (a[0] & 0xf) as f32 * 0.75 + i as f32 - 3.0);
+            }
+            0x262
+        });
+        rec(t, 333, 1, |_, a| 0x0333_0000 ^ a[0]);
+        t.stub_st0(333, move |_, _| 0.5 + f64::from(k) * 2.75 - 4.0);
+        let lock = SCRATCH + 0x5e0;
+        t.set_u32(w(0x86), lock);
+        t.set_u32(lock, 0x77 + k);
+        let sel = SCRATCH + 0x180;
+        t.set_u32(img.word(cam + 0x8c), sel);
+        t.write(sel, &[3, 1, 4, 2]);
+        t.set_u32(img.word(cam + 0x22), 0x0a0a_0022 + k);
+        t.set_u32(img.word(cam + 0x9b), 0x0a0a_009b);
+        magic_r11::ring(t, w(0x138), w(0x155), free, SCRATCH + 0x5000);
+        t.write(SCRATCH + 0x600, &[0x44; 0x20]);
+        t.set_u32(w(0x1b0), if listed { SCRATCH + 0x600 } else { 0 });
+        t.set_u32(w(0x1c4), SCRATCH + 0x600);
+        junk_ops(t, f, &[0x5c, 0xd7, 0x113, 0x11e, 0x126, 0x8d]);
+    };
+    for (k, (listed, free)) in (0u32..).zip([(false, 4u16), (true, 4), (true, 2), (false, 2)]) {
+        setup(&mut t, k, listed, free);
+        ownb::dirty_stack(&mut t, 0x7930 + k, &[]);
+        t.check(f, Call::default(), &[], Eax::Checked, |g, img, fr| {
+            ffx_magic::r45::start_up_0449(g, img, fr)
+        });
+    }
+    let load = t.at(0x52b0);
+    for (busy, loaded, ready) in [(1u32, 0u32, 1u32), (0, 0, 0), (0, 1, 1), (0, 0, 2)] {
+        setup(&mut t, 2, true, 4);
+        rec(&mut t, 225, 1, move |_, _| busy);
+        rec(&mut t, 226, 2, |_, a| 0x0226_0000 ^ a[0]);
+        rec(&mut t, 227, 1, move |_, _| ready);
+        let at = t.img.word(load + 0x18);
+        t.set_u32(at, loaded);
+        for o in [0x26u32, 0x46] {
+            let at = t.img.word(load + o);
+            t.set_u32(at, 0x0b0b_0000 + o);
+        }
+        junk_ops(&mut t, load, &[0x61, 0x6b]);
+        ownb::dirty_stack(&mut t, 0x52b0, &[]);
+        t.check_entry(load, Call::default(), &[], Eax::Checked);
     }
 }

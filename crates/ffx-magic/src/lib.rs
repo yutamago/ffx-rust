@@ -3466,6 +3466,8 @@ ports! {
     "r45 throw flight 0392" => r45::THROW_FLIGHT_0392, r45::throw_flight_0392;
     "r45 landing 0392" => r45::LANDING_0392, r45::landing_0392;
     "r45 trails start 0392" => r45::TRAILS_START_0392, r45::trails_start_0392;
+    "r45 summon place 0449" => r45::SUMMON_PLACE_0449, r45::summon_place_0392;
+    "r45 load step 0449" => r45::LOAD_0449, r45::load_0449;
     // round 45 (magic-r45): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
@@ -5435,6 +5437,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r45 start-up 0392", &r45::START_UP_0392),
     ("r45 actors tilt 0392", &r45::ACTORS_TILT_0392),
     ("r45 trails 0392", &r45::TRAILS_0392),
+    ("r45 start-up 0449", &r45::START_UP_0449),
     // round 45 (magic-r45): end of INTERNAL
 ];
 
