@@ -1767,3 +1767,100 @@ fn load_0396() {
         t.check_entry(load, Call::default(), &[], Eax::Checked);
     }
 }
+
+/// `magic_0397` 0x100058d0 (`r48::landing_0397`): three, one and no
+/// actors; slot 532 answering for some (the other start), in and out of a
+/// battle; the free ring with enough nodes, the task list empty and not.
+#[test]
+fn landing_0397() {
+    let Some(mut t) = sa::twin(397) else { return };
+    all_stubs(&mut t);
+    let f = t.at(0x58d0);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    magic_r11::object_slots(&mut t);
+    magic_r11::object_start_auto(&mut t, img.rel32_target(f + 0x272));
+    rec(&mut t, 262, 4, |m, a| {
+        let k = (a[0] & 0xff) as f32;
+        wf(m, a[1], 2.0 * (k - 2.0));
+        wf(m, a[2], 0.5 * k + 0.375);
+        wf(m, a[3], 1.5 * (3.0 - k));
+        0x262
+    });
+    for s in [12u32, 314, 277, 15, 16, 17] {
+        rec(&mut t, s, 1, move |_, a| (s << 16) ^ a[0]);
+    }
+    t.stub_st0(12, |_, a| f64::from(a[0] & 0xf) * 0.625);
+    t.stub_st0(314, |_, a| f64::from(f32::from_bits(a[0])) * 0.125);
+    for s in [277u32, 15, 16, 17] {
+        t.stub_st0(s, move |_, a| f64::from((a[0] & 7) + s) * 0.0625);
+    }
+    rec(&mut t, 532, 1, |_, a| a[0] & 1);
+    for s in [330u32, 328, 329, 268] {
+        rec(&mut t, s, 3, move |m, a| {
+            let x = m.r32(a[0]) ^ a[2] ^ s;
+            m.w32(a[0], x);
+            s
+        });
+    }
+    rec(&mut t, 295, 2, |_, a| 0x0295_0000 ^ a[0] ^ a[1]);
+    for o in [0x5du32, 0x22a, 0x2d4, 0x4aa, 0x519, 0x583] {
+        t.set_u32(w(o), SCRATCH + 0x700);
+    }
+    t.write(SCRATCH + 0x700, &[3, 2, 4, 1, 5, 2, 6, 0]);
+    for o in [0x68u32, 0x524] {
+        for i in 0..8 {
+            t.set_u32(w(o) + 4 * i, 0x0b00_0010 + 3 * i);
+        }
+    }
+    let sc = img.rel32_target(f + 0x121);
+    for o in [0x28u32, 0x74] {
+        t.set_u32(img.word(sc + o), SCRATCH + 0x700);
+    }
+    for o in [0x33u32, 0x7f] {
+        for i in 0..8 {
+            t.set_u32(img.word(sc + o) + 4 * i, 0x0b00_0010 + 3 * i);
+        }
+    }
+    junk_ops(&mut t, f, &[0xaf, 0x1c9, 0x254, 0x2ac, 0x341, 0x4ee]);
+    for (op, x) in [
+        (0xaf, 0.5f32),
+        (0x1c9, 4.0),
+        (0x254, 1.25),
+        (0x2ac, 0.75),
+        (0x341, 2.5),
+        (0x4ee, 3.0),
+    ] {
+        setf(&mut t, w(op), x);
+    }
+    t.set_u32(w(0x1d7), 0x8000_0000);
+    let s = SCRATCH + 0x1_0000;
+    let nodes = SCRATCH + 0x5000;
+    // (count, battle, listed)
+    for (k, (count, battle, listed)) in (0u32..).zip([
+        (3i32, 1u32, false),
+        (1, 0, true),
+        (0, 1, true),
+        (2, 0, false),
+    ]) {
+        t.set_u32(w(0x13), s);
+        t.set_u32(w(0x27), count.cast_unsigned());
+        junk(&mut t, s + 0x1800, 0xc00, k);
+        // the sway task given back: no children, no links
+        let back = SCRATCH + 0x4000;
+        junk(&mut t, back, 0x20, k);
+        t.set_u32(back, 0);
+        t.set_u32(back + 4, 0);
+        t.set_u32(back + 8, back);
+        t.set_u32(back + 0xc, 0);
+        t.set_u32(s + 0x23f0, back);
+        t.set_u32(w(0x2f2), battle);
+        magic_r11::pools(&mut t, f, 1941);
+        magic_r11::ring(&mut t, w(0x3af), w(0x3bb), 8, nodes);
+        t.write(SCRATCH + 0x600, &[0x44; 0x20]);
+        t.set_u32(w(0x429), if listed { SCRATCH + 0x600 } else { 0 });
+        t.set_u32(w(0x43f), SCRATCH + 0x600);
+        ownb::dirty_stack(&mut t, 0x58d0 + k, &[]);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}

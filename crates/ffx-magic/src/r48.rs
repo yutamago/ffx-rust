@@ -2948,3 +2948,290 @@ pub const LOAD_0396: Sig = Sig {
     calls: &[(0x5b, Callee::Sig(&crate::r45::START_UP_0396))],
     imports: &[],
 };
+
+/// `magic_0397`'s actors' landing (0x100058d0, 1941 bytes; a table
+/// callback, no arguments; a /GS frame: the place `(x, y, z, 1)` at
+/// `ebp - 0x14`). With `S = *G_S`: the sway task `S[0x23f0]` goes back to
+/// the free ring ([`give_back`](crate::sa_pool::give_back)); then for each
+/// actor `k < *G_N` (its record `R = S + 0x1e90 + 0xac k`, `P = R +
+/// 0x64`, its object `O`):
+/// - slot 262 `(O, &x, &y, &z)`; `h` = slot 12 `(O)` (ST0, over `y`);
+///   `P[0xc] = x`, `P[0x10] -= K`, `P[0x14] = z`; `P[-4]`, `P[0]` = slot
+///   314 `(PI)` each; `P[4]` 0, `P[0x1c..0x24]` 1.0; the actor's scale
+///   into `R` ([`actor_scale`](crate::sa_misc::actor_scale)); slots 330,
+///   328, 329 `(R, R, P[4] / P[-4] / P[0])`; `R[0x30..0x38]` =
+///   `P[0xc..0x14]`; `P[-0x20] = -((P[0x10] - h) / K2)` among zeros;
+///   `P[0x40]` 30, `P[0x44] = c = rand rem 11 + 20`;
+/// - unless slot 532 `(LIST[k])` answers: the object `S + 0x130 (k + 13)`
+///   starts ([`start_object_owners`](crate::s4_misc::start_object_owners),
+///   `K3`, `(2, c + 0x1c, 0, CB)`) at `(x, z, 1)` with `y = h - K4`, its
+///   trail `T = S + 0x1cf0 + 0x34 k` reset; in a battle also the object
+///   `S + 0x130 (k + 5)` (`K3`, `(4, 0x14, 0, 0)`, its step `CB2`); the
+///   ring record `Q` (`S + 0x1b00`, one per such actor) is set up and a
+///   task node from the free ring ([`pool_take_0587`](crate::r27::pool_take_0587),
+///   kept at its `+0x14`) goes last on the task list; slot 295 `(LIST[k],
+///   -1)`;
+/// - else the object `S + 0x130 (k + 5)` starts (`K3` in a battle, else
+///   0; `(4, 0, 0x14, CB)`) at the actor's place (slot 262) and its
+///   matrix (slot 268 `(O, 0x10, V)`).
+///
+/// Then two task nodes from the free ring: the actors' settle (kept at
+/// `S[0x23f0]`) and the landing's light on `W = S + 0x1cb8` (set up with
+/// its globals), appended after it. Returns 0xffff (`S` when the ring
+/// had no third node).
+#[allow(clippy::too_many_lines)] // the original's steps
+pub fn landing_0397<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::s4_misc::start_object_owners;
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let c = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let ebp = fr.esp.wrapping_sub(4);
+    let (px, py, pz, pw) = (
+        ebp.wrapping_sub(0x14),
+        ebp.wrapping_sub(0x10),
+        ebp.wrapping_sub(0xc),
+        ebp.wrapping_sub(8),
+    );
+    let s = g.read::<u32>(w(0x13));
+    let back = g.read::<u32>(s + 0x23f0);
+    crate::sa_pool::give_back(g, img, img.rel32_target(f + 0x22), back);
+    let n = g.read::<u32>(w(0x27)).cast_signed();
+    let actor =
+        |g: &G, k: u32, list: u32| u32::from(g.read::<u8>(g.read::<u32>(w(list)).wrapping_add(k)));
+    let obj = |g: &G, k: u32, list: u32, table: u32| {
+        g.read::<u32>(w(table).wrapping_add(4 * actor(g, k, list)))
+    };
+    let mut q = s + 0x1b00;
+    for k in 0..n.max(0).cast_unsigned() {
+        let r = s.wrapping_add(0x1e90 + 0xac * k);
+        let p = r + 0x64;
+        let o = obj(g, k, 0x5d, 0x68);
+        g.call(t(g, 0x7d, 262), 0, &[o, px, py, pz]);
+        let h = st0_f32(g.call(t(g, 0x8a, 12), 0, &[o]).st0);
+        g.write::<f32>(py, h);
+        let x = g.read::<f32>(px);
+        g.write::<f32>(p + 0xc, x);
+        let y = sub(g.read::<f32>(p + 0x10), c(g, 0xaf));
+        g.write::<u32>(pw, ONE);
+        g.write::<f32>(p + 0x10, y);
+        let z = g.read::<f32>(pz);
+        g.write::<f32>(p + 0x14, z);
+        let pi = 0x4049_0fdb;
+        let r1 = st0_f32(g.call(t(g, 0xd4, 314), 0, &[pi]).st0);
+        g.write::<f32>(p.wrapping_sub(4), r1);
+        let r2 = st0_f32(g.call(t(g, 0xee, 314), 0, &[pi]).st0);
+        g.write::<f32>(p, r2);
+        g.write::<u32>(p + 4, 0);
+        for off in [0x1c, 0x20, 0x24] {
+            g.write::<u32>(p + off, ONE);
+        }
+        crate::sa_misc::actor_scale(g, img, img.rel32_target(f + 0x121), k, r);
+        for (op, sl, at) in [(0x138, 330, p + 4), (0x15a, 328, p - 4), (0x17b, 329, p)] {
+            let a = g.read::<u32>(at);
+            g.call(t(g, op, sl), 0, &[r, r, a]);
+        }
+        for i in 0..3u32 {
+            let v = g.read::<u32>(p + 0xc + 4 * i);
+            g.write::<u32>(p - 0x34 + 4 * i, v);
+        }
+        let d = div(sub(g.read::<f32>(p + 0x10), h), c(g, 0x1c9));
+        for off in [0x38u32, 0x3c] {
+            g.write::<u32>(p + off, 0);
+        }
+        for off in [0x24u32, 0x1c, 0x18, 0x14, 0x10, 0xc, 8] {
+            g.write::<u32>(p - off, 0);
+        }
+        let mask = g.read::<u32>(w(0x1d7));
+        g.write::<u32>(p - 0x20, d.to_bits() ^ mask);
+        let cnt = g
+            .rand()
+            .cast_signed()
+            .wrapping_rem(11)
+            .wrapping_add(20)
+            .cast_unsigned();
+        g.write::<u32>(p + 0x40, 0x1e);
+        g.write::<u32>(p + 0x44, cnt);
+        let i = actor(g, k, 0x22a);
+        let busy = g.call(t(g, 0x234, 532), 0, &[i]).eax;
+        if busy == 0 {
+            let o1 = s + 0x130 * (k + 0xd);
+            start_object_owners(
+                g,
+                img,
+                img.rel32_target(f + 0x272),
+                o1,
+                c(g, 0x254),
+                2,
+                cnt + 0x1c,
+                (0, w(0x244)),
+            );
+            let y = sub(h, c(g, 0x2ac));
+            g.write::<f32>(o1 + 0xd0, x);
+            g.write::<f32>(o1 + 0xd8, z);
+            g.write::<u32>(o1 + 0xdc, ONE);
+            g.write::<f32>(o1 + 0xd4, y);
+            let v = g.read::<u32>(s + 0x23f8);
+            g.write::<u32>(o1 + 0xc4, v);
+            let i = actor(g, k, 0x2d4);
+            g.write::<u32>(o1 + 0x120, i);
+            let tr = s + 0x1cf0 + 0x34 * k;
+            for off in [0x18u32, 0x14, 0x10, 0x1c] {
+                g.write::<u32>(tr + off, 0);
+            }
+            g.write::<u16>(tr + 0x30, 0);
+            g.write::<u32>(tr + 0x20, w(0x31c));
+            g.write::<u32>(tr + 0x24, w(0x323));
+            g.write::<u32>(tr + 0x28, 0);
+            g.write::<u32>(tr + 0x2c, 0);
+            g.write::<u32>(o1 + 0x110, tr);
+            if g.read::<u32>(w(0x2f2)) != 0 {
+                let o2 = s + 0x130 * (k + 5);
+                start_object_owners(
+                    g,
+                    img,
+                    img.rel32_target(f + 0x35b),
+                    o2,
+                    c(g, 0x341),
+                    4,
+                    0x14,
+                    (0, 0),
+                );
+                let v = g.read::<u32>(s + 0x23f8);
+                g.write::<u32>(o2 + 0xc4, v);
+                g.write::<u32>(o2 + 0x104, w(0x377));
+                g.write::<u32>(o2 + 0x120, k);
+            }
+            for (off, v) in [
+                (0u32, 0u32),
+                (0x1c, 0),
+                (0x20, 0x3d88_8889),
+                (0x24, 0),
+                (0x28, 0xf),
+            ] {
+                g.write::<u32>(q + off, v);
+            }
+            g.write::<u16>(q + 0x2c, 0);
+            let (node, _) = crate::r27::pool_take_0587(
+                g,
+                img,
+                f,
+                [0x3af, 0x3bb, 0x3df, 0x3e7, 0x418, 0x423],
+                0,
+            );
+            g.write::<u8>(node + 0x18, 1);
+            g.write::<u32>(node + 0x14, q);
+            crate::r32::append_last(g, img, f, node, [0x429, 0x43f, 0x452, 0x496], 0);
+            for (off, v) in [
+                (4u32, 0x4000_0000u32),
+                (8, ONE),
+                (0xc, 0),
+                (0x10, 0x4000_0000),
+                (0x14, ONE),
+                (0x18, 0),
+            ] {
+                g.write::<u32>(q + off, v);
+            }
+            let fl = g.read::<u16>(q + 0x2c) | 3;
+            g.write::<u16>(q + 0x2c, fl);
+            g.write::<u32>(q + 0x24, cnt + 0x1e);
+            q += 0x30;
+            let i = actor(g, k, 0x4aa);
+            g.call(t(g, 0x4b6, 295), 0, &[i, u32::MAX]);
+        } else {
+            let o2 = s + 0x130 * (k + 5);
+            let k3 = if g.read::<u32>(w(0x4d8)) != 0 {
+                c(g, 0x4ee)
+            } else {
+                0.0
+            };
+            start_object_owners(
+                g,
+                img,
+                img.rel32_target(f + 0x4f8),
+                o2,
+                k3,
+                4,
+                0,
+                (0x14, w(0x244)),
+            );
+            let v = o2 + 0xd0;
+            let o = obj(g, k, 0x519, 0x524);
+            g.call(t(g, 0x531, 262), 0, &[o, v, v + 4, v + 8]);
+            g.call(t(g, 0x546, 268), 0, &[o, 0x10, v]);
+            g.write::<u32>(v + 0xc, ONE);
+            let x = g.read::<u32>(s + 0x23f8);
+            g.write::<u32>(o2 + 0xc4, x);
+            let i = actor(g, k, 0x583);
+            g.write::<u32>(o2 + 0x120, i);
+        }
+    }
+    // the settle task (its append keeps no G_LAST: the light's follows)
+    let (second, _) =
+        crate::r27::pool_take_0587(g, img, f, [0x5b1, 0x5c6, 0x5f7, 0x5f7, 0x61c, 0x627], 0);
+    let listed = g.read::<u32>(w(0x62d)) != 0;
+    g.write::<u8>(second + 0x18, 1);
+    g.write::<u32>(second + 4, 0);
+    if listed {
+        let last = g.read::<u32>(w(0x640));
+        g.write::<u32>(second, last);
+        g.write::<u32>(last.wrapping_add(4), second);
+    } else {
+        g.write::<u32>(second, 0);
+        g.write::<u32>(w(0x653), second);
+    }
+    g.write::<u32>(second + 8, second);
+    let wl = s + 0x1cb8;
+    g.write::<u32>(s + 0x23f0, second);
+    g.write::<u32>(w(0x66b), 0x3f00_0000);
+    g.write::<u32>(w(0x675), ONE);
+    for (off, v) in [
+        (8u32, 0x3f00_0000u32),
+        (4, 0x3f00_0000),
+        (0, 0x3f00_0000),
+        (0xc, ONE),
+        (0x18, ONE),
+        (0x14, ONE),
+        (0x10, ONE),
+        (0x1c, ONE),
+        (0x28, 0x1e),
+        (0x34, 0),
+        (0x30, 0x14),
+        (0x2c, 0x14),
+    ] {
+        g.write::<u32>(wl + off, v);
+    }
+    let (third, eax) =
+        crate::r27::pool_take_0587(g, img, f, [0x6eb, 0x5f7, 0x6f9, 0x701, 0x732, 0x73d], s);
+    let listed = g.read::<u32>(w(0x743)) != 0;
+    g.write::<u8>(third + 0x18, 1);
+    g.write::<u32>(third + 0x14, wl);
+    g.write::<u32>(third + 4, 0);
+    g.write::<u32>(w(0x758), third);
+    if listed {
+        g.write::<u32>(third, second);
+        g.write::<u32>(second + 4, third);
+    } else {
+        g.write::<u32>(third, 0);
+        g.write::<u32>(w(0x784), third);
+    }
+    g.write::<u32>(third + 8, third);
+    Ret::eax(eax)
+}
+
+/// [`landing_0397`] (the `rel32`s: the give back, the actor scale, three
+/// object starts, the cookie checks; `rand` through the IAT).
+pub const LANDING_0397: Sig = Sig {
+    len: 1941,
+    hash: 0xedd2_d4b8_894e_0131,
+    calls: &[
+        (0x22, Callee::Sig(&crate::sa_pool::GIVE_BACK)),
+        (0x121, Callee::Sig(&crate::sa_misc::ACTOR_SCALE)),
+        (0x272, Callee::Sig(&crate::s4_misc::START_OBJECT_OWNERS)),
+        (0x35b, Callee::Sig(&crate::s4_misc::START_OBJECT_OWNERS)),
+        (0x4f8, Callee::Sig(&crate::s4_misc::START_OBJECT_OWNERS)),
+        (0x76e, Callee::Any),
+        (0x78d, Callee::Any),
+    ],
+    imports: &[(0x1fe, "rand")],
+};
