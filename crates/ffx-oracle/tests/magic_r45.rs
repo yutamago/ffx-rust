@@ -2062,15 +2062,18 @@ fn nearest_actor_0392() {
     all_stubs(&mut t);
     // slot 262: the place from the character's low byte
     let near = SCRATCH + 0x7e40;
+    // (b14 test gap: the places now lie either side of the mark in x,
+    // spread in y and z, so a wrong term picks another actor)
     rec(&mut t, 262, 4, move |m, a| {
         let c = a[0] & 0xff;
-        let d = if c == m.r32(near) {
-            0.5
+        if c == m.r32(near) {
+            for i in 1..4 {
+                wf(m, a[i], 0.5 * i as f32 - 1.0);
+            }
         } else {
-            c as f32 * 1.25 + 2.0
-        };
-        for i in 1..4 {
-            wf(m, a[i], d * i as f32 - 1.0);
+            wf(m, a[1], (c as f32 - 3.0) * 4.0);
+            wf(m, a[2], c as f32 * 0.5 - 1.0);
+            wf(m, a[3], (c % 3) as f32 * 2.0);
         }
         0x262
     });
@@ -2085,11 +2088,26 @@ fn nearest_actor_0392() {
     let s = SCRATCH + 0x1_0000;
     t.set_u32(w(0x1f), s);
     // (actors, the near one's character byte)
-    for (k, (n, nb)) in (0u32..).zip([(0u32, 0u32), (1, 3), (4, 3), (4, 2), (4, 0x99), (3, 4)]) {
+    for (k, (n, nb)) in (0u32..).zip([
+        (0u32, 0u32),
+        (1, 3),
+        (4, 3),
+        (4, 2),
+        (4, 0x99),
+        (3, 4),
+        (5, 0x99),
+        (5, 0x98),
+    ]) {
         t.set_u32(w(0x31), n);
         t.set_u32(near, nb);
         junk(&mut t, s + 0x5370, 0x20, k);
         floats(&mut t, s + 0xf70, 4, k);
+        if k >= 6 {
+            // the mark to the right, high and deep
+            setf(&mut t, s + 0xf70, 6.0);
+            setf(&mut t, s + 0xf74, 3.0 - k as f32);
+            setf(&mut t, s + 0xf78, 7.0 * (k - 6) as f32 - 3.0);
+        }
         ownb::dirty_stack(&mut t, 0x1540 + k, &[]);
         t.check(f, Call::default(), &[], Eax::Junk, |g, img, fr| {
             ffx_magic::r45::nearest_actor_0392(g, img, fr)
@@ -2188,5 +2206,103 @@ fn glide_target_0392() {
         t.check(f, Call::default(), &[], Eax::Checked, |g, img, fr| {
             ffx_magic::r45::glide_target_0392(g, img, fr)
         });
+    }
+}
+
+/// `magic_0392` 0x10003a40 (`r45::glide_run_0392`): the steps above 8,
+/// reaching 8 (battle and not), reaching 1 (the caster and an actor),
+/// reaching 0 and below.
+#[test]
+fn glide_run_0392() {
+    let Some(mut t) = sa::twin(392) else { return };
+    let f = t.at(0x3a40);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    all_stubs(&mut t);
+    magic_r11::object_slots(&mut t);
+    let start = t.img.rel32_target(f + 0x11a);
+    magic_r11::object_start_auto(&mut t, start);
+    for s in [215u32, 413] {
+        rec(&mut t, s, 1, move |_, a| (s << 16) ^ a[0]);
+    }
+    rec(&mut t, 388, 3, |_, a| 0x0388_0000 ^ a[0]);
+    let sel = SCRATCH + 0x180;
+    t.set_u32(w(0x185), sel);
+    t.write(sel, &[3, 1, 4, 2, 5]);
+    t.set_u32(w(0x80), 0x0a0a_0080);
+    t.set_u32(w(0x17e), 0x0a0a_017e);
+    let s = SCRATCH + 0x1_0000;
+    t.set_u32(w(0x6), s);
+    let o = SCRATCH + 0x1000;
+    // (steps, battle, actor)
+    for (k, (n, battle, i)) in (0u32..).zip([
+        (12i32, 0u32, 0u32),
+        (9, 0, 0),
+        (9, 1, 0),
+        (2, 0, u32::MAX),
+        (2, 1, 3),
+        (1, 0, 1),
+        (0, 0, 1),
+        (-2, 1, 1),
+    ]) {
+        junk(&mut t, s + 0x700, 0x200, k);
+        floats(&mut t, s + 0xf60, 0x20, k);
+        floats(&mut t, s + 0xfd0, 4, k + 3);
+        t.set_u32(s + 0x5388, n.cast_unsigned());
+        t.set_u32(s + 0x537c, i);
+        setf(&mut t, s + 0x5378, 0.25 * k as f32);
+        t.set_u32(w(0x7a), battle);
+        junk_ops(&mut t, f, &[0x85, 0x91, 0xd5, 0xe9]);
+        junk(&mut t, o, 0x60, k);
+        magic_r11::pools(&mut t, f, 485);
+        ownb::dirty_stack(&mut t, 0x3a40 + k, &[]);
+        t.check_entry(f, Call::default(), &[o], Eax::Checked);
+    }
+}
+
+/// `magic_0392` 0x10001e50 (`r45::summon_place_0392`): the object list
+/// empty and not; the scaled turn's slots write what they read.
+#[test]
+fn summon_place_0392() {
+    let Some(mut t) = sa::twin(392) else { return };
+    let f = t.at(0x1e50);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    all_stubs(&mut t);
+    magic_r11::object_slots(&mut t);
+    let start = t.img.rel32_target(f + 0x2f);
+    magic_r11::object_start_auto(&mut t, start);
+    rec(&mut t, 235, 1, |m, a| {
+        for i in 0..16 {
+            wf(m, a[0] + 4 * i, if i % 5 == 0 { 1.0 } else { 0.0 });
+        }
+        0x235
+    });
+    for s in [330u32, 328, 329] {
+        rec(&mut t, s, 3, move |m, a| {
+            let x = f32::from_bits(a[2]);
+            for i in 0..16 {
+                let v = rf(m, a[1] + 4 * i) + x * ((i + s) % 3) as f32;
+                wf(m, a[0] + 4 * i, v);
+            }
+            s
+        });
+    }
+    for s in [277u32, 15, 16, 17] {
+        rec(&mut t, s, 1, move |_, a| (s << 16) ^ a[0]);
+        t.stub_st0(s, move |_, a| 1.0 + f64::from((a[0] ^ s) & 3) * 0.25);
+    }
+    rec(&mut t, 210, 2, |_, a| 0x0210_0000 ^ a[0] ^ a[1]);
+    let s = SCRATCH + 0x1_0000;
+    t.set_u32(w(0x1d), s);
+    t.set_u32(w(0x126), 0x0c0c_0126);
+    for k in 0..3u32 {
+        junk(&mut t, s + 0x800, 0x200, k);
+        junk(&mut t, s + 0xd00, 0x300, k);
+        floats(&mut t, s + 0xf70, 4, k);
+        setf(&mut t, s + 0x5378, 0.75 * k as f32 - 0.5);
+        magic_r11::pools(&mut t, f, 416);
+        ownb::dirty_stack(&mut t, 0x1e50 + k, &[]);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }

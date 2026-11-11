@@ -3250,3 +3250,166 @@ pub const GLIDE_TARGET_0392: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `magic_0392`'s glide run (0x10003a40, 485 bytes; a callback, cdecl
+/// `(O)`): with `S = *G_S`, the steps `n = S + 0x5388` drop while
+/// positive and `S + 0xf60..` moves by `S + 0xfd0..`. At `n` 8 the record
+/// of [`glide_step_0392`] is filled (callback `CB`); at `n` 1 the object
+/// `S + 0x720` starts ([`start_object_plain`](crate::s4_misc::start_object_plain),
+/// scale `K`, index 6) at `S + 0xf90..` with the yaw `S + 0x5378`, `+0xe4`
+/// -4 and `+0xe8` -6, and slot 388 `(a, 13, 1)` runs for the actor `S +
+/// 0x537c` (`*G_A` for -1, else its selection byte). Once `n` is not
+/// positive, `S + 0xf60..` = `S + 0xf90..`, `O + 0x56` = 1 and `O` is
+/// returned; else the last value in `eax`.
+pub fn glide_run_0392<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let s = g.read::<u32>(w(0x6));
+    let n = g.read::<u32>(s + 0x5388);
+    if n.cast_signed() > 0 {
+        g.write::<u32>(s + 0x5388, n - 1);
+    }
+    for j in [0u32, 4, 8] {
+        let v = add(g.read::<f32>(s + 0xfd0 + j), g.read::<f32>(s + 0xf60 + j));
+        g.write::<f32>(s + 0xf60 + j, v);
+    }
+    let mut eax = g.read::<u32>(s + 0xf6c);
+    g.write::<u32>(s + 0xf6c, eax);
+    if g.read::<u32>(s + 0x5388) == 8 {
+        let battle = g.read::<u32>(w(0x7a)) != 0;
+        let a = g.read::<u32>(w(0x80));
+        g.write::<u32>(w(0x85), a);
+        g.write::<u32>(w(0x91), w(0x95));
+        g.write::<u32>(w(0x9b), u32::MAX);
+        let slot = if battle { 0x674 / 4 } else { 0x35c / 4 };
+        let h = g.call(slot_target(g, w(0x8b), slot), 0, &[a]).eax;
+        let battle = g.read::<u32>(w(0xba)) != 0;
+        g.write::<u32>(w(0xc5), h);
+        g.write::<u32>(w(0xcb), u32::MAX);
+        g.write::<u32>(w(0xd5), 0);
+        g.write::<u32>(w(0xdf), 1);
+        if battle {
+            g.write::<u16>(w(0xf2), 1);
+            eax = h;
+        } else {
+            g.write::<u16>(w(0xe9), 0);
+            eax = 0;
+        }
+    }
+    if g.read::<u32>(s + 0x5388) == 1 {
+        let o = s + 0x720;
+        let scale = g.read::<f32>(w(0x107));
+        crate::s4_misc::start_object_plain(g, img, img.rel32_target(f + 0x11a), o, scale, 6);
+        for j in 0..4u32 {
+            let x = g.read::<u32>(s + 0xf90 + 4 * j);
+            g.write::<u32>(o + 0xd0 + 4 * j, x);
+        }
+        let yaw = g.read::<u32>(s + 0x5378);
+        g.write::<u32>(o + 0xc4, yaw);
+        g.write::<u32>(o + 0xe4, 0xc080_0000);
+        g.write::<u32>(o + 0xe8, 0xc0c0_0000);
+        let i = g.read::<u32>(s + 0x537c);
+        let a = if i == u32::MAX {
+            g.read::<u32>(w(0x17e))
+        } else {
+            u32::from(g.read::<u8>(g.read::<u32>(w(0x185)).wrapping_add(i)))
+        };
+        eax = g.call(slot_target(g, w(0x193), 388), 0, &[a, 0xd, 1]).eax;
+    }
+    if g.read::<u32>(s + 0x5388).cast_signed() > 0 {
+        return Ret::eax(eax);
+    }
+    for j in 0..4u32 {
+        let x = g.read::<u32>(s + 0xf90 + 4 * j);
+        g.write::<u32>(s + 0xf60 + 4 * j, x);
+    }
+    let o = fr.arg(g, 0);
+    g.write::<u8>(o.wrapping_add(0x56), 1);
+    Ret::eax(o)
+}
+
+/// [`glide_run_0392`] (the `rel32`: the object start).
+pub const GLIDE_RUN_0392: Sig = Sig {
+    len: 485,
+    hash: 0x83f0_9692_e8a9_db67,
+    calls: &[(0x11a, Callee::Sig(&crate::s4_misc::START_OBJECT_PLAIN))],
+    imports: &[],
+};
+
+/// `magic_0392`'s summon place (0x10001e50, 416 bytes; a table entry, no
+/// arguments; a /GS frame, the point `M` at `ebp - 0x14`): with `S =
+/// *G_S`, the object `O = S + 0x850` starts
+/// ([`start_object_plain`](crate::s4_misc::start_object_plain), scale
+/// `K`, index 7) at `S + 0xf70..` with `y` less `K1` and the yaw `S +
+/// 0x5378`; the angles `S + 0xf50..` = `(0, yaw, 0, 0)` turn the scaled
+/// matrix `S + 0xd10` ([`scale_rotate`](crate::sa_misc::scale_rotate))
+/// whose place `S + 0xd40..` and `S + 0xf60..` are `S + 0xf70..`; then
+/// slots 210 and 211 `(*G_C, S + 0xd10)`. (The original's other path,
+/// for a zero matrix address, gets a party member's place (slots 217,
+/// 255) instead of slot 210; `S + 0xd10` is never 0, but it is kept.)
+/// Returns slot 211's `eax`.
+pub fn summon_place_0392<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let s = g.read::<u32>(w(0x1d));
+    let o = s + 0x850;
+    let scale = g.read::<f32>(w(0x14));
+    crate::s4_misc::start_object_plain(g, img, img.rel32_target(f + 0x2f), o, scale, 7);
+    for j in 0..4u32 {
+        let x = g.read::<u32>(s + 0xf70 + 4 * j);
+        g.write::<u32>(o + 0xd0 + 4 * j, x);
+    }
+    let yaw = g.read::<u32>(s + 0x5378);
+    let y = sub(g.read::<f32>(o + 0xd4), g.read::<f32>(w(0x75)));
+    g.write::<u32>(o + 0xc4, yaw);
+    let a = s + 0xf50;
+    let m = s + 0xd10;
+    g.write::<f32>(o + 0xd4, y);
+    g.write::<u32>(a, 0);
+    let yaw = g.read::<u32>(s + 0x5378);
+    g.write::<u32>(a + 4, yaw);
+    g.write::<u32>(a + 8, 0);
+    g.write::<u32>(a + 0xc, 0);
+    crate::sa_misc::scale_rotate(g, img, img.rel32_target(f + 0xbd), m, a);
+    for j in 0..4u32 {
+        let x = g.read::<u32>(s + 0xf70 + 4 * j);
+        g.write::<u32>(s + 0xd40 + 4 * j, x);
+    }
+    for j in 0..4u32 {
+        let x = g.read::<u32>(s + 0xf70 + 4 * j);
+        g.write::<u32>(s + 0xf60 + 4 * j, x);
+    }
+    let c = g.read::<u32>(w(0x126));
+    let mut st = Pushes::default();
+    if m != 0 {
+        st.push_all(&[m, c]);
+        st.call(g, t(g, 0x12f, 210), 0);
+        st.pop(2);
+    } else if g.read::<u32>(w(0x144)) == 0 {
+        let i = g.read::<u32>(w(0x14d));
+        if i.cast_signed() < 0x20 {
+            let v = fr.esp.wrapping_sub(4).wrapping_sub(0x14);
+            st.push_all(&[v, i]);
+            st.call(g, t(g, 0x15b, 217), 0);
+            st.push_all(&[v, i]);
+            st.call(g, t(g, 0x16d, 255), 0);
+            st.pop(4);
+        }
+    }
+    st.push_all(&[m, c]);
+    Ret::eax(st.call(g, t(g, 0x17e, 211), 0).eax)
+}
+
+/// [`summon_place_0392`] (the `rel32`s: the object start, the scaled
+/// turn, the cookie check).
+pub const SUMMON_PLACE_0392: Sig = Sig {
+    len: 416,
+    hash: 0xeab5_38b6_6bb2_d866,
+    calls: &[
+        (0x2f, Callee::Sig(&crate::s4_misc::START_OBJECT_PLAIN)),
+        (0xbd, Callee::Sig(&crate::sa_misc::SCALE_ROTATE)),
+        (0x198, Callee::Any),
+    ],
+    imports: &[],
+};
