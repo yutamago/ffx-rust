@@ -1948,7 +1948,7 @@ fn shards_draw_0348() {
             s
         });
     }
-    for s in [329u32, 328, 231, 230] {
+    for s in [329u32, 328, 230] {
         let n = if s == 230 { 2 } else { 3 };
         rec(&mut t, s, n, move |m, a| {
             log16(m, a[1]);
@@ -1977,9 +1977,18 @@ fn shards_draw_0348() {
             let x = rf(m, a[1] + 0x30 + 4 * i) + rf(m, a[2] + 4 * i) * 1.5;
             wf(m, a[0] + 4 * i, x);
         }
-        let ww = 1.25 + rf(m, a[2]) * 0.0625;
+        let ww = 1.25 + rf(m, a[2]) * 0.0625 + rf(m, a[2] + 0xc) * 0.5;
         wf(m, a[0] + 0xc, ww);
         0x229
+    });
+    // 231 (out, a, b): both inputs count (b's last row the face's place)
+    rec(&mut t, 231, 3, |m, a| {
+        log16(m, a[2]);
+        for i in 0..16 {
+            let x = rf(m, a[1] + 4 * i) * 0.5 + rf(m, a[2] + 4 * i) * 0.25;
+            wf(m, a[0] + 4 * i, x);
+        }
+        0x231
     });
     let lock = SCRATCH + 0x4100;
     let sd = t.img.rel32_target(f + 0xb3);
@@ -1994,15 +2003,20 @@ fn shards_draw_0348() {
     let at = t.img.word(sd + 0xba8);
     t.set_u32(at, SCRATCH + 0x3_a300);
     floats(&mut t, SCRATCH + 0x3_a300, 16, 0.5);
+    rec(&mut t, 779, 2, move |m, a| {
+        m.w32(SCRATCH + 0x7f48, m.r32(lock));
+        0x0779_0000 ^ a[0]
+    });
     let task = SCRATCH + 0x7c00;
     #[allow(clippy::type_complexity)]
-    let cases: [(&[(u8, u16)], u32, u32); 6] = [
+    let cases: [(&[(u8, u16)], u32, u32); 7] = [
         (&[(2, 3)], 0, 9),
         (&[(2, 3)], 1, 9),
         (&[(2, 2), (1, 2), (2, 3)], 1, 9),
         (&[(2, 2), (2, 3)], 1, 0),
         (&[(2, 12), (2, 11)], 1, 9),
         (&[(2, 2)], 1, 9),
+        (&[(2, 28)], 1, 9),
     ];
     for (k, (groups, mesh, refuse)) in (0u32..).zip(cases) {
         shard_model(&mut t, m, k, groups);
@@ -2012,9 +2026,19 @@ fn shards_draw_0348() {
         for i in 0..total {
             let r = e + 0xd30 + 0x7c * i;
             floats(&mut t, r, 0x1f, -2.0 + 0.125 * i as f32);
-            let life = if k == 5 || i % 4 == 1 { 0 } else { 1 + i };
+            let life = if k == 5 || (k != 6 && i % 4 == 1) {
+                0
+            } else {
+                1 + i
+            };
             t.set_u32(r + 0x78, life);
-            t.set_u32(r + 0x74, 3 + i % 5);
+            // (a negative divisor now and then: the alpha's sign bit)
+            let div = if i % 7 == 3 {
+                -3i32
+            } else {
+                3 + (i % 5) as i32
+            };
+            t.set_u32(r + 0x74, div.cast_unsigned());
         }
         t.set_u32(SCRATCH + 0x7f40, mesh);
         t.set_u32(SCRATCH + 0x7f44, refuse);
@@ -2023,5 +2047,176 @@ fn shards_draw_0348() {
         t.set_u32(task + 8, task + 0x10);
         magic_h6::scrub(&mut t);
         t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+}
+
+/// A part for `r47::mesh_0434` at `p`: `groups` (kind byte, faces of
+/// 0x1c bytes) from `+0x20`, then 0x40 points and 0x40 normals (16 bytes
+/// each); face `j`'s corners are points `j`, `j + 1`, `j + 2` and normals
+/// `j + 3`, `j + 1`, `j`.
+fn mesh_part(t: &mut Twin, p: u32, k: u32, groups: &[(u8, u16)]) {
+    let total: u32 = groups.iter().map(|&(_, n)| u32::from(n)).sum();
+    t.write(p, &[0x6b; 0x20]);
+    t.set_u32(p + 4, 0x20);
+    let mut g = p + 0x20;
+    for &(kind, n) in groups {
+        t.write(g, &[0x3c; 0x20]);
+        t.set_u8(g + 1, kind);
+        t.set_u16(g + 2, n);
+        g += 0x20;
+        if kind == 0x10 {
+            for j in 0..u32::from(n) {
+                let face = g + 0x1c * j;
+                t.write(face, &[0x2d; 0x1c]);
+                for (c, (pi, ni)) in [(0u32, (0u32, 3u32)), (2, (1, 1)), (4, (2, 0))] {
+                    t.set_u16(face + c, ((j + pi) % 0x40) as u16);
+                    t.set_u16(face + 0x14 + c, ((j + ni) % 0x40) as u16);
+                }
+            }
+            g += 0x1c * u32::from(n);
+        }
+    }
+    let verts = g;
+    t.set_u32(p + 8, verts - p);
+    floats(t, verts, 0x100, -3.0 + k as f32);
+    let normals = verts + 0x400;
+    t.set_u32(p + 0xc, normals - p);
+    for i in 0..0x40u32 {
+        let x = (i as f32 * 0.37 + k as f32).sin();
+        let y = (i as f32 * 0.21).cos();
+        for (q, v) in [x, y, 0.5 - x * 0.25, 0.0].into_iter().enumerate() {
+            t.set_u32(normals + 0x10 * i + 4 * q as u32, v.to_bits());
+        }
+    }
+    t.set_u16(p + 0x10, total as u16);
+    t.set_u16(p + 0x12, 0x40);
+}
+
+/// `magic_0434` 0x10004840 (`r47::mesh_0434`, internal: `edx` = the
+/// model, seven stack words): slot 773 answering 0 or not, one group, a
+/// group of another kind, more than 20 faces (the packet buffers
+/// flipped twice), no faces.
+#[test]
+fn mesh_0434() {
+    let Some(mut t) = twin(434) else { return };
+    all_stubs(&mut t);
+    let f = t.at(0x4840);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let part = SCRATCH + 0x2_0000;
+    let bone = SCRATCH + 0x2_3000;
+    floats(&mut t, bone, 16, 0.25);
+    rec(&mut t, 941, 1, move |_, a| {
+        if a[0] == 0x0941_0002 { bone } else { part }
+    });
+    rec(&mut t, 772, 2, |_, a| 0x0772_0000 ^ a[0]);
+    t.stub_edx(772, |_, a| a[1] ^ 0x0077_2000);
+    rec(&mut t, 773, 2, |m, _| m.r32(SCRATCH + 0x7f40));
+    let texp = SCRATCH + 0x2_3100;
+    t.set_u32(texp, 0x7e70_0000);
+    rec(&mut t, 719, 3, move |_, _| texp);
+    let proj = SCRATCH + 0x2_4000;
+    rec(&mut t, 562, 0, move |_, _| proj);
+    for s in [235u32, 723, 724] {
+        rec(&mut t, s, 1, move |m, a| {
+            for i in 0..16 {
+                wf(m, a[0] + 4 * i, s as f32 * 0.001 + i as f32 * 0.25 - 1.0);
+            }
+            s
+        });
+    }
+    rec(&mut t, 325, 2, |m, a| {
+        for i in 0..4 {
+            let x = m.r32(a[1] + 4 * i);
+            m.w32(a[0] + 4 * i, x);
+        }
+        0x325
+    });
+    rec(&mut t, 230, 2, |m, a| {
+        for i in 0..16 {
+            let x = m.r32(a[1] + 4 * i);
+            m.w32(a[0] + 4 * i, x);
+        }
+        0x230
+    });
+    rec(&mut t, 231, 3, |m, a| {
+        log16(m, a[2]);
+        for i in 0..16 {
+            let x = rf(m, a[1] + 4 * i) * 0.5 + rf(m, a[2] + 4 * i) * 0.25;
+            wf(m, a[0] + 4 * i, x);
+        }
+        0x231
+    });
+    rec(&mut t, 229, 3, |m, a| {
+        for i in 0..3 {
+            let x = rf(m, a[1] + 0x30 + 4 * i) + rf(m, a[2] + 4 * i) * 1.5;
+            wf(m, a[0] + 4 * i, x);
+        }
+        let ww = 1.25 + rf(m, a[2]) * 0.0625 + rf(m, a[2] + 0xc) * 0.5;
+        wf(m, a[0] + 0xc, ww);
+        0x229
+    });
+    rec(&mut t, 232, 2, |m, a| {
+        for i in 0..3 {
+            let x = rf(m, a[1] + 4 * i) * 0.5;
+            wf(m, a[0] + 4 * i, x);
+        }
+        0x232
+    });
+    rec(&mut t, 829, 5, |m, a| {
+        m.w32(a[3], 0x0829_0000);
+        m.w32(a[4], a[1]);
+        0x829
+    });
+    let lock = SCRATCH + 0x4100;
+    for o in [0x51u32, 0x6e, 0x3f9, 0x426, 0xbeb, 0xc15, 0xd65, 0xd89] {
+        let at = w(&t, o);
+        t.set_u32(at, lock);
+    }
+    rec(&mut t, 830, 3, move |m, a| {
+        let c = m.r32(SCRATCH + 0x7f4c) + 1;
+        m.w32(SCRATCH + 0x7f4c, c);
+        m.w32(SCRATCH + 0x7f50 + 4 * (c % 8), m.r32(lock) ^ a[1]);
+        0x830
+    });
+    let (za, zz, zx, zy) = (
+        SCRATCH + 0x2_3200,
+        SCRATCH + 0x2_3300,
+        SCRATCH + 0x2_3400,
+        SCRATCH + 0x2_3500,
+    );
+    for (i, at) in (0u32..).zip([za, zz, zx, zy]) {
+        floats(&mut t, at, 16, 0.5 + i as f32);
+    }
+    let model = SCRATCH + 0x2_3600;
+    #[allow(clippy::type_complexity)]
+    let cases: [(&[(u8, u16)], u32); 4] = [
+        (&[(0x10, 3)], 0),
+        (&[(0x10, 2), (5, 1), (0x10, 22)], 1),
+        (&[], 1),
+        (&[(0x10, 20)], 2),
+    ];
+    for (k, (groups, answer)) in (0u32..).zip(cases) {
+        mesh_part(&mut t, part, k, groups);
+        t.set_u32(model, 0x0941_0001);
+        t.set_u32(model + 4, 0x0941_0002);
+        t.set_u32(SCRATCH + 0x7f40, answer);
+        t.set_u32(lock, 0x40 + k);
+        let call = Call {
+            edx: model,
+            ..Call::default()
+        };
+        let args = [
+            za,
+            zz,
+            zx,
+            zy,
+            0x0001_2300 + k,
+            0x0004_5600 + k,
+            (0.75f32).to_bits(),
+        ];
+        magic_h6::scrub(&mut t);
+        t.check(f, call, &args, Eax::Checked, |g, img, fr| {
+            ffx_magic::r47::mesh_0434(g, img, fr)
+        });
     }
 }
