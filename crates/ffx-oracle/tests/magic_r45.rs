@@ -3983,9 +3983,15 @@ fn start_up_0396() {
     let fw = |o: u32| img.word(fc + o);
     for (k, (listed, free)) in (0u32..).zip([(false, 5u16), (true, 5), (true, 3), (false, 3)]) {
         all_stubs(&mut t);
-        for (s, n) in [(719u32, 3usize), (711, 3), (710, 4), (271, 1)] {
+        for (s, n) in [(719u32, 3usize), (710, 4), (271, 1)] {
             rec(&mut t, s, n, move |_, a| (s << 16) ^ a[0] ^ k);
         }
+        let lock = SCRATCH + 0x5e0;
+        // (b38 test gap: the lock held during slot 711, kept in a word)
+        rec(&mut t, 711, 3, move |m, a| {
+            m.w32(SCRATCH + 0x5f0, m.r32(lock));
+            0x0711_0000 ^ a[0]
+        });
         rec(&mut t, 262, 4, |m, a| {
             for i in 1..4 {
                 wf(m, a[i], (a[0] & 0xf) as f32 * 0.75 + i as f32 - 3.0);
@@ -3998,7 +4004,6 @@ fn start_up_0396() {
         junk(&mut t, state, 0x400, k);
         t.set_u32(fw(0x08), state);
         t.set_u32(fw(0x22), 0x0c0c_0022);
-        let lock = SCRATCH + 0x5e0;
         t.set_u32(w(0x74), lock);
         t.set_u32(lock, 0x77 + k);
         magic_r11::ring(&mut t, w(0x128), w(0x13f), free, SCRATCH + 0x5000);
