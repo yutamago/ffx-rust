@@ -3860,3 +3860,118 @@ pub const ACTORS_TILT_0392: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// One axis of `magic_0392`'s throw curve from `b` towards `a` (`d = a -
+/// b`; `t`, `u = K - t`; `k` the constants `K9c` (three loads), `K88`,
+/// `K7`, `K54`): `(((((ut uu) K9c)(d K88) + (uu uu) d) + ((tt uu) K9c)(d
+/// K7)) + ((tt ut) K9c) d) + (tt tt) K54) + b`, each step one `f32`
+/// rounding in this order.
+#[allow(clippy::many_single_char_names)] // the curve's own terms
+fn throw_axis_0392(a: f32, b: f32, t: f32, u: f32, k: [f32; 6]) -> f32 {
+    let [k1, k2, k3, k88, k7, k54] = k;
+    let d = sub(a, b);
+    let (tt, uu, ut) = (mul(t, t), mul(u, u), mul(u, t));
+    let t1 = mul(mul(mul(ut, uu), k1), mul(d, k88));
+    let t2 = mul(mul(uu, uu), d);
+    let t3 = mul(mul(mul(tt, uu), k2), mul(d, k7));
+    let t4 = mul(mul(mul(tt, ut), k3), d);
+    let t5 = mul(mul(tt, tt), k54);
+    add(add(add(add(add(t1, t2), t3), t4), t5), b)
+}
+
+/// `magic_0392`'s throw flight (0x100021d0, 861 bytes; a callback, cdecl
+/// `(O)`; a frame of three locals): with `S = *G_S`, the steps `S +
+/// 0x538c` drop while positive; `t` = steps / `S[0x5390]`, `u = K - t`;
+/// `S + 0xf60..+0xf68` = the curve from `S + 0xf90..` to `S + 0xfa0..`
+/// ([`throw_axis_0392`]; the `z` axis with a literal 0 for `K54`); the
+/// yaw `S + 0xf54` = `c t + u g` wrapped once, `g` the aim `S + 0xfb4`
+/// unwrapped towards `c` ([`unwrap_to`](crate::r34::unwrap_to)); the
+/// matrix `S + 0xd10` turned by `S + 0xf50..`
+/// ([`scale_rotate`](crate::sa_misc::scale_rotate)); at 10 steps the main
+/// object and its fade start
+/// ([`main_object_fade`](crate::r9_misc::main_object_fade)). Once no
+/// steps are left, `S + 0xf60..` = `S + 0xfa0..`, `O + 0x56` = 1 and `O`
+/// is returned; else the last call's `eax`.
+pub fn throw_flight_0392<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let s = g.read::<u32>(w(0x9));
+    let n = g.read::<u32>(s + 0x538c);
+    if n.cast_signed() > 0 {
+        g.write::<u32>(s + 0x538c, n - 1);
+    }
+    let c = crate::sb_sse::cvt(g.read::<u32>(s + 0x538c));
+    let total = crate::sb_sse::cvt(g.read::<u32>(s + 0x5390));
+    let t = div(c, total);
+    let u = sub(k(g, 0x44), t);
+    let k7 = k(g, 0x7b);
+    for (j, ops, k54) in [
+        (0u32, [0x93u32, 0x9b, 0xe1, 0xa6], Some(0x10cu32)),
+        (4, [0x148, 0x131, 0x189, 0x153], Some(0x1a0)),
+        (8, [0x1f0, 0x1f8, 0x245, 0x203], None),
+    ] {
+        let kk = [
+            k(g, ops[0]),
+            k(g, ops[1]),
+            k(g, ops[2]),
+            k(g, ops[3]),
+            k7,
+            k54.map_or(0.0, |o| k(g, o)),
+        ];
+        let x = throw_axis_0392(
+            g.read::<f32>(s + 0xfa0 + j),
+            g.read::<f32>(s + 0xf90 + j),
+            t,
+            u,
+            kk,
+        );
+        g.write::<f32>(s + 0xf60 + j, x);
+    }
+    let cur = g.read::<f32>(s + 0xf54);
+    let (hi, lo) = (k(g, 0x239), k(g, 0x27f));
+    let aim = crate::r34::unwrap_to(cur, g.read::<f32>(s + 0xfb4), hi, lo);
+    let y = add(mul(cur, t), mul(u, aim));
+    let tw = k(g, 0x2da);
+    let y = if y > hi {
+        sub(y, tw)
+    } else if lo > y {
+        add(y, k(g, 0x2e9))
+    } else {
+        y
+    };
+    g.write::<f32>(s + 0xf54, y);
+    let mut eax =
+        crate::sa_misc::scale_rotate(g, img, img.rel32_target(f + 0x303), s + 0xd10, s + 0xf50);
+    if g.read::<u32>(s + 0x538c) == 0xa {
+        let fade = Frame {
+            at: img.rel32_target(f + 0x314),
+            // push ebp; sub esp, 0xc; push esi; the call
+            esp: fr.esp.wrapping_sub(0x18),
+            ..*fr
+        };
+        eax = crate::r9_misc::main_object_fade(g, img, &fade).eax;
+    }
+    if g.read::<u32>(s + 0x538c).cast_signed() > 0 {
+        return Ret::eax(eax);
+    }
+    for j in 0..4u32 {
+        let x = g.read::<u32>(s + 0xfa0 + 4 * j);
+        g.write::<u32>(s + 0xf60 + 4 * j, x);
+    }
+    let o = fr.arg(g, 0);
+    g.write::<u8>(o.wrapping_add(0x56), 1);
+    Ret::eax(o)
+}
+
+/// [`throw_flight_0392`] (the `rel32`s: the scaled turn, the main
+/// object's fade).
+pub const THROW_FLIGHT_0392: Sig = Sig {
+    len: 861,
+    hash: 0x711b_efb2_09cb_b5a8,
+    calls: &[
+        (0x303, Callee::Sig(&crate::sa_misc::SCALE_ROTATE)),
+        (0x314, Callee::Sig(&crate::r9_misc::MAIN_OBJECT_FADE_0392)),
+    ],
+    imports: &[],
+};

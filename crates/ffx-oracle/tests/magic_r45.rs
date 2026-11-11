@@ -2631,7 +2631,8 @@ fn actors_tilt_0392() {
         (0, [(3, 1, 1); 3]),
         (3, [(5, 1, 1), (3, 0, 1), (-1, 1, 1)]),
         (3, [(1, 1, 1), (4, 1, 0), (0, 1, 1)]),
-        (2, [(1, 0, 0), (9, 1, 1), (2, 1, 1)]),
+        // (b18 test gap: an actor past the first reaching 0)
+        (2, [(9, 1, 1), (1, 0, 0), (2, 1, 1)]),
     ];
     for (k, (n, recs)) in (0u32..).zip(cases) {
         t.set_u32(w(0x22), n);
@@ -2656,5 +2657,66 @@ fn actors_tilt_0392() {
         t.check(f, call, &[], Eax::Checked, |g, img, fr| {
             ffx_magic::r45::actors_tilt_0392(g, img, fr)
         });
+    }
+}
+
+/// `magic_0392` 0x100021d0 (`r45::throw_flight_0392`): steps above 10,
+/// reaching 10 (the main object starts), reaching 0 and at 0; the yaw and
+/// the aim either side of 0 (the unwrap both ways and not).
+#[test]
+fn throw_flight_0392() {
+    let Some(mut t) = sa::twin(392) else { return };
+    let f = t.at(0x21d0);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    all_stubs(&mut t);
+    magic_r11::object_slots(&mut t);
+    let mo = t.img.rel32_target(f + 0x314);
+    let start = t.img.rel32_target(mo + 0x1c);
+    magic_r11::object_start_auto(&mut t, start);
+    rec(&mut t, 235, 1, |m, a| {
+        for i in 0..16 {
+            wf(m, a[0] + 4 * i, if i % 5 == 0 { 1.0 } else { 0.0 });
+        }
+        0x235
+    });
+    for s in [330u32, 328, 329] {
+        rec(&mut t, s, 3, move |m, a| {
+            let x = f32::from_bits(a[2]);
+            for i in 0..16 {
+                let v = rf(m, a[1] + 4 * i) + x * ((i + s) % 3) as f32;
+                wf(m, a[0] + 4 * i, v);
+            }
+            s
+        });
+    }
+    for s in [277u32, 15, 16, 17] {
+        rec(&mut t, s, 1, move |_, a| (s << 16) ^ a[0]);
+        t.stub_st0(s, move |_, a| 1.0 + f64::from((a[0] ^ s) & 3) * 0.25);
+    }
+    let s = SCRATCH + 0x1_0000;
+    t.set_u32(w(0x9), s);
+    let o = SCRATCH + 0x1000;
+    // (steps, yaw, aim)
+    for (k, (n, cur, aim)) in (0u32..).zip([
+        (20i32, 0.5f32, 1.0f32),
+        (11, -2.5, 3.0),
+        (5, 2.5, -3.0),
+        (1, -0.5, 0.25),
+        (0, 3.0, 2.0),
+        (14, -3.0, -2.5),
+    ]) {
+        junk(&mut t, s + 0xd00, 0x300, k);
+        floats(&mut t, s + 0xf90, 0x8, k);
+        floats(&mut t, s + 0xfa0, 0x4, k + 5);
+        t.set_u32(s + 0x538c, n.cast_unsigned());
+        t.set_u32(s + 0x5390, 24);
+        setf(&mut t, s + 0xf54, cur);
+        setf(&mut t, s + 0xfb4, aim);
+        junk(&mut t, o, 0x60, k);
+        magic_r11::pools(&mut t, f, 861);
+        magic_r11::pools(&mut t, mo, 167);
+        ownb::dirty_stack(&mut t, 0x21d0 + k, &[]);
+        t.check_entry(f, Call::default(), &[o], Eax::Checked);
     }
 }
