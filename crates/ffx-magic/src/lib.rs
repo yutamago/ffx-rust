@@ -3458,6 +3458,7 @@ ports! {
     "r45 sparks 0434" => r45::SPARKS_0434, r45::sparks_0434;
     "r45 aim start 0397" => r45::AIM_START_0397, r45::aim_start_0397;
     "r45 load step 0397" => r45::LOAD_0397, r45::load_0397;
+    "r45 glide step 0392" => r45::GLIDE_STEP_0392, r45::glide_step_0392;
     // round 45 (magic-r45): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
@@ -5419,6 +5420,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r45 project 0434", &r45::PROJECT_0434),
     ("r45 bone matrix 0434", &r45::BONE_MATRIX_0434),
     ("r45 start-up 0397", &r45::START_UP_0397),
+    ("r45 glide start 0392", &r45::GLIDE_START_0392),
     // round 45 (magic-r45): end of INTERNAL
 ];
 

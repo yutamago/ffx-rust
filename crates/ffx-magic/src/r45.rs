@@ -2927,3 +2927,141 @@ pub const LOAD_0397: Sig = Sig {
     calls: &[(0x5b, Callee::Sig(&START_UP_0397))],
     imports: &[],
 };
+
+/// `magic_0392`'s glide step (0x10003c30, 291 bytes; a callback, cdecl
+/// `(O)`): with `S = *G_S`, the count `c = S + 0x5380` drops while
+/// positive; `t = c / S[0x5384]`: `S + 0xf60` = `S[0xf80] (K - t) +
+/// S[0xf70] t`, `S + 0xf68` likewise from `+0xf88` and `+0xf78`. At
+/// `c` 8 a record is filled: `G_R` (`*G_A`), the callback `CB`, -1, the
+/// handle slot 215 `(*G_A)` (slot 413 in a battle), -1, 0, 1 and the
+/// halfword 0 (1 in a battle). Once `c` is not positive, `O + 0x56` = 1
+/// and `O` is returned; else the last value in `eax` (the count, or the
+/// record's halfword or slot's answer at 8).
+pub fn glide_step_0392<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let s = g.read::<u32>(w(0x6));
+    let mut eax = g.read::<u32>(s + 0x5380);
+    if eax.cast_signed() > 0 {
+        eax -= 1;
+        g.write::<u32>(s + 0x5380, eax);
+    }
+    {
+        let c = crate::sb_sse::cvt(g.read::<u32>(s + 0x5380));
+        let n = crate::sb_sse::cvt(g.read::<u32>(s + 0x5384));
+        let t = div(c, n);
+        let u = sub(g.read::<f32>(w(0x35)), t);
+        let x = add(
+            mul(g.read::<f32>(s + 0xf80), u),
+            mul(g.read::<f32>(s + 0xf70), t),
+        );
+        g.write::<f32>(s + 0xf60, x);
+        let z = add(
+            mul(g.read::<f32>(s + 0xf88), u),
+            mul(g.read::<f32>(s + 0xf78), t),
+        );
+        g.write::<f32>(s + 0xf68, z);
+        if g.read::<u32>(s + 0x5380) == 8 {
+            let battle = g.read::<u32>(w(0x94)) != 0;
+            let a = g.read::<u32>(w(0x9a));
+            g.write::<u32>(w(0x9f), a);
+            g.write::<u32>(w(0xab), w(0xaf));
+            g.write::<u32>(w(0xb5), u32::MAX);
+            let slot = if battle { 0x674 / 4 } else { 0x35c / 4 };
+            let h = g.call(slot_target(g, w(0xa5), slot), 0, &[a]).eax;
+            let battle = g.read::<u32>(w(0xd4)) != 0;
+            g.write::<u32>(w(0xdf), h);
+            g.write::<u32>(w(0xe5), u32::MAX);
+            g.write::<u32>(w(0xef), 0);
+            g.write::<u32>(w(0xf9), 1);
+            if battle {
+                g.write::<u16>(w(0x10c), 1);
+                eax = h;
+            } else {
+                g.write::<u16>(w(0x103), 0);
+                eax = 0;
+            }
+        }
+    }
+    if g.read::<u32>(s + 0x5380).cast_signed() > 0 {
+        return Ret::eax(eax);
+    }
+    let o = fr.arg(g, 0);
+    g.write::<u8>(o.wrapping_add(0x56), 1);
+    Ret::eax(o)
+}
+
+/// [`glide_step_0392`].
+pub const GLIDE_STEP_0392: Sig = Sig {
+    len: 291,
+    hash: 0xac32_fafe_7a90_6df0,
+    calls: &[],
+    imports: &[],
+};
+
+/// `magic_0392`'s glide start (0x10001920, 381 bytes; internal, no
+/// arguments): with `S = *G_S`, the actor `i = S + 0x537c` (-1 the
+/// caster `*G_C`, else `T[sel[i]]`) puts its place into `P = S + 0xf90`
+/// (slot 268 `(c, 1, P)`, `w` 1.0); `P.y` rises by `K1`; the steps `n` =
+/// the distance from `S + 0xf80..` (`_libm_sse2_sqrt_precise` of the
+/// double) times `K2`, truncated and kept in 9..=15; `S + 0xfd0..` =
+/// `(P - S[0xf80..]) * (K3 / n)` (`w` 0), `S + 0x5388` = `n`. Returns
+/// `P.w`'s word (1.0).
+pub fn glide_start_0392<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let s = g.read::<u32>(w(0x9));
+    let i = g.read::<u32>(s + 0x537c);
+    let p = s + 0xf90;
+    let c = if i == u32::MAX {
+        g.read::<u32>(w(0x20))
+    } else {
+        let b = u32::from(g.read::<u8>(g.read::<u32>(w(0x27)).wrapping_add(i)));
+        g.read::<u32>(w(0x32).wrapping_add(4 * b))
+    };
+    g.call(slot_target(g, w(0x3b), 268), 0, &[c, 1, p]);
+    g.write::<u32>(p + 0xc, 0x3f80_0000);
+    let y = add(g.read::<f32>(s + 0xf94), g.read::<f32>(w(0x5a)));
+    g.write::<f32>(s + 0xf94, y);
+    let dx = sub(g.read::<f32>(s + 0xf80), g.read::<f32>(p));
+    let dy = sub(g.read::<f32>(s + 0xf84), y);
+    let dz = sub(g.read::<f32>(s + 0xf88), g.read::<f32>(s + 0xf98));
+    let sum = add(add(mul(dy, dy), mul(dx, dx)), mul(dz, dz));
+    // _libm_sse2_sqrt_precise of the double, rounded back to f32
+    #[allow(clippy::cast_possible_truncation)]
+    let d = f64::from(sum).sqrt() as f32;
+    let k = mul(d, g.read::<f32>(w(0xb5)));
+    // cvttss2si (0x80000000 for NaN and out of range)
+    #[allow(clippy::cast_possible_truncation)]
+    let n = if k.is_nan() || !(-2_147_483_648.0..2_147_483_648.0).contains(&k) {
+        i32::MIN
+    } else {
+        k as i32
+    };
+    let n = n.clamp(9, 15);
+    for (j, d) in [(0u32, 0xf80u32), (4, 0xf84), (8, 0xf88)] {
+        let v = sub(g.read::<f32>(p + j), g.read::<f32>(s + d));
+        g.write::<f32>(s + 0xfd0 + j, v);
+    }
+    let one = g.read::<u32>(p + 0xc);
+    g.write::<u32>(s + 0xfdc, one);
+    #[allow(clippy::cast_precision_loss)] // cvtdq2ps of 9..=15
+    let r = div(g.read::<f32>(w(0xe3)), n as f32);
+    for j in [0u32, 4] {
+        let v = mul(r, g.read::<f32>(s + 0xfd0 + j));
+        g.write::<f32>(s + 0xfd0 + j, v);
+    }
+    let v = mul(g.read::<f32>(s + 0xfd8), r);
+    g.write::<f32>(s + 0xfd8, v);
+    g.write::<u32>(s + 0xfdc, 0);
+    g.write::<i32>(s + 0x5388, n);
+    Ret::eax(one)
+}
+
+/// [`glide_start_0392`] (the `rel32`: `_libm_sse2_sqrt_precise`).
+pub const GLIDE_START_0392: Sig = Sig {
+    len: 381,
+    hash: 0x3961_dfdd_2620_bf22,
+    calls: &[(0xa9, Callee::Import("_libm_sse2_sqrt_precise"))],
+    imports: &[],
+};
