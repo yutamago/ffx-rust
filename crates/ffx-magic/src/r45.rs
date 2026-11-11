@@ -4966,3 +4966,105 @@ pub const LOAD_0449: Sig = Sig {
     calls: &[(0x5b, Callee::Sig(&START_UP_0449))],
     imports: &[],
 };
+
+/// `magic_0449`'s throw target (0x10005850, 700 bytes; internal, no
+/// arguments; an aligned /GS frame, `B` its base after the pushes: the
+/// yaw at `B + 8`, the place `P` at `B + 0x18`, the turned `O` at `B +
+/// 0x28`, the offset `V` at `B + 0x38`, the matrix `M` at `B + 0x48`).
+/// With `S = *G_S`: `P` = `S + 0xf70..`, `V` = `(0, -10, 30, 1)`, `M` =
+/// slot 235 turned by X 0 and Y `S + 0x56dc` (slots 328, 329), `O` = `M
+/// V` (slot 229), `P += O` (slot 248); the aim `S + 0xfb4` = the yaw, the
+/// start `S + 0xfa0..` = `(P, 1)`, the steps `S + 0x56ec` and `+0x56f0`
+/// 60; the target `T = S + 0xfc0` the actors' mean
+/// ([`mean_position`](crate::sb_misc::mean_position)); the pitch `S +
+/// 0xfb0` = `atan2(T.y - P.y, |T - P| in x/z)` and the aim `S + 0xfb4` =
+/// `K - atan2(T.z - P.z, T.x - P.x)` wrapped once (`_CIatan2` of the
+/// doubles), `S + 0xfb8` 0; then `S + 0x56f4` = slot 623 `(*G_E, 0, 0, 0,
+/// 0, 0, 0)`, which it returns. Each slot call passes the words the
+/// original leaves on the stack.
+pub fn throw_target_0449<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let b = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0x90);
+    let (yl, p, o, v, m) = (b + 8, b + 0x18, b + 0x28, b + 0x38, b + 0x48);
+    let s = g.read::<u32>(w(0x1e));
+    for j in 0..4u32 {
+        let x = g.read::<u32>(s + 0xf70 + 4 * j);
+        g.write::<u32>(p + 4 * j, x);
+    }
+    let mut st = Pushes::default();
+    st.push(m);
+    let yaw = g.read::<u32>(s + 0x56dc);
+    g.write::<u32>(yl, yaw);
+    for (d, x) in [
+        (0u32, 0u32),
+        (4, 0xc120_0000),
+        (8, 0x41f0_0000),
+        (0xc, 0x3f80_0000),
+    ] {
+        g.write::<u32>(v + d, x);
+    }
+    st.call(g, t(g, 0x5a, 235), 0);
+    st.set_top(0);
+    st.push_all(&[m, m]);
+    st.call(g, t(g, 0xa8, 328), 0);
+    st.pop(2);
+    st.set_top(g.read::<u32>(yl));
+    st.push_all(&[m, m]);
+    st.call(g, t(g, 0xc9, 329), 0);
+    st.push_all(&[v, m, o]);
+    g.write::<u32>(v + 0xc, 0x3f80_0000);
+    st.call(g, t(g, 0xe5, 229), 0);
+    st.push_all(&[o, p, p]);
+    st.call(g, t(g, 0x105, 248), 0);
+    let yaw = g.read::<u32>(s + 0x56dc);
+    g.write::<u32>(s + 0xfb4, yaw);
+    for j in 0..3u32 {
+        let x = g.read::<u32>(p + 4 * j);
+        g.write::<u32>(s + 0xfa0 + 4 * j, x);
+    }
+    g.write::<u32>(s + 0xfac, 0x3f80_0000);
+    g.write::<u32>(p + 0xc, 0x3f80_0000);
+    g.write::<u32>(s + 0x56ec, 0x3c);
+    g.write::<u32>(s + 0x56f0, 0x3c);
+    let tp = s + 0xfc0;
+    // the call from `B`
+    crate::sb_misc::mean_position(g, img, img.rel32_target(f + 0x177), b.wrapping_sub(4), tp);
+    let dy = sub(g.read::<f32>(tp + 4), g.read::<f32>(p + 4));
+    let dx = sub(g.read::<f32>(tp), g.read::<f32>(p));
+    let dz = sub(g.read::<f32>(tp + 8), g.read::<f32>(p + 8));
+    g.write::<f32>(b + 0xc, dx);
+    g.write::<f32>(b + 8, dz);
+    let flat = f64::from(add(mul(dz, dz), mul(dx, dx))).sqrt();
+    // fstp qword; cvtpd2ps
+    #[allow(clippy::cast_possible_truncation)]
+    let pitch = g.atan2(f64::from(dy), flat) as f32;
+    g.write::<f32>(s + 0xfb0, pitch);
+    #[allow(clippy::cast_possible_truncation)]
+    let a = g.atan2(f64::from(dz), f64::from(dx)) as f32;
+    let y = sub(k(g, 0x23a), a);
+    let y = wrap_once(g, img, f, y, [0x249, 0x253, 0x25d, 0x26a]);
+    g.write::<f32>(s + 0xfb4, y);
+    g.write::<u32>(s + 0xfb8, 0);
+    let e = g.read::<u32>(w(0x299));
+    let h = g.call(t(g, 0x26f, 623), 0, &[e, 0, 0, 0, 0, 0, 0]).eax;
+    g.write::<u32>(s + 0x56f4, h);
+    Ret::eax(h)
+}
+
+/// [`throw_target_0449`] (the `rel32`s: the mean, the square root,
+/// `_CIatan2` twice, the cookie check).
+pub const THROW_TARGET_0449: Sig = Sig {
+    len: 700,
+    hash: 0x8542_3804_9207_9c70,
+    calls: &[
+        (0x177, Callee::Sig(&crate::sb_misc::MEAN_POSITION)),
+        (0x1d4, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x1e7, Callee::Import("_CIatan2")),
+        (0x228, Callee::Import("_CIatan2")),
+        (0x2b4, Callee::Any),
+    ],
+    imports: &[],
+};

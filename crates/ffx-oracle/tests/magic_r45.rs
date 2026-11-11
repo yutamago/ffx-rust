@@ -3143,3 +3143,47 @@ fn start_up_0449() {
         t.check_entry(load, Call::default(), &[], Eax::Checked);
     }
 }
+
+/// `magic_0449` 0x10005850 (`r45::throw_target_0449`, internal): one to
+/// three actors in the mean, the yaw either side of 0 and far out (the
+/// wrap both ways and not).
+#[test]
+fn throw_target_0449() {
+    let Some(mut t) = sa::twin(449) else { return };
+    let f = t.at(0x5850);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    let far = SCRATCH + 0x7e30;
+    let s = SCRATCH + 0x1_0000;
+    let mp = t.img.rel32_target(f + 0x177);
+    let mw = |o: u32| img.word(mp + o);
+    for (k, (yaw, d)) in (0u32..).zip([
+        (0.5f32, 1.0f32),
+        (-2.5, 3.0),
+        (3.0, 0.25),
+        (-3.0, 8.0),
+        (6.5, 2.0),
+    ]) {
+        aim_0392_setup(&mut t, &[], far, 0);
+        rec(&mut t, 623, 7, |_, a| 0x0623_0000 ^ a[0] ^ a[3]);
+        t.set_u32(w(0x1e), s);
+        t.set_u32(w(0x299), 0x0e0e_0299 + k);
+        t.set_u32(mw(0x11), 1 + k % 3);
+        t.set_u32(mw(0x46), 0x0c0c);
+        let sel = SCRATCH + 0x180;
+        t.write(sel, &[3, 1, 4, 2]);
+        t.set_u32(mw(0x4d), sel);
+        for j in 0..8u32 {
+            t.set_u32(mw(0x58) + 4 * j, 0xc400 + j);
+        }
+        junk(&mut t, s + 0xf60, 0x80, k);
+        floats(&mut t, s + 0xf70, 4, k + 7);
+        junk(&mut t, s + 0x56d0, 0x40, k);
+        setf(&mut t, s + 0x56dc, yaw);
+        setf(&mut t, far, d);
+        ownb::dirty_stack(&mut t, 0x5850 + k, &[]);
+        t.check(f, Call::default(), &[], Eax::Checked, |g, img, fr| {
+            ffx_magic::r45::throw_target_0449(g, img, fr)
+        });
+    }
+}
