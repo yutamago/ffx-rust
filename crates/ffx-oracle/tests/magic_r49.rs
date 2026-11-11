@@ -144,6 +144,8 @@ fn curves_setup(
     // the selected actor and the handles
     let sel = SCRATCH + 0x7b00;
     t.set_u8(sel, (2 + k) as u8);
+    // (b1 test gap: the byte after the selector not 0)
+    t.set_u8(sel + 1, 0x3c);
     let at = w(t, ops.sel);
     t.set_u32(at, sel);
     let tab = w(t, ops.handles);
@@ -307,11 +309,13 @@ fn fold(m: &mut dyn StubMem, slot: u32, i: u32, v: u32) {
 }
 
 /// The trail draw's slots and globals for the trail draw at `td` (as
-/// `magic_r29.rs`'s).
+/// `magic_r29.rs`'s, on the 1462-byte copy's operands; the draw gate
+/// byte set).
 fn trail_stubs(t: &mut Twin, td: u32) {
     let lock = SCRATCH + 0x9000;
-    t.set_u32(t.img.word(td + 0x463), lock);
-    t.set_u32(t.img.word(td + 0x520), 0x0cc0_0cc0);
+    t.set_u32(t.img.word(td + 0x46e), lock);
+    t.set_u32(t.img.word(td + 0x52b), 0x0cc0_0cc0);
+    t.set_u8(t.img.word(td + 0x433), 1);
     rec(t, 234, 3, |m, a| {
         for i in 0..3 {
             let v = rf(m, a[1] + 4 * i) - rf(m, a[2] + 4 * i);
@@ -334,7 +338,7 @@ fn trail_stubs(t: &mut Twin, td: u32) {
         }
         0x229
     });
-    let gp = t.img.word(td + 0x63);
+    let gp = t.img.word(td + 0x66);
     rec(t, 772, 2, move |m, a| {
         let sm = m.r32(gp);
         for j in 0..12 {
@@ -509,14 +513,15 @@ fn curves_task_0396() {
         t.set_u32(r + 0x530, cs.flags.0);
         t.set_u32(r + 0x534, cs.flags.1);
         if cs.on_point {
-            // every key 0: the sample is 0 on each axis, as is `R + 0xd0`
+            // every key alike: the sample is the key on each axis, as is
+            // `R + 0xd0` (b1 test gap: not 0, so the differences count)
             for i in 0..7u32 {
                 for j in 0..4u32 {
-                    t.set_u32(r + 0x488 + 0x10 * i + 4 * j, 0);
+                    setf(&mut t, r + 0x488 + 0x10 * i + 4 * j, 1.25 + j as f32);
                 }
             }
             for j in 0..3u32 {
-                t.set_u32(r + 0xd0 + 4 * j, 0);
+                setf(&mut t, r + 0xd0 + 4 * j, 1.25 + j as f32);
             }
         }
         // the node in a sibling list, and the pool's globals
