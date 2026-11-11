@@ -5145,3 +5145,120 @@ pub const MESH_0267: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `magic_0267`'s draw (0x10002ce0, 661 bytes; a stored callback, no
+/// arguments; an 8-aligned /GS frame, `E` = `esp` before the `esi`
+/// push). Nothing while the scale `K0` is not above 0 (returns the
+/// cookie word). Else the count `+1` (at most 0x80); `M0 = E + 0x44`
+/// (slot 235) scaled by `K0` and moved to `(c0, K0 K + c1, c2, c3)`; the
+/// camera matrices `E + 0xc4` (723) and `M3 = E + 0x84` (724); the two
+/// angles step by their constants (each wrapped once); `M1 = E + 4`
+/// (235) `= M1 M3` (231), turned by both angles (328, 329), its move
+/// cleared; the model slot 719 `(P, 4, 0)` drawn twice ([`mesh_0267`]
+/// `(M1, count, 1)` and `(M1, count / 2, 0)` with `M0`); the DLL's packet
+/// ([`packet`](crate::o4_fam4::packet)); slot 779 with slot 772 `(0x10b,
+/// model)`'s pair, the lock held. Returns the lock's global word.
+pub fn draw_0267<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let gw = |g: &G, o: u32| g.read::<u32>(w(o));
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let call = |o: u32| img.rel32_target(f + o);
+    let e = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0x10c);
+    let cookie = gw(g, 0xd) ^ e;
+    g.write::<u32>(e + 0x108, cookie);
+    let k0 = k(g, 0x20);
+    if 0.0 >= k0 {
+        return Ret::eax(cookie);
+    }
+    let c = g.read::<i32>(w(0x2c)).wrapping_add(1).min(0x80);
+    g.write::<i32>(w(0x3c), c);
+    let m0 = e + 0x44;
+    // call width: 1
+    g.call(t(g, 0x46, 235), 0, &[m0]);
+    let k0 = k(g, 0x56);
+    for o in [0x28u32, 0x14, 0] {
+        g.write::<f32>(m0 + o, k0);
+    }
+    let y = add(mul(k0, k(g, 0x78)), k(g, 0x8e));
+    g.write::<f32>(m0 + 0x30, k(g, 0x5e));
+    g.write::<f32>(m0 + 0x38, k(g, 0x86));
+    g.write::<f32>(m0 + 0x3c, k(g, 0xa9));
+    g.write::<f32>(m0 + 0x34, y);
+    // call width: 1
+    g.call(t(g, 0xaf, 723), 0, &[e + 0xc4]);
+    let m3 = e + 0x84;
+    // call width: 1
+    g.call(t(g, 0xd9, 724), 0, &[m3]);
+    let ops = [0xf9, 0x101, 0x109, 0x101];
+    let a1 = wrap_once(g, img, f, add(k(g, 0xe9), k(g, 0xf1)), ops);
+    g.write::<f32>(w(0x128), a1);
+    let a2 = wrap_once(g, img, f, add(k(g, 0x130), k(g, 0x138)), ops);
+    g.write::<f32>(w(0x15e), a2);
+    let m1 = e + 4;
+    // call width: 1
+    g.call(t(g, 0x156, 235), 0, &[m1]);
+    // call width: 3
+    g.call(t(g, 0x180, 231), 0, &[m1, m3, m1]);
+    let a1 = gw(g, 0x190);
+    // call width: 3
+    g.call(t(g, 0x1a3, 328), 0, &[m1, m1, a1]);
+    let a2 = gw(g, 0x1b3);
+    // call width: 3
+    g.call(t(g, 0x1c6, 329), 0, &[m1, m1, a2]);
+    for o in [0x30u32, 0x34, 0x38] {
+        g.write::<u32>(m1 + o, 0);
+    }
+    // call width: 3
+    let model = g.call(t(g, 0x1d3, 719), 0, &[w(0x1fd), 4, 0]).eax;
+    for (at, n, mode) in [(0x21cu32, 0x20cu32, 1u32), (0x23c, 0x221, 0)] {
+        let count = g.read::<i32>(w(n));
+        let alpha = if mode == 1 { count } else { count / 2 };
+        // three pushes: the return address at E - 0x14
+        let esp = e.wrapping_sub(0x14);
+        for (i, x) in (1u32..).zip([m1, alpha.cast_unsigned(), mode]) {
+            g.write::<u32>(esp + 4 * i, x);
+        }
+        let mf = Frame {
+            at: call(at),
+            esp,
+            ecx: model,
+            edx: m0,
+            ..*fr
+        };
+        mesh_0267(g, img, &mf);
+    }
+    // the mesh's cookie check leaves the global cookie in ecx
+    let packet = Frame {
+        at: call(0x244),
+        esp: e.wrapping_sub(8),
+        ecx: gw(g, 0xd),
+        ..*fr
+    };
+    crate::o4_fam4::packet(g, img, &packet);
+    // call width: 2
+    let r = g.call(t(g, 0x249, 772), 0, &[0x10b, model]);
+    let lock = gw(g, 0x25d);
+    let saved = g.read::<u32>(lock);
+    g.write::<u32>(lock, 1);
+    // call width: 2
+    g.call(t(g, 0x266, 779), 0, &[r.eax, r.edx]);
+    let lock = gw(g, 0x27c);
+    g.write::<u32>(lock, saved);
+    Ret::eax(lock)
+}
+
+/// [`draw_0267`] (the `rel32`s: the mesh twice, the packet, the cookie
+/// check).
+pub const DRAW_0267: Sig = Sig {
+    len: 661,
+    hash: 0x9839_5ba2_bd0b_9e46,
+    calls: &[
+        (0x21c, Callee::Sig(&MESH_0267)),
+        (0x23c, Callee::Sig(&MESH_0267)),
+        (0x244, Callee::Sig(&crate::o4_fam4::PACKET_0267_2F80)),
+        (0x28d, Callee::Any),
+    ],
+    imports: &[],
+};

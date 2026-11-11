@@ -2427,26 +2427,19 @@ fn mesh_model_0267(t: &mut Twin, m: u32, k: u32, groups: &[(u8, u16)]) {
     t.set_u16(m + 0x14, 0x20);
 }
 
-/// `magic_0267` 0x100015b0 (`r47::mesh_0267`, internal: `ecx` = the
-/// model, `edx` = a matrix, cdecl `(X, alpha, mode)`): no mesh (the
-/// registration), modes 1 and 0, groups of kind 1 and others, slot 886
-/// refusing.
-#[test]
-fn mesh_0267() {
-    let Some(mut t) = twin(267) else { return };
-    all_stubs(&mut t);
-    let f = t.at(0x15b0);
+/// The call-outs of `r47::mesh_0267` (at `f`) stubbed and its globals
+/// set; returns the lock and the work buffers' base.
+fn mesh_stubs_0267(t: &mut Twin, f: u32) -> (u32, u32) {
+    all_stubs(t);
     let w = |t: &Twin, o: u32| t.img.word(f + o);
-    rec(&mut t, 772, 2, |_, a| 0x0772_0000 ^ a[1]);
+    rec(t, 772, 2, |_, a| 0x0772_0000 ^ a[1]);
     t.stub_edx(772, |_, a| a[0] ^ 0x0077_2000);
-    rec(&mut t, 773, 2, |m, _| m.r32(SCRATCH + 0x7f40));
-    rec(&mut t, 887, 2, |_, a| 0x0887_0000 + a[1]);
-    rec(&mut t, 886, 4, |m, a| {
-        u32::from(m.r32(SCRATCH + 0x7f44) != a[1])
-    });
+    rec(t, 773, 2, |m, _| m.r32(SCRATCH + 0x7f40));
+    rec(t, 887, 2, |_, a| 0x0887_0000 + a[1]);
+    rec(t, 886, 4, |m, a| u32::from(m.r32(SCRATCH + 0x7f44) != a[1]));
     // the work buffers (0x10000 apart) far above the scratch area
     let work = 0x6000_0000u32;
-    rec(&mut t, 562, 0, move |_, _| work);
+    rec(t, 562, 0, move |_, _| work);
     let (pos, uv, col, idx) = (
         SCRATCH + 0x3_0000,
         SCRATCH + 0x3_2000,
@@ -2454,28 +2447,28 @@ fn mesh_0267() {
         SCRATCH + 0x3_8000,
     );
     for (s, b) in [(898u32, pos), (901, uv), (900, col), (902, idx)] {
-        rec(&mut t, s, 1, move |_, a| b + 0x400 * (a[0] & 3));
+        rec(t, s, 1, move |_, a| b + 0x400 * (a[0] & 3));
     }
     let (mm, bmin, bmax) = (SCRATCH + 0x3_a000, SCRATCH + 0x3_a100, SCRATCH + 0x3_a200);
     for (s, b) in [(893u32, mm), (890, bmin), (891, bmax)] {
-        rec(&mut t, s, 1, move |_, _| b);
+        rec(t, s, 1, move |_, _| b);
     }
     for s in [723u32, 724] {
-        rec(&mut t, s, 1, move |m, a| {
+        rec(t, s, 1, move |m, a| {
             for i in 0..16 {
                 wf(m, a[0] + 4 * i, s as f32 * 0.001 + i as f32 * 0.25 - 1.0);
             }
             s
         });
     }
-    rec(&mut t, 230, 2, |m, a| {
+    rec(t, 230, 2, |m, a| {
         for i in 0..16 {
             let x = m.r32(a[1] + 4 * i);
             m.w32(a[0] + 4 * i, x);
         }
         0x230
     });
-    rec(&mut t, 231, 3, |m, a| {
+    rec(t, 231, 3, |m, a| {
         log16(m, a[2]);
         for i in 0..16 {
             let x = rf(m, a[1] + 4 * i) * 0.5 + rf(m, a[2] + 4 * i) * 0.25;
@@ -2483,7 +2476,7 @@ fn mesh_0267() {
         }
         0x231
     });
-    rec(&mut t, 229, 3, |m, a| {
+    rec(t, 229, 3, |m, a| {
         let mut o = [0f32; 4];
         for (i, oi) in o.iter_mut().enumerate() {
             let i = i as u32;
@@ -2499,7 +2492,7 @@ fn mesh_0267() {
         }
         0x229
     });
-    rec(&mut t, 325, 2, |m, a| {
+    rec(t, 325, 2, |m, a| {
         for i in 0..4 {
             let x = m.r32(a[1] + 4 * i);
             m.w32(a[0] + 4 * i, x);
@@ -2508,7 +2501,7 @@ fn mesh_0267() {
     });
     let lock = SCRATCH + 0x4100;
     for o in [0x8bu32, 0xb5, 0xf0d, 0xf31] {
-        let at = w(&t, o);
+        let at = w(t, o);
         t.set_u32(at, lock);
     }
     let reg = t.img.rel32_target(f + 0xd7);
@@ -2517,14 +2510,26 @@ fn mesh_0267() {
         t.set_u32(at, lock);
     }
     for s in [775u32, 779] {
-        rec(&mut t, s, 2, move |m, a| {
+        rec(t, s, 2, move |m, a| {
             m.w32(SCRATCH + 0x7f48 + (s & 4), m.r32(lock));
             (s << 16) ^ a[0]
         });
     }
-    let at = w(&t, 0xe5d);
+    let at = w(t, 0xe5d);
     t.set_u32(at, SCRATCH + 0x3_a300);
-    floats(&mut t, SCRATCH + 0x3_a300, 16, 0.5);
+    floats(t, SCRATCH + 0x3_a300, 16, 0.5);
+    (lock, work)
+}
+
+/// `magic_0267` 0x100015b0 (`r47::mesh_0267`, internal: `ecx` = the
+/// model, `edx` = a matrix, cdecl `(X, alpha, mode)`): no mesh (the
+/// registration), modes 1 and 0, groups of kind 1 and others, slot 886
+/// refusing.
+#[test]
+fn mesh_0267() {
+    let Some(mut t) = twin(267) else { return };
+    let f = t.at(0x15b0);
+    let (lock, work) = mesh_stubs_0267(&mut t, f);
     let (x, y) = (SCRATCH + 0x3_a400, SCRATCH + 0x3_a500);
     floats(&mut t, x, 16, 0.75);
     floats(&mut t, y, 16, -1.5);
@@ -2555,5 +2560,70 @@ fn mesh_0267() {
         t.check(f, call, &[x, 3 + k, mode], Eax::Checked, |g, img, fr| {
             ffx_magic::r47::mesh_0267(g, img, fr)
         });
+    }
+}
+
+/// `magic_0267` 0x10002ce0 (`r47::draw_0267`, a stored callback): the
+/// scale at 0, below and above it; the count at its cap, below it and
+/// negative (the halving); both angles wrapped up, down and not; the mesh
+/// registered and not.
+#[test]
+fn draw_0267() {
+    let Some(mut t) = twin(267) else { return };
+    let mf = t.at(0x15b0);
+    let (lock, work) = mesh_stubs_0267(&mut t, mf);
+    let f = t.at(0x2ce0);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let m = SCRATCH + 0x2_8000;
+    rec(&mut t, 719, 3, move |_, _| m);
+    for s in [235u32, 723, 724] {
+        rec(&mut t, s, 1, move |m, a| {
+            for i in 0..16 {
+                wf(m, a[0] + 4 * i, s as f32 * 0.001 + i as f32 * 0.25 - 1.0);
+            }
+            s
+        });
+    }
+    for s in [328u32, 329] {
+        rec(&mut t, s, 3, move |m, a| {
+            log16(m, a[1]);
+            let ang = f32::from_bits(a[2]);
+            for i in 0..16 {
+                let x = rf(m, a[1] + 4 * i) * 0.5 + ang * 0.25 + s as f32 * 0.001;
+                wf(m, a[0] + 4 * i, x);
+            }
+            s
+        });
+    }
+    let lockp = w(&t, 0x25d);
+    t.set_u32(lockp, lock);
+    // the packet's record
+    let pk = t.img.rel32_target(f + 0x244);
+    let at = t.img.word(pk + 2);
+    t.set_u32(at, SCRATCH + 0x3_b000);
+    let (k0, count, a1, a2) = (w(&t, 0x20), w(&t, 0x2c), w(&t, 0xe9), w(&t, 0x130));
+    // (scale, count, angle 1, angle 2, mesh registered)
+    for (k, (scale, n, x1, x2, mesh)) in (0u32..).zip([
+        (0.0f32, 3i32, 0.5f32, 0.5f32, 1u32),
+        (-1.0, 3, 0.5, 0.5, 1),
+        (1.5, 0x7f, 3.1, -3.1, 1),
+        (0.75, 0x80, -3.1, 3.1, 1),
+        (2.0, -4, 0.25, -0.25, 0),
+        (f32::NAN, 6, 0.0, 1.0, 1),
+    ]) {
+        mesh_model_0267(&mut t, m, k, &[(1, 2), (2, 1), (1, 3)]);
+        for i in 0..5u32 {
+            junk(&mut t, work + 0x1_0000 * i, 0x200, k + i);
+        }
+        junk(&mut t, SCRATCH + 0x3_b000, 0x80, k);
+        t.set_u32(k0, scale.to_bits());
+        t.set_u32(count, n.cast_unsigned());
+        t.set_u32(a1, x1.to_bits());
+        t.set_u32(a2, x2.to_bits());
+        t.set_u32(SCRATCH + 0x7f40, mesh);
+        t.set_u32(SCRATCH + 0x7f44, 9);
+        t.set_u32(lock, 0x40 + k);
+        magic_h6::scrub(&mut t);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
