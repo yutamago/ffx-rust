@@ -1541,12 +1541,11 @@ ported! {
             n as u8,
             |m| vu0::bridge::ke_vu0_rnd_i(m, |_, seed| crt_srand(seed)),
             |_, f, a, b, at| {
-                let mut more = 0u32;
-                #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-                let p = (&raw mut more).expose_provenance() as u32;
+                let mut more = super::StackFrame::<1>::new();
+                let p = more.at();
                 // the born callback is a cdecl function of (obj, arg, vertex, &more)
                 ffx_bridge::route::cdecl::<u32>(f, &[a, b, at, p]);
-                more
+                ffx_bridge::Mem::read(&mem(), p)
             },
         )
     }
@@ -2065,8 +2064,8 @@ ported! {
     }
     /// `yiMapFileRead(scene, file)`.
     yiMapFileRead @ 0x0090_f900 => extern "C" fn yi_map_file_read(scene: u32, file: u32) -> u32 {
-        let mut image = Image([0; 0x60]);
-        let at = u32::try_from((&raw mut image).expose_provenance()).unwrap_or(0);
+        let mut image = super::AlignedFrame::<96>::new();
+        let at = image.at();
         yi::bridge::yi_map_file_read(&mut mem(), scene, file, at, &mut |_, f, a| call_cdecl(f, a))
     }
     /// `yiWindowDrawPlate(window)`.
@@ -2235,8 +2234,8 @@ ported! {
     }
     /// `yiArc_readmem(scene: u32, file: u32)`.
     yiArc_readmem @ 0x0090_f8e0 => extern "C" fn shim_yi_arc_readmem(scene: u32, file: u32) -> u32 {
-        let mut image = Image([0; 0x60]);
-        let at = u32::try_from((&raw mut image).expose_provenance()).unwrap_or(0);
+        let mut image = super::AlignedFrame::<96>::new();
+        let at = image.at();
         yi::bridge::yi_arc_readmem(&mut mem(), scene, file, at, &mut |_, f, a| call_cdecl(f, a))
     }
     /// `yiAnimInfo_init(info: u32)`.
@@ -2266,20 +2265,20 @@ ported! {
     }
     /// `rcbgLoadBin(data)`.
     rcbgLoadBin @ 0x0092_1d60 => extern "C" fn shim_rcbg_load_bin(data: u32) {
-        let mut work = Work([0; 0xa4]);
-        let at = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        let mut work = super::AlignedFrame::<164>::new();
+        let at = work.at();
         guide::bridge::rcbg_load_bin(&mut mem(), data, at, &mut |_, f, a| call_cdecl(f, a));
     }
     /// `Yn_PreBgSetData(data)`.
     Yn_PreBgSetData @ 0x0091_aa60 => extern "C" fn shim_yn_pre_bg_set_data(data: u32) {
-        let mut work = Work([0; 0xa4]);
-        let at = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        let mut work = super::AlignedFrame::<164>::new();
+        let at = work.at();
         guide::bridge::yn_pre_bg_set_data(&mut mem(), data, at, &mut |_, f, a| call_cdecl(f, a));
     }
     /// `yiObjReadFinish(read)`.
     yiObjReadFinish @ 0x0090_a9e0 => extern "C" fn shim_yi_obj_read_finish(read: u32) {
-        let mut image = Image([0; 0x60]);
-        let at = u32::try_from((&raw mut image).expose_provenance()).unwrap_or(0);
+        let mut image = super::AlignedFrame::<96>::new();
+        let at = image.at();
         yi::bridge::yi_obj_read_finish(&mut mem(), read, at, &mut |_, f, a| call_cdecl(f, a));
     }
     /// `rcfxParticleNew()`.
@@ -2336,10 +2335,10 @@ ported! {
     }
     /// `yiObjReadCallback(read)`.
     yiObjReadCallback @ 0x0090_97c0 => extern "C" fn shim_yi_obj_read_callback(read: u32) -> u32 {
-        let mut work = Work([0; 0xa4]);
-        let mut image = Image([0; 0x60]);
-        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
-        let i = u32::try_from((&raw mut image).expose_provenance()).unwrap_or(0);
+        let mut work = super::AlignedFrame::<164>::new();
+        let mut image = super::AlignedFrame::<96>::new();
+        let w = work.at();
+        let i = image.at();
         yi::bridge::yi_obj_read_callback(&mut mem(), read, w, i, &mut |_, f, a| call_cdecl(f, a))
     }
     /// `rcbgScaleVector(dst, v, s)`.
@@ -2434,14 +2433,14 @@ ported! {
     }
     /// `rcbgSetViewMatrix(out, eye, at, up, roll)`.
     rcbgSetViewMatrix @ 0x0092_04b0 => extern "C" fn shim_rcbg_set_view_matrix(out: u32, eye: u32, at: u32, up: u32, roll: u32) -> u32 {
-        let mut work = Scratch([0; 0x20]);
-        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        let mut work = super::AlignedFrame::<32>::new();
+        let w = work.at();
         camera::bridge::rcbg_set_view_matrix(&mut mem(), out, eye, at, up, roll, w, &mut |_, f, a| call_cdecl(f, a))
     }
     /// `rcbgSceneSetMatrix(view)`.
     rcbgSceneSetMatrix @ 0x0092_0c00 => extern "C" fn shim_rcbg_scene_set_matrix(v: u32) {
-        let mut work = CameraWork([0; camera::WORK as usize]);
-        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        let mut work = super::AlignedFrame::<{ camera::WORK as usize }>::new();
+        let w = work.at();
         camera::bridge::rcbg_scene_set_matrix(
             &mut mem(),
             v,
@@ -2452,8 +2451,8 @@ ported! {
     }
     /// `rcbgSceneSetMatrix_Cross()`.
     rcbgSceneSetMatrix_Cross @ 0x0092_0e40 => extern "C" fn shim_rcbg_scene_set_matrix_cross() -> u32 {
-        let mut work = CameraWork([0; camera::WORK as usize]);
-        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        let mut work = super::AlignedFrame::<{ camera::WORK as usize }>::new();
+        let w = work.at();
         camera::bridge::rcbg_scene_set_matrix_cross(&mut mem(), w, &mut |_, f, a| call_cdecl(f, a), &mut |_, f, a| call_float(f, a))
     }
     /// `rcbgModelCreate(model, desc)`.
@@ -2462,20 +2461,20 @@ ported! {
     }
     /// `rcbgModelCreateOnePrimH(model, type, count, verts, normals)`.
     rcbgModelCreateOnePrimH @ 0x0092_7fa0 => extern "C" fn shim_rcbg_model_create_one_prim_h(m: u32, kind: u32, count: u32, verts: u32, normals: u32) -> u32 {
-        let mut work = Scratch([0; 0x20]);
-        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        let mut work = super::AlignedFrame::<32>::new();
+        let w = work.at();
         model::bridge::rcbg_model_create_one_prim_h(&mut mem(), m, kind, count, verts, normals, w, &mut |_, f, a| call_cdecl(f, a))
     }
     /// `rcbgModelFToS0(out, points, n, scale)`.
     rcbgModelFToS0 @ 0x0092_81d0 => extern "C" fn shim_rcbg_model_f_to_s0(out: u32, points: u32, n: i32, scale: u32) -> u32 {
-        let mut work = Scratch([0; 0x20]);
-        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        let mut work = super::AlignedFrame::<32>::new();
+        let w = work.at();
         model::bridge::rcbg_model_f_to_s0(&mut mem(), out, points, n, scale, w)
     }
     /// `rcbgGuideSetModelFromIdMap(guide)`.
     rcbgGuideSetModelFromIdMap @ 0x0091_d5e0 => extern "C" fn shim_rcbg_guide_set_model_from_id_map(g: u32) {
-        let mut work = Scratch([0; 0x20]);
-        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        let mut work = super::AlignedFrame::<32>::new();
+        let w = work.at();
         guide::bridge::rcbg_guide_set_model_from_id_map(&mut mem(), g, w, &mut |_, f, a| call_cdecl(f, a));
     }
     /// `yiSwizzleColumns(src, dst)`.
@@ -2484,32 +2483,32 @@ ported! {
     }
     /// `yiSwizzlePage(w, h, src, dst)`.
     yiSwizzlePage @ 0x0090_e2e0 => extern "C" fn shim_yi_swizzle_page(w: i32, h: i32, src: u32, dst: u32) {
-        let mut work = Swizzle([0; 0x200]);
-        let at = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        let mut work = super::AlignedFrame::<512>::new();
+        let at = work.at();
         yi::bridge::yi_swizzle_page(&mut mem(), w, h, src, dst, at, &mut |_, f, a| call_cdecl(f, a));
     }
     /// `yiSwizzleImage(w, h, src, dst)`.
     yiSwizzleImage @ 0x0090_e0b0 => extern "C" fn shim_yi_swizzle_image(w: i32, h: i32, src: u32, dst: u32) -> u32 {
-        let mut work = Swizzle([0; 0x200]);
-        let at = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        let mut work = super::AlignedFrame::<512>::new();
+        let at = work.at();
         yi::bridge::yi_swizzle_image(&mut mem(), w, h, src, dst, at, &mut |_, f, a| call_cdecl(f, a))
     }
     /// `yiMapReadMaster(map, file, cd_map, cd_file, alarm)`.
     yiMapReadMaster @ 0x0090_93b0 => extern "C" fn shim_yi_map_read_master(map: u32, file: u32, cd_map: u32, cd_file: u32, alarm: u32) -> u32 {
-        let mut image = Image([0; 0x60]);
-        let im = u32::try_from((&raw mut image).expose_provenance()).unwrap_or(0);
-        let mut work = Work([0; 0xa4]);
-        let wk = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
-        let mut local = Scratch([0; 0x20]);
-        let lc = u32::try_from((&raw mut local).expose_provenance()).unwrap_or(0);
+        let mut image = super::AlignedFrame::<96>::new();
+        let im = image.at();
+        let mut work = super::AlignedFrame::<164>::new();
+        let wk = work.at();
+        let mut local = super::AlignedFrame::<32>::new();
+        let lc = local.at();
         yi::bridge::yi_map_read_master(&mut mem(), map, file, cd_map, cd_file, alarm, im, wk, lc, &mut |_, f, a| call_cdecl(f, a))
     }
     /// `yiMapSetup(map)`.
     yiMapSetup @ 0x0090_9680 => extern "C" fn shim_yi_map_read_host(map: u32) -> u32 {
-        let mut work = Host([0; 0x1000]);
-        let wk = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
-        let mut image = Image([0; 0x60]);
-        let im = u32::try_from((&raw mut image).expose_provenance()).unwrap_or(0);
+        let mut work = super::AlignedFrame::<4096>::new();
+        let wk = work.at();
+        let mut image = super::AlignedFrame::<96>::new();
+        let im = image.at();
         yi::bridge::yi_map_read_host(&mut mem(), map, wk, im, &mut |_, f, a| call_cdecl(f, a))
     }
     /// `yiAttachAnimDObj(obj, anim, arg)`.
@@ -2778,19 +2777,15 @@ ported! {
     /// `AbmapDrawChrRings()`.
     AbmapDrawChrRings @ 0x00a4_c8d0 => extern "C" fn shim_abmap_draw_chr_rings() {
         // 16-byte aligned: the matrix and vectors go to FFXVu0MulMatrix
-        #[repr(C, align(16))]
-        struct RingsWork([u8; ffx_field::abmap_draw::RINGS_WORK as usize]);
-        let mut work = RingsWork([0; ffx_field::abmap_draw::RINGS_WORK as usize]);
-        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        let mut work = super::AlignedFrame::<{ ffx_field::abmap_draw::RINGS_WORK as usize }>::new();
+        let w = work.at();
         ffx_field::abmap_draw::abmap_draw_chr_rings(&mut mem(), w, &mut |_, f, a| call_cdecl(f, a));
     }
     /// `AbmapDrawBoard()`.
     AbmapDrawBoard @ 0x00a4_c700 => extern "C" fn shim_abmap_draw_board() {
         // 16-byte aligned: the matrices go to FFXVu0UnitMatrix/MulMatrix
-        #[repr(C, align(16))]
-        struct BoardWork([u8; ffx_field::abmap_draw::BOARD_WORK as usize]);
-        let mut work = BoardWork([0; ffx_field::abmap_draw::BOARD_WORK as usize]);
-        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        let mut work = super::AlignedFrame::<{ ffx_field::abmap_draw::BOARD_WORK as usize }>::new();
+        let w = work.at();
         ffx_field::abmap_draw::abmap_draw_board(&mut mem(), w, &mut |_, f, a| call_cdecl(f, a));
     }
     /// `AbmapDrawChrLabels_00a4b790()`: void (no caller reads `eax`); the
@@ -2828,10 +2823,8 @@ ported! {
     /// `KeThCp_Update(t)`.
     KeThCp_Update @ 0x0076_49a0 => extern "C" fn shim_ke_th_cp_update(t: u32) -> u32 {
         // 16-byte aligned: the unit matrix goes to FFXVu0UnitMatrix
-        #[repr(C, align(16))]
-        struct CpWork([u8; ffx_field::keth::CP_WORK as usize]);
-        let mut work = CpWork([0; ffx_field::keth::CP_WORK as usize]);
-        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        let mut work = super::AlignedFrame::<{ ffx_field::keth::CP_WORK as usize }>::new();
+        let w = work.at();
         ffx_field::keth::ke_th_cp_update(&mut mem(), t, w, &mut |_, f, a| call_cdecl(f, a))
     }
     /// `KeThBP_MkStripStart_00765f80()`.
@@ -2868,10 +2861,8 @@ ported! {
     /// `yiPolySplitRectXZ(r, list, inside, outside, cap_in, cap_out, m, a, b, unlimited)`.
     yiPolySplitRectXZ @ 0x0091_0a90 => extern "C" fn shim_yi_poly_split_rect_xz(_r: u32, list: u32, inside: u32, outside: u32, cap_in: u32, cap_out: u32, m: u32, a: u32, b: u32, unlimited: u32) -> u32 {
         // 16-byte aligned: yiRectTriOverlapXZ hands its vectors to FFXVu0ApplyMatrix
-        #[repr(C, align(16))]
-        struct SplitWork([u8; ffx_field::yipoly::SPLIT_WORK as usize]);
-        let mut work = SplitWork([0; ffx_field::yipoly::SPLIT_WORK as usize]);
-        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        let mut work = super::AlignedFrame::<{ ffx_field::yipoly::SPLIT_WORK as usize }>::new();
+        let w = work.at();
         ffx_field::yipoly::yi_poly_split_rect_xz(
             &mut mem(),
             list,
@@ -2887,10 +2878,8 @@ ported! {
     /// `yiRectToOMDBuild(r, inside, size_in, outside, size_out, m, a, b, unlimited)`.
     yiRectToOMDBuild @ 0x0091_2270 => extern "C" fn shim_yi_rect_to_omd_build(r: u32, inside: u32, size_in: u32, outside: u32, size_out: u32, m: u32, a: u32, b: u32, unlimited: u32) -> u32 {
         // 16-byte aligned: the corners and the split's work go to FFXVu0 calls
-        #[repr(C, align(16))]
-        struct BuildWork([u8; ffx_field::yipoly::BUILD_WORK as usize]);
-        let mut work = BuildWork([0; ffx_field::yipoly::BUILD_WORK as usize]);
-        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        let mut work = super::AlignedFrame::<{ ffx_field::yipoly::BUILD_WORK as usize }>::new();
+        let w = work.at();
         ffx_field::yipoly::yi_rect_to_omd_build(
             &mut mem(),
             r,
@@ -2911,37 +2900,30 @@ ported! {
     /// `yiSetDrawFrame()`: the state word and packet in a 16-byte aligned
     /// local.
     yiSetDrawFrame @ 0x0091_2590 => extern "C" fn shim_yi_set_draw_frame() -> u32 {
-        #[repr(C, align(16))]
-        struct FrameWork([u8; ffx_field::yipoly::DRAW_FRAME_WORK as usize]);
-        let mut work = FrameWork([0; ffx_field::yipoly::DRAW_FRAME_WORK as usize]);
-        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        let mut work = super::AlignedFrame::<{ ffx_field::yipoly::DRAW_FRAME_WORK as usize }>::new();
+        let w = work.at();
         ffx_field::yipoly::yi_set_draw_frame(&mut mem(), w, &mut |_, f, a| call_cdecl(f, a))
     }
     /// `yiTexTargetClear(frame, u, v, h)`.
     yiTexTargetClear @ 0x0091_26f0 => extern "C" fn shim_yi_tex_target_clear(frame: u32, u: u32, v: u32, h: u32) -> u32 {
         // 16-byte aligned: the packet goes to sceDmaSendN
-        #[repr(C, align(16))]
-        struct ClearWork([u8; ffx_field::yipoly::CLEAR_WORK as usize]);
-        let mut work = ClearWork([0; ffx_field::yipoly::CLEAR_WORK as usize]);
-        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        let mut work = super::AlignedFrame::<{ ffx_field::yipoly::CLEAR_WORK as usize }>::new();
+        let w = work.at();
         ffx_field::yipoly::yi_tex_target_clear(&mut mem(), frame, (u, v), h, w, &mut |_, f, a| call_cdecl(f, a))
     }
     /// `yiPartChainToOMD(r, out, part)`, fixed: the VIF codes run on their own buffer.
     yiPartChainToOMD @ 0x0091_1ac0 => extern "C" fn shim_yi_part_chain_to_omd(r: u32, out: u32, part: u32) -> u32 {
-        // on the heap: 16 KB is too big for some threads' stacks
-        let mut vif = vec![0u32; ffx_field::yipoly::CHAIN_VIF_WORK as usize / 4];
-        let w = u32::try_from(vif.as_mut_ptr().expose_provenance()).unwrap_or(0);
-        let size = ffx_field::yipoly::yi_part_chain_to_omd(&mut mem(), r, out, part, w, &mut |_, f, a| call_cdecl(f, a));
-        std::hint::black_box(&mut vif);
-        size
+        // with_frame: on the heap in the hook (16 KB is too big for some
+        // threads' stacks), on the game stack in ffx-host
+        super::with_frame(ffx_field::yipoly::CHAIN_VIF_WORK, |w| {
+            ffx_field::yipoly::yi_part_chain_to_omd(&mut mem(), r, out, part, w, &mut |_, f, a| call_cdecl(f, a))
+        })
     }
     /// `yiPolySelectRectXZ(r, list, packet, cap, m, a, b, unlimited)`.
     yiPolySelectRectXZ @ 0x0091_05b0 => extern "C" fn shim_yi_poly_select_rect_xz(_r: u32, list: u32, packet: u32, cap: u32, m: u32, a: u32, b: u32, unlimited: u32) -> u32 {
         // 16-byte aligned: yiRectTriOverlapXZ hands its vectors to FFXVu0ApplyMatrix
-        #[repr(C, align(16))]
-        struct SplitWork([u8; ffx_field::yipoly::SPLIT_WORK as usize]);
-        let mut work = SplitWork([0; ffx_field::yipoly::SPLIT_WORK as usize]);
-        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        let mut work = super::AlignedFrame::<{ ffx_field::yipoly::SPLIT_WORK as usize }>::new();
+        let w = work.at();
         ffx_field::yipoly::yi_poly_select_rect_xz(
             &mut mem(),
             list,
@@ -3093,8 +3075,8 @@ ported! {
     }
     /// `rcefWorkSwap(w)`.
     rcefWorkSwap @ 0x0092_5530 => extern "C" fn shim_rcef_work_swap(w: u32) {
-        let mut tmp = Scratch([0; 0x20]);
-        let t = u32::try_from((&raw mut tmp).expose_provenance()).unwrap_or(0);
+        let mut tmp = super::AlignedFrame::<32>::new();
+        let t = tmp.at();
         task::bridge::rcef_work_swap(&mut mem(), w, t);
     }
     /// `rcefWorkSet(w, a, b, v)`.
@@ -3147,14 +3129,14 @@ ported! {
     }
     /// `rcbgFPmGetMatrix(fp, out)`.
     rcbgFPmGetMatrix @ 0x0092_2290 => extern "C" fn shim_rcbg_fpm_get_matrix(fp: u32, out: u32) -> u32 {
-        let mut work = Scratch([0; 0x20]);
-        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        let mut work = super::AlignedFrame::<32>::new();
+        let w = work.at();
         model::bridge::rcbg_fpm_get_matrix(&mut mem(), fp, out, w, &mut |_, f, a| call_cdecl(f, a))
     }
     /// `rcbgFPmRestart(id, chr, elem)`.
     rcbgFPmRestart @ 0x0092_2300 => extern "C" fn shim_rcbg_fpm_restart(id: u32, chr: u32, elem: u32) -> u32 {
-        let mut work = Scratch([0; 0x20]);
-        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        let mut work = super::AlignedFrame::<32>::new();
+        let w = work.at();
         model::bridge::rcbg_fpm_restart(&mut mem(), id, chr, elem, w, &mut |_, f, a| call_cdecl(f, a))
     }
     /// `rcuiScaleVector(dst, v, s, a, b, c)`.
@@ -3228,8 +3210,8 @@ ported! {
     }
     /// `rcbgModelSetTexReg(page)`.
     rcbgModelSetTexReg @ 0x0092_84d0 => extern "C" fn shim_rcbg_model_set_tex_reg(page: u32) -> u32 {
-        let mut work = Scratch([0; 0x20]);
-        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        let mut work = super::AlignedFrame::<32>::new();
+        let w = work.at();
         model::bridge::rcbg_model_set_tex_reg(&mut mem(), page, w, &mut |_, f, a| call_cdecl(f, a))
     }
     /// `rcefRunPart(env, part, arg)`.
@@ -3306,14 +3288,14 @@ ported! {
     }
     /// `rcbgFPm173ProcSphere(fp)`.
     rcbgFPm173ProcSphere @ 0x0092_2eb0 => extern "C" fn shim_rcbg_fpm173_proc_sphere(fp: u32) {
-        let mut work = Scratch([0; 0x20]);
-        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        let mut work = super::AlignedFrame::<32>::new();
+        let w = work.at();
         model::bridge::rcbg_fpm173_proc_sphere(&mut mem(), fp, w, &mut |_, f, a| call_cdecl(f, a));
     }
     /// `rcbgFPmGetPartData(id, n, part, k)`.
     rcbgFPmGetPartData @ 0x0092_3190 => extern "C" fn shim_rcbg_fpm_get_part_data(id: u32, n: i32, part: u32, k: u32) -> u32 {
-        let mut work = Scratch([0; 0x20]);
-        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        let mut work = super::AlignedFrame::<32>::new();
+        let w = work.at();
         model::bridge::rcbg_fpm_get_part_data(&mut mem(), id, n, part, k, w, &mut |_, f, a| call_cdecl(f, a))
     }
     /// `rcbgPalLoadConfig(pal, parse)`.
@@ -3326,20 +3308,20 @@ ported! {
     }
     /// `yiSetBattleView(view)`.
     yiSetBattleView @ 0x0090_a140 => extern "C" fn shim_yi_set_battle_view(view: u32) {
-        let mut work = Matrix([0; 0x40]);
-        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        let mut work = super::AlignedFrame::<64>::new();
+        let w = work.at();
         yi::bridge::yi_set_battle_view(&mut mem(), view, w, &mut |_, f, a| call_cdecl(f, a), &mut |_, f, a| call_float(f, a));
     }
     /// `yiSetViewMatrices(m, view)`.
     yiSetViewMatrices @ 0x0090_a640 => extern "C" fn shim_yi_set_view_matrices(m: u32, view: u32) {
-        let mut work = Matrix([0; 0x40]);
-        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        let mut work = super::AlignedFrame::<64>::new();
+        let w = work.at();
         yi::bridge::yi_set_view_matrices(&mut mem(), m, view, w, &mut |_, f, a| call_cdecl(f, a), &mut |_, f, a| call_float(f, a));
     }
     /// `yiSetLightMatrices()`.
     yiSetLightMatrices @ 0x0090_8d00 => extern "C" fn shim_yi_set_light_matrices() -> u32 {
-        let mut work = Lights([0; 0x70]);
-        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        let mut work = super::AlignedFrame::<112>::new();
+        let w = work.at();
         yi::bridge::yi_set_light_matrices(&mut mem(), w, &mut |_, f, a| call_cdecl(f, a))
     }
     /// `yiImageVramAlloc(img)`.
@@ -3417,8 +3399,8 @@ ported! {
     }
     /// `rcbgSceneLoadTextCameraCalcRef(cam)`.
     rcbgSceneLoadTextCameraCalcRef @ 0x0093_b110 => extern "C" fn shim_rcbg_scene_load_text_camera_calc_ref(cam: u32) -> u32 {
-        let mut work = Matrix([0; 0x40]);
-        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        let mut work = super::AlignedFrame::<64>::new();
+        let w = work.at();
         scene::bridge::rcbg_scene_load_text_camera_calc_ref(&mut mem(), cam, w, &mut |_, f, a| call_cdecl(f, a))
     }
     /// `yiImage_dumpall(rman)`.
@@ -3448,8 +3430,8 @@ ported! {
     }
     /// `rcuiLoadSetTitle()`.
     rcuiLoadSetTitle @ 0x0093_4fb0 => extern "C" fn shim_rcui_load_set_title() -> u32 {
-        let mut buf = Matrix([0; 0x40]);
-        let b = u32::try_from((&raw mut buf).expose_provenance()).unwrap_or(0);
+        let mut buf = super::AlignedFrame::<64>::new();
+        let b = buf.at();
         rcui::bridge::rcui_load_set_title(&mut mem(), b, &mut |_, f, a| call_cdecl(f, a))
     }
     /// `rcbgSceneWaveDCProc(scene)`.
@@ -3479,8 +3461,8 @@ ported! {
     // ---- round 14 ----
     /// `rcefGetChrDir(chr)`.
     rcefGetChrDir @ 0x0092_dfd0 => extern "C" fn shim_rcef_get_chr_dir(chr: u32) -> f32 {
-        let mut out = Scratch([0; 0x20]);
-        let o = u32::try_from((&raw mut out).expose_provenance()).unwrap_or(0);
+        let mut out = super::AlignedFrame::<32>::new();
+        let o = out.at();
         vu0::bridge::rcef_get_chr_dir(&mut mem(), chr, o, &mut |_, f, a| call_cdecl(f, a), &mut |_, f, a| call_float(f, a))
     }
     /// `rcuiCollectChrHandlesByGroup()`.
@@ -3534,45 +3516,43 @@ ported! {
     }
     /// `yiRectTriOverlapXZ(tri, m, a, b)`.
     yiRectTriOverlapXZ @ 0x0091_0070 => extern "C" fn shim_yi_rect_tri_overlap_xz(tri: u32, m: u32, a: u32, b: u32) -> u32 {
-        let mut work = Work([0; 0xa4]);
-        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        let mut work = super::AlignedFrame::<164>::new();
+        let w = work.at();
         yi::bridge::yi_rect_tri_overlap_xz(&mut mem(), tri, m, [a, b], w, &mut |_, f, a| call_cdecl(f, a))
     }
     /// `KeLnsArnd_Draw(e, flags)`.
     KeLnsArnd_Draw @ 0x0076_9340 => extern "C" fn shim_ke_lns_arnd_draw(e: u32, flags: u32) {
-        let mut work = Work([0; 0xa4]);
-        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        let mut work = super::AlignedFrame::<164>::new();
+        let w = work.at();
         #[allow(clippy::cast_possible_truncation)] // a u16 argument
         ke::bridge::ke_lns_arnd_draw(&mut mem(), e, flags as u16, w, &mut |_, f, a| call_cdecl(f, a));
     }
     /// `KeLnsClm_Draw(e, flags)`.
     KeLnsClm_Draw @ 0x0076_96c0 => extern "C" fn shim_ke_lns_clm_draw(e: u32, flags: u32) {
-        #[repr(C, align(16))]
-        struct ClmWork([u8; ke::clm::WORK as usize]);
-        let mut work = ClmWork([0; ke::clm::WORK as usize]);
-        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        let mut work = super::AlignedFrame::<{ ke::clm::WORK as usize }>::new();
+        let w = work.at();
         #[allow(clippy::cast_possible_truncation)] // a u16 argument
         ke::bridge::ke_lns_clm_draw(&mut mem(), e, flags as u16, w, &mut |_, f, a| call_cdecl(f, a));
     }
     /// `KeLnsCrn_Draw(e, flags)`.
     KeLnsCrn_Draw @ 0x0076_9d70 => extern "C" fn shim_ke_lns_crn_draw(e: u32, flags: u32) {
-        let mut work = Work([0; 0xa4]);
-        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        let mut work = super::AlignedFrame::<164>::new();
+        let w = work.at();
         #[allow(clippy::cast_possible_truncation)] // a u16 argument
         ke::bridge::ke_lns_crn_draw(&mut mem(), e, flags as u16, w, &mut |_, f, a| call_cdecl(f, a));
     }
     /// `KeLnsFls_Draw(e, flags)`.
     KeLnsFls_Draw @ 0x0076_a1f0 => extern "C" fn shim_ke_lns_fls_draw(e: u32, flags: u32) {
-        let mut work = Work([0; 0xa4]);
-        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        let mut work = super::AlignedFrame::<164>::new();
+        let w = work.at();
         #[allow(clippy::cast_possible_truncation)] // a u16 argument
         ke::bridge::ke_lns_fls_draw(&mut mem(), e, flags as u16, w, &mut |_, f, a| call_cdecl(f, a));
     }
     // ---- round 16 ----
     /// `KeMdl_Draw(e, rec, col, p4, p5, p6, mode, zmat, p9, p10)`.
     KeMdl_Draw @ 0x0076_6ff0 => extern "C" fn shim_ke_mdl_draw(e: u32, rec: u32, col: u32, p4: u32, p5: u32, p6: u32, mode: u32, zmat: u32, p9: u32, p10: u32) {
-        let mut work = MdlWork([0; 0xe0]);
-        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        let mut work = super::AlignedFrame::<224>::new();
+        let w = work.at();
         ke::bridge::ke_mdl_draw(&mut mem(), [e, rec, col, p4, p5, p6, mode, zmat, p9, p10], w, &mut |_, f, a| call_cdecl(f, a));
     }
     /// `rcuiVu0SubVector(dst, a, b)`.
@@ -3581,20 +3561,20 @@ ported! {
     }
     /// `rcuiClampVector(dst, v, lo, hi)`.
     rcuiClampVector @ 0x0093_cd20 => extern "C" fn shim_rcui_clamp_vector(dst: u32, v: u32, lo: u32, hi: u32) -> u32 {
-        let mut work = Scratch([0; 0x20]);
-        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        let mut work = super::AlignedFrame::<32>::new();
+        let w = work.at();
         rcui::bridge::rcui_clamp_vector(&mut mem(), dst, v, (lo, hi), w, &mut |_, f, a| call_cdecl(f, a))
     }
     /// `rcuiInvertRigidMatrix(dst, m)`.
     rcuiInvertRigidMatrix @ 0x0093_d090 => extern "C" fn shim_rcui_invert_rigid_matrix(dst: u32, m: u32) -> u32 {
-        let mut work = Matrix([0; 0x40]);
-        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        let mut work = super::AlignedFrame::<64>::new();
+        let w = work.at();
         rcui::bridge::rcui_invert_rigid_matrix(&mut mem(), dst, m, w, &mut |_, f, a| call_cdecl(f, a))
     }
     /// `rcuiProjectToInt(out, m, v, raw)`.
     rcuiProjectToInt @ 0x0093_d710 => extern "C" fn shim_rcui_project_to_int(out: u32, m: u32, v: u32, raw: u32) -> f32 {
-        let mut work = Scratch([0; 0x20]);
-        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        let mut work = super::AlignedFrame::<32>::new();
+        let w = work.at();
         rcui::bridge::rcui_project_to_int(&mut mem(), out, (m, v), raw, w, &mut |_, f, a| call_cdecl(f, a))
     }
     /// `rcbgAnimeLoadConfig(anime, parse)`.
@@ -3649,39 +3629,39 @@ ported! {
     }
     /// `KeThCp_AddBp(cp, pool, a, b)`.
     KeThCp_AddBp @ 0x0076_44d0 => extern "C" fn shim_ke_th_cp_add_bp(cp: u32, pool: u32, a: u32, b: u32) -> u32 {
-        let mut work = Scratch([0; 0x20]);
-        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        let mut work = super::AlignedFrame::<32>::new();
+        let w = work.at();
         ke::bridge::ke_th_cp_add_bp(&mut mem(), cp, pool, (a, b), w)
     }
     // ---- round 19 ----
     /// `AbmapItemUsableAt(chr, node, item)`.
     AbmapItemUsableAt @ 0x00a4_9310 => extern "C" fn shim_abmap_item_usable_at(chr: u32, node: u32, item: u32) -> u32 {
-        let mut work = Scratch([0; 0x20]);
-        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        let mut work = super::AlignedFrame::<32>::new();
+        let w = work.at();
         abmap::bridge::abmap_item_usable_at(&mut mem(), [chr, node, item], w, &mut |_, f, a| call_cdecl(f, a))
     }
     /// `AbmapItemApplyAt(chr, node, item, mark)`.
     AbmapItemApplyAt @ 0x00a5_b400 => extern "C" fn shim_abmap_item_apply_at(chr: u32, node: u32, item: u32, mark: u32) -> u32 {
-        let mut work = Scratch([0; 0x20]);
-        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        let mut work = super::AlignedFrame::<32>::new();
+        let w = work.at();
         abmap::bridge::abmap_item_apply_at(&mut mem(), [chr, node, item, mark], w, &mut |_, f, a| call_cdecl(f, a))
     }
     /// `AbmapItemNodeEffect(node, ctx)`.
     AbmapItemNodeEffect @ 0x00a4_9440 => extern "C" fn shim_abmap_item_node_effect(node: u32, ctx: u32) -> u32 {
-        let mut tmp = Scratch([0; 0x20]);
-        let t = u32::try_from((&raw mut tmp).expose_provenance()).unwrap_or(0);
+        let mut tmp = super::AlignedFrame::<32>::new();
+        let t = tmp.at();
         abmap::bridge::abmap_item_node_effect(&mut mem(), node, ctx, t, &mut |_, f, a| call_cdecl(f, a))
     }
     /// `AbmapItemApplyNode(node, ctx)`.
     AbmapItemApplyNode @ 0x00a5_b490 => extern "C" fn shim_abmap_item_apply_node(node: u32, ctx: u32) -> u32 {
-        let mut tmp = Scratch([0; 0x20]);
-        let t = u32::try_from((&raw mut tmp).expose_provenance()).unwrap_or(0);
+        let mut tmp = super::AlignedFrame::<32>::new();
+        let t = tmp.at();
         abmap::bridge::abmap_item_apply_node(&mut mem(), node, ctx, t, &mut |_, f, a| call_cdecl(f, a))
     }
     /// `AbmapSetupKindShapes()`.
     AbmapSetupKindShapes @ 0x00a5_b230 => extern "C" fn shim_abmap_setup_kind_shapes() -> u32 {
-        let mut tmp = Scratch([0; 0x20]);
-        let t = u32::try_from((&raw mut tmp).expose_provenance()).unwrap_or(0);
+        let mut tmp = super::AlignedFrame::<32>::new();
+        let t = tmp.at();
         abmap::bridge::abmap_setup_kind_shapes(&mut mem(), t, &mut |_, f, a| call_cdecl(f, a))
     }
 
@@ -3733,8 +3713,8 @@ ported! {
 
     /// `yiGetFogColor(out)`.
     yiGetFogColor @ 0x0090_8980 => extern "C" fn shim_yi_get_fog_color(out: u32) -> u32 {
-        let mut tmp = Scratch([0; 0x20]);
-        let t = u32::try_from((&raw mut tmp).expose_provenance()).unwrap_or(0);
+        let mut tmp = super::AlignedFrame::<32>::new();
+        let t = tmp.at();
         yi::bridge::yi_get_fog_color(&mut mem(), out, t, &mut |_, f, a| call_cdecl(f, a))
     }
 
@@ -3770,8 +3750,8 @@ ported! {
 
     /// `AbmapItemEffectAtNode(chr, node, item)`.
     AbmapItemEffectAtNode @ 0x00a4_93b0 => extern "C" fn shim_abmap_item_effect_at_node(chr: u32, node: u32, item: u32) -> u32 {
-        let mut work = Scratch([0; 0x20]);
-        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        let mut work = super::AlignedFrame::<32>::new();
+        let w = work.at();
         abmap::bridge::abmap_item_effect_at_node(&mut mem(), [chr, node, item], w, &mut |_, f, a| call_cdecl(f, a))
     }
 
@@ -3797,22 +3777,22 @@ ported! {
 
     /// `AbmapFillCommandMenu(pad, kind)`.
     AbmapFillCommandMenu @ 0x00a4_59e0 => extern "C" fn shim_abmap_fill_command_menu(pad: u32, kind: u32) -> u32 {
-        let mut work = Scratch([0; 0x20]);
-        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        let mut work = super::AlignedFrame::<32>::new();
+        let w = work.at();
         abmap::bridge::abmap_fill_command_menu(&mut mem(), pad, kind, w, &mut |_, f, a| call_cdecl(f, a))
     }
 
     /// `Yn_GuideEdgeFade(p, a, b, rect, out)`.
     Yn_GuideEdgeFade @ 0x0091_f530 => extern "C" fn shim_yn_guide_edge_fade(p: u32, a: u32, b: u32, rect: u32, out: u32) -> u32 {
-        let mut work = Scratch([0; 0x20]);
-        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        let mut work = super::AlignedFrame::<32>::new();
+        let w = work.at();
         guide::bridge::yn_guide_edge_fade(&mut mem(), [p, a, b, rect, out], w)
     }
 
     /// `rcbgSceneSetChadist(scene)`.
     rcbgSceneSetChadist @ 0x0092_0790 => extern "C" fn shim_rcbg_scene_set_chadist(scene: u32) -> u32 {
-        let mut work = Scratch([0; 0x20]);
-        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        let mut work = super::AlignedFrame::<32>::new();
+        let w = work.at();
         model::bridge::rcbg_scene_set_chadist(&mut mem(), scene, w, &mut |_, f, a| call_cdecl(f, a))
     }
 
@@ -3993,15 +3973,15 @@ ported! {
 
     /// `rcefColorSet(r, g, b, a, v)`.
     rcefColorSet @ 0x0092_e9c0 => extern "C" fn shim_rcef_color_set(r: u32, g: u32, b: u32, a: u32, v: u32) {
-        let mut work = Scratch([0; 0x20]);
-        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        let mut work = super::AlignedFrame::<32>::new();
+        let w = work.at();
         task::bridge::rcef_color_set(&mut mem(), [r, g, b, a, v], w);
     }
 
     /// `rcefColorFade(r0, g0, b0, a0, r1, g1, b1, a1, v)`.
     rcefColorFade @ 0x0092_ea40 => extern "C" fn shim_rcef_color_fade(r0: u32, g0: u32, b0: u32, a0: u32, r1: u32, g1: u32, b1: u32, a1: u32, v: u32) {
-        let mut work = Scratch([0; 0x20]);
-        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        let mut work = super::AlignedFrame::<32>::new();
+        let w = work.at();
         task::bridge::rcef_color_fade(&mut mem(), [r0, g0, b0, a0, r1, g1, b1, a1, v], w);
     }
 
@@ -4229,10 +4209,8 @@ ported! {
 
     /// `AbmapCheckAchievements()`.
     AbmapCheckAchievements @ 0x00a4_7210 => extern "C" fn shim_abmap_check_achievements() {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0x490]);
-        let mut work = Locals([0; 0x490]);
-        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        let mut work = super::AlignedFrame::<1168>::new();
+        let w = work.at();
         abmap::bridge::abmap_check_achievements(&mut mem(), w, &mut |_, f, a| call_cdecl(f, a));
     }
 
@@ -4248,10 +4226,8 @@ ported! {
 
     /// `Yn_SeaFpFade(fade)`.
     Yn_SeaFpFade @ 0x0092_2970 => extern "C" fn shim_yn_sea_fp_fade(fade: u32) {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0x50]);
-        let mut work = Locals([0; 0x50]);
-        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        let mut work = super::AlignedFrame::<80>::new();
+        let w = work.at();
         model::bridge::yn_sea_fp_fade(&mut mem(), fade, w, &mut |_, f, a| call_cdecl(f, a));
     }
 
@@ -4262,19 +4238,15 @@ ported! {
 
     /// `KeBornPtCmlp(pc, pd, prog, out)`.
     KeBornPtCmlp @ 0x0075_9400 => extern "C" fn shim_ke_born_pt_cmlp(pc: u32, pd: u32, prog: u32, out: u32) {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0x30]);
-        let mut work = Locals([0; 0x30]);
-        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        let mut work = super::AlignedFrame::<48>::new();
+        let w = work.at();
         ke::bridge::ke_born_pt_cmlp(&mut mem(), [pc, pd, prog, out], w, &mut |_, f, a| call_cdecl(f, a));
     }
 
     /// `KeLnsLp_Update(lp)`.
     KeLnsLp_Update @ 0x0076_a690 => extern "C" fn shim_ke_lns_lp_update(lp: u32) {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0xc0]);
-        let mut work = Locals([0; 0xc0]);
-        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        let mut work = super::AlignedFrame::<192>::new();
+        let w = work.at();
         ke::bridge::ke_lns_lp_update(&mut mem(), lp, w, &mut |_, f, a| call_cdecl(f, a), |_, f, a| call_float(f, a));
     }
 
@@ -4455,60 +4427,48 @@ ported! {
     /// `rcPrimLine(x0, y0, x1, y1, colour, ui)`: the vertices in a local
     /// buffer, as the original's.
     rcPrimLine @ 0x0092_6c00 => extern "C" fn shim_rc_prim_line(x0: u32, y0: u32, x1: u32, y1: u32, colour: u32, ui: u32) -> u32 {
-        #[repr(C, align(16))]
-        struct Verts([u32; 8]);
-        let mut v = Verts([0; 8]);
-        let w = u32::try_from((&raw mut v).expose_provenance()).unwrap_or(0);
+        let mut v = super::AlignedFrame::<32>::new();
+        let w = v.at();
         rcui::bridge::rc_prim_line(&mut mem(), [x0, y0, x1, y1, colour, ui], w, &mut |_, f, a| call_cdecl(f, a))
     }
 
     /// `rcPrimCircleLine(x, y, r, colour, ui)`: the 65 vertices in a local
     /// buffer, as the original's.
     rcPrimCircleLine @ 0x0092_5ea0 => extern "C" fn shim_rc_prim_circle_line(x: u32, y: u32, r: u32, colour: u32, ui: u32) -> u32 {
-        #[repr(C, align(16))]
-        struct Verts([u32; 65 * 4]);
-        let mut v = Verts([0; 65 * 4]);
-        let w = u32::try_from((&raw mut v).expose_provenance()).unwrap_or(0);
+        let mut v = super::AlignedFrame::<{ 4 * (65 * 4) }>::new();
+        let w = v.at();
         rcui::bridge::rc_prim_circle_line(&mut mem(), [x, y, r, colour, ui], w, &mut |_, f, a| call_cdecl(f, a))
     }
 
     /// `rcPrimBox(x, y, w, h, colour, ui)`: the vertices in a local buffer,
     /// as the original's.
     rcPrimBox @ 0x0092_5b60 => extern "C" fn shim_rc_prim_box(x: u32, y: u32, w: u32, h: u32, colour: u32, ui: u32) -> u32 {
-        #[repr(C, align(16))]
-        struct Verts([u32; 16]);
-        let mut v = Verts([0; 16]);
-        let wk = u32::try_from((&raw mut v).expose_provenance()).unwrap_or(0);
+        let mut v = super::AlignedFrame::<64>::new();
+        let wk = v.at();
         rcui::bridge::rc_prim_box(&mut mem(), [x, y, w, h, colour, ui], wk, &mut |_, f, a| call_cdecl(f, a))
     }
 
     /// `rcPrimBatu(x, y, size, colour, ui)`: the vertices in a local
     /// (aligned like the original's).
     rcPrimBatu @ 0x0092_59c0 => extern "C" fn shim_rc_prim_batu(x: u32, y: u32, size: u32, colour: u32, ui: u32) -> u32 {
-        #[repr(C, align(16))]
-        struct Verts([u32; 16]);
-        let mut v = Verts([0; 16]);
-        let wk = u32::try_from((&raw mut v).expose_provenance()).unwrap_or(0);
+        let mut v = super::AlignedFrame::<64>::new();
+        let wk = v.at();
         rcui::bridge::rc_prim_batu(&mut mem(), [x, y, size, colour, ui], wk, &mut |_, f, a| call_cdecl(f, a))
     }
 
     /// `rcPrimTri(x, y, r, angle, colour, ui)`: the vertices in a local
     /// buffer, as the original's.
     rcPrimTri @ 0x0092_70c0 => extern "C" fn shim_rc_prim_tri(x: u32, y: u32, r: u32, angle: u32, colour: u32, ui: u32) -> u32 {
-        #[repr(C, align(16))]
-        struct Verts([u32; 12]);
-        let mut v = Verts([0; 12]);
-        let w = u32::try_from((&raw mut v).expose_provenance()).unwrap_or(0);
+        let mut v = super::AlignedFrame::<48>::new();
+        let w = v.at();
         rcui::bridge::rc_prim_tri(&mut mem(), [x, y, r, angle, colour, ui], w, &mut |_, f, a| call_cdecl(f, a))
     }
 
     /// `InitVFXKeThRenderData(a, b, c)`: the arrays and names in a local
     /// buffer, as the original's.
     InitVFXKeThRenderData @ 0x0076_58b0 => extern "C" fn shim_init_vfx_ke_th_render_data(a: u32, b: u32, c: u32) -> u32 {
-        #[repr(C, align(16))]
-        struct Work([u8; ke::bridge::KE_TH_WORK as usize]);
-        let mut v = Work([0; ke::bridge::KE_TH_WORK as usize]);
-        let w = u32::try_from((&raw mut v).expose_provenance()).unwrap_or(0);
+        let mut v = super::AlignedFrame::<{ ke::bridge::KE_TH_WORK as usize }>::new();
+        let w = v.at();
         ke::bridge::init_vfx_ke_th_render_data(&mut mem(), [a, b, c], w, &mut |_, f, a| call_cdecl(f, a))
     }
 
@@ -5080,44 +5040,6 @@ ported! {
     }
 }
 
-/// The original's 16-byte aligned stack buffer for a load-image packet
-/// (`yiMapFileRead`).
-#[repr(C, align(16))]
-struct Image([u8; 0x60]);
-
-/// The original's stack chunk and parser (`rcbgLoadBin`).
-#[repr(C, align(16))]
-struct Work([u8; 0xa4]);
-
-/// `KeMdl_Draw`'s render description and view matrix.
-#[repr(C, align(16))]
-struct MdlWork([u8; 0xe0]);
-
-/// A small 16-byte aligned stack buffer of the original (a vector pair, a
-/// model description, a CD read's result).
-#[repr(C, align(16))]
-struct Scratch([u8; 0x20]);
-
-/// A 16-byte aligned stack matrix of the original.
-#[repr(C, align(16))]
-struct Matrix([u8; 0x40]);
-
-/// `yiSetLightMatrices`'s seven stack vectors.
-#[repr(C, align(16))]
-struct Lights([u8; 0x70]);
-
-/// `rcbgSceneSetMatrix`'s matrices and scaled vectors.
-#[repr(C, align(16))]
-struct CameraWork([u8; camera::WORK as usize]);
-
-/// `yiSwizzlePage`'s two block buffers.
-#[repr(C, align(16))]
-struct Swizzle([u8; 0x200]);
-
-/// `yiMapSetup`'s four path strings.
-#[repr(C, align(16))]
-struct Host([u8; 0x1000]);
-
 /// `rcbgGuideUpdateEx(guide, show)` (`0x0091da80`) in Rust, for the
 /// minimap's hook (`crate::minimap::guide_update`), which the game calls
 /// instead: the work area is the original's frame (`StackFrame`), the
@@ -5216,11 +5138,10 @@ fn call_ptr2(f: u32, a: u32, b: u32) -> u32 {
 
 /// The VFX run record of an FP id (`pppFpGetMngPtr(id, &run, NULL)`).
 fn fp_run(m: &mut super::RawMem, id: u32) -> u32 {
-    let mut run = 0u32;
-    #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-    let at = (&raw mut run).expose_provenance() as u32;
+    let mut run = super::StackFrame::<1>::new();
+    let at = run.at();
     ffx_vfx::fp::bridge::ppp_fp_get_mng_ptr(m, id, at, 0);
-    run
+    ffx_bridge::Mem::read(&*m, at)
 }
 
 /// MSVCR110's `srand`, through the game's import slot (`0x00b0c484`).
