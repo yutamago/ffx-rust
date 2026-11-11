@@ -1757,3 +1757,77 @@ fn start_up_0267() {
         t.check_entry(load, Call::default(), &[], Eax::Checked);
     }
 }
+
+/// `magic_0267` 0x10002900 (`r47::spin_thunk_0267`) running 0x100029c0
+/// (`r47::spin_0267`): the wait counting down and running out, the scale
+/// 0 (and -0) with a wait at 0 and below, the angles wrapped both ways
+/// and not, the scale growing, shrinking and stopping at 0.
+#[test]
+fn spin_0267() {
+    let Some(mut t) = twin(267) else { return };
+    all_stubs(&mut t);
+    let f = t.at(0x2900);
+    let v = t.at(0x29c0);
+    let w = |t: &Twin, o: u32| t.img.word(v + o);
+    magic_r11::object_slots(&mut t);
+    rec(&mut t, 277, 1, |_, a| 0x0277_0000 ^ a[0]);
+    t.stub_st0(277, |_, a| f64::from(a[0] & 0xf) * 0.25 + 0.5);
+    for (s, x) in [(15u32, 1.25f64), (16, -0.75), (17, 2.5)] {
+        rec(&mut t, s, 1, move |_, a| a[0] ^ (s << 16));
+        t.stub_st0(s, move |_, a| f64::from(a[0] & 0xff) * 0.0625 + x);
+    }
+    rec(&mut t, 235, 1, |m, a| {
+        for i in 0..16 {
+            m.w32(a[0] + 4 * i, if i % 5 == 0 { 0x3f80_0000 } else { 0 });
+        }
+        0x235
+    });
+    for s in [330u32, 328, 329] {
+        rec(&mut t, s, 3, move |m, a| {
+            log16(m, a[1]);
+            let ang = f32::from_bits(a[2]);
+            for i in 0..16 {
+                let x = rf(m, a[1] + 4 * i) * 0.5 + ang + i as f32 + s as f32 * 0.001;
+                wf(m, a[0] + 4 * i, x);
+            }
+            s
+        });
+    }
+    // (wait, scale, speed, the angles' start)
+    for (k, (wait, scale, speed, ang)) in (0u32..).zip([
+        (3i32, 0.5f32, 0.1f32, 0.0f32),
+        (1, 0.5, 0.1, 0.0),
+        (0, 0.0, 0.1, 0.0),
+        (-1, -0.0, 0.1, 0.0),
+        (0, 0.5, 0.125, 3.1),
+        (0, 0.5, -0.25, -3.1),
+        (0, 0.05, -0.1, 1.0),
+        (-2, 0.25, -0.25, 2.0),
+    ]) {
+        let at = w(&t, 0x21c);
+        junk(&mut t, at, 0x60, k);
+        let at = w(&t, 0x2d3);
+        floats(&mut t, at, 4, 1.5 + k as f32);
+        for (o, x) in [
+            (0x4du32, scale),
+            (0xf5, speed),
+            (0x65, ang),
+            (0xad, -ang * 0.5),
+            (0xd5, ang * 0.75),
+            (0x6d, 0.3),
+            (0x12b, 0.75),
+            (0x182, 2.0),
+        ] {
+            let at = w(&t, o);
+            t.set_u32(at, x.to_bits());
+        }
+        let at = w(&t, 0x11);
+        t.set_u32(at, wait.cast_unsigned());
+        for o in [0x15bu32, 0x2c] {
+            let at = w(&t, o);
+            t.set_u32(at, 0x00b0_0000 + k);
+        }
+        magic_h6::scrub(&mut t);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}

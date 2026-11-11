@@ -3365,3 +3365,167 @@ pub const LOAD_0267: Sig = Sig {
     calls: &[(0x5b, Callee::Sig(&START_UP_0267))],
     imports: &[],
 };
+
+/// `magic_0267`'s summon spin (0x100029c0, 797 bytes; a stored callback,
+/// no arguments; a /GS `ebp` frame, the scale matrix `M` at `ebp -
+/// 0x44`). While the wait `*G_W` is positive it counts down (at 0 slot
+/// 525 `(*G_A)` once; returns the count or that slot's `eax`); with the
+/// scale `*G_S` exactly 0 nothing more (`eax` as `lahf` leaves it).
+/// Else the three angles `G_R[0..3]` step by `*G_D` (each wrapped once),
+/// the scale by its speed `*G_V` (stopped at 0: the speed 0), the fade
+/// `*G_F` drops by `K`; at scale 0 the summon's part is shown
+/// ([`part_toggle`](crate::s4_misc::part_toggle) `(0)`), the count or
+/// slot 257 ([`count_or_257`](crate::s4_small::count_or_257)) and slot
+/// 311 `(*G_H)` with `*G_F` 0 and `*G_H` -1 after. Then the place's `y`
+/// steps by `K'`, `M` is the summon's scale
+/// ([`scale_matrix`](crate::m0267::scale_matrix)), the summon's matrix
+/// `N` = slot 330 `(N, M, R[2])`, 328 and 329 `(N, N, R[0])` / `R[1]`,
+/// its three rows scaled by the scale and its last row the place.
+/// Returns slot 329's `eax`.
+#[allow(clippy::too_many_lines)] // the original's steps, in order
+pub fn spin_0267<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let gw = |g: &G, o: u32| g.read::<u32>(w(o));
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let call = |o: u32| img.rel32_target(f + o);
+    let ebp = fr.esp.wrapping_sub(4);
+    let cookie = gw(g, 0x7) ^ ebp;
+    g.write::<u32>(ebp.wrapping_sub(4), cookie);
+    let wait = gw(g, 0x11);
+    if wait.cast_signed() > 0 {
+        let x = wait.wrapping_sub(1);
+        g.write::<u32>(w(0x1b), x);
+        if x != 0 {
+            return Ret::eax(x);
+        }
+        let a = gw(g, 0x2c);
+        // call width: 1
+        return Ret::eax(g.call(t(g, 0x26, 525), 0, &[a]).eax);
+    }
+    let s = k(g, 0x4d);
+    if s == 0.0 {
+        // `lahf` after `ucomiss` (equal: ZF, the fixed bit 1) into `ah`
+        return Ret::eax((wait & 0xffff_00ff) | 0x4200);
+    }
+    let (d, hi, tw, lo) = (k(g, 0x6d), k(g, 0x75), k(g, 0x7d), k(g, 0x85));
+    let wrap = |x: f32| {
+        if x > hi {
+            sub(x, tw)
+        } else if lo > x {
+            add(x, tw)
+        } else {
+            x
+        }
+    };
+    for (from, to) in [(0x65u32, 0xa5u32), (0xad, 0xcd), (0xd5, 0x101)] {
+        let x = wrap(add(g.read::<f32>(w(from)), d));
+        g.write::<f32>(w(to), x);
+    }
+    let mut scale = add(k(g, 0xf5), s);
+    g.write::<f32>(w(0x10c), scale);
+    if 0.0 > scale {
+        scale = 0.0;
+        g.write::<f32>(w(0x119), 0.0);
+        g.write::<u32>(w(0x11f), 0);
+    }
+    let fade = sub(k(g, 0x12b), k(g, 0x133));
+    g.write::<f32>(w(0x13e), fade);
+    let m = ebp.wrapping_sub(0x44);
+    if scale == 0.0 {
+        let pt = Frame {
+            at: call(0x14b),
+            esp: ebp.wrapping_sub(0x48),
+            edx: 0,
+            ..*fr
+        };
+        crate::s4_misc::part_toggle(g, img, &pt);
+        let cf = Frame {
+            at: call(0x150),
+            ..pt
+        };
+        crate::s4_small::count_or_257(g, img, &cf);
+        let h = gw(g, 0x15b);
+        g.write::<u32>(w(0x167), 0);
+        // call width: 1
+        g.call(t(g, 0x155, 311), 0, &[h]);
+        g.write::<u32>(w(0x176), u32::MAX);
+    }
+    let y = add(k(g, 0x182), k(g, 0x18a));
+    g.write::<f32>(w(0x195), y);
+    let sm = Frame {
+        at: call(0x19a),
+        esp: ebp.wrapping_sub(0x48),
+        edx: m,
+        ..*fr
+    };
+    crate::m0267::scale_matrix(g, img, &sm);
+    let n = w(0x1b6);
+    let a = gw(g, 0x1a2);
+    // call width: 3
+    g.call(t(g, 0x1b1, 330), 0, &[n, m, a]);
+    let a = gw(g, 0x1c6);
+    // call width: 3
+    g.call(t(g, 0x1cb, 328), 0, &[w(0x1e3), w(0x1de), a]);
+    let a = gw(g, 0x1ed);
+    // call width: 3
+    let eax = g.call(t(g, 0x1f2, 329), 0, &[w(0x20a), w(0x205), a]).eax;
+    let scale = k(g, 0x214);
+    for (from, to) in [
+        (0x21cu32, 0x22bu32),
+        (0x233, 0x23f),
+        (0x247, 0x253),
+        (0x25b, 0x267),
+        (0x26f, 0x27b),
+        (0x283, 0x28f),
+        (0x297, 0x2a3),
+        (0x2ab, 0x2b7),
+        (0x2bf, 0x2cb),
+    ] {
+        let x = mul(g.read::<f32>(w(from)), scale);
+        g.write::<f32>(w(to), x);
+    }
+    for (from, to) in [
+        (0x2d3u32, 0x2dbu32),
+        (0x2e3, 0x2eb),
+        (0x2f3, 0x2fb),
+        (0x303, 0x30b),
+    ] {
+        let x = gw(g, from);
+        g.write::<u32>(w(to), x);
+    }
+    Ret::eax(eax)
+}
+
+/// [`spin_0267`] (the `rel32`s: its callees and the cookie check).
+pub const SPIN_0267: Sig = Sig {
+    len: 797,
+    hash: 0x92fc_89c8_65c8_2108,
+    calls: &[
+        (0x41, Callee::Any),
+        (0x14b, Callee::Sig(&crate::s4_misc::PART_TOGGLE)),
+        (0x150, Callee::Sig(&crate::s4_small::COUNT_OR_257)),
+        (0x19a, Callee::Sig(&crate::m0267::SCALE_MATRIX)),
+        (0x315, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// `magic_0267`'s spin thunk (0x10002900, 5 bytes; the start-up's task
+/// step): a tail jump to [`spin_0267`].
+pub fn spin_thunk_0267<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let callee = Frame {
+        at: img.rel32_target(fr.at + 1),
+        ..*fr
+    };
+    spin_0267(g, img, &callee)
+}
+
+/// [`spin_thunk_0267`] (`jmp rel32`).
+pub const SPIN_THUNK_0267: Sig = Sig {
+    len: 5,
+    hash: 0x2ad2_8090_e3fa_4fe4,
+    calls: &[(1, Callee::Sig(&SPIN_0267))],
+    imports: &[],
+};

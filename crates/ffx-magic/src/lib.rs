@@ -3522,6 +3522,8 @@ ports! {
     "r47 image thunk 0297" => r47::IMAGE_THUNK_0297, r47::image_thunk_0297;
     "r47 summon task 0297" => r47::SUMMON_TASK_0297, r47::summon_task_0297;
     "r47 load step 0267" => r47::LOAD_0267, r47::load_0267;
+    "r47 spin 0267" => r47::SPIN_0267, r47::spin_0267;
+    "r47 spin thunk 0267" => r47::SPIN_THUNK_0267, r47::spin_thunk_0267;
     // round 47 (magic-r47): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
