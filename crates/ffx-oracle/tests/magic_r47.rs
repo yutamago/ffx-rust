@@ -1011,7 +1011,7 @@ fn draw_0385() {
         (i32, i32, i32, i32),
         (f32, u32, u8),
         (i32, i32, bool),
-    ); 12] = [
+    ); 14] = [
         ((false, 0, 0), (2, 0, 0, 0), (0.5, 0, 0), (0, 0, false)),
         ((true, 3, 0), (2, 0, 0, 0), (0.5, 0, 0), (0, 0, false)),
         ((true, 0, 3), (3, 0, 0, 1), (9.0, 1, 3), (4, -1, false)),
@@ -1029,10 +1029,12 @@ fn draw_0385() {
         ((true, 0, -1), (0, 0, 0, 0), (0.5, 7, 0), (0, 0, false)),
         ((true, 1, 0), (0, 0, 0, 0), (0.5, 0, 0), (0, 0, false)),
         ((true, 0, 5), (0, 0, 0, 0), (0.5, 1, 1), (2, 0, false)),
+        ((true, 0, 2), (3, 0, 0, 2), (0.5, 2, 0), (0, 0, false)),
+        ((true, 0, 2), (0, 0, 3, 2), (0.5, 3, 0), (0, 0, false)),
     ];
     // (the counts end the walk after each kind of record: the colour
     // global keeps the last one's)
-    for (k, n) in (0u32..).zip([0u32, 12, 3, 4, 5, 6, 7, 8]) {
+    for (k, n) in (0u32..).zip([0u32, 14, 3, 4, 5, 6, 7, 8]) {
         junk_ops(&mut t, f, &[0x58, 0x284, 0x2c2, 0x375, 0xce], k);
         t.set_u32(lock, 0x33 + k);
         let at = w(&t, 0x1f);
@@ -1122,6 +1124,10 @@ fn start_up_0385_setup(
         let at = w(t, o);
         t.set_u32(at, v);
     }
+    // (the pool reset before the takes points them at the DLL's own 32
+    // records, all free, the rover 0: its records junked)
+    let pool = w(t, 0x276);
+    junk(t, pool, 0x68 * 0x20, k);
     let fr0 = SCRATCH + 0x5c0;
     t.set_u32(fr0 + 0xc, 0x0fa0_0000 + k);
     let at = w(t, 0x30c);
@@ -1182,5 +1188,124 @@ fn start_up_0385() {
         }
         magic_h6::scrub(&mut t);
         t.check_entry(load, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// A model for `r47::shards_0348` at `m`: `groups` (kind byte, faces)
+/// after the header, the vertices after them; the corners of face `j`
+/// are vertices `j`, `j + 1`, `j + 3`.
+fn shard_model(t: &mut Twin, m: u32, k: u32, groups: &[(u8, u16)]) -> u32 {
+    let total: u32 = groups.iter().map(|&(_, n)| u32::from(n)).sum();
+    t.write(m, &[0x6b; 0x20]);
+    t.set_u32(m + 4, 0x20);
+    let mut g = m + 0x20;
+    for (i, &(kind, n)) in (0u32..).zip(groups) {
+        t.write(g, &[0x3c; 0x10]);
+        t.set_u8(g + 1, kind);
+        t.set_u16(g + 2, n);
+        // the 64-bit word: low bits, the size field, two shifts
+        let q: u64 = (0x1234 + u64::from(i))
+            | (u64::from(5 + i + k) << 20)
+            | (u64::from(3 + i) << 26)
+            | (u64::from(7 + i) << 30)
+            | (u64::from(0xabc + k) << 40);
+        t.set_u32(g + 8, q as u32);
+        t.set_u32(g + 0xc, (q >> 32) as u32);
+        for j in 0..u32::from(n) {
+            let face = g + 0x10 + 0x20 * j;
+            t.write(face, &[0x2d; 0x20]);
+            for (c, d) in [(0xcu32, 0u32), (0xe, 1), (0x10, 3)] {
+                t.set_u16(face + c, (j + d + i) as u16);
+            }
+        }
+        g += 0x10 + 0x20 * u32::from(n);
+    }
+    let verts = g;
+    t.set_u32(m + 8, verts - m);
+    for v in 0..0x40u32 {
+        for (q, x) in (0u32..).zip([3i32, -5, 7]) {
+            let x = (v as i32 * x + (k as i32) * 11 - 40) as i16;
+            t.set_u16(verts + 6 * v + 2 * q, x as u16);
+        }
+    }
+    t.set_u16(m + 0x10, total as u16);
+    total
+}
+
+/// `magic_0348` 0x10006c70 (`r47::shards_start_0348`) and its tail
+/// 0x10005360 (`r47::shards_0348`): one group, two and three groups,
+/// a group of another kind (first and second), slot 885 refusing, no
+/// faces, slot 883 answering non-zero.
+#[test]
+fn shards_0348() {
+    let Some(mut t) = twin(348) else { return };
+    all_stubs(&mut t);
+    let f = t.at(0x6c70);
+    let sh = t.at(0x5360);
+    let m = SCRATCH + 0x2_8000;
+    rec(&mut t, 719, 3, move |_, _| m);
+    rec(&mut t, 314, 1, |_, a| 0x0314_0000 ^ a[0]);
+    t.stub_st0(314, |_, a| f64::from(f32::from_bits(a[0])) * 0.75 - 0.125);
+    rec(&mut t, 404, 1, |m, a| {
+        let c = m.r32(SCRATCH + 0x7e70) + 1;
+        m.w32(SCRATCH + 0x7e70, c);
+        0x0404_0000 ^ a[0]
+    });
+    t.stub_st0(404, |m, a| {
+        f64::from(f32::from_bits(a[0])) * 2.5 + f64::from(m.r32(SCRATCH + 0x7e70) % 7) * 0.25
+    });
+    let lock = SCRATCH + 0x4100;
+    for o in [0x3fcu32, 0x477, 0x541, 0x560] {
+        let at = t.img.word(sh + o);
+        t.set_u32(at, lock);
+    }
+    // 885 logs the lock it sees, writes into the buffer, answers by case
+    rec(&mut t, 885, 7, move |m, a| {
+        m.w32(SCRATCH + 0x7f00 + 4 * (a[1] & 7), m.r32(lock));
+        m.w32(a[6] + 8, a[0] ^ a[4]);
+        m.r32(SCRATCH + 0x7f40)
+    });
+    rec(&mut t, 772, 2, |_, a| 0x0772_0000 ^ a[1]);
+    t.stub_edx(772, |_, a| a[0] ^ 0x0077_2000);
+    rec(&mut t, 776, 1, |_, a| 0x0776_0000 ^ a[0]);
+    // 882 copies the three arrays and the buffers' words it was given
+    rec(&mut t, 882, 7, |m, a| {
+        for i in 0..5 {
+            for (j, p) in [a[3], a[4], a[6]].into_iter().enumerate() {
+                let x = m.r32(p + 4 * i);
+                m.w32(SCRATCH + 0x7f80 + 0x20 * j as u32 + 4 * i, x);
+            }
+            let x = m.r32(a[5] + 0x100 * i + 8);
+            m.w32(SCRATCH + 0x7fe0 + 4 * i, x);
+        }
+        0x882
+    });
+    rec(&mut t, 883, 2, |m, _| m.r32(SCRATCH + 0x7f44));
+    rec(&mut t, 779, 2, move |m, a| {
+        m.w32(SCRATCH + 0x7f48, m.r32(lock));
+        0x0779_0000 ^ a[0]
+    });
+    let s = SCRATCH + 0x2_c000;
+    let at = t.img.word(f + 0xe);
+    t.set_u32(at, s);
+    #[allow(clippy::type_complexity)]
+    let cases: [(&[(u8, u16)], u32, u32); 8] = [
+        (&[(2, 3)], 1, 0),
+        (&[(2, 2), (2, 3)], 1, 0),
+        (&[(2, 1), (2, 2), (2, 1)], 1, 0x5a),
+        (&[(5, 2)], 1, 0),
+        (&[(2, 2), (1, 2)], 1, 0),
+        (&[(2, 2), (2, 2)], 0, 0),
+        (&[], 1, 0),
+        (&[(2, 4)], 1, 7),
+    ];
+    for (k, (groups, ok, r883)) in (0u32..).zip(cases) {
+        shard_model(&mut t, m, k, groups);
+        junk(&mut t, s + 0xd30, 0x7c * 12, k);
+        t.set_u32(lock, 0x40 + k);
+        t.set_u32(SCRATCH + 0x7f40, ok);
+        t.set_u32(SCRATCH + 0x7f44, r883);
+        magic_h6::scrub(&mut t);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
