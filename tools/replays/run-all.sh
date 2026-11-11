@@ -60,7 +60,7 @@
 #   tools/replays/run-all.sh --audio --record [replay...]
 # plays the audio list (event-besaid: voice, music and footsteps;
 # battle-attack: sound effects and the victory fanfare; menu-browse: menu
-# sounds; battle-ifrit: a summon; movie-fmv: a movie's user stream) with FFX_AUDIO_WAV, FMOD's mix written
+# sounds; battle-ifrit: a summon; movie-fmv: a movie's user stream; battle-shout: the Shout channel and a 32 kHz battle voice) with FFX_AUDIO_WAV, FMOD's mix written
 # to <run>/<tag>/<replay>-<tag>.wav (no sound reaches the speakers), and
 # compares the captures between the replays' `audiomark start` and
 # `audiomark end` with tools/wav-compare.py, sample for sample. --record
@@ -68,6 +68,8 @@
 # check), stores them in ~/ffx-work/replay-audio (FFX_REPLAY_AUDIO; never
 # in git); without it the Rust replacements run and are compared with both
 # references. Traces and screenshots are not compared in this mode.
+# FFX_HARNESS_EXE=rust: ffx-rust.exe's own mixer writes the capture and the
+# marks (crates/ffx-host/src/audio.rs), compared with the same references.
 # Unicorn profile (docs/harness.md, "Unicorn coverage in ffx-rust"):
 #   FFX_HARNESS_EXE=rust FFX_HOST_PROFILE=1 tools/replays/run-all.sh [--extra|--audio] [replay...]
 # has each ffx-rust.exe write every function that ran in Unicorn
@@ -125,7 +127,7 @@ if [ -n "$extra" ]; then
 fi
 
 # the audio list (--audio, below)
-audio_replays=(event-besaid battle-attack menu-browse battle-ifrit movie-fmv)
+audio_replays=(event-besaid battle-attack menu-browse battle-ifrit movie-fmv battle-shout)
 if [[ "${1:-}" == --list || ( "${1:-}" == --audio && "${2:-}" == --list ) ]]; then
     [[ "$1" == --audio ]] && replays=("${audio_replays[@]}")
     printf '%s\n' "${replays[@]}"

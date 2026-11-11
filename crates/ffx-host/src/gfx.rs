@@ -40,6 +40,7 @@ use crate::exec::{Exec, Stop};
 use crate::table::{Args, Ret};
 
 mod composite;
+pub mod gate;
 
 /// `D3D_FEATURE_LEVEL_11_0`.
 pub const FEATURE_LEVEL_11_0: u32 = 0xb000;
@@ -106,6 +107,9 @@ pub struct Config {
     /// frame's draws (1.8 GB on the boot to the title, about 6 GB of the
     /// process in menu-grid's harness run).
     pub no_record: bool,
+    /// Keep what the harness's gate captures need (`gfxcapture <dir> hash
+    /// frames N now`, [`gate`]): `FFX_HOST_GFX_CAPTURE=1`.
+    pub gate: bool,
 }
 
 /// `DXGI_SWAP_CHAIN_DESC`, word by word as the game passes it.
@@ -295,6 +299,13 @@ pub trait Backend: Send {
     /// The back buffer as it is now, BGRA rows (the harness's `shot`);
     /// `None` without a real one.
     fn back_buffer_image(&mut self) -> Option<(u32, u32, Vec<u8>)> {
+        None
+    }
+    /// A 2D texture's contents as the hook's gate capture reads them back
+    /// (`read_texture_all`: a staging copy of `desc`, then for each slice
+    /// `max(desc[2], 1)` subresources `mip + slice x mips` at their row
+    /// pitch, `pitch x rows` bytes each); `None` without a real device.
+    fn read_texture(&mut self, _id: u32, _desc: &[u32; 11]) -> Option<Vec<Subresource>> {
         None
     }
 }
@@ -488,6 +499,12 @@ pub struct Gfx {
     pub frame_sizes: Vec<(u32, u32, u32)>,
     /// The objects of Iggy's composite ([`Gfx::composite`]).
     composite: composite::Objects,
+    /// What gate captures need ([`Config::gate`]).
+    gate: Option<gate::Store>,
+    /// This frame's `CopyTexture`s that came from region copies and
+    /// resolves (indices into `cmds`): the hook's capture records only
+    /// `CopyResource`, so gate captures leave these out.
+    region_copies: Vec<usize>,
 }
 
 impl std::fmt::Debug for Gfx {
@@ -580,6 +597,61 @@ fn texture_subs(dims: u8, d: &[u32]) -> Vec<(u32, u32, u32)> {
     out
 }
 
+/// A buffer's description and its bytes now (its arena copy).
+fn buffer_now(
+    mem: &impl ffx_bridge::Mem,
+    resources: &HashMap<u32, Resource>,
+    id: u32,
+) -> Option<(ffx_gfx::BufferDesc, Vec<u8>)> {
+    let r = resources.get(&id).filter(|r| r.dims == 0)?;
+    let desc: ffx_gfx::BufferDesc = r.desc.get(..6)?.try_into().ok()?;
+    Some((desc, bytes(mem, r.copy, r.size)))
+}
+
+/// The dynamic vertex and index buffers' bytes now (`D3D11_USAGE_DYNAMIC`,
+/// not constant buffers).
+fn rings<'a>(
+    mem: &'a impl ffx_bridge::Mem,
+    resources: &'a HashMap<u32, Resource>,
+) -> impl Iterator<Item = (u32, Vec<u8>)> + 'a {
+    resources
+        .iter()
+        .filter(|(_, r)| r.dims == 0 && !r.is_constant_buffer() && r.desc.get(1) == Some(&2))
+        .map(|(&id, r)| (id, bytes(mem, r.copy, r.size)))
+}
+
+/// `g_Camera`: the active camera channel; its look-at point and eye.
+const G_CAMERA: u32 = 0x0231_1430;
+const CAMERA_LOOK_AT: u32 = 0x50;
+const CAMERA_EYE: u32 = 0x61c + 0x50;
+
+/// What the game shows, as the hook's `world::msg`: the scene (the last
+/// `.ebp` the game opened, `crate::harness::scene`) and the camera
+/// channel's eye and look-at point in the renderer's space (x and y
+/// negated).
+fn world(e: &Exec) -> Msg {
+    let mem = e.mem();
+    let arena = e.shared().arena();
+    let read3 = |at: u32| -> Option<[f32; 3]> {
+        if !arena.is_mapped(at, 12) {
+            return None;
+        }
+        let v = [0, 4, 8].map(|o| mem.read::<f32>(at + o));
+        v.iter()
+            .all(|x| x.is_finite() && x.abs() < 1e7)
+            .then_some([-v[0], -v[1], v[2]])
+    };
+    let camera = arena
+        .is_mapped(G_CAMERA, 4)
+        .then(|| mem.read::<u32>(G_CAMERA))
+        .filter(|&c| c != 0)
+        .and_then(|c| Some((read3(c + CAMERA_EYE)?, read3(c + CAMERA_LOOK_AT)?)));
+    Msg::World {
+        scene: crate::harness::scene(),
+        camera,
+    }
+}
+
 /// One argument word as a float.
 fn f(w: u32) -> f32 {
     f32::from_bits(w)
@@ -601,6 +673,7 @@ impl Gfx {
         let context = com.create(e, class::CONTEXT);
         let swap_chain = com.create(e, class::SWAP_CHAIN);
         let back_buffer = com.create(e, class::TEXTURE2D);
+        let gate = config.gate.then(gate::Store::default);
         let mut g = Self {
             com,
             backend,
@@ -628,6 +701,8 @@ impl Gfx {
             unhandled: BTreeSet::new(),
             frame_sizes: vec![(0, 0, 0)],
             composite: composite::Objects::default(),
+            gate,
+            region_copies: Vec::new(),
         };
         let bb = desc.back_buffer();
         g.resources.insert(
@@ -689,6 +764,9 @@ impl Gfx {
     }
 
     fn emit(&mut self, m: &Msg) {
+        if let Some(g) = self.gate.as_mut() {
+            g.object(m, |d| texture_subs(2, d));
+        }
         if !self.config.no_record {
             m.write(&mut self.stream);
         }
@@ -1252,6 +1330,12 @@ impl Gfx {
             return;
         };
         let data = bytes(&e.mem(), r.copy + off, size);
+        if r.dims == 2
+            && row != 0
+            && let Some(g) = self.gate.as_mut()
+        {
+            g.texture_rows(id, sub, 0, 0, &data, row, row, size / row);
+        }
         self.backend.op(&Op::Unmapped(id, sub, row, slice, &data));
         self.buffer_changed(e, id);
     }
@@ -1310,6 +1394,13 @@ impl Gfx {
                 (row, rows, d),
             );
         }
+        if r.dims == 2
+            && let Some(g) = self.gate.as_mut()
+        {
+            // the box's corner in bytes and rows of blocks
+            let (x, y) = bx.map_or((0, 0), |b| (b[0] / bw * block, b[1] / bw));
+            g.texture_rows(id, sub, x, y, &data, pitch, brow, brows);
+        }
         self.emit(&Msg::UpdateTexture {
             id,
             subresource: sub,
@@ -1323,8 +1414,10 @@ impl Gfx {
         crate::harness::on_present(|| backend.back_buffer_image());
         let hr = self.backend.present(a[1], a[2]);
         let f = self.frame();
+        self.gate_present(e, &f);
         self.emit(&Msg::Frame(f));
         self.cmds.clear();
+        self.region_copies.clear();
         self.presents += 1;
         self.frame_sizes.push((0, 0, 0));
         if self
@@ -1335,6 +1428,76 @@ impl Gfx {
             e.end(Stop::Milestone(format!("Present {}", self.presents)));
         }
         hr
+    }
+
+    /// A gate capture's `Present` ([`gate::Store::present`]): this frame
+    /// is taken when it shows the update the capture wants next; after the
+    /// one before the window, the dynamic buffers' bytes are noted.
+    fn gate_present(&mut self, e: &Exec, f: &ffx_gfx::Frame) {
+        let Some(g) = self.gate.as_mut() else {
+            return;
+        };
+        if g.wants().is_none() {
+            return;
+        }
+        let mem = e.mem();
+        let resources = &self.resources;
+        let backend = &mut self.backend;
+        let buffer = |id: u32| buffer_now(&mem, resources, id);
+        let mut texture = |id: u32, desc: &ffx_gfx::TextureDesc| backend.read_texture(id, desc);
+        let world = || world(e);
+        let mut live = gate::Live {
+            buffer: &buffer,
+            texture: &mut texture,
+            world: &world,
+        };
+        // as the hook's capture: no region copies or resolves
+        let filtered;
+        let f = if self.region_copies.is_empty() {
+            f
+        } else {
+            let mut cmds = Vec::with_capacity(f.cmds.len());
+            for (i, c) in f.cmds.iter().enumerate() {
+                if !self.region_copies.contains(&i) {
+                    cmds.push(c.clone());
+                }
+            }
+            filtered = ffx_gfx::Frame { cmds, ..f.clone() };
+            &filtered
+        };
+        if g.present(crate::harness::present_label(), f, &mut live) {
+            g.snapshot_rings(rings(&mem, resources));
+        }
+    }
+
+    /// The update the running gate capture wants next (its present is not
+    /// held: `crate::harness::before_present_flip`).
+    #[must_use]
+    pub fn gate_wants(&self) -> Option<u32> {
+        self.gate.as_ref().and_then(gate::Store::wants)
+    }
+
+    /// Arms a gate capture of the presents that show updates `first`..
+    /// (the harness's `gfxcapture ... now`), noting the dynamic buffers'
+    /// bytes as they are now (the present before the window may have been
+    /// made already).
+    ///
+    /// # Errors
+    /// The layer keeps no gate store (`FFX_HOST_GFX_CAPTURE=1`), or a
+    /// capture is running.
+    pub fn gate_arm(
+        &mut self,
+        mem: &impl ffx_bridge::Mem,
+        opts: gate::Options,
+        first: u32,
+        reply: std::sync::mpsc::Sender<String>,
+    ) -> Result<(), String> {
+        let Some(g) = self.gate.as_mut() else {
+            return Err("no gate store (start ffx-rust with FFX_HOST_GFX_CAPTURE=1)".into());
+        };
+        g.arm(opts, first, reply)?;
+        g.snapshot_rings(rings(mem, &self.resources));
+        Ok(())
     }
 
     /// One method call: what it returns.
@@ -1875,7 +2038,7 @@ impl Gfx {
             }
             "CopySubresourceRegion" | "CopySubresourceRegion1" => {
                 let bx = read_box(&mem, a[8]);
-                self.texture_copied(a[1], a[6]);
+                self.region_copied(a[1], a[6]);
                 self.backend.op(&Op::CopyRegion(
                     [a[1], a[2], a[3], a[4], a[5], a[6], a[7]],
                     bx,
@@ -1897,7 +2060,7 @@ impl Gfx {
             }
             "GenerateMips" => self.backend.op(&Op::GenerateMips(a[1])),
             "ResolveSubresource" => {
-                self.texture_copied(a[1], a[3]);
+                self.region_copied(a[1], a[3]);
                 self.backend
                     .op(&Op::Resolve([a[1], a[2], a[3], a[4], a[5]]));
             }
@@ -1957,6 +2120,16 @@ impl Gfx {
     }
 
     /// A copy between textures goes into the stream (`CopyTexture`).
+    /// [`Gfx::texture_copied`] for a region copy or a resolve (noted for
+    /// gate captures: [`Gfx::region_copies`]).
+    fn region_copied(&mut self, dst: u32, src: u32) {
+        let before = self.cmds.len();
+        self.texture_copied(dst, src);
+        if self.cmds.len() > before {
+            self.region_copies.push(before);
+        }
+    }
+
     fn texture_copied(&mut self, dst: u32, src: u32) {
         let tex = |id| self.resources.get(&id).is_some_and(|r| r.dims != 0);
         if tex(dst) && tex(src) {

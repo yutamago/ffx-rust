@@ -23,6 +23,7 @@
 use std::cell::Cell;
 use std::collections::HashMap;
 use std::io::Write as _;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use ffx_bridge::Mem as _;
@@ -207,6 +208,13 @@ pub struct Audio {
     state: Mutex<Option<State>>,
     /// Where the mix goes (`--audio-wav`), set before the run.
     pub wav: Mutex<Option<std::path::PathBuf>>,
+    /// `<wav>.marks` ([`Audio::capture`]): where the harness's
+    /// `audiomark`s fall in the WAV.
+    marks: Mutex<Option<std::fs::File>>,
+    /// Blocks mixed ([`BLOCK`] frames each): the mixer's sample clock is
+    /// this times [`BLOCK`], FMOD's `System::getDSPClock` after as many
+    /// `EventSystem::update`s.
+    blocks: AtomicU64,
 }
 
 impl std::fmt::Debug for Audio {
@@ -216,6 +224,54 @@ impl std::fmt::Debug for Audio {
 }
 
 impl Audio {
+    /// The audio capture (docs/harness.md, "Audio capture"): the mix goes
+    /// to the WAV file `wav` (FMOD's WAV writer format, as the hook's
+    /// `FFX_AUDIO_WAV` capture writes it) and `<wav>.marks` beside it
+    /// gets the format line and, later, one line per [`Audio::mark`].
+    /// Call before the run.
+    ///
+    /// # Errors
+    /// When the marks file can't be made.
+    pub fn capture(&self, wav: &std::path::Path) -> std::io::Result<()> {
+        if let Ok(mut w) = self.wav.lock() {
+            *w = Some(wav.to_owned());
+        }
+        let mut name = wav.as_os_str().to_owned();
+        name.push(".marks");
+        let mut f = std::fs::File::create(std::path::PathBuf::from(name))?;
+        f.write_all(marks_header(&wav.display().to_string()).as_bytes())?;
+        if let Ok(mut m) = self.marks.lock() {
+            *m = Some(f);
+        }
+        Ok(())
+    }
+
+    /// The harness's `audiomark <name>` at `frame` (the main thread held at
+    /// that boundary, so the `FmodManager` thread waits for its turn and
+    /// the mixer's clock is the same in every run): the hook's marks line,
+    /// written to the marks file when there is one, and its reply.
+    /// `turns`: FMOD ticks in turns ([`crate::clock::Clock::fmod_turn_state`]),
+    /// `late`: turns the boundary gave up waiting for.
+    pub fn mark(&self, name: &str, frame: u32, turns: bool, late: u32) -> String {
+        let blocks = self.blocks.load(Ordering::Acquire);
+        self.mark_line(&mark_line(name, frame, blocks, late, turns));
+        mark_reply(frame, blocks, late)
+    }
+
+    /// A turn the boundary gave up waiting for (the hook's `late` line).
+    pub fn note_late(&self, frame: u32) {
+        self.mark_line(&format!("late frame {frame}"));
+    }
+
+    fn mark_line(&self, line: &str) {
+        if let Ok(mut m) = self.marks.lock()
+            && let Some(f) = m.as_mut()
+        {
+            let _ = writeln!(f, "{line}");
+            let _ = f.flush();
+        }
+    }
+
     /// Blocks mixed and calls the engine did not follow.
     #[must_use]
     pub fn summary(&self) -> Option<(u64, Vec<(String, u32)>)> {
@@ -263,6 +319,32 @@ fn with<T>(e: &mut Exec, f: impl FnOnce(&mut State) -> T) -> Option<T> {
     }
     let s = guard.as_mut()?;
     Some(with_exec(e, || f(s)))
+}
+
+/// The marks file's first lines: the hook's header and the format FMOD's
+/// WAV writer runs with under the capture (48 kHz, `PCMFLOAT` (5), 2
+/// channels, 32 bits, blocks of [`BLOCK`], output `WAVWRITER_NRT` (5)).
+fn marks_header(wav: &str) -> String {
+    format!(
+        "# audiomarks 1 {wav}\nformat rate 48000 format 5 channels 2 bits 32 block {BLOCK} output 5 init 0x0\n"
+    )
+}
+
+/// One `audiomark` line, as the hook writes it (`free`: the hook's free
+/// FMOD ticks; the clock here gives none).
+fn mark_line(name: &str, frame: u32, blocks: u64, late: u32, turns: bool) -> String {
+    format!(
+        "mark {name} frame {frame} sample {} updates {blocks} free 0 late {late} turns {turns}",
+        blocks * BLOCK as u64
+    )
+}
+
+/// The reply to `audiomark`, as the hook's.
+fn mark_reply(frame: u32, blocks: u64, late: u32) -> String {
+    format!(
+        "ok frame {frame} sample {} updates {blocks} free 0 late {late}",
+        blocks * BLOCK as u64
+    )
 }
 
 /// A WAV file in FMOD's writer format: float, 2 channels, 48 kHz, sizes 0.
@@ -494,8 +576,11 @@ fn event_system_update(e: &mut Exec, _: &Args) -> Ret {
             .iter()
             .filter_map(|&(ev, kind)| s.callbacks.get(&ev).map(|&(f, u)| (ev, kind, f, u)))
             .collect::<Vec<_>>()
-    })
-    .unwrap_or_default();
+    });
+    if due.is_some() {
+        e.shared().audio.blocks.fetch_add(1, Ordering::AcqRel);
+    }
+    let due = due.unwrap_or_default();
     let reads = with(e, |s| std::mem::take(&mut s.reads)).unwrap_or(0);
     movie_reads(e, reads);
     for (ev, kind, f, user) in due {
@@ -1156,3 +1241,68 @@ pub const TABLE: &[(&str, &str, Conv, usize, ImportFn)] = &[
         channel_group_get_num_channels,
     ),
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The lines of a reference capture's marks file (battle-attack, the
+    /// hook's `FFX_AUDIO_WAV` on the original code), field for field.
+    #[test]
+    fn marks_lines_are_the_hooks() {
+        assert_eq!(
+            marks_header("C:\\t\\a.wav"),
+            "# audiomarks 1 C:\\t\\a.wav\n\
+             format rate 48000 format 5 channels 2 bits 32 block 1600 output 5 init 0x0\n"
+        );
+        assert_eq!(
+            mark_line("start", 192, 189, 0, true),
+            "mark start frame 192 sample 302400 updates 189 free 0 late 0 turns true"
+        );
+        assert_eq!(
+            mark_reply(1315, 1179, 0),
+            "ok frame 1315 sample 1886400 updates 1179 free 0 late 0"
+        );
+    }
+
+    #[test]
+    fn a_capture_writes_its_marks_beside_the_wav() {
+        let dir = std::env::temp_dir().join(format!("ffx-host-marks-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let wav = dir.join("x.wav");
+        let a = Audio::default();
+        a.capture(&wav).unwrap();
+        assert_eq!(a.wav.lock().unwrap().as_deref(), Some(wav.as_path()));
+        a.blocks.store(3, Ordering::Release);
+        assert_eq!(
+            a.mark("start", 5, true, 0),
+            "ok frame 5 sample 4800 updates 3 free 0 late 0"
+        );
+        a.note_late(6);
+        let text = std::fs::read_to_string(dir.join("x.wav.marks")).unwrap();
+        let lines: Vec<_> = text.lines().collect();
+        assert_eq!(lines.len(), 4);
+        assert!(lines[0].starts_with("# audiomarks 1 "));
+        assert!(lines[1].starts_with("format rate 48000 "));
+        assert_eq!(
+            lines[2],
+            "mark start frame 5 sample 4800 updates 3 free 0 late 0 turns true"
+        );
+        assert_eq!(lines[3], "late frame 6");
+        // the WAV itself: FMOD's writer header, 0x44 bytes before the data
+        drop(wav_file(&wav).unwrap());
+        let h = std::fs::read(&wav).unwrap();
+        assert_eq!(h.len(), 0x44);
+        assert_eq!(&h[0x3c..0x40], b"data");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn without_a_capture_a_mark_still_answers() {
+        let a = Audio::default();
+        assert_eq!(
+            a.mark("end", 9, false, 0),
+            "ok frame 9 sample 0 updates 0 free 0 late 0"
+        );
+    }
+}

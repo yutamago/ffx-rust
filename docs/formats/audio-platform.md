@@ -509,6 +509,17 @@ What is left:
 - The Shout channel: the stubs and the engine follow it, but no recorded
   replay plays one (battle-overdrive, recorded with a log, has no
   `playSound`); a battle with a voiced shout is still to record.
+  battle-shout (2026-11-12, `tools/replays/battle-shout.txt`, in the audio
+  list) plays one: `MsSoundStreamPlay(0, 0)` gives stream 1 of
+  `g_BtlShoutStreams` (`0x00c42510`, 44 streams for speakers 0-7, lines
+  0-7), the `VoiceIDMapper` key of `210101td`; the stream numbers 1-0x2c
+  are the keys of `210101td`..`210802sm`. In the game only `system_01`'s
+  worker 4 plays shouts (`Native_706d`, eight calls: lines 0-7 of the
+  acting party member, picked by `Btl.GetParsedCommand`, `Random16` and the
+  voice event flag). The same replay plays Rikku's `210701rk` (key 0x23)
+  as a battle voice (`SndStandbyStream`, `SndStartStream`): a 32 kHz
+  sample. Its references are to record (`run-all.sh --audio --record
+  battle-shout`).
 - Voices at 32 kHz (100 voice samples; the replays' voice is 48 kHz).
 - `maxplaybacks` stealing: the game's own limits (5 a sequence, 30 for
   sequence 114, `canStartNewEvent`) stop it before FMOD's in every log.

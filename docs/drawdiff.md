@@ -449,9 +449,19 @@ original first, then the ports against the original, each at 0 within the
 scene's allow list.
 
 ```bash
-tools/scene-gate-capture.sh <replay> <run> [original|only-m4|all]
+tools/scene-gate-capture.sh <replay> <run> [original|only-m4|all|rust]
 tools/scene-gate.sh <scene> <run A> <run B>
 ```
+
+`rust` (M5, 2026-11-12) plays the replay on `ffx-rust.exe`
+(`FFX_HARNESS_EXE=rust`) with `FFX_HOST_GFX_CAPTURE=1`: the D3D11 layer's
+gate capture (`crates/ffx-host/src/gfx/gate.rs`, docs/harness.md "Two
+processes") writes `capture.ffxgfx` as the hook's hash mode does, so
+drawdiff compares it with the original's references (`scene-gate.sh
+<scene> dg-<replay>-q1 <rust run>`). It writes no `hashes.txt`;
+`scene-gate.sh` then skips `compare-captures.py` (target and back buffer
+hashes) and says so. The run's `ffx-rust.log` is kept beside the
+captures.
 
 | Scene | Replay (`tools/replays/`) | Capture point |
 |---|---|---|

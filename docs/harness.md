@@ -1434,12 +1434,15 @@ The gate (M4 "done when" item 4):
 tools/replays/run-all.sh --audio                  # Rust against the references
 tools/replays/run-all.sh --audio battle-attack    # one replay
 tools/replays/run-all.sh --audio --record [replay...]   # (re-)record the references
+FFX_HARNESS_EXE=rust FFX_REPLAY_SERIAL=1 tools/replays/run-all.sh --audio   # ffx-rust.exe ("Two processes")
 ```
 
 The audio list is event-besaid (music, Wakka's voice, footsteps),
 battle-attack (sound effects, the victory fanfare), menu-browse (menu
-sounds), battle-ifrit (a summon) and movie-fmv (a movie's user stream,
-since 2026-10-28). `FFX_RUST_AUDIO=1` runs the Rust sound engine in place
+sounds), battle-ifrit (a summon), movie-fmv (a movie's user stream,
+since 2026-10-28) and battle-shout (since 2026-11-12: a shout on the Shout
+channel and a 32 kHz battle voice, each started with `call` in
+battle-attack's first command window; `tools/replays/battle-shout.txt`). `FFX_RUST_AUDIO=1` runs the Rust sound engine in place
 of FMOD (`docs/formats/audio-platform.md`). The references are two original-code
 captures per replay in `~/ffx-work/replay-audio` (`FFX_REPLAY_AUDIO`;
 never in git, about 15 MB a capture). `--record` plays the original code
@@ -2411,7 +2414,7 @@ records).
   `FFX_HOST_SYM` through `WSLENV` with `/p`); `running` marks a thread in
   emulated code, read from its last host entry; `crate::stacks`,
   2026-11-01, host-b9), `audiomark`
-  (`ok off`: no capture), `quit` (and `calllog off`, the replay player's
+  (the marks file of the `FFX_AUDIO_WAV` capture, below), `quit` (and `calllog off`, the replay player's
   closing line). Every other command (`snapshot`, `fpucw`,
   the overlay and editor commands, `cursor`, `threads`)
   answers `err ... not served by ffx-rust yet`.
@@ -2463,6 +2466,23 @@ records).
   FMOD's sound on its own mixer; its device output (WASAPI) stays off in
   harness games unless `FFX_RUST_AUDIO_OUT=1` (`docs/host.md`, "FMOD"), so
   nothing reaches the speakers.
+- **Audio capture** (2026-11-11, wp4-audio). `FFX_AUDIO_WAV=<file>` (as
+  for `FFX.exe`; `tools/run-game.sh` passes it with `/p`, else
+  `--audio-wav`) writes the mixer's blocks to the WAV in FMOD's writer
+  format (48 kHz stereo float, one 1,600-frame block per
+  `EventSystem::update`, unbuffered, so `quit` loses nothing) and makes
+  `<file>.marks` beside it with the hook's header and format line.
+  `audiomark <name>` writes the hook's `mark <name> frame <n> sample <s>
+  updates <u> free 0 late <l> turns <t>` line there (the sample clock is
+  the blocks mixed x 1,600, what FMOD's `getDSPClock` gives after as many
+  updates) and answers as the hook. FMOD's turns are the clock's (always
+  on from the first boundary, `docs/host.md` "The clock"); a turn the
+  boundary gives up on after 120 s counts as `late` and writes a `late
+  frame <n>` line, which `tools/wav-compare.py` prints. So
+  `FFX_HARNESS_EXE=rust tools/replays/run-all.sh --audio` compares
+  ffx-rust's captures with the original's references as the hooked run
+  does. An in-process `--replay` script's `audiomark` writes the same
+  line (`--audio-wav`).
 - **Screenshots.** `shot` reads the back buffer (a staging copy of the
   swap chain's buffer 0) of the update the main thread stands after, or a
   later one, into a 32-bit BMP; the reply says `update <n>`, as the hook's.
@@ -2476,6 +2496,25 @@ records).
   (with `--gfx`) arms the hook's capture before the device exists, so it
   holds the frames from the first `Present` on; a script waits for it with
   `gfxcapture result`.
+- **Scene-gate captures** (2026-11-12, wp4-audio). `gfxcapture <dir>
+  [hash] [frames N] [now] [async]` and `gfxcapture result`, as the hook's
+  (docs/drawdiff.md, "Scene gates"), when `ffx-rust.exe` runs with
+  `FFX_HOST_GFX_CAPTURE=1` (`tools/scene-gate-capture.sh <replay> <run>
+  rust` sets it; `crates/ffx-host/src/gfx/gate.rs`). The layer then keeps
+  the views', shaders', layouts' and states' messages and every 2D
+  texture's uploaded contents (no frames). Armed at boundary `f`, the
+  capture takes the presents that show updates `f + 1` .. `f + N` and
+  writes `capture.ffxgfx` with the objects those frames use declared as
+  the hook's hash mode declares them (texture content hashes of the GPU's
+  contents, read back through a staging copy as the hook does, static
+  buffers' hashes, index buffers' bytes, the dynamic buffers' bytes at the
+  window's start; region copies and resolves left out of the frames, as
+  the hook's capture has only `CopyResource`), the `World` message (the last `.ebp` opened, the
+  camera) and the frames, plus `frames.txt`. No `hashes.txt` (target
+  contents need GPU read-backs): `tools/scene-gate.sh` runs drawdiff alone
+  for such a run. The present of the update the capture waits for is not
+  held in lockstep: its frame is taken inside that present, and the
+  script's `gfxcapture result` waits at that update's boundary.
 - **How far it gets (2026-10-29, host-pc2).** The 64-bit build
   (x86_64, which `tools/run-game.sh --rust` installs) plays field-walk on PC2 with the same trace
   events as PC2's original recordings and screenshots within the limits

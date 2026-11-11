@@ -1,5 +1,5 @@
 #!/bin/bash
-# scene-gate-capture.sh <replay> <run> [original|only-m4|all]: one run of a
+# scene-gate-capture.sh <replay> <run> [original|only-m4|all|rust]: one run of a
 # draw-gate replay (tools/replays/draw-gate-<replay>.txt, or draw-field)
 # with the graphics layer, its captures copied to
 # ${FFX_CAPTURES:-~/ffx-work/m4/captures}/<run>/<capture>.
@@ -8,6 +8,11 @@
 #             ported/{h,p}<n>_*.rs, c2_new.rs, m4_rest.rs, phyre_render.rs),
 #             the rest original
 #   all       every hook (the default)
+#   rust      ffx-rust.exe (FFX_HARNESS_EXE=rust, crates/ffx-host; the D3D11
+#             layer's gate capture, crates/ffx-host/src/gfx/gate.rs, with
+#             FFX_HOST_GFX_CAPTURE=1): capture.ffxgfx and frames.txt, no
+#             hashes.txt (scene-gate.sh runs drawdiff alone then); its
+#             ffx-rust.log is kept as <run>/ffx-rust.log
 # FFX_HOOK_ONLY or FFX_HOOK_DISABLE set by the caller pass on (bisecting;
 # with `all` only). docs/drawdiff.md, "Scene gates".
 set -u
@@ -41,19 +46,38 @@ case "$mode" in
         echo "hooks: $(wc -l < "$list")"
         ;;
     all) ;;
-    *) echo "mode: original, only-m4 or all" >&2; exit 2 ;;
+    rust)
+        export FFX_HARNESS_EXE=rust FFX_HOST_GFX_CAPTURE=1
+        # emulated updates: the replay's and each reply's time
+        export FFX_REPLAY_TIMEOUT="${FFX_REPLAY_TIMEOUT:-3600}"
+        export FFX_HARNESS_REPLY_TIMEOUT="${FFX_HARNESS_REPLY_TIMEOUT:-3600}"
+        ;;
+    *) echo "mode: original, only-m4, all or rust" >&2; exit 2 ;;
 esac
 temp_win="$(powershell.exe -NoProfile -Command '[IO.Path]::GetTempPath()' | tr -d '\r')"
 lin="$(wslpath "${temp_win%\\}")/ffx-draw-gates/$run"
 rm -rf "$lin"; mkdir -p "$lin"
 win="$(wslpath -w "$lin")"
-tools/build-hook.sh > /dev/null || exit 1
+if [ "$mode" = rust ]; then
+    # run-game.sh installs this build (FFX_NO_BUILD: no second build there)
+    [ "${FFX_NO_BUILD:-}" = 1 ] || tools/build-host.sh > /dev/null || exit 1
+    export FFX_NO_BUILD=1
+    limit=14400
+else
+    tools/build-hook.sh > /dev/null || exit 1
+    limit=1800
+fi
 cargo build -q --release -p ffx-harness --example replay || exit 1
-FFX_GFX=1 FFX_TEST_VOLUME=0 FFX_GAME_DIR="${FFX_GAME_DIR:-$HOME/steam-games/FFX-X2-HD}" timeout 1800 \
+FFX_GFX=1 FFX_TEST_VOLUME=0 FFX_GAME_DIR="${FFX_GAME_DIR:-$HOME/steam-games/FFX-X2-HD}" timeout "$limit" \
     target/release/examples/replay "$script" "$win\\draw.trace" $arg > "$lin/replay.out" 2>&1
 status=$?
 rm -rf "$dst"; mkdir -p "$dst"
 cp "$lin/replay.out" "$dst/"
+if [ "$mode" = rust ]; then
+    # the slot's ffx-rust.log, before the slot's next game replaces it
+    slot="$(sed -n 's/^replay: slot \([0-9]*\),.*/\1/p' "$lin/replay.out" | head -1)"
+    [ -n "$slot" ] && cp "${FFX_INSTANCES_DIR:-$HOME/ffx-work/instances}/$slot/ffx-rust.log" "$dst/" 2>/dev/null
+fi
 for c in "${caps[@]}"; do
     [ -d "$lin/$c" ] && cp -r "$lin/$c" "$dst/"
 done

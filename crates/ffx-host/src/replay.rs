@@ -11,7 +11,8 @@
 //! | `press <buttons> <frames> [gap]` | holds the buttons `frames` updates, then waits `gap` more |
 //! | `wait <frames>` | `frames` updates |
 //! | `pin` | the time parts of the harness's `pin` (docs/harness.md, "Pinned state") |
-//! | `lockstep`, `trace`, `realtime`, `settings`, `audiomark`, `calllog` | nothing (always in lockstep; no trace file) |
+//! | `audiomark <name>` | the mixer's sample clock into the marks file (`--audio-wav`), as the harness's |
+//! | `lockstep`, `trace`, `realtime`, `settings`, `calllog` | nothing (always in lockstep; no trace file) |
 //!
 //! A range is `addr:len`, `addr+off:len` or `*addr+off:len` (through the
 //! pointer at `addr`). A script that fails ends the run with the reason.
@@ -324,7 +325,16 @@ fn step(e: &mut Exec, frame: u32, line: &str) -> Result<Step, String> {
             }
         }
         "pin" => Ok(Step::Next(format!("ok {}", pin(e)))),
-        "lockstep" | "trace" | "realtime" | "settings" | "audiomark" | "calllog" => {
+        "audiomark" => {
+            let (turns, late) = e.shared().clock.fmod_turn_state();
+            Ok(Step::Next(e.shared().audio.mark(
+                arg(1)?,
+                frame,
+                turns,
+                late,
+            )))
+        }
+        "lockstep" | "trace" | "realtime" | "settings" | "calllog" => {
             Ok(Step::Next("ok (nothing to do here)".into()))
         }
         other => Err(format!("{other}: not supported in-process")),

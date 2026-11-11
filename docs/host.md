@@ -516,6 +516,18 @@ Interface::Method(args) -> result`, `QueryInterface`'s IID by name).
 Methods the layer doesn't answer return `E_NOTIMPL` (or nothing) and are
 listed in the report (`gfx unhandled`); on the boot so far there are none.
 
+**Gate captures** (2026-11-12, wp4-audio; `src/gfx/gate.rs`). With
+`FFX_HOST_GFX_CAPTURE=1` the layer keeps no recording but a store of
+what a scene gate needs: the description messages and every 2D
+texture's contents as uploaded (initial data, `UpdateSubresource` boxes,
+`Unmap`), packed at the layout's row pitch; buffers come from their arena
+copies, and the D3D11 back end reads textures back for the hashes as the
+hook does (`Backend::read_texture`; the uploaded contents on the null
+device). The harness's `gfxcapture <dir> hash frames N now` then writes the
+presents that show updates `f + 1` .. `f + N` as the hook's hash-mode
+capture writes them (docs/harness.md, "Two processes"), so
+`tools/scene-gate.sh` compares them with the original's references.
+
 ## The clock
 
 `src/clock.rs` applies the hook harness's fast mode, virtual clock and
@@ -606,8 +618,11 @@ hook's `rust_audio.rs` is its other driver), with the same calls:
 - `EventSystem::update` mixes one 1,600-frame block (one FMOD tick: the
   clock is virtual) and calls the game's event callback where FMOD does
   (`SOUNDDEF_END`, `EVENTFINISHED`).
-- Output: `--audio-wav FILE`, the mix in FMOD's WAV writer format as the
-  audio gate records it, or else the default output device (WASAPI,
+- Output: `--audio-wav FILE` (or `FFX_AUDIO_WAV`, as the harness passes
+  it), the mix in FMOD's WAV writer format as the audio gate records it,
+  with `<FILE>.marks` beside it for the harness's `audiomark`s
+  (`Audio::capture`, `Audio::mark`: the blocks mixed x 1,600 as the
+  sample clock; docs/harness.md, "Two processes"), or else the default output device (WASAPI,
   shared mode): the hook's `rust_audio_out.rs`, the same file compiled
   into `ffx-host` (`audio::device`, host-iggy 2026-11-01). The game's clock
   drives the mix and the device only takes what is queued (underruns are

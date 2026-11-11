@@ -40,7 +40,9 @@
 //! | `notes` | the run's notes so far (`crate::log::note`: turns, failed threads), as `events` lists |
 //! | `quit` | ends the process (after writing the `--profile` file: [`profile_at_quit`]) |
 //!
-//! `audiomark` answers `ok off` (no `FFX_AUDIO_WAV` capture). Not served
+//! `audiomark <name>` notes the frame and the mixer's sample clock in the
+//! marks file of the `FFX_AUDIO_WAV` capture (`crate::audio::Audio::mark`;
+//! docs/harness.md, "Audio capture"), as the hook's. Not served
 //! (answered `err`): `snapshot`, `fpucw`, the
 //! overlay and live-editor commands, `cursor`, `threads`, `stacks`.
 
@@ -384,6 +386,35 @@ fn flip(e: &mut Exec, args: &Args) -> Ret {
     r
 }
 
+/// The scene: the last event file (`.ebp`) the game opened, as the hook's
+/// `world` notes it (the gate captures' `World` message).
+static SCENE: Mutex<String> = Mutex::new(String::new());
+
+/// Notes the scene an opened file names (`<map>.ebp`).
+fn note_scene(path: &str) {
+    let name = path.rsplit('/').next().unwrap_or(path);
+    if let Some(stem) = name.strip_suffix(".ebp")
+        && let Ok(mut s) = SCENE.lock()
+        && *s != stem
+    {
+        stem.clone_into(&mut s);
+    }
+}
+
+/// The scene ([`note_scene`]; empty before the first map).
+#[must_use]
+pub fn scene() -> String {
+    SCENE.lock().map(|s| s.clone()).unwrap_or_default()
+}
+
+/// The update the render thread's present shows (the harness's flip
+/// label), `None` when unknown.
+#[must_use]
+pub fn present_label() -> Option<u32> {
+    let l = PRESENT_LABEL.load(Ordering::Acquire);
+    (l != NO_LABEL).then_some(l)
+}
+
 /// `G_FILE_SYS`: the archive file system (`+0x3c`: the root's length).
 const FILE_SYS: u32 = 0x00cc_9c48;
 
@@ -417,6 +448,7 @@ fn file_open(e: &mut Exec, args: &Args) -> Ret {
                     }
                 })
                 .collect();
+            note_scene(&key);
             if let Some(k) = key.get(root..)
                 && let Ok(mut ev) = EVENTS.lock()
             {
@@ -638,7 +670,17 @@ pub fn before_present_flip(shared: &Shared) {
         return;
     }
     let start = Instant::now();
-    let hold = || LOCKSTEP.load(Ordering::Acquire) || PINNED.load(Ordering::Acquire) > 0;
+    // a gate capture's frame is taken at its Present, inside the flip:
+    // the update it wants is not held (the hook's capture takes it in
+    // Present, before the hold there), else the script's `gfxcapture
+    // result` at boundary `label` would wait for it forever
+    let captured = shared
+        .gfx
+        .lock()
+        .as_ref()
+        .is_some_and(|g| g.gate_wants() == Some(label));
+    let hold =
+        || !captured && (LOCKSTEP.load(Ordering::Acquire) || PINNED.load(Ordering::Acquire) > 0);
     let mut waited = false;
     while hold()
         && PASSED.load(Ordering::Acquire) <= label
@@ -1363,6 +1405,12 @@ fn run(shared: &Arc<Shared>, line: &str) -> Result<String, String> {
             }
             Ok(out)
         }
+        // a scene-gate capture (docs/drawdiff.md, "Scene gates"):
+        // `gfxcapture <dir> [hash] [frames N] [now] [async]`, `gfxcapture
+        // result` (crate::gfx::gate)
+        "gfxcapture" if crate::gfx::gate::Options::wanted(&words[1..]) => {
+            Ok(gate_capture(shared, &words[1..], now()))
+        }
         "gfxcapture" => {
             let dir = arg(1)?;
             if shared.gfx.lock().as_ref().is_some_and(|g| !g.records()) {
@@ -1379,11 +1427,54 @@ fn run(shared: &Arc<Shared>, line: &str) -> Result<String, String> {
         }
         // the replay player's closing line: no call log here
         "calllog" if words.get(1) == Some(&"off") => Ok("ok".into()),
-        // no FFX_AUDIO_WAV capture here (`--audio-wav` writes the whole
-        // mix): the hook's answer without one
-        "audiomark" => Ok("ok off".into()),
+        // where the mix stands (docs/harness.md, "Audio capture"): the
+        // marks file beside the `FFX_AUDIO_WAV` capture gets the line
+        "audiomark" => {
+            let (turns, late) = shared.clock.fmod_turn_state();
+            Ok(shared.audio.mark(arg(1)?, now(), turns, late))
+        }
         other => Err(format!("{other}: not served by ffx-rust yet")),
     }
+}
+
+/// The reply of a detached gate capture (`gfxcapture ... async`), for
+/// `gfxcapture result`.
+static GATE_RESULT: Mutex<Option<std::sync::mpsc::Receiver<String>>> = Mutex::new(None);
+
+/// `gfxcapture <dir> [hash] [frames N] [now] [async]` or `gfxcapture
+/// result`, at boundary `frame`: captures the presents of updates
+/// `frame + 1`.. (`crate::gfx::gate`), as the hook's capture armed after
+/// the present of update `frame`.
+fn gate_capture(shared: &Shared, words: &[&str], frame: u32) -> String {
+    if words.first() == Some(&"result") {
+        let Some(rx) = GATE_RESULT.lock().ok().and_then(|mut r| r.take()) else {
+            return "err no capture is running".into();
+        };
+        return wait_reply(shared, &rx);
+    }
+    let opts = match crate::gfx::gate::Options::parse(words) {
+        Ok(o) => o,
+        Err(e) => return format!("err {e}"),
+    };
+    let detach = opts.detach;
+    let (tx, rx) = channel();
+    let mem = ArenaMem {
+        arena: Arc::clone(shared.arena()),
+    };
+    let armed = match shared.gfx.lock().as_mut() {
+        Some(g) => g.gate_arm(&mem, opts, frame + 1, tx),
+        None => Err("no device yet".into()),
+    };
+    if let Err(e) = armed {
+        return format!("err {e}");
+    }
+    if detach {
+        if let Ok(mut r) = GATE_RESULT.lock() {
+            *r = Some(rx);
+        }
+        return format!("ok armed at boundary {frame}");
+    }
+    wait_reply(shared, &rx)
 }
 
 /// Where `quit` writes the profile, and the `ffx.sym` it names
