@@ -5683,3 +5683,168 @@ pub const GLIDE_START_0397: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `magic_0396`'s object start (0x10004e60, 295 bytes; a table entry, no
+/// arguments; the caller's `ecx` passed on). With `*G_ON` set and `S =
+/// *G_S`: the object `O = S + 0x720` starts
+/// ([`start_object_anim_2`](crate::s6_misc::start_object_anim_2), scale
+/// `K`, the stack `(6, ecx, 0, 0)`) at `S + 0xbe0..` with `y` less `K1`;
+/// `O + 0xe0` 0.5, `+0xe8` -4.8, `+0xc0` -0.4713, the yaw `O + 0xc4` =
+/// `S[0x2450] + K2` wrapped once; its record `S + 0xf18` (callback `CB`,
+/// the second word `W`) into `O + 0x110`. Returns the record, or the
+/// caller's `eax` with `*G_ON` 0.
+pub fn object_start_0396<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    if g.read::<u32>(w(0x2)) == 0 {
+        return Ret::eax(fr.eax);
+    }
+    let s = g.read::<u32>(w(0xa));
+    let o = s + 0x720;
+    // push edi, esi, four words; the call
+    let esp = fr.esp.wrapping_sub(0x1c);
+    for (i, v) in (1u32..).zip([6, fr.ecx, 0, 0]) {
+        g.write::<u32>(esp + 4 * i, v);
+    }
+    let mut xmm = fr.xmm;
+    xmm[3] = u128::from(g.read::<u32>(w(0x18)));
+    let start = Frame {
+        at: img.rel32_target(f + 0x2d),
+        esp,
+        edx: o,
+        xmm,
+        ..*fr
+    };
+    crate::s6_misc::start_object_anim_2(g, img, &start);
+    for j in 0..4u32 {
+        let x = g.read::<u32>(s + 0xbe0 + 4 * j);
+        g.write::<u32>(o + 0xd0 + 4 * j, x);
+    }
+    let y = sub(g.read::<f32>(o + 0xd4), k(g, 0x5b));
+    g.write::<f32>(o + 0xd4, y);
+    g.write::<u32>(o + 0xe0, 0x3f00_0000);
+    g.write::<u32>(o + 0xe8, 0xc099_999a);
+    g.write::<u32>(o + 0xc0, 0xbef1_463b);
+    let yaw = add(g.read::<f32>(s + 0x2450), k(g, 0xa6));
+    let yaw = wrap_once(g, img, f, yaw, [0xad, 0xb7, 0xc1, 0xce]);
+    let rec = s + 0xf18;
+    g.write::<f32>(o + 0xc4, yaw);
+    for d in [0x18u32, 0x14, 0x10, 0x1c] {
+        g.write::<u32>(rec + d, 0);
+    }
+    g.write::<u32>(rec + 0x20, w(0x101));
+    g.write::<u32>(rec + 0x24, w(0x108));
+    g.write::<u32>(rec + 0x28, 0);
+    g.write::<u32>(rec + 0x2c, 0);
+    g.write::<u16>(rec + 0x30, 0);
+    g.write::<u32>(o + 0x110, rec);
+    Ret::eax(rec)
+}
+
+/// [`object_start_0396`] (the `rel32`: the object start).
+pub const OBJECT_START_0396: Sig = Sig {
+    len: 295,
+    hash: 0x3c38_d1b4_c586_7fee,
+    calls: &[(0x2d, Callee::Sig(&crate::s6_misc::START_OBJECT_ANIM_2))],
+    imports: &[],
+};
+
+/// `magic_0396`'s second object start (0x10005200, 380 bytes; a table
+/// entry, no arguments; the caller's `ecx` passed on). With `S = *G_S`:
+/// the object `O = S + 0xab0` starts
+/// ([`start_object_anim_2`](crate::s6_misc::start_object_anim_2), scale
+/// `K`, the stack `(9, ecx, 0, 0)`) at `S + 0xbe0..` with `y` less `K1`,
+/// `O + 0xe8` -20 and the yaw `O + 0xc4` = `S[0x2450] - K2` wrapped once;
+/// the light record `L = S + 0xc00` on a task node appended to the list;
+/// with `*G_ON` set the fade record `S + 0xe58`
+/// ([`fade_task`](crate::s3_misc::fade_task), `edx` 40, `xmm1`/`xmm2` two
+/// constants, the stack word 0) and `S + 0xe68` 0.7. Returns the fade's
+/// node, else the light's.
+pub fn objects_start_0396<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let s = g.read::<u32>(w(0xc));
+    let o = s + 0xab0;
+    // push esi, edi, four words; the call
+    let esp = fr.esp.wrapping_sub(0x1c);
+    for (i, v) in (1u32..).zip([9, fr.ecx, 0, 0]) {
+        g.write::<u32>(esp + 4 * i, v);
+    }
+    let mut xmm = fr.xmm;
+    xmm[3] = u128::from(g.read::<u32>(w(0x4)));
+    let start = Frame {
+        at: img.rel32_target(f + 0x20),
+        esp,
+        edx: o,
+        xmm,
+        ..*fr
+    };
+    crate::s6_misc::start_object_anim_2(g, img, &start);
+    for j in 0..4u32 {
+        let x = g.read::<u32>(s + 0xbe0 + 4 * j);
+        g.write::<u32>(o + 0xd0 + 4 * j, x);
+    }
+    let y = sub(g.read::<f32>(o + 0xd4), k(g, 0x4e));
+    g.write::<f32>(o + 0xd4, y);
+    g.write::<u32>(o + 0xe8, 0xc1a0_0000);
+    let yaw = sub(g.read::<f32>(s + 0x2450), k(g, 0x85));
+    let yaw = wrap_once(g, img, f, yaw, [0x8c, 0x96, 0xa0, 0xad]);
+    g.write::<f32>(o + 0xc4, yaw);
+    let l = s + 0xc00;
+    g.write::<u32>(l + 0x80, 0x8040_4080);
+    g.write::<u32>(l + 0x84, 0x0040_4080);
+    g.write::<u32>(l + 0x88, 0);
+    g.write::<u16>(l + 0x98, 0x48);
+    g.write::<u32>(l + 0x90, 0x14);
+    g.write::<u32>(l + 0x8c, 0x14);
+    g.write::<u32>(l + 0x94, 0);
+    let node = crate::sa_pool::take(g, img, img.rel32_target(f + 0x10a), w(0xc0));
+    let listed = g.read::<u32>(w(0x110)) != 0;
+    g.write::<u32>(node.wrapping_add(0x14), l);
+    g.write::<u32>(node.wrapping_add(4), 0);
+    if listed {
+        let tail = g.read::<u32>(w(0x123));
+        g.write::<u32>(node, tail);
+        g.write::<u32>(tail.wrapping_add(4), node);
+    } else {
+        g.write::<u32>(node, 0);
+        g.write::<u32>(w(0x135), node);
+    }
+    g.write::<u32>(node.wrapping_add(8), node);
+    g.write::<u32>(w(0x144), node);
+    if g.read::<u32>(w(0x13b)) == 0 {
+        return Ret::eax(node);
+    }
+    // push esi, edi, the word; the call
+    let esp = fr.esp.wrapping_sub(0x10);
+    g.write::<u32>(esp + 4, 0);
+    let mut xmm = fr.xmm;
+    xmm[1] = u128::from(g.read::<u32>(w(0x156)));
+    xmm[2] = u128::from(g.read::<u32>(w(0x14e)));
+    let fade = Frame {
+        at: img.rel32_target(f + 0x168),
+        esp,
+        ecx: s + 0xe58,
+        edx: 0x28,
+        xmm,
+        ..*fr
+    };
+    let eax = crate::s3_misc::fade_task(g, img, &fade);
+    g.write::<u32>(s + 0xe68, 0x3f33_3333);
+    Ret::eax(eax)
+}
+
+/// [`objects_start_0396`] (the `rel32`s: the object start, the pool
+/// take, the fade).
+pub const OBJECTS_START_0396: Sig = Sig {
+    len: 380,
+    hash: 0x7305_18ef_52fa_78bd,
+    calls: &[
+        (0x20, Callee::Sig(&crate::s6_misc::START_OBJECT_ANIM_2)),
+        (0x10a, Callee::Sig(&crate::sa_pool::TAKE)),
+        (0x168, Callee::Sig(&crate::s3_misc::FADE_TASK)),
+    ],
+    imports: &[],
+};

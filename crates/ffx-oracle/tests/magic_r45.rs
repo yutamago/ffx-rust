@@ -3458,3 +3458,90 @@ fn glide_start_0397() {
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
+
+/// `magic_0396` 0x10004e60 (`r45::object_start_0396`): `*G_ON` 0 (the
+/// caller's `eax` back) and set, the yaw wrapping both ways and not.
+#[test]
+fn object_start_0396() {
+    let Some(mut t) = sa::twin(396) else { return };
+    let f = t.at(0x4e60);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    all_stubs(&mut t);
+    magic_r11::object_slots(&mut t);
+    let start = t.img.rel32_target(f + 0x2d);
+    magic_r11::object_start_auto(&mut t, start);
+    let s = SCRATCH + 0x1_0000;
+    t.set_u32(w(0xa), s);
+    for (k, (on, yaw)) in (0u32..).zip([(0u32, 0.0f32), (1, 0.5), (1, 3.0), (1, -3.5), (1, 6.0)]) {
+        t.set_u32(w(0x2), on);
+        junk(&mut t, s + 0x700, 0x180, k);
+        floats(&mut t, s + 0xbe0, 4, k);
+        junk(&mut t, s + 0xf00, 0x40, k);
+        setf(&mut t, s + 0x2450, yaw);
+        magic_r11::pools(&mut t, f, 295);
+        ownb::dirty_stack(&mut t, 0x4e60 + k, &[]);
+        let call = Call {
+            eax: 0x0eaa_0000 + k,
+            ecx: 0x0ecc_0000 + k,
+            ..Call::default()
+        };
+        t.check_entry(f, call, &[], Eax::Checked);
+    }
+}
+
+/// `magic_0396` 0x10005200 (`r45::objects_start_0396`): `*G_ON` 0 and
+/// set (the fade); the task list empty and not; the yaw wrapping both
+/// ways and not.
+#[test]
+fn objects_start_0396() {
+    let Some(mut t) = sa::twin(396) else { return };
+    let f = t.at(0x5200);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    all_stubs(&mut t);
+    magic_r11::object_slots(&mut t);
+    let start = t.img.rel32_target(f + 0x20);
+    magic_r11::object_start_auto(&mut t, start);
+    let s = SCRATCH + 0x1_0000;
+    t.set_u32(w(0xc), s);
+    let take = img.rel32_target(f + 0x10a);
+    let fade = img.rel32_target(f + 0x168);
+    let take2 = img.rel32_target(fade + 0x75);
+    for (k, (on, listed, yaw)) in (0u32..).zip([
+        (0u32, false, 0.5f32),
+        (1, true, 3.0),
+        (1, false, -3.5),
+        (0, true, 6.0),
+    ]) {
+        t.set_u32(w(0x13b), on);
+        junk(&mut t, s + 0xa80, 0x480, k);
+        floats(&mut t, s + 0xbe0, 4, k);
+        setf(&mut t, s + 0x2450, yaw);
+        magic_r11::pools(&mut t, f, 380);
+        magic_r11::ring(
+            &mut t,
+            img.word(take + 0x04),
+            img.word(take + 0x17),
+            4,
+            SCRATCH + 0x5000,
+        );
+        magic_r11::ring(
+            &mut t,
+            img.word(take2 + 0x04),
+            img.word(take2 + 0x17),
+            4,
+            SCRATCH + 0x5400,
+        );
+        let tail = SCRATCH + 0x1800;
+        junk(&mut t, tail, 0x20, k);
+        t.set_u32(w(0x110), if listed { tail } else { 0 });
+        t.set_u32(w(0x123), tail);
+        ownb::dirty_stack(&mut t, 0x5200 + k, &[]);
+        let call = Call {
+            ecx: 0x0ecc_0000 + k,
+            ..Call::default()
+        };
+        t.check_entry(f, call, &[], Eax::Checked);
+    }
+}
