@@ -3718,3 +3718,309 @@ pub const TRI_PICK_0431: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `magic_0431`'s orbs' aim (0x100024c0, 2917 bytes; internal, no
+/// arguments; a 16-aligned /GS frame, `S` its base below the two pushes:
+/// the view `M0` at `S + 0x118`, `M1` at `S + 0x158`, `M2`/`M3` at `S +
+/// 0xd8`, the points `P0` at `S + 0x78`, `P1` at `S + 0x68`, the angles
+/// `Q` at `S + 0x88`, the corners at `S + 0x98`, `+0xa8`, `+0xb8`). With
+/// `S0 = *G_S` and the caster `A0`: `B` = slot 562 + 0x80000; `M0` = slot
+/// 210 `(A0)`; `P0` = the target's place (slot 262) at its bone 6's
+/// height (slot 268), `P1` = `A0`'s bone 16 (slot 268); `Q = (pitch,
+/// yaw, 0)` from `P0` to `P1` (`_CIatan2`, the yaw `K1 - a` wrapped
+/// once); `M1` = the turn by `K2 - yaw` (slots 235, 329); `M0 = M1 M0`
+/// (slot 231); `P1 = M1 (P1 - P0)` with `P0` the caster's place; the
+/// picked triangles ([`tri_pick_0431`], records in `B`). The three orb
+/// records `R = S0 + 0xc6c + 0x30 k` then get `Q` and a jitter of
+/// `frnd(0.0943)` on its pitch and yaw and `frnd(PI)` as roll:
+/// - with three triangles or more, a triangle drawn from each third of
+///   them (`rand`, ten tries for an unused one, else the next unused),
+///   its model and three corners, and the corners' face normal's pitch
+///   and yaw (slots 230, 231, 229, 232, scaled by the vector `K4`);
+///   returns a third of the count;
+/// - else the three matrices `S0 + 0x760 + 0x40 k` (identity), the
+///   points `S0 + 0x830 + 0x10 k` (moved by `M2 (5000, frnd 4000, frnd
+///   4000, 1)`, `M2` the turn by the pitch and yaw) and the caster's bone
+///   17 copied to the `S0 + 0x830..` blocks; returns the last matrix's
+///   end.
+///
+/// Each orb ends with slot 257 `(actor 2 + k, 1)`.
+#[allow(clippy::too_many_lines)] // the original's two branches, step by step
+pub fn orbs_aim_0431<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::ob_model::wrap_once;
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let c = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let rf = |g: &G, at: u32| g.read::<f32>(at);
+    let a = fr.esp.wrapping_sub(4) & !0xf;
+    let s = a.wrapping_sub(0x198 + 8);
+    let at = |o: u32| s.wrapping_add(o);
+    let (m0, m1, m2) = (at(0x118), at(0x158), at(0xd8));
+    let (p0, p1, q) = (at(0x78), at(0x68), at(0x88));
+    let s0 = g.read::<u32>(w(0x1b));
+    let sel = |g: &G, list: u32, table: u32, i: u32| {
+        let b = u32::from(g.read::<u8>(g.read::<u32>(w(list)).wrapping_add(i)));
+        g.read::<u32>(w(table).wrapping_add(4 * b))
+    };
+    let actor = |g: &G, k: u32, me: u32, list: u32, table: u32| {
+        if k == u32::MAX {
+            g.read::<u32>(w(me))
+        } else {
+            sel(g, list, table, k)
+        }
+    };
+    let b = g.call(t(g, 0x24, 562), 0, &[]).eax.wrapping_add(0x8_0000);
+    let a0 = sel(g, 0x34, 0x4c, 0);
+    g.call(t(g, 0x52, 210), 0, &[a0, m0]);
+    let tgt = g.read::<u32>(w(0x64));
+    for off in [0x150u32, 0x14c, 0x148] {
+        g.write::<u32>(at(off), 0);
+    }
+    g.call(t(g, 0x81, 262), 0, &[tgt, p0, p0 + 4, p0 + 8]);
+    g.call(t(g, 0xb8, 268), 0, &[tgt, 6, q]);
+    let qy = g.read::<u32>(q + 4);
+    g.write::<u32>(p0 + 4, qy);
+    g.write::<u32>(p0 + 0xc, ONE);
+    let a0 = sel(g, 0xd1, 0xf2, 0);
+    g.call(t(g, 0x106, 262), 0, &[a0, p1, p1 + 4, p1 + 8]);
+    g.call(t(g, 0x119, 268), 0, &[a0, 0x10, p1]);
+    let dy = sub(rf(g, p1 + 4), rf(g, p0 + 4));
+    let dx = sub(rf(g, p1), rf(g, p0));
+    let dz = sub(rf(g, p1 + 8), rf(g, p0 + 8));
+    g.write::<u32>(p1 + 0xc, ONE);
+    let h = f64::from(add(mul(dz, dz), mul(dx, dx))).sqrt();
+    let pitch_d = g.atan2(f64::from(dy), h);
+    g.write::<f64>(at(0x30), pitch_d);
+    #[allow(clippy::cast_possible_truncation)]
+    g.write::<f32>(q, pitch_d as f32);
+    let yaw = g.atan2(f64::from(dz), f64::from(dx));
+    #[allow(clippy::cast_possible_truncation)]
+    let ya = sub(c(g, 0x1ff), yaw as f32);
+    let ya = wrap_once(g, img, f, ya, [0x216, 0x20f, 0x22c, 0x20f]);
+    g.write::<f32>(at(0x10), ya);
+    g.write::<f32>(q + 4, ya);
+    g.write::<u32>(q + 8, 0);
+    g.call(t(g, 0x248, 235), 0, &[m1]);
+    let turn = sub(c(g, 0x26c), ya);
+    let turn = wrap_once(g, img, f, turn, [0x27c, 0x286, 0x290, 0x29d]);
+    g.call(t(g, 0x2b1, 329), 0, &[m1, m1, turn.to_bits()]);
+    g.call(t(g, 0x2d9, 231), 0, &[m0, m1, m0]);
+    let a0 = sel(g, 0x2e6, 0x30b, 0);
+    g.call(t(g, 0x310, 262), 0, &[a0, p0, p0 + 4, p0 + 8]);
+    g.write::<u32>(p0 + 0xc, ONE);
+    for i in 0..4u32 {
+        let x = sub(rf(g, p1 + 4 * i), rf(g, p0 + 4 * i));
+        g.write::<f32>(p1 + 4 * i, x);
+    }
+    g.call(t(g, 0x34d, 229), 0, &[p1, m1, p1]);
+    let tp_esp = s.wrapping_sub(8);
+    g.write::<u32>(tp_esp + 4, p1);
+    let n = tri_pick_0431(
+        g,
+        img,
+        &Frame {
+            at: img.rel32_target(f + 0x373),
+            esp: tp_esp,
+            ecx: b,
+            edx: m0,
+            ..Frame::default()
+        },
+    )
+    .eax;
+    // (`addss` operand order: the record's pitch first in the fallback)
+    let jitter = |g: &mut G, r: u32, o: (u32, u32, u32), record_first: bool| {
+        let x = st0_f32(g.call(t(g, o.0, 314), 0, &[0x3dc1_04fb]).st0);
+        let v = if record_first {
+            add(rf(g, r), x)
+        } else {
+            add(x, rf(g, r))
+        };
+        g.write::<f32>(r, v);
+        let x = st0_f32(g.call(t(g, o.1, 314), 0, &[0x3dc1_04fb]).st0);
+        let v = add(x, rf(g, r + 4));
+        g.write::<f32>(r + 4, v);
+        let x = st0_f32(g.call(t(g, o.2, 314), 0, &[0x4049_0fdb]).st0);
+        g.write::<f32>(r + 8, x);
+    };
+    let copy_q = |g: &mut G, r: u32| {
+        for i in 0..4u32 {
+            let v = g.read::<u32>(q + 4 * i);
+            g.write::<u32>(r + 4 * i, v);
+        }
+    };
+    if n.cast_signed() < 3 {
+        let mut r = s0 + 0xc6c;
+        let a0 = sel(g, 0x38a, 0x39e, 0);
+        g.call(t(g, 0x3b2, 262), 0, &[a0, p1, p1 + 4, p1 + 8]);
+        g.call(t(g, 0x3cd, 268), 0, &[a0, 0x11, p1]);
+        g.write::<u32>(p1 + 0xc, ONE);
+        g.write::<u32>(p0, 0x459c_4000);
+        g.write::<u32>(p0 + 0xc, ONE);
+        let mut eax = 0;
+        for k in 0..3u32 {
+            let m = s0 + 0x760 + 0x40 * k;
+            let pt = s0 + 0x830 + 0x10 * k;
+            let blk = s0 + 0x864 + 0x10 * k;
+            g.call(t(g, 0x422, 235), 0, &[m]);
+            for i in 0..4u32 {
+                let v = g.read::<u32>(p1 + 4 * i);
+                g.write::<u32>(blk - 0x34 + 4 * i, v);
+            }
+            let r1 = st0_f32(g.call(t(g, 0x435, 314), 0, &[0x457a_0000]).st0);
+            g.write::<f32>(p0 + 4, r1);
+            let r2 = st0_f32(g.call(t(g, 0x476, 314), 0, &[0x457a_0000]).st0);
+            g.write::<f32>(p0 + 8, r2);
+            g.call(t(g, 0x49c, 235), 0, &[m2]);
+            #[allow(clippy::cast_possible_truncation)]
+            let pitch = g.read::<f64>(at(0x30)) as f32;
+            g.call(t(g, 0x4c1, 328), 0, &[m2, m2, pitch.to_bits()]);
+            let ya = g.read::<u32>(at(0x10));
+            g.call(t(g, 0x4e5, 329), 0, &[m2, m2, ya]);
+            let v = at(0xc8);
+            g.write::<u32>(p0 + 0xc, ONE);
+            g.call(t(g, 0x50a, 229), 0, &[v, m2, p0]);
+            g.call(t(g, 0x533, 248), 0, &[pt, pt, v]);
+            g.write::<u32>(pt + 0xc, ONE);
+            for (to, from) in [
+                (0u32, 0x30u32),
+                (4, 0x2c),
+                (0xffff_fffc, 0x34),
+                (8, 0x28),
+                (0x30, 0x30),
+                (0x2c, 0x34),
+                (0x34, 0x2c),
+                (0x38, 0x28),
+            ] {
+                let v = g.read::<u32>(blk - from);
+                g.write::<u32>(blk.wrapping_add(to), v);
+            }
+            copy_q(g, r);
+            jitter(g, r, (0x586, 0x5bd, 0x5e4), true);
+            g.write::<u32>(r + 0x20, m);
+            g.write::<u32>(r + 0x28, pt + 0x30);
+            g.write::<u32>(r + 0x24, pt);
+            g.write::<u32>(r + 0x2c, pt + 0x60);
+            for (off, x) in [(0x10u32, 0u32), (0x14, 0xbfc9_0fdb), (0x18, 0), (0x1c, 0)] {
+                g.write::<u32>(r + off, x);
+            }
+            let who = actor(g, 2 + k, 0x642, 0x649, 0x654);
+            g.call(t(g, 0x65c, 257), 0, &[who, 1]);
+            eax = m + 0x40;
+            r += 0x30;
+        }
+        return Ret::eax(eax);
+    }
+    let a0 = sel(g, 0x6ac, 0x6b6, 0);
+    g.call(t(g, 0x6bb, 210), 0, &[a0, m0]);
+    let third = n.cast_signed() / 3;
+    for i in 0..4u32 {
+        g.write::<u32>(p0 + 4 * i, if i == 3 { ONE } else { 0 });
+    }
+    let mut r = s0 + 0xc6c;
+    let mut base = 0i32;
+    for k in 0..3u32 {
+        let mut tries = 0;
+        let mut j;
+        loop {
+            let rr = g.rand().cast_signed();
+            j = rr.wrapping_rem(third).wrapping_add(base);
+            tries += 1;
+            if g.read::<u32>(b.wrapping_add((12 * j).cast_unsigned()) + 4) != 0 || tries >= 10 {
+                break;
+            }
+        }
+        while g.read::<u32>(b.wrapping_add((12 * j).cast_unsigned()) + 4) == 0 {
+            j += 1;
+            if j > n.cast_signed() - 1 {
+                j = 0;
+            }
+        }
+        let rec = b.wrapping_add((12 * j).cast_unsigned());
+        copy_q(g, r);
+        jitter(g, r, (0x784, 0x7b9, 0x7e0), false);
+        let model = g.read::<u32>(rec);
+        g.write::<u32>(r + 0x20, model);
+        let (verts, tri) = (g.read::<u32>(rec + 4), g.read::<u32>(rec + 8));
+        for (i, off) in [0x24u32, 0x28, 0x2c].into_iter().enumerate() {
+            let idx = u32::from(g.read::<u16>(tri + 2 * i as u32));
+            g.write::<u32>(r + off, (idx << 4).wrapping_add(verts));
+        }
+        let m3 = m2;
+        g.call(t(g, 0x83e, 230), 0, &[m3, g.read::<u32>(r + 0x20)]);
+        let kk = c(g, 0x857);
+        for off in [0x30u32, 0x34, 0x38] {
+            let v = mul(rf(g, m3 + off), kk);
+            g.write::<f32>(m3 + off, v);
+        }
+        g.call(t(g, 0x8a4, 231), 0, &[m1, m0, m3]);
+        let corner = [at(0x98), at(0xa8), at(0xb8)];
+        for (i, (op, off)) in [(0x8d0u32, 0x24u32), (0x8f3, 0x28), (0x916, 0x2c)]
+            .into_iter()
+            .enumerate()
+        {
+            let src = g.read::<u32>(r + off);
+            g.call(t(g, op, 229), 0, &[corner[i], m1, src]);
+        }
+        let cv = |g: &G, i: usize, a: u32| rf(g, corner[i] + 4 * a);
+        let e2y = sub(cv(g, 2, 1), cv(g, 0, 1));
+        let e2z = sub(cv(g, 2, 2), cv(g, 0, 2));
+        let e2x = sub(cv(g, 2, 0), cv(g, 0, 0));
+        let e1y = sub(cv(g, 1, 1), cv(g, 0, 1));
+        let e1z = sub(cv(g, 1, 2), cv(g, 0, 2));
+        let e1x = sub(cv(g, 1, 0), cv(g, 0, 0));
+        let nx = sub(mul(e2z, e1y), mul(e2y, e1z));
+        let ny = sub(mul(e2x, e1z), mul(e2z, e1x));
+        let nz = sub(mul(e2y, e1x), mul(e2x, e1y));
+        let nv = p1;
+        for (i, x) in [nx, ny, nz, 1.0].into_iter().enumerate() {
+            g.write::<f32>(nv + 4 * i as u32, x);
+        }
+        g.call(t(g, 0x9c5, 232), 0, &[nv, nv]);
+        let kv = w(0x9f6);
+        let mut sc = [0.0f32; 4];
+        for i in 0..4u32 {
+            sc[i as usize] = mul(rf(g, nv + 4 * i), rf(g, kv + 4 * i));
+            g.write::<f32>(nv + 4 * i, sc[i as usize]);
+        }
+        let zz = sub(sc[2], rf(g, p0 + 8));
+        let xx = sub(sc[0], rf(g, p0));
+        let yy = sub(sc[1], rf(g, p0 + 4));
+        let h = f64::from(add(mul(zz, zz), mul(xx, xx))).sqrt();
+        let pitch = g.atan2(f64::from(yy), h);
+        #[allow(clippy::cast_possible_truncation)]
+        g.write::<f32>(r + 0x10, pitch as f32);
+        let yaw = g.atan2(f64::from(zz), f64::from(xx));
+        #[allow(clippy::cast_possible_truncation)]
+        let a2 = sub(c(g, 0xaba), yaw as f32);
+        let a2 = wrap_once(g, img, f, a2, [0xac9, 0xad3, 0xadd, 0xaea]);
+        g.write::<f32>(r + 0x14, a2);
+        g.write::<u32>(r + 0x18, 0);
+        let who = actor(g, 2 + k, 0xb04, 0xb0b, 0xb16);
+        g.call(t(g, 0xb1e, 257), 0, &[who, 1]);
+        base = base.wrapping_add(third);
+        g.write::<u32>(rec + 4, 0);
+        r += 0x30;
+    }
+    Ret::eax(third.cast_unsigned())
+}
+
+/// [`orbs_aim_0431`] (the `rel32`s: `_libm_sse2_sqrt_precise`, `_CIatan2`
+/// twice, the triangle pick, the cookie check, then the same three again
+/// and the second cookie check; `rand` through the IAT).
+pub const ORBS_AIM_0431: Sig = Sig {
+    len: 2917,
+    hash: 0x2c3c_7b20_1729_a734,
+    calls: &[
+        (0x198, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x1ab, Callee::Import("_CIatan2")),
+        (0x1ed, Callee::Import("_CIatan2")),
+        (0x373, Callee::Sig(&TRI_PICK_0431)),
+        (0x69b, Callee::Any),
+        (0xa51, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0xa64, Callee::Import("_CIatan2")),
+        (0xaa8, Callee::Import("_CIatan2")),
+        (0xb5d, Callee::Any),
+    ],
+    imports: &[(0x732, "rand")],
+};

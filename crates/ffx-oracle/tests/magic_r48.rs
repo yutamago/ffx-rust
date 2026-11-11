@@ -2326,3 +2326,187 @@ fn tri_pick_0431() {
         t.check(f, call, &[eye], Eax::Checked, ffx_magic::r48::tri_pick_0431);
     }
 }
+
+/// `magic_0431` 0x100024c0 (`r48::orbs_aim_0431`, internal): too few
+/// triangles (the three orbs aimed by the fallback) and enough (drawn
+/// from each third, `rand` landing on used and unused records).
+#[test]
+fn orbs_aim_0431() {
+    let Some(mut t) = sa::twin(431) else { return };
+    let f = t.at(0x24c0);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    let tp = img.rel32_target(f + 0x373);
+    let ft = img.rel32_target(tp + 0x68);
+    let wt = |o: u32| img.word(ft + o);
+    let fb = img.rel32_target(tp + 0x36);
+    let cr = img.rel32_target(tp + 0xf);
+    all_stubs(&mut t);
+    let models = SCRATCH + 0x8000;
+    let buf = SCRATCH + 0x1_8000;
+    rec(&mut t, 941, 1, move |_, a| models + 0x800 * (a[0] & 3));
+    rec(&mut t, 562, 0, move |_, _| buf);
+    for s in [230u32, 210] {
+        rec(&mut t, s, 2, move |m, a| {
+            let (dst, src) = if s == 230 { (a[0], a[1]) } else { (a[1], a[0]) };
+            for i in 0..16 {
+                let x = ((src >> 4) & 0xf) as f32 * 0.125 + i as f32 * 0.0625;
+                wf(m, dst + 4 * i, x);
+            }
+            s
+        });
+    }
+    rec(&mut t, 235, 1, |m, a| {
+        for i in 0..16 {
+            wf(m, a[0] + 4 * i, if i % 5 == 0 { 1.0 } else { 0.0 });
+        }
+        0x235
+    });
+    for s in [231u32, 329, 328, 248] {
+        rec(&mut t, s, 3, move |m, a| {
+            let n = if s == 248 { 4 } else { 16 };
+            for i in 0..n {
+                let y = if s == 231 || s == 248 {
+                    rf(m, a[2] + 4 * i)
+                } else {
+                    f32::from_bits(a[2])
+                };
+                let x = rf(m, a[1] + 4 * i) * 0.5 + y;
+                wf(m, a[0] + 4 * i, x);
+            }
+            s
+        });
+    }
+    rec(&mut t, 229, 3, |m, a| {
+        let mut out = [0.0f32; 4];
+        for i in 0..4 {
+            for j in 0..4 {
+                out[i as usize] += rf(m, a[1] + 16 * j + 4 * i) * rf(m, a[2] + 4 * j);
+            }
+        }
+        out[3] = out[3].abs() + 1.0;
+        for i in 0..4 {
+            let log = SCRATCH + 0x3_e100 + 4 * i;
+            m.w32(log, m.r32(log) ^ m.r32(a[2] + 4 * i));
+            wf(m, a[0] + 4 * i, out[i as usize]);
+        }
+        0x229
+    });
+    rec(&mut t, 232, 2, |m, a| {
+        let v: Vec<f32> = (0..3).map(|i| rf(m, a[1] + 4 * i)).collect();
+        let n = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt().max(1e-3);
+        for i in 0..3 {
+            wf(m, a[0] + 4 * i as u32, v[i] / n);
+        }
+        0x232
+    });
+    rec(&mut t, 262, 4, |m, a| {
+        for i in 1..4 {
+            wf(m, a[i], (a[0] & 0xf) as f32 * 0.75 + i as f32 - 3.0);
+        }
+        0x262
+    });
+    rec(&mut t, 268, 3, |m, a| {
+        for i in 0..4 {
+            wf(
+                m,
+                a[2] + 4 * i,
+                (a[0] & 7) as f32 * 0.5 + (a[1] + i) as f32 * 0.25,
+            );
+        }
+        0x268
+    });
+    rec(&mut t, 314, 1, |_, a| 0x0314_0000 ^ a[0]);
+    t.stub_st0(314, |m, a| {
+        let k = m.r32(SCRATCH + 0x3_e000);
+        m.w32(SCRATCH + 0x3_e000, k + 1);
+        f64::from(f32::from_bits(a[0])) * (f64::from(k % 7) / 7.0 - 0.5)
+    });
+    rec(&mut t, 257, 2, |_, a| 0x0257_0000 ^ a[0] ^ a[1]);
+    for o in [0x34u32, 0xd1, 0x2e6, 0x38a, 0x6ac, 0x649, 0xb0b] {
+        t.set_u32(w(o), SCRATCH + 0x700);
+    }
+    t.write(SCRATCH + 0x700, &[3, 2, 1, 0, 4, 5]);
+    for o in [0x4cu32, 0xf2, 0x30b, 0x39e, 0x6b6, 0x654, 0xb16] {
+        for i in 0..8 {
+            t.set_u32(w(o) + 4 * i, 0x0b00_0010 + 3 * i);
+        }
+    }
+    t.set_u32(w(0x64), 0x0b00_0099);
+    // the pick's set-up (tri_pick_0431's test)
+    t.set_u32(img.word(cr + 1), SCRATCH + 0x700);
+    junk_ops(&mut t, cr, &[0x11, 0x4c]);
+    setf(&mut t, img.word(fb + 0xee), 0.5);
+    setf(&mut t, img.word(fb + 0x172), 2.0);
+    for (op, x) in [
+        (0x41u32, 0.5f32),
+        (0x1b2, 3.0),
+        (0x2bd, 1.0),
+        (0x394, 1.5),
+        (0x3a3, std::f32::consts::PI),
+        (0x3ad, std::f32::consts::TAU),
+        (0x3b7, -std::f32::consts::PI),
+        (0x3c4, std::f32::consts::TAU),
+        (0x3d1, 3.0),
+        (0x3db, -3.0),
+        (0x3f1, 3.0),
+    ] {
+        setf(&mut t, wt(op), x);
+    }
+    for (op, x) in [
+        (0x1ff, 1.5f32),
+        (0x216, std::f32::consts::PI),
+        (0x20f, std::f32::consts::TAU),
+        (0x22c, -std::f32::consts::PI),
+        (0x26c, 0.25),
+        (0x857, 0.5),
+        (0xaba, 1.5),
+    ] {
+        setf(&mut t, w(op), x);
+    }
+    for i in 0..4u32 {
+        setf(&mut t, w(0x9f6) + 4 * i, 1.0 + i as f32 * 0.5);
+    }
+    let set = SCRATCH + 0x100;
+    t.set_u32(img.word(tp + 0x1a), set);
+    t.set_u32(wt(0x47), set);
+    let s0 = SCRATCH + 0x1_0000;
+    t.set_u32(w(0x1b), s0);
+    for (k, prims) in (0u32..).zip([2i16, 12, 9]) {
+        junk(&mut t, s0, 0xd40, k);
+        junk(&mut t, set, 0x40, k);
+        t.write(set + 4, &1u16.to_le_bytes());
+        t.set_u32(set + 0x10, 1);
+        t.set_u32(set + 0x14, 3);
+        let at = models + 0x800;
+        junk(&mut t, at, 0x800, k);
+        t.set_u32(at + 4, 0x40);
+        t.set_u32(at + 8, 0x400);
+        t.write(at + 0x12, &6u16.to_le_bytes());
+        t.write(at + 0x10, &prims.to_le_bytes());
+        t.write(at + 0x41, &[0x10]);
+        t.write(at + 0x42, &prims.to_le_bytes());
+        for tn in 0..prims as u32 {
+            for c in 0..3u32 {
+                t.write(
+                    at + 0x60 + 0x1c * tn + 2 * c,
+                    &(((tn + c * 2) % 6) as u16).to_le_bytes(),
+                );
+            }
+        }
+        for i in 0..24u32 {
+            let v = ((i * 7 + k * 5) % 23) as f32 * 0.25 - 2.75;
+            setf(&mut t, at + 0x400 + 4 * i, v);
+        }
+        floats(&mut t, models + 0x800 * 3, 16, k);
+        junk(&mut t, buf + 0x8_0000, 0x200, k);
+        ownb::dirty_stack(&mut t, 0x24c0 + k, &[]);
+        t.check(
+            f,
+            Call::default(),
+            &[],
+            Eax::Checked,
+            ffx_magic::r48::orbs_aim_0431,
+        );
+    }
+}
