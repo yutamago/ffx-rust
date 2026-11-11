@@ -1701,3 +1701,304 @@ pub const GLOW_SETUP_0387: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `magic_0387`'s laser task (0x1000c4a0, 572 bytes; cdecl `(T)`, `N =
+/// T[4]`; an aligned frame `A`, `S = A - 0x38`: the record `R` at `S +
+/// 0xc`, `V` at `S + 0x24`). By the state `N[0x18]` (states 0x41..0x44
+/// through a jump table), the wait `N[0x1c]` and the count `N[0x20]`
+/// down by one at every return:
+/// - 0: once `N[0xbb8]` is at least 0x50, the particle node from
+///   `R = (N + 0x5b0, K_L, N + 0x464, *G_P, K_T, 1)`, state 0x10 (run
+///   on);
+/// - 0x10: the wait 8, state 0x11; 0x11: once the wait is out, `u16
+///   N[0x72a]` = 1, state 0x40 (run on);
+/// - 0x40: state 0x41, the wait 0, the count 4; when `N[0xbb8]` is at
+///   least 0x80 the sprite `N + 0x5b0` takes `V = (1, 1, 1, 0)` and 8
+///   ([`sprite_size`](crate::m0387::sprite_size)) and the state goes
+///   on to 0x42; then as 0x42;
+/// - 0x42: unless `i16 N[0x694]` is positive, `u16 N[0x72a]` 0 and the
+///   next state; then as 0x43;
+/// - 0x43: once the count is out: while the wait is out byte `N[0xb18]
+///   += 3` and the wait 2; at 0x30 or more the next state, the wait 10;
+/// - 0x44: once the wait is out, state 0x1000 (run on);
+/// - 0x1000: once `N[0xbb8]` has bit 0x2000 and byte `N[0x698]` bit 4:
+///   five nodes leave, `T[0]` is unlinked, state 0x2000.
+///
+/// Returns the last value in `eax`.
+#[allow(clippy::too_many_lines)] // the states
+pub fn laser_task_0387<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let tk = fr.arg(g, 0);
+    let n = g.read::<u32>(tk + 4);
+    let a = fr.esp.wrapping_sub(4) & !7;
+    let s0 = a.wrapping_sub(0x38);
+    let (r, v) = (s0 + 0xc, s0 + 0x24);
+    let end = |g: &mut G, eax: u32| {
+        for off in [0x1c, 0x20] {
+            let c = g.read::<u32>(n + off);
+            g.write::<u32>(n + off, c.wrapping_sub(1));
+        }
+        Ret::eax(eax)
+    };
+    let wait_out = |g: &G| g.read::<u32>(n + 0x1c).cast_signed() <= 0;
+    loop {
+        let state = g.read::<u32>(n + 0x18);
+        // the jump table's entry for 0x41..0x44 (read, as the original)
+        let entry = |i: u32| img.word(w(0xe7) + 4 * i).wrapping_sub(f);
+        let mut at = match state {
+            0 => 0x6e,
+            0x10 => 0x49,
+            0x11 => 0x54,
+            0x40 => 0x101,
+            0x1000 => 0x1a7,
+            0x41..=0x44 => entry(state - 0x41),
+            s if s > 0x40 && s < 0x1000 => return end(g, s - 0x41),
+            s => return end(g, s),
+        };
+        let mut eax = if (0x41..=0x44).contains(&state) {
+            state - 0x41
+        } else {
+            state
+        };
+        loop {
+            match at {
+                0x6e => {
+                    if g.read::<u32>(n + 0xbb8) < 0x50 {
+                        return end(g, eax);
+                    }
+                    let pp = g.read::<u32>(w(0x8c));
+                    g.write::<u32>(n + 0x5b0, w(0x96));
+                    for (i, x) in [n + 0x5b0, w(0xa2), n + 0x464, pp, w(0xae), 1]
+                        .into_iter()
+                        .enumerate()
+                    {
+                        g.write::<u32>(r + 4 * i as u32, x);
+                    }
+                    crate::sb_nodes::particle_node(g, img, img.rel32_target(f + 0xb7), r);
+                    g.write::<u32>(n + 0x18, 0x10);
+                    break;
+                }
+                0x49 => {
+                    g.write::<u32>(n + 0x1c, 8);
+                    g.write::<u32>(n + 0x18, 0x11);
+                    eax = 0x11;
+                    at = 0x54;
+                }
+                0x54 => {
+                    if !wait_out(g) {
+                        return end(g, eax);
+                    }
+                    g.write::<u16>(n + 0x72a, 1);
+                    g.write::<u32>(n + 0x18, 0x40);
+                    break;
+                }
+                0x101 => {
+                    let st = g.read::<u32>(n + 0x18).wrapping_add(1);
+                    g.write::<u32>(n + 0x18, st);
+                    g.write::<u32>(n + 0x1c, 0);
+                    g.write::<u32>(n + 0x20, 4);
+                    if g.read::<u32>(n + 0xbb8) >= 0x80 {
+                        for (i, x) in [ONE, ONE, ONE, 0].into_iter().enumerate() {
+                            g.write::<u32>(v + 4 * i as u32, x);
+                        }
+                        let esp = s0.wrapping_sub(8);
+                        g.write::<u32>(esp + 4, 8);
+                        crate::m0387::sprite_size(
+                            g,
+                            img,
+                            &Frame {
+                                at: img.rel32_target(f + 0x14b),
+                                esp,
+                                ecx: n + 0x5b0,
+                                edx: v,
+                                ..Frame::default()
+                            },
+                        );
+                        let st = g.read::<u32>(n + 0x18).wrapping_add(1);
+                        g.write::<u32>(n + 0x18, st);
+                    }
+                    at = 0x155;
+                }
+                0x155 => {
+                    eax = g.read::<u32>(n + 0x18);
+                    if eax >= 0x42 && g.read::<i16>(n + 0x694) <= 0 {
+                        g.write::<u16>(n + 0x72a, 0);
+                        eax += 1;
+                        g.write::<u32>(n + 0x18, eax);
+                    }
+                    at = 0x174;
+                }
+                0x174 => {
+                    if g.read::<u32>(n + 0x20).cast_signed() > 0 {
+                        return end(g, eax);
+                    }
+                    if wait_out(g) {
+                        let b = g.read::<u8>(n + 0xb18).wrapping_add(3);
+                        g.write::<u8>(n + 0xb18, b);
+                        g.write::<u32>(n + 0x1c, 2);
+                    }
+                    if g.read::<u8>(n + 0xb18) >= 0x30 {
+                        let st = g.read::<u32>(n + 0x18).wrapping_add(1);
+                        g.write::<u32>(n + 0x18, st);
+                        g.write::<u32>(n + 0x1c, 10);
+                    }
+                    return end(g, eax);
+                }
+                0xeb => {
+                    if !wait_out(g) {
+                        return end(g, eax);
+                    }
+                    g.write::<u32>(n + 0x18, 0x1000);
+                    break;
+                }
+                _ => {
+                    // 0x1a7: state 0x1000
+                    if g.read::<u32>(n + 0xbb8) & 0x2000 == 0 || g.read::<u8>(n + 0x698) & 4 == 0 {
+                        return end(g, eax);
+                    }
+                    for off in [0x464, 0x438, 0xb2c, 0x730, 0x6b0] {
+                        crate::sa_misc::leave(g, n + off, 0);
+                    }
+                    let eax = unlink_task(g, tk);
+                    g.write::<u32>(n + 0x18, 0x2000);
+                    return end(g, eax);
+                }
+            }
+        }
+    }
+}
+
+/// [`laser_task_0387`] (the `rel32`s: the particle node, the sprite
+/// size, five node leaves, the cookie check).
+pub const LASER_TASK_0387: Sig = Sig {
+    len: 572,
+    hash: 0x07cd_fe69_2fa9_6a39,
+    calls: &[
+        (0xb7, Callee::Sig(&crate::sb_nodes::PARTICLE_NODE)),
+        (0x14b, Callee::Sig(&crate::m0387::SPRITE_SIZE)),
+        (0x1c3, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0x1ce, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0x1d9, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0x1e4, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0x1ef, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0x224, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// `magic_0387`'s laser set-up (0x1000c6e0, 661 bytes; internal, `ecx`
+/// = the task `N`, `edx` = `X`, stack `(a0)`; the records `R` at `ebp -
+/// 0x18` and `R2` at `ebp - 0x14`): `N` is linked as a task (callback
+/// [`laser_task_0387`]); the strip node `N + 0x6b0`
+/// ([`strip_record`](crate::m0387::strip_record) with `(G0, N + 0x38,
+/// 0x100040, X)`, class `K_S`); with the draws `r1`, `r2`, `r3` (slot
+/// 324) `N[0x70c] = ((r2 & 0x1000) + 0x1800) (1 - (r1 & 2))`,
+/// `N[0x710] = ((r3 & 0x1000) + 0x1800) (1 - ((r1 >> 1) & 2))`,
+/// `N[0x714]` 0; the sprite node `N + 0x730`
+/// ([`sprite_record`](crate::m0387::sprite_record) with `(K_L, N +
+/// 0x6b0, slot 719 (K_E, 9, 1))`, class `K_P`); under the root `G0`: `S
+/// = N + 0xb2c` (`S[0x2c]` = `N + 0x6b0`, `S[0x30]` 0), `D = N + 0x438`
+/// (`N[0x454..0x460] = (1, 1, 1, 0.5)`) and `E = N + 0x464`
+/// (`E[0x13c..0x144] = (S, D, K_T)`, `E[0x128]` = `K_O`, byte
+/// `E[0x148]` 0); the glow at `N + 0xba0` ([`glow_setup_0387`] with
+/// `S` and `a0`); state `N[0x18]` 0. Returns the glow set-up's `eax`.
+pub fn laser_setup_0387<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let (n, x) = (fr.ecx, fr.edx);
+    let ebp = fr.esp.wrapping_sub(4);
+    let (r, r2) = (ebp.wrapping_sub(0x18), ebp.wrapping_sub(0x14));
+    task_link(g, img, f, n, [0x12, 0x19, 0x21, 0x2b, 0x30, 0x3f, 0x4d]);
+    let strip = n + 0x6b0;
+    for (i, v) in [strip, w(0x57), n + 0x38, 0x0010_0040, x]
+        .into_iter()
+        .enumerate()
+    {
+        g.write::<u32>(r + 4 * i as u32, v);
+    }
+    let fr1 = Frame {
+        at: img.rel32_target(f + 0x69),
+        esp: ebp.wrapping_sub(0x28),
+        ecx: r,
+        ..Frame::default()
+    };
+    crate::m0387::strip_record(g, img, &fr1);
+    g.write::<u32>(strip, w(0x74));
+    let draw = |g: &mut G, op: u32| g.call(slot_target(g, w(op), 324), 0, &[]).eax;
+    let r1 = draw(g, 0x6e);
+    let rr = draw(g, 0x82);
+    let side = 1u32.wrapping_sub(r1 & 2);
+    g.write::<u32>(n + 0x70c, ((rr & 0x1000) + 0x1800).wrapping_mul(side));
+    let rr = draw(g, 0xb2);
+    let side = 1u32.wrapping_sub((r1.cast_signed() >> 1).cast_unsigned() & 2);
+    g.write::<u32>(n + 0x710, ((rr & 0x1000) + 0x1800).wrapping_mul(side));
+    g.write::<u32>(n + 0x714, 0);
+    let sp = n + 0x730;
+    g.write::<u32>(r2, sp);
+    g.write::<u32>(r2 + 4, w(0x108));
+    g.write::<u32>(r2 + 8, strip);
+    let e = g
+        .call(slot_target(g, w(0xd9), 719), 0, &[w(0xfe), 9, 1])
+        .eax;
+    g.write::<u32>(r2 + 0xc, e);
+    let fr2 = Frame {
+        at: img.rel32_target(f + 0x11b),
+        esp: ebp.wrapping_sub(0x28),
+        ecx: r2,
+        ..Frame::default()
+    };
+    crate::m0387::sprite_record(g, img, &fr2);
+    g.write::<u32>(sp, w(0x121));
+    let root = w(0x13a);
+    let s = n + 0xb2c;
+    root_append(g, s, root, w(0x17d));
+    g.write::<u32>(s + 0x2c, strip);
+    g.write::<u32>(s + 0x30, 0);
+    let d = n + 0x438;
+    root_append(g, d, root, w(0x1cf));
+    for (off, v) in [
+        (0x454, ONE),
+        (0x458, ONE),
+        (0x45c, ONE),
+        (0x460, 0x3f00_0000),
+    ] {
+        g.write::<u32>(n + off, v);
+    }
+    let el = n + 0x464;
+    root_append(g, el, root, w(0x203));
+    let a0 = fr.arg(g, 0);
+    g.write::<u32>(el + 0x140, d);
+    g.write::<u32>(el + 0x13c, s);
+    g.write::<u32>(el + 0x144, w(0x262));
+    g.write::<u32>(el + 0x128, w(0x26c));
+    g.write::<u8>(el + 0x148, 0);
+    let esp = ebp.wrapping_sub(0x2c);
+    g.write::<u32>(esp + 4, a0);
+    let ret = glow_setup_0387(
+        g,
+        img,
+        &Frame {
+            at: img.rel32_target(f + 0x280),
+            esp,
+            ecx: n + 0xba0,
+            edx: s,
+            ..Frame::default()
+        },
+    );
+    g.write::<u32>(n + 0x18, 0);
+    Ret::eax(ret.eax)
+}
+
+/// [`laser_setup_0387`] (the `rel32`s: the strip record, the sprite
+/// record, the glow set-up).
+pub const LASER_SETUP_0387: Sig = Sig {
+    len: 661,
+    hash: 0x7845_a0c9_06cc_3e35,
+    calls: &[
+        (0x69, Callee::Sig(&crate::m0387::STRIP_RECORD)),
+        (0x11b, Callee::Sig(&crate::m0387::SPRITE_RECORD)),
+        (0x280, Callee::Sig(&GLOW_SETUP_0387)),
+    ],
+    imports: &[],
+};

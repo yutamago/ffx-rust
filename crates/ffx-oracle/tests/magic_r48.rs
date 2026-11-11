@@ -1086,3 +1086,126 @@ fn glow_setup_0387() {
         );
     }
 }
+
+/// `magic_0387` 0x1000c4a0 (`r48::laser_task_0387`): every state and
+/// its gates (the `N[0xbb8]` levels, the waits, the count, `N[0x694]`,
+/// the byte counter reaching 0x30), unknown states on both sides.
+#[test]
+fn laser_task_0387() {
+    let Some(mut t) = sa::twin(387) else { return };
+    let f = t.at(0xc4a0);
+    all_stubs(&mut t);
+    copy_325(&mut t);
+    rec(&mut t, 941, 1, |_, a| a[0] ^ 0x0941_0000);
+    particle_globals(&mut t, f, 0xb7);
+    let (tk, d, prev, next, n) = (
+        SCRATCH + 0x100,
+        SCRATCH + 0x140,
+        SCRATCH + 0x180,
+        SCRATCH + 0x1c0,
+        SCRATCH + 0x1_0000,
+    );
+    let plist = t.img.word(f + 0xa2);
+    junk_ops(&mut t, f, &[0x8c]);
+    // (state, wait, count, N[0xbb8], i16 N[0x694], byte N[0xb18], byte N[0x698])
+    for (k, (state, wait, count, lvl, h, b, g8)) in (0u32..).zip([
+        (0u32, 1u32, 1u32, 0x4fu32, 0i16, 0u8, 0u8),
+        (0, 1, 1, 0x50, 0, 0, 0),
+        (0x10, 1, 1, 0x50, 0, 0, 0),
+        (0x11, 0xffff_ffff, 1, 0x50, 0, 0, 0),
+        (0x11, 3, 1, 0x50, 0, 0, 0),
+        (0x40, 3, 1, 0x7f, 0, 0, 0),
+        (0x40, 3, 1, 0x80, 1, 0, 0),
+        (0x40, 3, 1, 0x80, 0, 0x2d, 0),
+        (0x42, 0, 0, 0x80, -1, 0x2c, 0),
+        (0x43, 0, 0, 0x80, 0, 0x2d, 0),
+        (0x43, 2, 0, 0x80, 0, 0x30, 0),
+        (0x43, 2, 0, 0x80, 0, 0x2f, 0),
+        (0x43, 2, 3, 0x80, 0, 0x2f, 0),
+        (0x44, 1, 3, 0x80, 0, 0, 0),
+        (0x44, 0, 3, 0x2000, 0, 0, 0xfb),
+        (0x44, 0, 3, 0x1fff, 0, 0, 0x04),
+        (0x1000, 0, 3, 0x2000, 0, 0, 0x04),
+        (0x45, 0, 3, 0x2000, 0, 0, 0x04),
+        (0x2000, 0, 3, 0x2000, 0, 0, 0x04),
+        (0x30, 0, 3, 0x2000, 0, 0, 0x04),
+    ]) {
+        junk(&mut t, n, 0xc00, k);
+        t.set_u32(n + 0x18, state);
+        t.set_u32(n + 0x1c, wait);
+        t.set_u32(n + 0x20, count);
+        t.set_u32(n + 0xbb8, lvl);
+        t.write(n + 0x694, &h.to_le_bytes());
+        t.write(n + 0xb18, &[b]);
+        t.write(n + 0x698, &[g8]);
+        for off in [0x464u32, 0x438, 0xb2c, 0x730, 0x6b0] {
+            t.set_u32(n + off + 0x14, 0);
+        }
+        let (node, parent) = (n + 0x730, SCRATCH + 0x300);
+        t.set_u32(node + 0x14, parent);
+        t.set_u32(node + 4, parent);
+        t.set_u32(node + 8, parent);
+        t.set_u32(parent + 0xc, node);
+        t.set_u32(parent + 0x10, node);
+        t.set_u16(parent + 0x18, 3);
+        junk(&mut t, plist, 0x20, k);
+        t.set_u32(plist + 0x10, plist);
+        t.set_u32(tk, d);
+        t.set_u32(tk + 4, n);
+        for (a, b, c) in [(d, prev, next), (prev, next, d), (next, d, prev)] {
+            t.set_u32(a + 4, b);
+            t.set_u32(a + 8, c);
+        }
+        ownb::dirty_stack(&mut t, 0xc4a0 + k, &[]);
+        t.check_entry(f, Call::default(), &[tk], Eax::Checked);
+    }
+}
+
+/// `magic_0387` 0x1000c6e0 (`r48::laser_setup_0387`, internal): the draws
+/// varied (both sides' signs), the root with and without children.
+#[test]
+fn laser_setup_0387() {
+    let Some(mut t) = sa::twin(387) else { return };
+    let f = t.at(0xc6e0);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    let gs = img.rel32_target(f + 0x280);
+    all_stubs(&mut t);
+    for (s, n) in [(941u32, 1), (676, 3), (678, 1), (325, 2), (719, 3)] {
+        rec(&mut t, s, n, move |_, a| a[0] ^ (s << 16));
+    }
+    let row = SCRATCH + 0x3_e000;
+    rec(&mut t, 324, 0, move |m, _| {
+        let k = m.r32(row);
+        m.w32(row, k + 1);
+        0x0e01_0000_u32.wrapping_add(0x0a07 * k) ^ (k << 12)
+    });
+    particle_globals(&mut t, gs, 0x2ce);
+    junk_ops(&mut t, gs, &[0x273]);
+    let (n, last, kid) = (SCRATCH + 0x1_0000, SCRATCH + 0x200, SCRATCH + 0x300);
+    let root = w(0x57);
+    let plist = img.word(gs + 0x2b5);
+    for k in 0..4u32 {
+        junk(&mut t, n, 0x3f00, k);
+        junk(&mut t, last, 0x10, k);
+        t.set_u32(w(0x21), last);
+        t.set_u32(w(0x3f), 0x0f0f_0f0f + k);
+        junk(&mut t, root, 0x20, k);
+        t.set_u32(root + 0x10, if k == 1 { kid } else { root });
+        junk(&mut t, plist, 0x20, k + 1);
+        t.set_u32(plist + 0x10, plist);
+        let call = Call {
+            ecx: n,
+            edx: 0x0e0e_0000 + k,
+            ..Call::default()
+        };
+        ownb::dirty_stack(&mut t, 0xc6e0 + k, &[]);
+        t.check(
+            f,
+            call,
+            &[0x0a0a_0000 + k],
+            Eax::Checked,
+            ffx_magic::r48::laser_setup_0387,
+        );
+    }
+}
