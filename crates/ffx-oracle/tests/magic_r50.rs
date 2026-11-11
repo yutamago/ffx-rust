@@ -437,7 +437,11 @@ fn burst_task_0387() {
         0x908
     });
     // slot 910 reads its `&Q`
-    rec(&mut t, 910, 4, |m, a| m.r32(a[2]) ^ 0x0910_0000);
+    rec(&mut t, 910, 4, |m, a| {
+        let q = m.r32(a[2]);
+        m.w32(BURST_LOG + 0x14, m.r32(BURST_LOG + 0x14).rotate_left(1) ^ q);
+        0x0910_0000
+    });
     for (s, n) in [
         (907u32, 5usize),
         (909, 2),
