@@ -2331,9 +2331,10 @@ fn summon_task_0164() {
         [(7, 0, 0, 0, 0), (0x1a0, 0, 0, 0, 0), (0x3000, 0, 0, 0, 0)];
     // the globals the states store to (the block the code names): floats
     // first, the pointers and lists set after
-    let lo = w(&t, 0x9a) & !0xfff;
+    // (from the summon block's page up)
+    let lo = t.img.word(t.at(0x8e40) + 0x11) & !0xfff;
     for (k, (state, n38, r1, r2, flag)) in (0u32..).zip(cases.into_iter().chain(more)) {
-        for i in 0..0x1600u32 {
+        for i in 0..0x1800u32 {
             let x = 1.25 + ((i * 13 + k) % 61) as f32 * 0.0625;
             t.set_u32(lo + 4 * i, x.to_bits());
         }
