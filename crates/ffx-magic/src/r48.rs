@@ -2002,3 +2002,125 @@ pub const LASER_SETUP_0387: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `magic_0387`'s lasers set-up (0x1000d000, 786 bytes; internal, `ecx`
+/// = the task `N`, `edx` = the effect `E`, stack `(a0, a1, a2)`; the
+/// records `R` at `ebp - 0x10` and `R2` at `ebp - 0x24`): `N` is linked
+/// as a task (callback the lasers task at 0x1000c980); under the root
+/// `G0`: `B = N + 0x2c` (slot 325 `(N + 0x48, a0)`), `C = N + 0x160`
+/// ([`time_left`](crate::m0042::time_left) of `E` into `N + 0x17c`), `D
+/// = N + 0x1b8` (`D[0x13c..0x144] = (B, K_P, C)`, `D[0x128]` = `K_O`,
+/// byte `D[0x148]` 0) and `F = N + 0x18c` (`N[0x1a8..0x1b0] = (0,
+/// 0x4000, 0)`); the bone node `N + 0x6e8`
+/// ([`node_init_big`](crate::m0070::node_init_big) with `(G0, K_A, F,
+/// K_P)`, class `K_B`, `N[0x838]` = 0x6f, `N[0x834]` = `E[0x54]`); the
+/// two lasers at `N + 0xb80` and `N + 0x4b90` ([`laser_setup_0387`]
+/// with `D` and the bone node), each followed by its own constants;
+/// `N[0x28] = a2`, `N[0x24] = a1`, the state `N[0x18]` 0. Returns `a1`.
+pub fn lasers_setup_0387<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let (n, e) = (fr.ecx, fr.edx);
+    let ebp = fr.esp.wrapping_sub(4);
+    let (r, r2) = (ebp.wrapping_sub(0x10), ebp.wrapping_sub(0x24));
+    task_link(g, img, f, n, [0x15, 0x1c, 0x24, 0x2e, 0x33, 0x3f, 0x46]);
+    let root = w(0x59);
+    let b = n + 0x2c;
+    root_append(g, b, root, w(0xa1));
+    let a0 = fr.arg(g, 0);
+    g.call(slot_target(g, w(0x95), 325), 0, &[n + 0x48, a0]);
+    let c = n + 0x160;
+    root_append(g, c, root, w(0xb8));
+    g.write::<u32>(r, e);
+    g.write::<u32>(r + 4, n + 0x17c);
+    crate::m0042::time_left(
+        g,
+        img,
+        img.rel32_target(f + 0x112),
+        r,
+        ebp.wrapping_sub(0x38),
+    );
+    let d = n + 0x1b8;
+    root_append(g, d, root, w(0x11e));
+    g.write::<u32>(d + 0x13c, b);
+    g.write::<u32>(d + 0x140, w(0x174));
+    g.write::<u32>(d + 0x128, w(0x17e));
+    g.write::<u8>(d + 0x148, 0);
+    g.write::<u32>(d + 0x144, c);
+    let fv = n + 0x18c;
+    root_append(g, fv, root, w(0x19d));
+    let bone = n + 0x6e8;
+    for (off, v) in [(0x1a8, 0), (0x1ac, 0x4000), (0x1b0, 0)] {
+        g.write::<u32>(n + off, v);
+    }
+    for (i, v) in [bone, w(0x217), w(0x21e), fv, w(0x225)]
+        .into_iter()
+        .enumerate()
+    {
+        g.write::<u32>(r2 + 4 * i as u32, v);
+    }
+    crate::m0070::node_init_big(g, r2);
+    g.write::<u32>(bone, w(0x233));
+    g.write::<u32>(n + 0x838, 0x6f);
+    let x = g.read::<u32>(e + 0x54);
+    g.write::<u32>(n + 0x834, x);
+    let esp = ebp.wrapping_sub(0x3c);
+    let laser = |g: &mut G, at: u32, ecx: u32| {
+        g.write::<u32>(esp + 4, bone);
+        laser_setup_0387(
+            g,
+            img,
+            &Frame {
+                at: img.rel32_target(f + at),
+                esp,
+                ecx,
+                edx: d,
+                ..Frame::default()
+            },
+        );
+    };
+    laser(g, 0x254, n + 0xb80);
+    for (off, v) in [
+        (0x125c, 0xc270_0000),
+        (0x1260, 0),
+        (0x1264, 0x41f0_0000),
+        (0x126c, 0x41a0_0000),
+        (0x49c0, 0x4118_0000),
+        (0x49c4, ONE),
+        (0x49c8, 0xc128_0000),
+    ] {
+        g.write::<u32>(n + off, v);
+    }
+    laser(g, 0x2ab, n + 0x4b90);
+    let a2 = fr.arg(g, 2);
+    g.write::<u32>(n + 0x28, a2);
+    let a1 = fr.arg(g, 1);
+    for (off, v) in [
+        (0x526c, 0xc270_0000),
+        (0x5270, 0),
+        (0x5274, 0xc1f0_0000),
+        (0x527c, 0x41a0_0000),
+        (0x89d0, 0xc118_0000),
+        (0x89d4, ONE),
+        (0x89d8, 0xc128_0000),
+    ] {
+        g.write::<u32>(n + off, v);
+    }
+    g.write::<u32>(n + 0x24, a1);
+    g.write::<u32>(n + 0x18, 0);
+    Ret::eax(a1)
+}
+
+/// [`lasers_setup_0387`] (the `rel32`s: the time left, the big node init,
+/// the two laser set-ups).
+pub const LASERS_SETUP_0387: Sig = Sig {
+    len: 786,
+    hash: 0xe5f5_439d_8ea8_d0e3,
+    calls: &[
+        (0x112, Callee::Sig(&crate::m0042::TIME_LEFT)),
+        (0x22a, Callee::Sig(&crate::m0070::NODE_INIT_BIG)),
+        (0x254, Callee::Sig(&LASER_SETUP_0387)),
+        (0x2ab, Callee::Sig(&LASER_SETUP_0387)),
+    ],
+    imports: &[],
+};

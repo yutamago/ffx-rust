@@ -1118,6 +1118,8 @@ fn laser_task_0387() {
         (0x40, 3, 1, 0x80, 1, 0, 0),
         (0x40, 3, 1, 0x80, 0, 0x2d, 0),
         (0x42, 0, 0, 0x80, -1, 0x2c, 0),
+        // (b7 test gap: 0 itself; the sprite size writes 8 there on the 0x40 path)
+        (0x42, 0, 3, 0x80, 0, 0x2c, 0),
         (0x43, 0, 0, 0x80, 0, 0x2d, 0),
         (0x43, 2, 0, 0x80, 0, 0x30, 0),
         (0x43, 2, 0, 0x80, 0, 0x2f, 0),
@@ -1206,6 +1208,75 @@ fn laser_setup_0387() {
             &[0x0a0a_0000 + k],
             Eax::Checked,
             ffx_magic::r48::laser_setup_0387,
+        );
+    }
+}
+
+/// `magic_0387` 0x1000d000 (`r48::lasers_setup_0387`, internal): the
+/// effect's time by slot 333 or 601, the root with and without children.
+#[test]
+fn lasers_setup_0387() {
+    let Some(mut t) = sa::twin(387) else { return };
+    let f = t.at(0xd000);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    let ls = img.rel32_target(f + 0x254);
+    let gs = img.rel32_target(ls + 0x280);
+    let tl = img.rel32_target(f + 0x112);
+    all_stubs(&mut t);
+    for (s, n) in [(941u32, 1), (676, 3), (678, 1), (325, 2), (719, 3)] {
+        rec(&mut t, s, n, move |_, a| a[0] ^ (s << 16));
+    }
+    rec(&mut t, 333, 1, |_, _| 0x333);
+    t.stub_st0(333, |_, a| f64::from(a[0] & 0xff) * 0.25);
+    rec(&mut t, 601, 2, |m, a| {
+        m.w32(a[1], 1.5f32.to_bits());
+        0x601
+    });
+    let row = SCRATCH + 0x3_e000;
+    rec(&mut t, 324, 0, move |m, _| {
+        let k = m.r32(row);
+        m.w32(row, k + 1);
+        0x0e01_0000_u32.wrapping_add(0x0a07 * k) ^ (k << 12)
+    });
+    particle_globals(&mut t, gs, 0x2ce);
+    junk_ops(&mut t, gs, &[0x273]);
+    junk_ops(&mut t, tl, &[0x55, 0x66, 0x6e]);
+    for (op, x) in [(0x55u32, 30.0f32), (0x66, 2.0), (0x6e, 0.5)] {
+        setf(&mut t, img.word(tl + op), x);
+    }
+    let (n, e, last, kid) = (
+        SCRATCH + 0x1_0000,
+        SCRATCH + 0x100,
+        SCRATCH + 0x200,
+        SCRATCH + 0x300,
+    );
+    let root = w(0x59);
+    let plist = img.word(gs + 0x2b5);
+    for k in 0..3u32 {
+        junk(&mut t, n, 0x8a00, k);
+        junk(&mut t, e, 0x100, k);
+        t.write(e + 0x90, &[k as u8 & 1]);
+        junk(&mut t, last, 0x10, k);
+        t.set_u32(w(0x24), last);
+        t.set_u32(w(0x3f), 0x0f0f_0f0f + k);
+        junk(&mut t, root, 0x20, k);
+        t.set_u32(root + 0x10, if k == 1 { kid } else { root });
+        junk(&mut t, plist, 0x20, k + 1);
+        t.set_u32(plist + 0x10, plist);
+        let call = Call {
+            ecx: n,
+            edx: e,
+            ..Call::default()
+        };
+        ownb::dirty_stack(&mut t, 0xd000 + k, &[]);
+        let args = [SCRATCH + 0x400, 0x0a01 + k, 0x0a02 + k];
+        t.check(
+            f,
+            call,
+            &args,
+            Eax::Checked,
+            ffx_magic::r48::lasers_setup_0387,
         );
     }
 }

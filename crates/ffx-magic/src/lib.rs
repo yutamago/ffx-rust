@@ -5515,6 +5515,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r48 burst set-up 0387", &r48::BURST_SETUP_0387),
     ("r48 glow set-up 0387", &r48::GLOW_SETUP_0387),
     ("r48 laser set-up 0387", &r48::LASER_SETUP_0387),
+    ("r48 lasers set-up 0387", &r48::LASERS_SETUP_0387),
     // round 48 (magic-r48): end of INTERNAL
 ];
 
