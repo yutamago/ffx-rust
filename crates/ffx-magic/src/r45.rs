@@ -5599,3 +5599,87 @@ pub const GLIDE_CURVE_0397: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// `magic_0397`'s glide start (0x10004830, 582 bytes; a table entry, no
+/// arguments; a /GS frame: the matrices `M2` at `ebp - 0xb4` and `M1` at
+/// `ebp - 0x74`, the turned `O` at `ebp - 0x34`, the place `Q` at `ebp -
+/// 0x24`, the offset `V` at `ebp - 0x14`). With `S = *G_S` and the yaw `y
+/// = S + 0x23f8`: `P = S + 0xd0..` = `S + 0x1900..`, `V` = `(0, 0, 130,
+/// 1)`, `M1` = slot 235 turned by X 0 and Y `y` (slots 328, 329), `O` =
+/// `M1 V` (slot 229), `P += O` (slot 248), `P.w` 1; the curve's end `S +
+/// 0x1910..` = `P`, `S + 0x104` 0, the steps `S + 0x2400` 120; then `Q` =
+/// `S + 0x1900..` moved the same way by `(0, 0, 105, 1)` (`M2`) with `w` 1
+/// and the caster placed there ([`place_me`](crate::sa_misc::place_me)).
+/// Each slot call passes the words the original leaves on the stack.
+/// Returns the placing's `eax`.
+pub fn glide_start_0397<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let ebp = fr.esp.wrapping_sub(4);
+    let at = |o: u32| ebp.wrapping_sub(o);
+    let (m2, m1, o, q, v) = (at(0xb4), at(0x74), at(0x34), at(0x24), at(0x14));
+    let s = g.read::<u32>(w(0x17));
+    let p = s + 0xd0;
+    g.write::<u32>(v, 0);
+    for j in 0..4u32 {
+        let x = g.read::<u32>(s + 0x1900 + 4 * j);
+        g.write::<u32>(p + 4 * j, x);
+    }
+    let yaw = g.read::<u32>(s + 0x23f8);
+    g.write::<u32>(at(0xb8), yaw);
+    g.write::<u32>(v + 4, 0);
+    g.write::<u32>(v + 8, 0x4302_0000);
+    g.write::<u32>(v + 0xc, 0x3f80_0000);
+    let mut st = Pushes::default();
+    // `M` = slot 235 turned by X 0 and Y the yaw, `O` = `M V`, `to += O`
+    let turn = |g: &mut G, st: &mut Pushes, m: u32, to: u32, ops: [u32; 5]| {
+        st.push(m);
+        st.call(g, t(g, ops[0], 235), 0);
+        st.set_top(0);
+        st.push_all(&[m, m]);
+        st.call(g, t(g, ops[1], 328), 0);
+        st.pop(2);
+        st.set_top(g.read::<u32>(at(0xb8)));
+        st.push_all(&[m, m]);
+        st.call(g, t(g, ops[2], 329), 0);
+        st.push_all(&[v, m, o]);
+        g.write::<u32>(v + 0xc, 0x3f80_0000);
+        st.call(g, t(g, ops[3], 229), 0);
+        st.push_all(&[o, to, to]);
+        st.call(g, t(g, ops[4], 248), 0);
+    };
+    turn(g, &mut st, m1, p, [0x65, 0x9b, 0xbd, 0xd6, 0xee]);
+    g.write::<u32>(p + 0xc, 0x3f80_0000);
+    for j in 0..4u32 {
+        let x = g.read::<u32>(p + 4 * j);
+        g.write::<u32>(s + 0x1910 + 4 * j, x);
+    }
+    g.write::<u32>(s + 0x104, 0);
+    g.write::<u32>(s + 0x2400, 0x78);
+    for j in 0..4u32 {
+        let x = g.read::<u32>(s + 0x1900 + 4 * j);
+        g.write::<u32>(q + 4 * j, x);
+    }
+    for (d, x) in [(0u32, 0u32), (4, 0), (8, 0x42d2_0000), (0xc, 0x3f80_0000)] {
+        g.write::<u32>(v + d, x);
+    }
+    // the first turn's nine words stay under the second's slot 235 (a
+    // prefix here) and go after it (`add esp, 0x24`)
+    let mut st = Pushes::default();
+    turn(g, &mut st, m2, q, [0x19b, 0x1ba, 0x1df, 0x1fb, 0x218]);
+    g.write::<u32>(q + 0xc, 0x3f80_0000);
+    let eax = crate::sa_misc::place_me(g, img, img.rel32_target(f + 0x232), q);
+    Ret::eax(eax)
+}
+
+/// [`glide_start_0397`] (the `rel32`s: the placing, the cookie check).
+pub const GLIDE_START_0397: Sig = Sig {
+    len: 582,
+    hash: 0x259f_3ed9_8e30_9e02,
+    calls: &[
+        (0x232, Callee::Sig(&crate::sa_misc::PLACE_ME)),
+        (0x23e, Callee::Any),
+    ],
+    imports: &[],
+};

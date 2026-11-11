@@ -3418,3 +3418,43 @@ fn glide_curve_0397() {
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
+
+/// `magic_0397` 0x10004830 (`r45::glide_start_0397`): the yaw varied;
+/// the caster a party member outside a battle, in a battle (grounded and
+/// not) and past 32.
+#[test]
+fn glide_start_0397() {
+    let Some(mut t) = sa::twin(397) else { return };
+    let f = t.at(0x4830);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    let pm = t.img.rel32_target(f + 0x232);
+    let pw = |o: u32| img.word(pm + o);
+    let far = SCRATCH + 0x7e30;
+    let s = SCRATCH + 0x1_0000;
+    // (yaw, battle, me, grounded)
+    for (k, (yaw, battle, me, ground)) in (0u32..).zip([
+        (0.5f32, 0u32, 3u32, 0u32),
+        (-2.0, 1, 3, 0),
+        (3.0, 1, 3, 1),
+        (1.25, 0, 0x24, 1),
+    ]) {
+        aim_0392_setup(&mut t, &[], far, 0);
+        for (sl, n) in [(255u32, 2usize), (33, 4), (32, 3)] {
+            rec(&mut t, sl, n, move |_, a| (sl << 16) ^ a[0] ^ a[1]);
+        }
+        rec(&mut t, 11, 1, move |_, _| ground);
+        t.set_u32(w(0x17), s);
+        junk(&mut t, s + 0xc0, 0x60, k);
+        junk(&mut t, s + 0x18f0, 0x40, k);
+        floats(&mut t, s + 0x1900, 4, k);
+        junk(&mut t, s + 0x23f0, 0x20, k);
+        setf(&mut t, s + 0x23f8, yaw);
+        setf(&mut t, far, 1.0);
+        t.set_u32(pw(0x2), battle);
+        t.set_u32(pw(0xd), me);
+        t.set_u32(pw(0x32), 0x0c0c_0032 + k);
+        ownb::dirty_stack(&mut t, 0x4830 + k, &[]);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
