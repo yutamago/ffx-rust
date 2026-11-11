@@ -2124,3 +2124,223 @@ pub const LASERS_SETUP_0387: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `magic_0387`'s lasers task (0x1000c980, 1652 bytes; cdecl `(T)`, `N
+/// = T[4]`, `O = N[0x28]` the owner; an aligned frame `A`, `S = A -
+/// 0x40`: the record `R` at `S + 0x14`, `V` at `S + 0x2c`). By the state
+/// `N[0x18]`, the wait `N[0x1c]` down by one at every return:
+/// - 0: once both lasers' `+0x18` (`N[0xb98]`, `N[0x4ba8]`) are above
+///   0x10, state 0x10;
+/// - 0x10: the step `N[0x20]` 0, the wait `W[0]`, state 0x11 (run on);
+/// - 0x11 (once the wait is out), step `i`: `X = N + 0x2c (i + 2)` under
+///   the root `G0`, slot 229 `(N + 0x74 + 0x2c i, N + 0x254, (T[i], 0, 0,
+///   1))`; `Y = N + 0x2c (i + 5)` under `G0` (colour 1, 1, 1 and an alpha
+///   0.48 from the third step on, else `(frnd K1 + 0) K2`);
+///   `E = N + 0x304 + 0x14c i` under `G0` (`E[0x13c] = X`, `E[0x140] =
+///   Y`, `E[0x144]` = `K_T`, `E[0x128]` = `K_O`); the particle node from
+///   `R = (N + 0x840 + 0x100 i, K_L, E, *G_P, K_P, 0)`; the glow `P =
+///   N[0x24]` takes the alpha (`P[0x1c..0x2c]`, byte `P[0x30] |= 1`); the
+///   first step also makes the effect node `N + 0xb40` (`R = (.., G0,
+///   K_O, N + 0x2c, K_E, 2)`); the step goes up: after three, state 0x12 and the wait 5,
+///   else slot 388 `(part, TBL[frnd & 1], 1)` for each of `O`'s parts and
+///   the wait `W[i + 1]`;
+/// - 0x12: once the wait is out, slot 239 `(*G_E, part, 0)` for each
+///   part, state 0x1000 (run on);
+/// - 0x1000: once `N[0x4ba8] & N[0xb98]` has bit 0x2000: five nodes leave,
+///   `T[0]` is unlinked, state 0x2000.
+///
+/// Returns the last value in `eax` (the cookie word `*G_COOKIE ^ (A -
+/// 0x34)` where nothing else was loaded).
+#[allow(clippy::too_many_lines)] // the states
+pub fn lasers_task_0387<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let tk = fr.arg(g, 0);
+    let n = g.read::<u32>(tk + 4);
+    let a = fr.esp.wrapping_sub(4) & !7;
+    let s0 = a.wrapping_sub(0x40);
+    let (r, v) = (s0 + 0x14, s0 + 0x2c);
+    let cookie = g.read::<u32>(w(0xa)) ^ a.wrapping_sub(0x34);
+    let end = |g: &mut G, eax: u32| {
+        let c = g.read::<u32>(n + 0x1c);
+        g.write::<u32>(n + 0x1c, c.wrapping_sub(1));
+        Ret::eax(eax)
+    };
+    let wait_out = |g: &G| g.read::<u32>(n + 0x1c).cast_signed() <= 0;
+    let parts = |g: &G| g.read::<u32>(g.read::<u32>(n + 0x28) + 0x4dc).cast_signed();
+    let mut eax = cookie;
+    let mut state = g.read::<u32>(n + 0x18);
+    loop {
+        match state {
+            0 => {
+                if g.read::<u32>(n + 0xb98) > 0x10 && g.read::<u32>(n + 0x4ba8) > 0x10 {
+                    g.write::<u32>(n + 0x18, 0x10);
+                }
+                return end(g, eax);
+            }
+            0x10 | 0x11 => {
+                if state == 0x10 {
+                    g.write::<u32>(n + 0x20, 0);
+                    let w0 = g.read::<u32>(w(0x25b));
+                    g.write::<u32>(n + 0x1c, w0);
+                    g.write::<u32>(n + 0x18, 0x11);
+                    eax = 0x11;
+                }
+                if !wait_out(g) {
+                    return end(g, eax);
+                }
+                let root = w(0x28c);
+                let i = g.read::<u32>(n + 0x20);
+                let x = n + 0x2c * (i + 2);
+                root_append(g, x, root, w(0x2fb));
+                let i = g.read::<u32>(n + 0x20);
+                g.write::<u32>(v + 4, 0);
+                let t0 = g.read::<u32>(w(0x30f) + 4 * i);
+                g.write::<u32>(v, t0);
+                g.write::<u32>(v + 8, 0);
+                g.write::<u32>(v + 0xc, ONE);
+                let i = g.read::<u32>(n + 0x20);
+                let s229 = slot_target(g, w(0x342), 229);
+                g.call(s229, 0, &[n + 0x74 + 0x2c * i, n + 0x254, v]);
+                let i = g.read::<u32>(n + 0x20);
+                let y = n + 0x2c * (i + 5);
+                root_append(g, y, root, w(0x3a4));
+                for off in [0xf8, 0xfc, 0x100] {
+                    let i = g.read::<u32>(n + 0x20);
+                    g.write::<u32>(n + off + 0x2c * i, ONE);
+                }
+                let i = g.read::<u32>(n + 0x20);
+                if i.cast_signed() >= 2 {
+                    g.write::<u32>(n + 0x104 + 0x2c * i, 0x3ef5_c290);
+                } else {
+                    let x = st0_f32(g.call(slot_target(g, w(0x3f4), 307), 0, &[]).st0);
+                    let i = g.read::<u32>(n + 0x20);
+                    let al = mul(add(mul(x, k(g, 0x40e)), 0.0), k(g, 0x423));
+                    g.write::<f32>(n + 0x104 + 0x2c * i, al);
+                }
+                let i = g.read::<u32>(n + 0x20);
+                let e = n + 0x304 + 0x14c * i;
+                let (xx, yy) = (n + 0x2c * (i + 2), n + 0x2c * (i + 5));
+                root_append(g, e, root, w(0x453));
+                g.write::<u32>(e + 0x140, yy);
+                g.write::<u32>(e + 0x13c, xx);
+                g.write::<u32>(e + 0x144, w(0x4b1));
+                g.write::<u32>(e + 0x128, w(0x4bb));
+                g.write::<u8>(e + 0x148, 0);
+                let i = g.read::<u32>(n + 0x20);
+                let pn = n + 0x840 + 0x100 * i;
+                let pp = g.read::<u32>(w(0x4e9));
+                g.write::<u32>(pn, w(0x513));
+                for (j, x) in [pn, w(0x4f9), n + 0x304 + 0x14c * i, pp, w(0x505), 0]
+                    .into_iter()
+                    .enumerate()
+                {
+                    g.write::<u32>(r + 4 * j as u32, x);
+                }
+                crate::sb_nodes::particle_node(g, img, img.rel32_target(f + 0x518), r);
+                let i = g.read::<u32>(n + 0x20);
+                let al = g.read::<f32>(n + 0x104 + 0x2c * i);
+                g.write::<f32>(v, al);
+                let p = g.read::<u32>(n + 0x24);
+                let a2 = mul(al, k(g, 0x53b));
+                let b = g.read::<u8>(p + 0x30) | 1;
+                g.write::<u8>(p + 0x30, b);
+                let a0 = mul(al, k(g, 0x54a));
+                let a1 = mul(al, k(g, 0x555));
+                let a3 = mul(al, k(g, 0x55d));
+                g.write::<f32>(p + 0x1c, a2);
+                g.write::<f32>(p + 0x24, a1);
+                g.write::<u32>(p + 0x2c, 0x41c8_0000);
+                g.write::<f32>(p + 0x20, sub(a0, a2));
+                g.write::<f32>(p + 0x28, sub(a3, a1));
+                eax = p;
+                if g.read::<u32>(n + 0x20) == 0 {
+                    let en = n + 0xb40;
+                    for (j, x) in [en, w(0x59f), w(0x5a7), n + 0x2c, w(0x5b3), 2]
+                        .into_iter()
+                        .enumerate()
+                    {
+                        g.write::<u32>(r + 4 * j as u32, x);
+                    }
+                    crate::sb_nodes::effect_node(g, img, img.rel32_target(f + 0x5c0), r);
+                    let node = g.read::<u32>(r);
+                    g.write::<u32>(node, w(0x5ca));
+                    let x = g.read::<u32>(en + 0x2c) | 1;
+                    g.write::<u32>(en + 0x2c, x);
+                    g.write::<u32>(en + 0x30, 0);
+                    eax = node;
+                }
+                let i = g.read::<u32>(n + 0x20).wrapping_add(1);
+                g.write::<u32>(n + 0x20, i);
+                if i.cast_signed() >= 3 {
+                    let st = g.read::<u32>(n + 0x18).wrapping_add(1);
+                    g.write::<u32>(n + 0x18, st);
+                    g.write::<u32>(n + 0x1c, 5);
+                    return end(g, eax);
+                }
+                let mut j = 0u32;
+                while j.cast_signed() < parts(g) {
+                    let bit = g.call(slot_target(g, w(0x611), 324), 0, &[]).eax & 1;
+                    let t = g.read::<u32>(w(0x625).wrapping_add(4 * bit));
+                    let o = g.read::<u32>(n + 0x28);
+                    let part = g.read::<u32>(o + 0x6c + 0x98 * j);
+                    g.call(slot_target(g, w(0x631), 388), 0, &[part, t, 1]);
+                    j += 1;
+                }
+                let i = g.read::<u32>(n + 0x20);
+                let wt = g.read::<u32>(w(0x658).wrapping_add(4 * i));
+                g.write::<u32>(n + 0x1c, wt);
+                return end(g, wt);
+            }
+            0x12 => {
+                if !wait_out(g) {
+                    return end(g, eax);
+                }
+                let mut j = 0u32;
+                eax = g.read::<u32>(n + 0x28);
+                while j.cast_signed() < parts(g) {
+                    let o = g.read::<u32>(n + 0x28);
+                    let part = g.read::<u32>(o + 0x6c + 0x98 * j);
+                    let e = g.read::<u32>(w(0x60));
+                    g.call(slot_target(g, w(0x5a), 239), 0, &[e, part, 0]);
+                    eax = g.read::<u32>(n + 0x28);
+                    j += 1;
+                }
+                g.write::<u32>(n + 0x18, 0x1000);
+                state = 0x1000;
+            }
+            0x1000 => {
+                let gate = g.read::<u32>(n + 0x4ba8) & g.read::<u32>(n + 0xb98);
+                if gate & 0x2000 == 0 {
+                    return end(g, gate);
+                }
+                for off in [0x6e8, 0x18c, 0x1b8, 0x2c, 0x160] {
+                    crate::sa_misc::leave(g, n + off, 0);
+                }
+                let eax = unlink_task(g, tk);
+                let c = g.read::<u32>(n + 0x1c);
+                g.write::<u32>(n + 0x1c, c.wrapping_sub(1));
+                g.write::<u32>(n + 0x18, 0x2000);
+                return Ret::eax(eax);
+            }
+            _ => return end(g, eax),
+        }
+    }
+}
+
+/// [`lasers_task_0387`] (the `rel32`s: the particle node, the effect
+/// node, the cookie checks).
+pub const LASERS_TASK_0387: Sig = Sig {
+    len: 1652,
+    hash: 0xa72a_7e7b_8b08_e44c,
+    calls: &[
+        (0x23c, Callee::Any),
+        (0x2e1, Callee::Any),
+        (0x518, Callee::Sig(&crate::sb_nodes::PARTICLE_NODE)),
+        (0x5c0, Callee::Sig(&crate::sb_nodes::EFFECT_NODE)),
+        (0x5f9, Callee::Any),
+        (0x66c, Callee::Any),
+    ],
+    imports: &[],
+};
