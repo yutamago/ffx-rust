@@ -64,21 +64,15 @@ ported! {
     /// `op_ffxambient_to_omdambient()`: its locals in a buffer on this
     /// shim's stack.
     op_ffxambient_to_omdambient @ 0x00a6_8ff0 => extern "C" fn op_ffxambient_to_omdambient() -> u32 {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0x20]);
-        let mut locals = Locals([0; 0x20]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0x20;
+        let mut locals = super::AlignedFrame::<32>::new();
+        let frame = locals.at() + 0x20;
         hi_md::bridge::op_ffxambient_to_omdambient(&mut mem(), frame, &mut |_, f, a| call_ptr(f, a))
     }
     /// `op_md_list_bounds_00a6a0c0(list, m, min, max)`: its locals in a
     /// buffer on this shim's stack.
     op_md_list_bounds_00a6a0c0 @ 0x00a6_a0c0 => extern "C" fn op_md_list_bounds(list: u32, m: u32, min: u32, max: u32) -> u32 {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0x60]);
-        let mut locals = Locals([0; 0x60]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0x60;
+        let mut locals = super::AlignedFrame::<96>::new();
+        let frame = locals.at() + 0x60;
         hi_md::bridge::op_md_list_bounds(&mut mem(), list, m, min, max, frame, &mut |_, f, a| call_ptr(f, a))
     }
     /// `opus_0582_dot_set_00a73740(b, rec)`.
@@ -97,11 +91,8 @@ ported! {
     /// vector in a buffer on this shim's stack; the two frame words the
     /// original never writes as 0.
     opus_0437_poly_check @ 0x00a6_ed40 => extern "C" fn opus_0437_poly_check(list: u32, b: u32, dots: u32, m: u32, limit: f32) -> u32 {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0x60]);
-        let mut locals = Locals([0; 0x60]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0x60;
+        let mut locals = super::AlignedFrame::<96>::new();
+        let frame = locals.at() + 0x60;
         hi_opus::bridge::opus_0437_poly_check(&mut mem(), list, b, dots, m, limit, [0; 2], frame, &mut |_, f, a| call_ptr(f, a))
     }
     /// `opus_0279_draw(obj, init, rec, _, tex)`: `eax` the last
@@ -112,76 +103,55 @@ ported! {
     /// `opu_md_etc_draw_00a693b0(obj, b, m, view, e)`: the init block in a
     /// buffer on this shim's stack, its never-written words 0.
     opu_md_etc_draw_00a693b0 @ 0x00a6_93b0 => extern "C" fn opu_md_etc_draw(obj: u32, b: u32, m: u32, view: u32, e: u32) -> u32 {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0x80]);
-        let mut locals = Locals([0; 0x80]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0x80;
+        let mut locals = super::AlignedFrame::<128>::new();
+        let frame = locals.at() + 0x80;
         hi_draw::bridge::opu_md_etc_draw(&mut mem(), obj, b, m, view, e, [0; 7], frame, &mut |_, c, x| crt_trig(c, x), &mut |_, f, a| call_ptr(f, a))
     }
     /// `op_md_x64_draw_00a69300(obj, b, e)`: the init block in a buffer on
     /// this shim's stack, its never-written words 0.
     op_md_x64_draw_00a69300 @ 0x00a6_9300 => extern "C" fn op_md_x64_draw(obj: u32, b: u32, e: u32) -> u32 {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0x80]);
-        let mut locals = Locals([0; 0x80]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0x80;
+        let mut locals = super::AlignedFrame::<128>::new();
+        let frame = locals.at() + 0x80;
         hi_draw::bridge::op_md_x64_draw(&mut mem(), obj, b, e, [0; 8], frame, &mut |_, f, a| call_ptr(f, a))
     }
     /// `opp_md_break_pieces_00a744e0(src, out, rec)`: `op_deg_get`'s
     /// length cell in a buffer on this shim's stack; `op_random_per`'s two
     /// stale words (the caller's `edi`, `esi`) as 0.
     opp_md_break_pieces_00a744e0 @ 0x00a7_44e0 => extern "C" fn opp_md_break_pieces(src: u32, out: u32, rec: u32) -> u32 {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0x30]);
-        let mut locals = Locals([0; 0x30]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0x30;
+        let mut locals = super::AlignedFrame::<48>::new();
+        let frame = locals.at() + 0x30;
         hi_opus::bridge::opp_md_break_pieces(&mut mem(), src, out, rec, [0; 2], frame, &mut |_, f, a| super::call_cdecl_f32(f, a))
     }
     /// `opus_0582_break_draw(b, src, rec, unit, m5, m6, hold)`: its locals
     /// (the counts and the name the data buffer takes) in a buffer on this
     /// shim's stack; `op_deg_get` through the game; `eax` 0.
     opus_0582_break_draw @ 0x00a7_2380 => extern "C" fn opus_0582_break_draw(b: u32, src: u32, rec: u32, unit: u32, m5: u32, m6: u32, hold: u32) -> u32 {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0x150]);
-        let mut locals = Locals([0; 0x150]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0x150;
+        let mut locals = super::AlignedFrame::<336>::new();
+        let frame = locals.at() + 0x150;
         hi_opus::bridge::opus_0582_break_draw(&mut mem(), [b, src, rec, unit, m5, m6, hold], frame, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| super::call_cdecl_f32(f, a))
     }
     /// `opus_0582_draw(b, rec, unit, m4, m5, m6)`: its locals (the counts,
     /// the texture name, the vectors `FFXVu0ApplyMatrix` takes) in a
     /// buffer on this shim's stack; `eax` 0.
     opus_0582_draw @ 0x00a7_0d70 => extern "C" fn opus_0582_draw(b: u32, rec: u32, unit: u32, m4: u32, m5: u32, m6: u32) -> u32 {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0x180]);
-        let mut locals = Locals([0; 0x180]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0x180;
+        let mut locals = super::AlignedFrame::<384>::new();
+        let frame = locals.at() + 0x180;
         hi_opus::bridge::opus_0582_draw(&mut mem(), [b, rec, unit, m4, m5, m6], frame, &mut |_, f, a| call_ptr(f, a))
     }
     /// `opus_0437_draw(packet, model, rec, u, d, acc, slot)`: its locals
     /// (the colour vectors, the counts, the texture names) in a buffer on
     /// this shim's stack; `eax` the running vertex count.
     opus_0437_draw @ 0x00a6_e650 => extern "C" fn opus_0437_draw(packet: u32, model: u32, rec: u32, u: u32, d: u32, acc: u32, slot: u32) -> u32 {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0x280]);
-        let mut locals = Locals([0; 0x280]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0x280;
+        let mut locals = super::AlignedFrame::<640>::new();
+        let frame = locals.at() + 0x280;
         hi_opus::bridge::opus_0437_draw(&mut mem(), [packet, model, rec, u, d, acc, slot], frame, &mut |_, f, a| call_ptr(f, a))
     }
     /// `opus_0582_break_make(b, list, m)`: the vertices
     /// `FFXVu0ApplyMatrix` takes in a buffer on this shim's stack; `eax`
     /// as `op_spr_free` leaves it.
     opus_0582_break_make @ 0x00a7_1780 => extern "C" fn opus_0582_break_make(b: u32, list: u32, m: u32) -> u32 {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0x40]);
-        let mut locals = Locals([0; 0x40]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0x40;
+        let mut locals = super::AlignedFrame::<64>::new();
+        let frame = locals.at() + 0x40;
         hi_opus::bridge::opus_0582_break_make(&mut mem(), b, list, m, frame, &mut |_, f, a| call_ptr(f, a))
     }
     /// `op1_md_draw(obj, init)`: the draw path by `init`'s flags, through
@@ -192,41 +162,29 @@ ported! {
     /// `op_md_ref_nolight(obj, init, tex, scale, slot)`: its locals (the
     /// texture names, the counts) in a buffer on this shim's stack.
     op_md_ref_nolight @ 0x00a6_a6a0 => extern "C" fn op_md_ref_nolight(obj: u32, init: u32, tex: u32, scale: f32, slot: u32) -> u32 {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0x280]);
-        let mut locals = Locals([0; 0x280]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0x280;
+        let mut locals = super::AlignedFrame::<640>::new();
+        let frame = locals.at() + 0x280;
         hi_draw::bridge::op_md_ref_nolight(&mut mem(), obj, init, tex, scale, slot, frame, &mut |_, f, a| call_ptr(f, a))
     }
     /// `op_vertex_normal_point44_ffx(obj, model, work, chr)`: its locals
     /// in a buffer on this shim's stack.
     op_vertex_normal_point44_ffx @ 0x00a6_d380 => extern "C" fn op_vertex_normal_point44_ffx(_obj: u32, model: u32, work: u32, chr: u32) -> u32 {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0x100]);
-        let mut locals = Locals([0; 0x100]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0x100;
+        let mut locals = super::AlignedFrame::<256>::new();
+        let frame = locals.at() + 0x100;
         hi_light::bridge::op_vertex_normal_point44_ffx(&mut mem(), model, work, chr, frame, &mut |_, f, a| call_ptr(f, a))
     }
     /// `op_vertex_normal_point44_ffx_2(obj, model, work, chr)`: its
     /// locals in a buffer on this shim's stack.
     op_vertex_normal_point44_ffx_2 @ 0x00a6_d670 => extern "C" fn op_vertex_normal_point44_ffx_2(_obj: u32, model: u32, work: u32, chr: u32) -> u32 {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0x190]);
-        let mut locals = Locals([0; 0x190]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0x190;
+        let mut locals = super::AlignedFrame::<400>::new();
+        let frame = locals.at() + 0x190;
         hi_light::bridge::op_vertex_normal_point44_ffx_2(&mut mem(), model, work, chr, frame, &mut |_, f, a| call_ptr(f, a))
     }
     /// `op_0437_vertex_normal_point44_ffx(packet, model, work, base, mul1,
     /// mul0, slot)`: its locals in a buffer on this shim's stack.
     op_0437_vertex_normal_point44_ffx @ 0x00a6_d890 => extern "C" fn op_0437_vertex_normal_point44_ffx(packet: u32, model: u32, work: u32, base: u32, mul1: u32, mul0: u32, slot: u32) -> u32 {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0x110]);
-        let mut locals = Locals([0; 0x110]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0x110;
+        let mut locals = super::AlignedFrame::<272>::new();
+        let frame = locals.at() + 0x110;
         hi_light::bridge::op_0437_vertex_normal_point44_ffx(&mut mem(), packet, model, work, [base, mul1, mul0], slot, frame, &mut |_, f, a| call_ptr(f, a))
     }
     /// `op_md_chara_path3(obj, init, chr)`.
@@ -236,11 +194,8 @@ ported! {
     /// `op_md_x64_00a6b710(obj, init)`: its locals in a buffer on this
     /// shim's stack.
     op_md_x64_00a6b710 @ 0x00a6_b710 => extern "C" fn op_md_x64(obj: u32, init: u32) -> u32 {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0x60]);
-        let mut locals = Locals([0; 0x60]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0x60;
+        let mut locals = super::AlignedFrame::<96>::new();
+        let frame = locals.at() + 0x60;
         hi_draw::bridge::op_md_x64(&mut mem(), obj, init, frame, &mut |_, f, a| call_ptr(f, a))
     }
     /// `op_md_x64_fog_00a6bfe0(obj, init)`.
@@ -258,21 +213,15 @@ ported! {
     /// `op_md_flag80_00a6acb0(obj, init)`: its light local in a buffer on
     /// this shim's stack.
     op_md_flag80_00a6acb0 @ 0x00a6_acb0 => extern "C" fn op_md_flag80(obj: u32, init: u32) -> u32 {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0x50]);
-        let mut locals = Locals([0; 0x50]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0x50;
+        let mut locals = super::AlignedFrame::<80>::new();
+        let frame = locals.at() + 0x50;
         hi_draw::bridge::op_md_flag80(&mut mem(), obj, init, frame, &mut |_, f, a| call_ptr(f, a))
     }
     /// `op_md_one8(obj, init)`: its light local in a buffer on this
     /// shim's stack.
     op_md_one8 @ 0x00a6_b220 => extern "C" fn op_md_one8(obj: u32, init: u32) -> u32 {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0x50]);
-        let mut locals = Locals([0; 0x50]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0x50;
+        let mut locals = super::AlignedFrame::<80>::new();
+        let frame = locals.at() + 0x50;
         hi_draw::bridge::op_md_one8(&mut mem(), obj, init, frame, &mut |_, f, a| call_ptr(f, a))
     }
     /// `op_md_one8_fog(obj, init)`.
@@ -283,32 +232,23 @@ ported! {
     /// on this shim's stack (`[init +0x20]` points into it during the
     /// call).
     op1_mdc_draw @ 0x00a6_8c90 => extern "C" fn op1_mdc_draw(list: u32, init: u32, m: u32, view: u32) -> u32 {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0xd0]);
-        let mut locals = Locals([0; 0xd0]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0xd0;
+        let mut locals = super::AlignedFrame::<208>::new();
+        let frame = locals.at() + 0xd0;
         hi_draw::bridge::op1_mdc_draw(&mut mem(), list, init, m, view, frame, &mut |_, f, a| call_ptr(f, a))
     }
     /// `op1_mdc_ref_nolight(list, init, m, view, _, tex, scale, m2)`: its
     /// three matrices in a buffer on this shim's stack (`[init +0x20]` and
     /// `[init +0x2c]` point into it during the call).
     op1_mdc_ref_nolight @ 0x00a6_8e10 => extern "C" fn op1_mdc_ref_nolight(list: u32, init: u32, m: u32, view: u32, _unused: u32, tex: u32, scale: u32, m2: u32) -> u32 {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0xd0]);
-        let mut locals = Locals([0; 0xd0]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0xd0;
+        let mut locals = super::AlignedFrame::<208>::new();
+        let frame = locals.at() + 0xd0;
         hi_draw::bridge::op1_mdc_ref_nolight(&mut mem(), list, init, m, view, tex, scale, m2, frame, &mut |_, f, a| call_ptr(f, a))
     }
     /// `op_refrection_st_float(obj, model, _, out, scale, du, dv)`: its
     /// locals in a buffer on this shim's stack.
     op_refrection_st_float @ 0x00a6_cfb0 => extern "C" fn op_refrection_st_float(obj: u32, model: u32, _unused: u32, out: u32, scale: u32, du: u32, dv: u32) -> u32 {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0x100]);
-        let mut locals = Locals([0; 0x100]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0x100;
+        let mut locals = super::AlignedFrame::<256>::new();
+        let frame = locals.at() + 0x100;
         hi_light::bridge::op_refrection_st_float(&mut mem(), obj, model, out, scale, du, dv, frame, &mut |_, f, a| call_ptr(f, a))
     }
     /// `opp_map_draw_init_00a753f0(b, pos)`.
@@ -318,11 +258,8 @@ ported! {
     /// `opus_0283_draw(obj, rec)`: its two render-data part locals in a
     /// buffer on this shim's stack.
     opus_0283_draw @ 0x00a7_6770 => extern "C" fn opus_0283_draw(obj: u32, rec: u32) {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0x80]);
-        let mut locals = Locals([0; 0x80]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0x80;
+        let mut locals = super::AlignedFrame::<128>::new();
+        let frame = locals.at() + 0x80;
         hi_0283::bridge::opus_0283_draw(&mut mem(), obj, rec, frame, &mut |_, f, a| call_ptr(f, a));
     }
 }
