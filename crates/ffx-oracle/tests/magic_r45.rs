@@ -2677,13 +2677,26 @@ fn actors_tilt_0392() {
 /// the aim either side of 0 (the unwrap both ways and not).
 #[test]
 fn throw_flight_0392() {
-    let Some(mut t) = sa::twin(392) else { return };
-    let f = t.at(0x21d0);
+    throw_flight(392, 0x21d0, 861, (0x538c, 0xf90, 11));
+}
+
+/// `magic_0449` 0x10005cf0 (`r45::throw_flight_0392` through
+/// `r45::THROW_FLIGHT_0449`): the same cases on its layout, and the fade
+/// at 50 steps.
+#[test]
+fn throw_flight_0449() {
+    throw_flight(449, 0x5cf0, 876, (0x56ec, 0xf70, 51));
+}
+
+/// `(steps, start, steps before the fade)` of the copy at `rva`.
+fn throw_flight(n: u16, rva: u32, len: u32, (steps, from, fade): (u32, u32, i32)) {
+    let Some(mut t) = sa::twin(n) else { return };
+    let f = t.at(rva);
     let img = t.img.clone();
     let w = |o: u32| img.word(f + o);
     all_stubs(&mut t);
     magic_r11::object_slots(&mut t);
-    let mo = t.img.rel32_target(f + 0x314);
+    let mo = t.img.rel32_target(f + 0x314 + len - 861);
     let start = t.img.rel32_target(mo + 0x1c);
     magic_r11::object_start_auto(&mut t, start);
     rec(&mut t, 235, 1, |m, a| {
@@ -2712,7 +2725,7 @@ fn throw_flight_0392() {
     // (steps, yaw, aim)
     for (k, (n, cur, aim)) in (0u32..).zip([
         (20i32, 0.5f32, 1.0f32),
-        (11, -2.5, 3.0),
+        (fade, -2.5, 3.0),
         (5, 2.5, -3.0),
         (1, -0.5, 0.25),
         (0, 3.0, 2.0),
@@ -2722,16 +2735,16 @@ fn throw_flight_0392() {
         (7, 4.0, 4.0),
     ]) {
         junk(&mut t, s + 0xd00, 0x300, k);
-        floats(&mut t, s + 0xf90, 0x8, k);
+        floats(&mut t, s + from, 0x8, k);
         floats(&mut t, s + 0xfa0, 0x4, k + 5);
-        t.set_u32(s + 0x538c, n.cast_unsigned());
-        t.set_u32(s + 0x5390, 24);
+        t.set_u32(s + steps, n.cast_unsigned());
+        t.set_u32(s + steps + 4, 24 + 3 * (fade.cast_unsigned() / 50));
         setf(&mut t, s + 0xf54, cur);
         setf(&mut t, s + 0xfb4, aim);
         junk(&mut t, o, 0x60, k);
-        magic_r11::pools(&mut t, f, 861);
+        magic_r11::pools(&mut t, f, len);
         magic_r11::pools(&mut t, mo, 167);
-        ownb::dirty_stack(&mut t, 0x21d0 + k, &[]);
+        ownb::dirty_stack(&mut t, rva + k, &[]);
         t.check_entry(f, Call::default(), &[o], Eax::Checked);
     }
 }

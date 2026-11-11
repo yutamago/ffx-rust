@@ -3925,16 +3925,17 @@ pub const ACTORS_TILT_0392: Sig = Sig {
 /// b`; `t`, `u = K - t`; `k` the constants `K9c` (three loads), `K88`,
 /// `K7`, `K54`): `(((((ut uu) K9c)(d K88) + (uu uu) d) + ((tt uu) K9c)(d
 /// K7)) + ((tt ut) K9c) d) + (tt tt) K54) + b`, each step one `f32`
-/// rounding in this order.
+/// rounding in this order. `magic_0449`'s copy has `d K4` for the fourth
+/// term's `d` (`k4`).
 #[allow(clippy::many_single_char_names)] // the curve's own terms
-fn throw_axis_0392(a: f32, b: f32, t: f32, u: f32, k: [f32; 6]) -> f32 {
+fn throw_axis_0392(a: f32, b: f32, t: f32, u: f32, k: [f32; 6], k4: Option<f32>) -> f32 {
     let [k1, k2, k3, k88, k7, k54] = k;
     let d = sub(a, b);
     let (tt, uu, ut) = (mul(t, t), mul(u, u), mul(u, t));
     let t1 = mul(mul(mul(ut, uu), k1), mul(d, k88));
     let t2 = mul(mul(uu, uu), d);
     let t3 = mul(mul(mul(tt, uu), k2), mul(d, k7));
-    let t4 = mul(mul(mul(tt, ut), k3), d);
+    let t4 = mul(mul(mul(tt, ut), k3), k4.map_or(d, |k4| mul(d, k4)));
     let t5 = mul(mul(tt, tt), k54);
     add(add(add(add(add(t1, t2), t3), t4), t5), b)
 }
@@ -3953,41 +3954,103 @@ fn throw_axis_0392(a: f32, b: f32, t: f32, u: f32, k: [f32; 6]) -> f32 {
 /// steps are left, `S + 0xf60..` = `S + 0xfa0..`, `O + 0x56` = 1 and `O`
 /// is returned; else the last call's `eax`.
 pub fn throw_flight_0392<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    // `magic_0449`'s copy (0x10005cf0) counts `S + 0x56ec` of `S +
+    // 0x56f0`, starts from `S + 0xf70..`, multiplies the fourth term's
+    // `d` by a constant too, starts the fade at 50 steps and has the
+    // operands after the curve 15 bytes later
+    let layout = if img.word(fr.at + 0xf) == 0x56ec {
+        FlightLayout {
+            steps: 0x56ec,
+            from: 0xf70,
+            k7: 0x58,
+            axes: [
+                (
+                    [0x58, 0x58, 0x58, 0x9e],
+                    Some(0xbc),
+                    Some(0xe4),
+                    Some(0x114),
+                ),
+                (
+                    [0x147, 0x11c, 0x190, 0x152],
+                    Some(0x175),
+                    Some(0xe4),
+                    Some(0x1b4),
+                ),
+                ([0x1ff, 0x1f7, 0x254, 0x20a], Some(0x228), Some(0xe4), None),
+            ],
+            fade_at: 50,
+            d: 15,
+        }
+    } else {
+        FlightLayout {
+            steps: 0x538c,
+            from: 0xf90,
+            k7: 0x7b,
+            axes: [
+                ([0x93, 0x9b, 0xe1, 0xa6], None, None, Some(0x10c)),
+                ([0x148, 0x131, 0x189, 0x153], None, None, Some(0x1a0)),
+                ([0x1f0, 0x1f8, 0x245, 0x203], None, None, None),
+            ],
+            fade_at: 10,
+            d: 0,
+        }
+    };
+    throw_flight_with(g, img, fr, &layout)
+}
+
+/// One axis of a [`FlightLayout`]: the operands of `K9c` (three loads)
+/// and `K88`; of `K7` (else the shared one); of the fourth term's `K4`;
+/// of `K54` (else 0).
+type FlightAxis = ([u32; 4], Option<u32>, Option<u32>, Option<u32>);
+
+/// Where a copy of [`throw_flight_0392`] keeps its steps (the total in
+/// the next word) and its start, its constants, the steps the fade
+/// starts at and how much later its operands are from the yaw on.
+struct FlightLayout {
+    steps: u32,
+    from: u32,
+    k7: u32,
+    axes: [FlightAxis; 3],
+    fade_at: u32,
+    d: u32,
+}
+
+/// [`throw_flight_0392`] on the layout `l`.
+fn throw_flight_with<G: Game>(g: &mut G, img: &Image, fr: &Frame, l: &FlightLayout) -> Ret {
     let f = fr.at;
     let w = |o: u32| img.word(f + o);
     let k = |g: &G, o: u32| g.read::<f32>(w(o));
     let s = g.read::<u32>(w(0x9));
-    let n = g.read::<u32>(s + 0x538c);
+    let n = g.read::<u32>(s + l.steps);
     if n.cast_signed() > 0 {
-        g.write::<u32>(s + 0x538c, n - 1);
+        g.write::<u32>(s + l.steps, n - 1);
     }
-    let c = crate::sb_sse::cvt(g.read::<u32>(s + 0x538c));
-    let total = crate::sb_sse::cvt(g.read::<u32>(s + 0x5390));
+    let c = crate::sb_sse::cvt(g.read::<u32>(s + l.steps));
+    let total = crate::sb_sse::cvt(g.read::<u32>(s + l.steps + 4));
     let t = div(c, total);
     let u = sub(k(g, 0x44), t);
-    let k7 = k(g, 0x7b);
-    for (j, ops, k54) in [
-        (0u32, [0x93u32, 0x9b, 0xe1, 0xa6], Some(0x10cu32)),
-        (4, [0x148, 0x131, 0x189, 0x153], Some(0x1a0)),
-        (8, [0x1f0, 0x1f8, 0x245, 0x203], None),
-    ] {
+    let k7 = k(g, l.k7);
+    for (j, (ops, k7o, k4, k54)) in (0u32..).step_by(4).zip(l.axes) {
         let kk = [
             k(g, ops[0]),
             k(g, ops[1]),
             k(g, ops[2]),
             k(g, ops[3]),
-            k7,
+            k7o.map_or(k7, |o| k(g, o)),
             k54.map_or(0.0, |o| k(g, o)),
         ];
         let x = throw_axis_0392(
             g.read::<f32>(s + 0xfa0 + j),
-            g.read::<f32>(s + 0xf90 + j),
+            g.read::<f32>(s + l.from + j),
             t,
             u,
             kk,
+            k4.map(|o| k(g, o)),
         );
         g.write::<f32>(s + 0xf60 + j, x);
     }
+    let w = |o: u32| img.word(f + o + l.d);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
     let cur = g.read::<f32>(s + 0xf54);
     let (hi, lo) = (k(g, 0x239), k(g, 0x27f));
     let aim = crate::r34::unwrap_to(cur, g.read::<f32>(s + 0xfb4), hi, lo);
@@ -4001,18 +4064,23 @@ pub fn throw_flight_0392<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         y
     };
     g.write::<f32>(s + 0xf54, y);
-    let mut eax =
-        crate::sa_misc::scale_rotate(g, img, img.rel32_target(f + 0x303), s + 0xd10, s + 0xf50);
-    if g.read::<u32>(s + 0x538c) == 0xa {
+    let mut eax = crate::sa_misc::scale_rotate(
+        g,
+        img,
+        img.rel32_target(f + 0x303 + l.d),
+        s + 0xd10,
+        s + 0xf50,
+    );
+    if g.read::<u32>(s + l.steps) == l.fade_at {
         let fade = Frame {
-            at: img.rel32_target(f + 0x314),
+            at: img.rel32_target(f + 0x314 + l.d),
             // push ebp; sub esp, 0xc; push esi; the call
             esp: fr.esp.wrapping_sub(0x18),
             ..*fr
         };
         eax = crate::r9_misc::main_object_fade(g, img, &fade).eax;
     }
-    if g.read::<u32>(s + 0x538c).cast_signed() > 0 {
+    if g.read::<u32>(s + l.steps).cast_signed() > 0 {
         return Ret::eax(eax);
     }
     for j in 0..4u32 {
@@ -4032,6 +4100,17 @@ pub const THROW_FLIGHT_0392: Sig = Sig {
     calls: &[
         (0x303, Callee::Sig(&crate::sa_misc::SCALE_ROTATE)),
         (0x314, Callee::Sig(&crate::r9_misc::MAIN_OBJECT_FADE_0392)),
+    ],
+    imports: &[],
+};
+
+/// [`throw_flight_0392`]'s copy in `magic_0449` (0x10005cf0, 876 bytes).
+pub const THROW_FLIGHT_0449: Sig = Sig {
+    len: 876,
+    hash: 0x9838_e8a6_f0b8_b9d7,
+    calls: &[
+        (0x312, Callee::Sig(&crate::sa_misc::SCALE_ROTATE)),
+        (0x323, Callee::Sig(&crate::r9_misc::MAIN_OBJECT_FADE_0449)),
     ],
     imports: &[],
 };
