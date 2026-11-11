@@ -17,7 +17,7 @@ const ONE: u32 = 0x3f80_0000;
 /// `count`). Returns the node and the new head; with no free node the
 /// original goes on with node 0 (it faults), the port too.
 /// (`r44::ring_take`'s steps.)
-fn ring_take<G: Game>(
+pub(crate) fn ring_take<G: Game>(
     g: &mut G,
     img: &Image,
     f: u32,
@@ -51,7 +51,7 @@ fn ring_take<G: Game>(
 /// The node `n` appended to the task list: `+0x4` 0; with no first node
 /// (`first` 0) `n` is the first (`+0` 0, the operand `to_first`'s word),
 /// else after `last` (`+0` = `last`, `last + 4` = `n`); `+0x8` itself.
-fn task_append<G: Game>(
+pub(crate) fn task_append<G: Game>(
     g: &mut G,
     img: &Image,
     f: u32,
