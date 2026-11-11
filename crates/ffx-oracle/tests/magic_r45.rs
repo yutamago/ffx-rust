@@ -2947,10 +2947,32 @@ fn landing_0392() {
 /// wrap both ways; the free ring of two nodes and more.
 #[test]
 fn trails_start_0392() {
-    let Some(mut t) = sa::twin(392) else { return };
-    let f = t.at(0x2950);
+    trails_start(392, 0x2950, [0, 0], &[]);
+}
+
+/// `magic_0449` 0x10006670 (`r45::trails_start_0392` through
+/// `r45::TRAILS_START_0449`): the same cases on its layout, the never
+/// written `V1.y` pinned to 0.
+#[test]
+fn trails_start_0449() {
+    trails_start(449, 0x6670, [-8, 18], &[0xfc]);
+}
+
+/// `d` moves the operands in `+0xbd..+0x171` and after `+0x64d`.
+fn trails_start(n: u16, rva: u32, d: [i32; 2], zero: &[u32]) {
+    let Some(mut t) = sa::twin(n) else { return };
+    let f = t.at(rva);
     let img = t.img.clone();
-    let w = |o: u32| img.word(f + o);
+    let w = |o: u32| {
+        let k = if o >= 0x64d {
+            d[1]
+        } else if o >= 0xbd {
+            d[0]
+        } else {
+            0
+        };
+        img.word(f + o.wrapping_add_signed(k))
+    };
     all_stubs(&mut t);
     rec(&mut t, 235, 1, |m, a| {
         for i in 0..16 {
@@ -3005,15 +3027,17 @@ fn trails_start_0392() {
         floats(&mut t, s + 0xf60, 0x4, k);
         floats(&mut t, s + 0xfc0, 0x4, k + 3);
         setf(&mut t, s + 0xfb4, 0.75 * k as f32 - 1.0);
-        junk(&mut t, s + 0x1100, 0x3a00, k);
+        junk(&mut t, s + 0x1100, 0x3e00, k);
         t.set_u32(p + 0x10, 0x0c01_0000 + k);
         magic_r11::ring(&mut t, w(0x65a), w(0x674), free, SCRATCH + 0x5000);
         t.write(SCRATCH + 0x600, &[0x44; 0x20]);
         t.set_u32(w(0x6cf), if listed { SCRATCH + 0x600 } else { 0 });
         t.set_u32(w(0x6de), SCRATCH + 0x600);
-        junk_ops(&mut t, f, &[0x704, 0x70e]);
+        for o in [0x704u32, 0x70e] {
+            t.set_u32(w(o), (0x5a5a_5a5a ^ o) | 1);
+        }
         junk(&mut t, w(0x163), 0x40, k);
-        ownb::dirty_stack(&mut t, 0x2950 + k, &[]);
+        ownb::dirty_stack(&mut t, rva + k, zero);
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }

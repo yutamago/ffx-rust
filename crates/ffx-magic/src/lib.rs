@@ -3468,6 +3468,7 @@ ports! {
     "r45 trails start 0392" => r45::TRAILS_START_0392, r45::trails_start_0392;
     "r45 summon place 0449" => r45::SUMMON_PLACE_0449, r45::summon_place_0392;
     "r45 load step 0449" => r45::LOAD_0449, r45::load_0449;
+    "r45 trails start 0449" => r45::TRAILS_START_0449, r45::trails_start_0392;
     // round 45 (magic-r45): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;

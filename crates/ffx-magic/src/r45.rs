@@ -4411,8 +4411,59 @@ pub const LANDING_0392: Sig = Sig {
 /// Returns 0xffff (the second take's count step left in `eax`).
 #[allow(clippy::too_many_lines)] // the original's set-up and its 16 trails
 pub fn trails_start_0392<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    // `magic_0449`'s copy (0x10006670) keeps its records 0x3d0 apart from
+    // `S + 0x15de - 0x39e`, its block at `S + 0x11c8`, draws `V1.y` =
+    // `frnd(20)` first in each pass (and never sets it before: a junk
+    // read, 0) and has its operands moved (`- 8`, `+ 24`, `+ 18`)
+    let layout = if img.word(fr.at + 0x161) == 0x15de {
+        TrailsLayout {
+            base: 0x15de,
+            qoff: 0x39e,
+            stride: 0x3d0,
+            e2: 0x11c8,
+            lift: true,
+            shifts: [-8, 0, 24, 18],
+        }
+    } else {
+        TrailsLayout {
+            base: 0x158e,
+            qoff: 0x37e,
+            stride: 0x3a0,
+            e2: 0x1198,
+            lift: false,
+            shifts: [0; 4],
+        }
+    };
+    trails_start_with(g, img, fr, &layout)
+}
+
+/// Where a copy of [`trails_start_0392`] keeps its records and block,
+/// whether it draws the lift first, and how far its operands moved from
+/// `magic_0392`'s at `+0xbd`, `+0x171`, `+0x18a` and `+0x64d`.
+struct TrailsLayout {
+    base: u32,
+    qoff: u32,
+    stride: u32,
+    e2: u32,
+    lift: bool,
+    shifts: [i32; 4],
+}
+
+/// [`trails_start_0392`] on the layout `l`.
+#[allow(clippy::too_many_lines)] // the original's set-up and its 16 trails
+fn trails_start_with<G: Game>(g: &mut G, img: &Image, fr: &Frame, l: &TrailsLayout) -> Ret {
     let f = fr.at;
-    let w = |o: u32| img.word(f + o);
+    let m = |o: u32| {
+        let d = match o {
+            0..0xbd => 0,
+            0xbd..0x171 => l.shifts[0],
+            0x171..0x18a => l.shifts[1],
+            0x18a..0x64d => l.shifts[2],
+            _ => l.shifts[3],
+        };
+        o.wrapping_add_signed(d)
+    };
+    let w = |o: u32| img.word(f + m(o));
     let k = |g: &G, o: u32| g.read::<f32>(w(o));
     let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
     let e = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0x154);
@@ -4427,6 +4478,8 @@ pub fn trails_start_0392<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let yaw = g.read::<u32>(s + 0xfb4);
     st.set_top(yaw);
     st.push_all(&[ma, mb]);
+    // (`magic_0449`'s copy never writes `V1.y` here: junk read: [E +
+    // 0x60] never written; 0 (brief 2026-10-24))
     for (o, x) in [
         (0x5cu32, 0u32),
         (0x60, 0),
@@ -4461,10 +4514,17 @@ pub fn trails_start_0392<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     st.call(g, t(g, 0x148, 329), 0);
     st.pop(3);
     let table = w(0x163);
-    let mut q = s + 0x1210;
+    let mut q = s + l.base - l.qoff;
     for j in 0..16u32 {
         let mut st = Pushes::default();
-        st.push(0x4248_0000);
+        if l.lift {
+            st.push(0x41a0_0000);
+            let r0 = st0_f32(st.call(g, t(g, 0x171, 314), 0).st0);
+            g.write::<f32>(v1 + 4, r0);
+            st.set_top(0x4248_0000);
+        } else {
+            st.push(0x4248_0000);
+        }
         let r1 = st0_f32(st.call(g, t(g, 0x171, 314), 0).st0);
         g.write::<f32>(v1 + 8, r1);
         st.set_top(0x4049_0fdb);
@@ -4520,7 +4580,7 @@ pub fn trails_start_0392<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         #[allow(clippy::cast_possible_truncation)]
         let a = g.atan2(f64::from(dz), f64::from(dx)) as f32;
         let yaw2 = sub(k(g, 0x3ca), a);
-        let yaw2 = wrap_once(g, img, f, yaw2, [0x3d9, 0x3e9, 0x3f3, 0x400]);
+        let yaw2 = wrap_once(g, img, f, yaw2, [0x3d9, 0x3e9, 0x3f3, 0x400].map(m));
         let mut st = Pushes::default();
         st.push(0x4049_0fdb);
         let r3 = st0_f32(st.call(g, t(g, 0x40b, 314), 0).st0);
@@ -4552,37 +4612,39 @@ pub fn trails_start_0392<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
             let x = g.read::<u32>(q + 0x10 + 4 * i);
             g.write::<u32>(q + 0x20 + 4 * i, x);
         }
+        // the trail's fields lie as `magic_0392`'s from `q`
+        let tb = q + l.qoff - 0x37e;
         let n = (g.rand().cast_signed() % 6 + 0x14).cast_unsigned();
-        g.write::<u32>(q + 0x39c, n);
-        g.write::<u32>(q + 0x398, n);
-        let tr = q + 0x170;
+        g.write::<u32>(tb + 0x39c, n);
+        g.write::<u32>(tb + 0x398, n);
+        let tr = tb + 0x170;
         g.write::<u32>(table + 4 * j, tr);
         let colour = g.read::<u32>(at(0xc));
         g.write::<u32>(tr, colour);
-        g.write::<u32>(q + 0x174, 1);
+        g.write::<u32>(tb + 0x174, 1);
         let pt: [u32; 4] = core::array::from_fn(|i| g.read::<u32>(o1 + 4 * i as u32));
-        g.write::<u16>(q + 0x178, 0xffff);
-        g.write::<u16>(q + 0x17a, 0x200);
-        g.write::<u32>(q + 0x37c, 0x8080_8080);
-        g.write::<u32>(q + 0x380, 0);
-        g.write::<u32>(q + 0x390, 0);
-        g.write::<u32>(q + 0x384, 0x3f80_0000);
-        g.write::<u32>(q + 0x388, 0x3f80_0000);
+        g.write::<u16>(tb + 0x178, 0xffff);
+        g.write::<u16>(tb + 0x17a, 0x200);
+        g.write::<u32>(tb + 0x37c, 0x8080_8080);
+        g.write::<u32>(tb + 0x380, 0);
+        g.write::<u32>(tb + 0x390, 0);
+        g.write::<u32>(tb + 0x384, 0x3f80_0000);
+        g.write::<u32>(tb + 0x388, 0x3f80_0000);
         for p in 0..32u32 {
             for (i, x) in (0u32..).zip(pt) {
-                g.write::<u32>(q + 0x17c + 16 * p + 4 * i, x);
+                g.write::<u32>(tb + 0x17c + 16 * p + 4 * i, x);
             }
         }
-        g.write::<u16>(q + 0x37d, 0x8020);
-        g.write::<u8>(q + 0x37f, 0x80);
-        g.write::<u16>(q + 0x381, 0x2000);
-        g.write::<u8>(q + 0x383, 0);
-        g.write::<u32>(q + 0x394, 0x32);
-        g.write::<u32>(q + 0x38c, 0x3f40_0000);
+        g.write::<u16>(tb + 0x37d, 0x8020);
+        g.write::<u8>(tb + 0x37f, 0x80);
+        g.write::<u16>(tb + 0x381, 0x2000);
+        g.write::<u8>(tb + 0x383, 0);
+        g.write::<u32>(tb + 0x394, 0x32);
+        g.write::<u32>(tb + 0x38c, 0x3f40_0000);
         g.write::<u8>(tr + 0x20c, 0x20);
         g.write::<u8>(tr + 0x210, 0x40);
         g.write::<u32>(tr + 0x218, 0x4000_0000);
-        q += 0x3a0;
+        q += l.stride;
     }
     take_pair_0266(
         g,
@@ -4591,11 +4653,12 @@ pub fn trails_start_0392<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         [
             0x65a, 0x674, 0x699, 0x6be, 0x6c9, 0x6cf, 0, 0x6de, 0x6f1, 0x78b, 0x793, 0x7c4, 0x7cf,
             0x7d5, 0x7f9, 0x815,
-        ],
+        ]
+        .map(|o| if o == 0 { 0 } else { m(o) }),
         0,
         1,
     );
-    let e2 = g.read::<u32>(at(0x10)).wrapping_add(0x1198);
+    let e2 = g.read::<u32>(at(0x10)).wrapping_add(l.e2);
     g.write::<u32>(w(0x704), 0x3f00_0000);
     g.write::<u32>(w(0x70e), 0x3f00_0000);
     for (d, x) in [
@@ -4632,6 +4695,19 @@ pub const TRAILS_START_0392: Sig = Sig {
         (0x81a, Callee::Any),
     ],
     imports: &[(0x561, "rand")],
+};
+
+/// [`trails_start_0392`]'s copy in `magic_0449` (0x10006670, 2100 bytes).
+pub const TRAILS_START_0449: Sig = Sig {
+    len: 2100,
+    hash: 0xf7cf_ffe4_7810_6d53,
+    calls: &[
+        (0x38e, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x3a1, Callee::Import("_CIatan2")),
+        (0x3d0, Callee::Import("_CIatan2")),
+        (0x82c, Callee::Any),
+    ],
+    imports: &[(0x579, "rand")],
 };
 
 /// `magic_0449`'s start-up (0x10007930, 648 bytes; internal, no
