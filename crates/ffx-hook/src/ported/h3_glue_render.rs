@@ -1646,12 +1646,8 @@ ported! {
     /// goes to a per-call buffer (the original's `alloca`).
     PostProcessManager_setHDAOSetting @ 0x0069_85d0 => extern "thiscall" fn post_set_hdao_setting(this: u32, path: u32) {
         let mut f = StackFrame::<4>::new();
-        let mut segment: Vec<u8> = Vec::new();
-        #[allow(clippy::cast_possible_truncation)] // 32-bit process
-        g22::post_set_hdao_setting(&mut mem(), f.at() + 0x10, |len| {
-            segment.resize(len as usize, 0);
-            segment.as_mut_ptr() as usize as u32
-        }, this, path);
+        let mut segment = super::AllocaFrame::new();
+        g22::post_set_hdao_setting(&mut mem(), f.at() + 0x10, |len| segment.alloc(len), this, path);
     }
 
     // ---- round 6 batch 23 (ffx_prender::h3_glue23) ----
