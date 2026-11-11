@@ -1910,7 +1910,7 @@ fn start_up_0397() {
     let w = |o: u32| img.word(f + o);
     let aim = t.img.rel32_target(f + 0x4e);
     let setup = |t: &mut Twin, k: u32, listed: bool| {
-        aim_0397_setup(t, aim, k, k % 2 == 0);
+        aim_0397_setup(t, aim, k, k.is_multiple_of(2));
         for (s, n) in [(271u32, 1usize), (711, 3), (710, 4), (719, 3)] {
             rec(t, s, n, move |_, a| (s << 16) ^ a[0]);
         }
