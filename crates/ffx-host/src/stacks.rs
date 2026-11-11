@@ -10,7 +10,6 @@
 //! of the threads: the clock's state and the render lock's and loader's
 //! words. One line (threads apart by ` | `), as the hook's `stacks` is.
 
-use std::path::PathBuf;
 use std::sync::OnceLock;
 
 use ffx_bridge::Mem as _;
@@ -34,21 +33,8 @@ const MAX_RETURNS: usize = 40;
 fn symbols() -> &'static Symbols {
     static SYMS: OnceLock<Symbols> = OnceLock::new();
     SYMS.get_or_init(|| {
-        let mut paths: Vec<PathBuf> = Vec::new();
-        if let Some(p) = std::env::var_os("FFX_HOST_SYM") {
-            paths.push(p.into());
-        }
-        paths.push("symbols/ffx.sym".into());
-        if let Some(d) = std::env::current_exe()
-            .ok()
-            .and_then(|p| p.parent().map(PathBuf::from))
-        {
-            paths.push(d.join("ffx.sym"));
-        }
-        paths
-            .iter()
-            .find(|p| p.is_file())
-            .map(|p| Symbols::read(p))
+        Symbols::locate()
+            .map(|p| Symbols::read(&p))
             .unwrap_or_default()
     })
 }

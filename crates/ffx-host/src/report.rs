@@ -3,9 +3,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use crate::exec::{Exec, Route};
+use crate::exec::{Exec, Profile, Route, Shared};
 
 /// Function starts and names from `symbols/ffx.sym`.
 #[derive(Debug, Default, Clone)]
@@ -34,6 +34,25 @@ impl Symbols {
             }
         }
         Self { names }
+    }
+
+    /// Where `ffx.sym` is: `FFX_HOST_SYM`, else `symbols/ffx.sym` from the
+    /// current directory, else `ffx.sym` beside the executable (the first
+    /// that exists).
+    #[must_use]
+    pub fn locate() -> Option<PathBuf> {
+        let mut paths: Vec<PathBuf> = Vec::new();
+        if let Some(p) = std::env::var_os("FFX_HOST_SYM") {
+            paths.push(p.into());
+        }
+        paths.push("symbols/ffx.sym".into());
+        if let Some(d) = std::env::current_exe()
+            .ok()
+            .and_then(|p| p.parent().map(PathBuf::from))
+        {
+            paths.push(d.join("ffx.sym"));
+        }
+        paths.into_iter().find(|p| p.is_file())
     }
 
     /// The function containing `addr` (the nearest start at or below it).
@@ -93,42 +112,9 @@ pub struct Summary {
 /// Counts what `exec` (and the threads that ended) ran.
 #[must_use]
 pub fn summary(exec: &Exec, syms: &Symbols) -> Summary {
-    let profile = exec.all_profile();
     let shared = exec.shared();
-    let text = exec.image().text().map(|t| (t.start, t.start + t.size));
-    let mut funcs: BTreeMap<(String, u32), Function> = BTreeMap::new();
-    for (&block, &n) in &profile.blocks {
-        let samples = profile.samples.get(&block).copied().unwrap_or(0);
-        let (module, start, name) = if text.is_some_and(|(lo, hi)| block >= lo && block < hi) {
-            match syms.containing(block) {
-                Some((a, name)) => ("FFX.exe".to_string(), a, name.to_string()),
-                None => ("FFX.exe".to_string(), block, format!("{block:#010x}")),
-            }
-        } else if let Some(d) = shared.dlls.iter().find(|d| d.contains(block)) {
-            let desc = d.describe(block);
-            let name = desc.split('+').next().unwrap_or(&desc).to_string();
-            let start = name
-                .split_once('!')
-                .and_then(|(_, n)| d.exports.get(n).copied())
-                .unwrap_or(d.base);
-            (d.name.clone(), start, name)
-        } else {
-            continue; // stubs, trampolines
-        };
-        let f = funcs.entry((module.clone(), start)).or_insert(Function {
-            start,
-            name,
-            module,
-            ..Function::default()
-        });
-        f.blocks += n;
-        f.samples += samples;
-        if block == start {
-            f.calls += n;
-        }
-    }
-    let mut functions: Vec<Function> = funcs.into_values().collect();
-    functions.sort_by(|a, b| b.samples.cmp(&a.samples).then(b.blocks.cmp(&a.blocks)));
+    let profile = shared.profile();
+    let functions = functions(shared, &profile, syms);
     let mut stats = exec.stats.clone();
     for t in shared.threads.lock().map(|t| t.clone()).unwrap_or_default() {
         if let Some(s) = &t.stats {
@@ -151,6 +137,62 @@ pub fn summary(exec: &Exec, syms: &Symbols) -> Summary {
         unicorn_blocks: profile.blocks.len(),
         functions,
     }
+}
+
+/// Every function `profile`'s blocks ran in, most samples first:
+/// `FFX.exe` by `syms` (a block before the first symbol is its own
+/// function), the C runtime DLLs by their nearest export, the spell
+/// overlays by their nearest entry ([`crate::library::function_at`]).
+/// Blocks at a port's `int3` (a table entry, a trap, a bound overlay
+/// entry) are left out: that is Rust running, not the original. So are
+/// the stub page's (stubs, sentinels, trampolines: no module).
+#[must_use]
+pub fn functions(shared: &Shared, profile: &Profile, syms: &Symbols) -> Vec<Function> {
+    let text = shared.image().text().map(|t| (t.start, t.start + t.size));
+    let bound = crate::library::bound_entries();
+    let mut funcs: BTreeMap<(String, u32), Function> = BTreeMap::new();
+    for (&block, &n) in &profile.blocks {
+        if shared.table().get(block).is_some()
+            || shared.trap(block).is_some()
+            || bound.contains(&block)
+        {
+            continue; // a port's int3
+        }
+        let samples = profile.samples.get(&block).copied().unwrap_or(0);
+        let (module, start, name) = if text.is_some_and(|(lo, hi)| block >= lo && block < hi) {
+            match syms.containing(block) {
+                Some((a, name)) => ("FFX.exe".to_string(), a, name.to_string()),
+                None => ("FFX.exe".to_string(), block, format!("{block:#010x}")),
+            }
+        } else if let Some(d) = shared.dlls.iter().find(|d| d.contains(block)) {
+            let desc = d.describe(block);
+            let name = desc.split('+').next().unwrap_or(&desc).to_string();
+            let start = name
+                .split_once('!')
+                .and_then(|(_, n)| d.exports.get(n).copied())
+                .unwrap_or(d.base);
+            (d.name.clone(), start, name)
+        } else if let Some((file, base, start)) = crate::library::function_at(block) {
+            let name = format!("{file}+{:#x}", start - base);
+            (file, start, name)
+        } else {
+            continue; // stubs, trampolines
+        };
+        let f = funcs.entry((module.clone(), start)).or_insert(Function {
+            start,
+            name,
+            module,
+            ..Function::default()
+        });
+        f.blocks += n;
+        f.samples += samples;
+        if block == start {
+            f.calls += n;
+        }
+    }
+    let mut functions: Vec<Function> = funcs.into_values().collect();
+    functions.sort_by(|a, b| b.samples.cmp(&a.samples).then(b.blocks.cmp(&a.blocks)));
+    functions
 }
 
 /// Every port that ran (all threads) as tab-separated lines (address,
@@ -182,8 +224,15 @@ pub fn ports_tsv(exec: &Exec) -> String {
 /// calls, blocks, samples), for `--profile FILE`.
 #[must_use]
 pub fn profile_tsv(s: &Summary) -> String {
+    functions_tsv(&s.functions)
+}
+
+/// `functions` as [`profile_tsv`] writes them (a header line, then one
+/// line each; `tools/unicorn-report.py` reads it).
+#[must_use]
+pub fn functions_tsv(functions: &[Function]) -> String {
     let mut out = String::from("module\tstart\tname\tcalls\tblocks\tsamples_ms\n");
-    for f in &s.functions {
+    for f in functions {
         let _ = writeln!(
             out,
             "{}\t{:#010x}\t{}\t{}\t{}\t{}",

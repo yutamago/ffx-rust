@@ -92,9 +92,6 @@ enum Event {
 #[derive(Debug, Default)]
 struct State {
     event: Option<Event>,
-    /// The profile (when [`Exec::cover`] is on).
-    profile: Profile,
-    last_tick: u64,
     /// The last basic blocks run (`FFX_HOST_TRACE=n`), oldest first.
     recent: std::collections::VecDeque<u32>,
     recent_cap: usize,
@@ -297,8 +294,9 @@ pub struct Shared {
     started: Instant,
     /// Every game thread asked for.
     pub threads: Mutex<Vec<ThreadInfo>>,
-    /// The profile of every thread that ended.
-    finished: Mutex<Profile>,
+    /// Every thread's profile (with [`Exec::cover`] on), kept after the
+    /// thread ends; read while the threads run (the harness's `quit`).
+    profiles: Mutex<Vec<Arc<Mutex<Profile>>>>,
     /// Every live emulator (thread id, Unicorn handle), for the watchdog.
     emulators: Mutex<Vec<(u32, usize)>>,
     /// Every live thread's host entries, for the harness's `stacks`.
@@ -411,7 +409,7 @@ impl Shared {
             tick: Arc::new(AtomicU64::new(0)),
             started: Instant::now(),
             threads: Mutex::new(Vec::new()),
-            finished: Mutex::new(Profile::default()),
+            profiles: Mutex::new(Vec::new()),
             emulators: Mutex::new(Vec::new()),
             spots: Mutex::new(Vec::new()),
             pool_work: Mutex::new(HashMap::new()),
@@ -512,6 +510,28 @@ impl Shared {
         if let Ok(mut t) = self.traps.write() {
             t.insert(at, trap);
         }
+    }
+
+    /// Every thread's profile so far, running or ended (empty without
+    /// [`Exec::cover`]). Safe from any thread: each thread's blocks go
+    /// into its own entry, which this only reads.
+    #[must_use]
+    pub fn profile(&self) -> Profile {
+        let live: Vec<Arc<Mutex<Profile>>> =
+            self.profiles.lock().map(|l| l.clone()).unwrap_or_default();
+        let mut p = Profile::default();
+        for t in live {
+            if let Ok(t) = t.lock() {
+                p.merge(&t);
+            }
+        }
+        p
+    }
+
+    /// The function table.
+    #[must_use]
+    pub fn table(&self) -> &Table {
+        &self.table
     }
 
     /// The trap at `at`.
@@ -953,24 +973,11 @@ impl Exec {
         self.shared.handle()
     }
 
-    /// This thread's profile so far (with [`Exec::cover`] on).
-    #[must_use]
-    pub fn profile(&self) -> &Profile {
-        &self.uc.get_data().profile
-    }
-
-    /// Every thread's profile: this one's and those of the threads that
-    /// ended.
+    /// Every thread's profile so far, running or ended
+    /// ([`Shared::profile`]).
     #[must_use]
     pub fn all_profile(&self) -> Profile {
-        let mut p = self
-            .shared
-            .finished
-            .lock()
-            .map(|f| f.clone())
-            .unwrap_or_default();
-        p.merge(self.profile());
-        p
+        self.shared.profile()
     }
 
     /// Profiles every basic block run, by count and clock samples (slower;
@@ -997,15 +1004,22 @@ impl Exec {
 
     fn add_profile_hook(&mut self) -> Result<()> {
         let tick = Arc::clone(&self.shared.tick);
-        self.uc.add_block_hook(1, 0, move |uc, addr, _| {
+        // this thread's own profile, uncontended but for a reader's
+        // snapshot (`Shared::profile`)
+        let live = Arc::new(Mutex::new(Profile::default()));
+        if let Ok(mut l) = self.shared.profiles.lock() {
+            l.push(Arc::clone(&live));
+        }
+        let mut last_tick = 0;
+        self.uc.add_block_hook(1, 0, move |_, addr, _| {
             let t = tick.load(Ordering::Relaxed);
-            let d = uc.get_data_mut();
             #[allow(clippy::cast_possible_truncation)] // a 32-bit address
             let addr = addr as u32;
-            *d.profile.blocks.entry(addr).or_default() += 1;
-            if t != d.last_tick {
-                d.last_tick = t;
-                *d.profile.samples.entry(addr).or_default() += 1;
+            let Ok(mut p) = live.lock() else { return };
+            *p.blocks.entry(addr).or_default() += 1;
+            if t != last_tick {
+                last_tick = t;
+                *p.samples.entry(addr).or_default() += 1;
             }
         })?;
         Ok(())
@@ -2194,7 +2208,7 @@ fn start_thread(shared: &Arc<Shared>, handle: u32) {
         .spawn(move || thread_main(&shared2, handle, id, entry, param));
     if spawned.is_err() {
         shared.running.fetch_sub(1, Ordering::AcqRel);
-        finish_thread(shared, handle, "host thread refused".into(), None, None);
+        finish_thread(shared, handle, "host thread refused".into(), None);
         shared.sync.thread_done(handle, 0);
     }
 }
@@ -2203,7 +2217,7 @@ fn thread_main(shared: &Arc<Shared>, handle: u32, id: u32, entry: u32, param: u3
     let mut ex = match Exec::on_thread(Arc::clone(shared), id, THREAD_STACK_SIZE) {
         Ok(e) => e,
         Err(e) => {
-            finish_thread(shared, handle, format!("no executor: {e}"), None, None);
+            finish_thread(shared, handle, format!("no executor: {e}"), None);
             shared.sync.thread_done(handle, 0);
             shared.running.fetch_sub(1, Ordering::AcqRel);
             return;
@@ -2221,7 +2235,6 @@ fn thread_main(shared: &Arc<Shared>, handle: u32, id: u32, entry: u32, param: u3
     ex.stats.x87 = ex.x87_steps();
     ex.stats.exceptions = ex.exceptions_raised();
     let stats = ex.stats.clone();
-    let profile = ex.profile().clone();
     let trace = std::mem::take(&mut ex.trace);
     drop(ex);
     // the record first: a waiter on the handle reads it as soon as the
@@ -2231,23 +2244,12 @@ fn thread_main(shared: &Arc<Shared>, handle: u32, id: u32, entry: u32, param: u3
     {
         i.trace = trace;
     }
-    finish_thread(shared, handle, outcome, Some(stats), Some(profile));
+    finish_thread(shared, handle, outcome, Some(stats));
     shared.sync.thread_done(handle, code);
     shared.running.fetch_sub(1, Ordering::AcqRel);
 }
 
-fn finish_thread(
-    shared: &Shared,
-    handle: u32,
-    outcome: String,
-    stats: Option<Stats>,
-    profile: Option<Profile>,
-) {
-    if let Some(p) = profile
-        && let Ok(mut f) = shared.finished.lock()
-    {
-        f.merge(&p);
-    }
+fn finish_thread(shared: &Shared, handle: u32, outcome: String, stats: Option<Stats>) {
     if let Ok(mut t) = shared.threads.lock()
         && let Some(i) = t.iter_mut().find(|i| i.handle == handle)
     {

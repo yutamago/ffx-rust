@@ -221,6 +221,29 @@ fn boots_past_the_d3d11_device_to_the_first_frames() {
         "{report}"
     );
     assert!(!s.dll_functions.is_empty(), "{report}");
+    // the profile (`--profile`) leaves the ports' int3 blocks out: a
+    // table entry's row holds only the original's body (a wrapper's
+    // trampoline jumping back in), never an entry of its own
+    for f in s.functions.iter().filter(|f| f.module == "FFX.exe") {
+        assert!(
+            f.calls == 0 || exec.table().get(f.start).is_none(),
+            "{} {:#x}: {} calls counted at a port's int3",
+            f.name,
+            f.start,
+            f.calls
+        );
+    }
+    // the TSV tools/unicorn-report.py reads
+    let tsv = ffx_host::report::profile_tsv(&s);
+    assert!(tsv.starts_with("module\tstart\tname\tcalls\tblocks\tsamples_ms\n"));
+    assert_eq!(tsv.lines().count(), s.functions.len() + 1);
+    // the profile is every thread's, also read from another thread while
+    // the game's threads may still run (the harness's `quit` writes it)
+    let shared = std::sync::Arc::clone(exec.shared());
+    let blocks = std::thread::spawn(move || shared.profile().blocks.len())
+        .join()
+        .unwrap();
+    assert!(blocks >= s.unicorn_blocks, "{report}");
     // the heap's decommit thread started and ended with the run
     let threads = exec.shared().threads.lock().unwrap().clone();
     assert!(
