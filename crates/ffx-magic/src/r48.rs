@@ -12,7 +12,7 @@
 
 use crate::m0018::st0_f32;
 use crate::runtime::slot_target;
-use crate::sb_sse::{add, mul, sub};
+use crate::sb_sse::{add, div, mul, sub};
 use crate::{Callee, Frame, Game, Image, Ret, Sig};
 
 const ONE: u32 = 0x3f80_0000;
@@ -2779,6 +2779,152 @@ pub const MAIN_TASK_0387: Sig = Sig {
         (0x605, Callee::Sig(&crate::l3_common::LIST_UNLINK_CURRENT)),
         (0x616, Callee::Sig(&crate::sa_summon::MODEL_SETUP)),
         (0x648, Callee::Any),
+    ],
+    imports: &[],
+};
+
+/// `magic_0397`'s actors' start (0x10005020, 1114 bytes; a table
+/// callback, no arguments; an aligned /GS frame `A`, `S = A - 0x48`: the
+/// position `(x, y, z)` at `S + 0x34`). As
+/// [`spin_start_0307`](crate::r32::spin_start_0307) on 0397's records
+/// (`R = *G_S + 0x1e90 + 0xac k`, the centre at `*G_S + 0x1900`): for
+/// each actor `k < *G_N` and its object `O`:
+/// - slot 262 `(O, &x, &y, &z)` (`w` 1.0); slot 12 `(O)`'s height `h`
+///   and slot 314 `(5.0)`'s `r` (ST0); `R[0x74] = y`,
+///   `u = ((y - h) + (r + C)) / D`;
+/// - the distance `d` from the centre (the height difference `c.y - c.y`)
+///   to `R[0x9c]`, `R[0xa0]` 80; the yaw `K - atan2(dz, dx)` (wrapped
+///   once) to `R[0x90]`, `R[0x94..0x98] = (0, K_S)`; `R[0x40..0x60]` zeros
+///   but `R[0x44] = u C1` and `R[0x54] = u C2 / D2`; slot 333 `(O)`'s
+///   angle `K2 - a` wrapped to `R[0x64]`; zeros, three scales 1.0, `R[0xa4]`
+///   500 and `R[0xa8]` 0;
+/// - unless slot 532 `(LIST[k])` answers: the actor's mode
+///   ([`actor_mode`](crate::sa_script::actor_mode), `ecx = k`, `edx = R`),
+///   slot 295 `(LIST[k], 0)` and slot 528 `(LIST[k], 0)`.
+///
+/// Then a task node (callback the actors' sway) is taken from the free
+/// ring ([`pool_take_0587`](crate::r27::pool_take_0587)), flagged and
+/// goes last on the task list, also kept at `*G_S + 0x23f0`. Returns
+/// `*G_S`.
+#[allow(clippy::too_many_lines)] // the record's fields, as the original
+pub fn actors_start_0397<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    use crate::ob_model::wrap_once;
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let c = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let rf = |g: &G, at: u32| g.read::<f32>(at);
+    let a = fr.esp.wrapping_sub(4) & !7;
+    let s0 = a.wrapping_sub(0x48);
+    let (px, py, pz) = (s0 + 0x34, s0 + 0x38, s0 + 0x3c);
+    let s = g.read::<u32>(w(0x15));
+    g.write::<u32>(s0 + 0x14, s);
+    let n = g.read::<u32>(w(0x1c)).cast_signed();
+    // `k` counts up from 0: the inlined "actor -1 is `*G_SELF`" branches
+    // never run
+    let obj = |g: &G, k: u32, list: u32, table: u32| {
+        let i = u32::from(g.read::<u8>(g.read::<u32>(w(list)).wrapping_add(k)));
+        g.read::<u32>(w(table).wrapping_add(4 * i))
+    };
+    let actor =
+        |g: &G, k: u32, list: u32| u32::from(g.read::<u8>(g.read::<u32>(w(list)).wrapping_add(k)));
+    for k in 0..n.max(0).cast_unsigned() {
+        let r = s.wrapping_add(0x1e90 + 0xac * k);
+        let o = obj(g, k, 0x43, 0x4e);
+        g.call(t(g, 0x63, 262), 0, &[o, px, py, pz]);
+        g.write::<u32>(s0 + 0x40, ONE);
+        let o = obj(g, k, 0x87, 0x92);
+        let h = st0_f32(g.call(t(g, 0x98, 12), 0, &[o]).st0);
+        g.write::<f32>(s0 + 0x18, h);
+        let y = rf(g, py);
+        g.write::<f32>(r + 0x74, y);
+        let r5 = st0_f32(g.call(t(g, 0xac, 314), 0, &[0x40a0_0000]).st0);
+        g.write::<f32>(s0 + 0x10, r5);
+        let lift = add(sub(rf(g, py), h), add(r5, c(g, 0xde)));
+        let sy = rf(g, s.wrapping_add(0x1904));
+        g.write::<f32>(py, sy);
+        let dz = sub(rf(g, pz), rf(g, s.wrapping_add(0x1908)));
+        let dy = sub(sy, sy);
+        let u = div(lift, c(g, 0x111));
+        g.write::<f32>(s0 + 0x10, u);
+        let dx = sub(rf(g, px), rf(g, s.wrapping_add(0x1900)));
+        let flat = add(add(mul(dy, dy), mul(dx, dx)), mul(dz, dz));
+        // `_libm_sse2_sqrt_precise` of the double: exact, as Rust's
+        #[allow(clippy::cast_possible_truncation)]
+        let d = f64::from(flat).sqrt() as f32;
+        g.write::<u32>(r + 0xa0, 0x42a0_0000);
+        g.write::<f32>(r + 0x9c, d);
+        let dz = sub(rf(g, pz), rf(g, s.wrapping_add(0x1908)));
+        let dx = sub(rf(g, px), rf(g, s.wrapping_add(0x1900)));
+        // `_CIatan2` on x87 (`ST1` = dz), rounded once
+        #[allow(clippy::cast_possible_truncation)]
+        let an = g.atan2(f64::from(dz), f64::from(dx)) as f32;
+        let yaw = sub(c(g, 0x1a8), an);
+        let yaw = wrap_once(g, img, f, yaw, [0x1b7, 0x1c1, 0x1cb, 0x1d8]);
+        g.write::<f32>(r + 0x90, yaw);
+        let u = rf(g, s0 + 0x10);
+        let side = div(mul(u, c(g, 0x1f1)), c(g, 0x201));
+        let up = mul(u, c(g, 0x1f9));
+        g.write::<u32>(r + 0x94, 0);
+        g.write::<u32>(r + 0x98, 0xbbcd_e32f);
+        for i in 0..9u32 {
+            g.write::<u32>(r + 0x40 + 4 * i, 0);
+        }
+        g.write::<f32>(r + 0x44, up);
+        g.write::<f32>(r + 0x54, side);
+        let o = obj(g, k, 0x261, 0x26c);
+        let v = st0_f32(g.call(t(g, 0x272, 333), 0, &[o]).st0);
+        g.write::<f32>(s0 + 0x10, v);
+        let a2 = sub(c(g, 0x286), v);
+        let a2 = wrap_once(g, img, f, a2, [0x296, 0x2a0, 0x2aa, 0x2b7]);
+        g.write::<f32>(r + 0x64, a2);
+        for (off, x) in [
+            (0x68u32, 0u32),
+            (0x6c, 0),
+            (0x80, ONE),
+            (0x84, ONE),
+            (0x88, ONE),
+            (0xa4, 0x1f4),
+            (0xa8, 0),
+        ] {
+            g.write::<u32>(r + off, x);
+        }
+        let i = actor(g, k, 0x30d);
+        if g.call(t(g, 0x317, 532), 0, &[i]).eax != 0 {
+            continue;
+        }
+        let mode = Frame {
+            at: img.rel32_target(f + 0x32f),
+            esp: s0.wrapping_sub(4),
+            ecx: k,
+            edx: r,
+            ..Frame::default()
+        };
+        crate::sa_script::actor_mode(g, img, &mode);
+        let i = actor(g, k, 0x340);
+        g.call(t(g, 0x34c, 295), 0, &[i, 0]);
+        let i = actor(g, k, 0x368);
+        g.call(t(g, 0x374, 528), 0, &[i, 0]);
+    }
+    let (node, _) =
+        crate::r27::pool_take_0587(g, img, f, [0x395, 0x3a4, 0x3c1, 0x3c9, 0x3fa, 0x405], 0);
+    g.write::<u8>(node + 0x18, 1);
+    crate::r32::append_last(g, img, f, node, [0x40b, 0x41e, 0x431, 0x447], 0);
+    let s = g.read::<u32>(s0 + 0x14);
+    g.write::<u32>(s + 0x23f0, node);
+    Ret::eax(s)
+}
+
+/// [`actors_start_0397`] (the `rel32`s: `_libm_sse2_sqrt_precise`,
+/// `_CIatan2`, the actor's mode, `__security_check_cookie`).
+pub const ACTORS_START_0397: Sig = Sig {
+    len: 1114,
+    hash: 0xf90f_55b9_2e87_b419,
+    calls: &[
+        (0x141, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0x196, Callee::Import("_CIatan2")),
+        (0x32f, Callee::Sig(&crate::sa_script::ACTOR_MODE)),
+        (0x452, Callee::Any),
     ],
     imports: &[],
 };

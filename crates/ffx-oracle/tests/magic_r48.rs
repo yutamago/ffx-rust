@@ -1598,7 +1598,14 @@ fn main_task_0387() {
         }
         // (the list's junk covers the centre's count)
         t.set_u32(img.word(cf + 0x48), 2);
-        t.set_u32(img.word(tgt(0x605) + 2), 0);
+        // (b10 test gaps: the effect's colour words finite, its flags word
+        // with bit 0 set and bit 2 clear, the list's current node linked)
+        floats(&mut t, fx + 0xa0, 0x30, k);
+        t.set_u32(w(0x431), 0x0f0f_0f0b + 16 * k);
+        let lf = tgt(0x605);
+        let cur = SCRATCH + 0x3_d100;
+        junk(&mut t, cur, 0x20, k);
+        t.set_u32(img.word(lf + 2), if k == 10 { cur } else { 0 });
         // the task list's last task (every set-up links after it)
         junk(&mut t, SCRATCH + 0x200, 0x10, k);
         t.set_u32(w(0x388), SCRATCH + 0x200);
@@ -1610,5 +1617,96 @@ fn main_task_0387() {
         }
         ownb::dirty_stack(&mut t, 0xd320 + k, &[]);
         t.check_entry(f, Call::default(), &[tk], Eax::Checked);
+    }
+}
+
+/// The free ring of `n` nodes at `nodes` (`free` the count, `head` the
+/// ring's node), as r32's tests set it up.
+fn free_ring(t: &mut Twin, nodes: u32, (free, head): (u32, u32), nfree: u16, k: u32) {
+    for i in 0..3u32 {
+        let n = nodes + 0x40 * i;
+        junk(t, n, 0x40, k + i);
+        t.set_u32(n, nodes + 0x40 * ((i + 2) % 3));
+        t.set_u32(n + 4, nodes + 0x40 * ((i + 1) % 3));
+    }
+    t.set_u16(free, nfree);
+    t.set_u32(head, nodes + 0x40);
+}
+
+/// `magic_0397` 0x10005020 (`r48::actors_start_0397`): three, one, two
+/// and no actors (the yaws and angles wrapping both ways), slot 532
+/// answering or not, the free ring with one and more nodes, the task list
+/// empty and not.
+#[test]
+fn actors_start_0397() {
+    let Some(mut t) = sa::twin(397) else { return };
+    all_stubs(&mut t);
+    let f = t.at(0x5020);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    rec(&mut t, 262, 4, |m, a| {
+        let k = (a[0] & 0xff) as f32;
+        let scale = rf(m, SCRATCH + 0xa04);
+        wf(m, a[1], scale * (k - 2.0));
+        wf(m, a[2], 0.5 * k + 0.375);
+        wf(m, a[3], scale * (3.0 - k));
+        0x262
+    });
+    for s in [12u32, 333, 314] {
+        rec(&mut t, s, 1, move |_, a| (s << 16) ^ a[0]);
+    }
+    t.stub_st0(12, |_, a| f64::from(a[0] & 0xf) * 0.625);
+    t.stub_st0(314, |_, a| f64::from(f32::from_bits(a[0])) * 0.125);
+    t.stub_st0(333, |m, a| {
+        f64::from(rf(m, SCRATCH + 0xa08)) * f64::from((a[0] & 0xff) + 1)
+    });
+    rec(&mut t, 532, 1, |_, a| a[0] & 1);
+    for s in [528u32, 295] {
+        rec(&mut t, s, 2, move |_, a| (s << 16) ^ a[0] ^ a[1]);
+    }
+    let mode = t.img.rel32_target(f + 0x32f);
+    for o in [0x43u32, 0x87, 0x261, 0x30d, 0x340, 0x368] {
+        let l = w(&t, o);
+        t.set_u32(l, SCRATCH + 0x700);
+    }
+    t.write(SCRATCH + 0x700, &[3, 1, 4, 1, 5, 2, 6, 0]);
+    for o in [0x4eu32, 0x92, 0x26c] {
+        for i in 0..8 {
+            let at = w(&t, o) + 4 * i;
+            t.set_u32(at, 0x0b00_0010 + 3 * i);
+        }
+    }
+    let l = t.img.word(mode + 0x21);
+    t.set_u32(l, SCRATCH + 0x700);
+    let l = t.img.word(mode + 0x2e);
+    for i in 0..8 {
+        t.set_u32(l + 4 * i, 0x0c00_0000 + i);
+    }
+    let s = SCRATCH + 0x1_0000;
+    let (gs, gn) = (w(&t, 0x15), w(&t, 0x1c));
+    let (free, head, tail, last) = (w(&t, 0x395), w(&t, 0x3a4), w(&t, 0x40b), w(&t, 0x41e));
+    let nodes = SCRATCH + 0x9000;
+    // (count, place scale, slot 333's angle step, free nodes, list tail)
+    let cases: [(i32, f32, f32, u16, u32); 5] = [
+        (3, 40.0, 1.5, 3, SCRATCH + 0x9800),
+        (1, 0.25, -2.0, 1, 0),
+        (2, 9.0, 0.25, 2, SCRATCH + 0x9800),
+        (0, 1.0, 1.0, 1, 0),
+        (-1, 1.0, 1.0, 2, SCRATCH + 0x9800),
+    ];
+    for (k, (count, scale, step, nfree, tl)) in (0u32..).zip(cases) {
+        t.set_u32(gs, s);
+        t.set_u32(gn, count.cast_unsigned());
+        junk(&mut t, s + 0x1e00, 0x400, k);
+        junk(&mut t, s + 0x23e0, 0x20, k + 1);
+        floats(&mut t, s + 0x1900, 4, k);
+        t.set_u32(SCRATCH + 0xa04, scale.to_bits());
+        t.set_u32(SCRATCH + 0xa08, step.to_bits());
+        t.set_u32(SCRATCH + 0xa00, k);
+        free_ring(&mut t, nodes, (free, head), nfree, k);
+        t.set_u32(tail, tl);
+        junk(&mut t, SCRATCH + 0x9800, 0x10, k);
+        t.set_u32(last, SCRATCH + 0x9800);
+        ownb::dirty_stack(&mut t, 0x5020 + k, &[]);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
