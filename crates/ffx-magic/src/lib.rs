@@ -3515,6 +3515,8 @@ ports! {
     "r47 draw 0417" => r47::DRAW_0417, r47::draw_0417;
     "r47 load step 0434" => r47::LOAD_0434, r47::load_0434;
     "r47 load step 0251" => r47::LOAD_0251, r47::load_0251;
+    "r47 draw 0385" => r47::DRAW_0385, r47::draw_0385;
+    "r47 load step 0385" => r47::LOAD_0385, r47::load_0385;
     // round 47 (magic-r47): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
@@ -5507,6 +5509,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r47 flames 0417", &r47::FLAMES_0417),
     ("r47 start-up 0434", &r47::START_UP_0434),
     ("r47 start-up 0251", &r47::START_UP_0251),
+    ("r47 start-up 0385", &r47::START_UP_0385),
     // round 47 (magic-r47): end of INTERNAL
 ];
 

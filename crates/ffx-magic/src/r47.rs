@@ -1490,3 +1490,592 @@ pub const LOAD_0251: Sig = Sig {
     calls: &[(0x5b, Callee::Sig(&START_UP_0251))],
     imports: &[],
 };
+
+/// `magic_0385`'s sprite draw (0x10001ed0, 990 bytes; a stored callback,
+/// no arguments; an 8-aligned /GS frame, `S` = `esp` after the three
+/// pushes). The view `A` (`S + 0x128`, slot 723), the camera `B` (`S +
+/// 0xe8`, slot 724), `G_D` = `D` (`S + 0xa8`), the scale matrix `C` (`S +
+/// 0x28`, slot 235). For each of the `*G_N` records `R` (0x68 bytes from
+/// `*G_R`) with `+0x60` set (each one counted):
+/// - while the wait `+0x54` is positive it counts down;
+/// - else the size `s` = `+0x1c` scaled: by `(K - x) +0x20 + x` (`x =
+///   +0x50 / +0x44`) while `+0x44` is positive, held while `+0x48` is
+///   (both with `+0x50` counting up, the count and `+0x50` 0 past it), by
+///   `+0x20 x + (K - x)` (`x = +0x50 / +0x4c`) while `+0x4c` is, else by
+///   `+0x20`; `C`'s diagonal `s`; the angle `+0x28 += +0x2c` wrapped once
+///   and slot 330 `(D, C, angle)`;
+/// - the point `P` (`S + 0x18`) = slot 237 `(actor, +0x34, R or 0 by bit
+///   1 of byte +0x64, P)`, `w` 1, through `B` into `D`'s last row (slot
+///   229); `G_E` 0, or with bit 0 `E` (`S + 0x68`, slot 230 `(E, D)`, its
+///   `z` moved by `+0x24`);
+/// - the colour: each byte `(a (n - |t|) + b |t|) / n` while `n` (`+0x3c`)
+///   is positive (`t` `+0x40` counting up, `n` 0 past it), else `+0x5c`;
+/// - the frame ([`anim_step`](crate::sb_common::anim_step) on `R +
+///   0x10`); with the life `+0x38` negative and `+0x14` not 1 the life
+///   becomes 1, else the part is linked
+///   ([`link_part`](crate::sa_misc::link_part) `(G_L, i)`); a positive
+///   life counts down, at 0 `+0x60` is cleared.
+///
+/// The count goes into a global and is returned.
+#[allow(clippy::too_many_lines)] // the original's steps, in order
+pub fn draw_0385<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let gw = |g: &G, o: u32| g.read::<u32>(w(o));
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let call = |o: u32| img.rel32_target(f + o);
+    // push ebp; and esp, -8; sub esp, 0x164; three pushes
+    let b0 = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0x164);
+    let cookie = gw(g, 0xd) ^ b0;
+    g.write::<u32>(b0 + 0x160, cookie);
+    let s = b0.wrapping_sub(0xc);
+    let (a, b, c, d, e, p, pt) = (
+        s + 0x128,
+        s + 0xe8,
+        s + 0x28,
+        s + 0xa8,
+        s + 0x68,
+        s + 0x18,
+        s + 0xd8,
+    );
+    let recs = gw(g, 0x1f);
+    // call width: 1
+    g.call(t(g, 0x2c, 723), 0, &[a]);
+    // call width: 1
+    g.call(t(g, 0x44, 724), 0, &[b]);
+    g.write::<u32>(w(0x58), d);
+    // call width: 1
+    g.call(t(g, 0x65, 235), 0, &[c]);
+    let one = k(g, 0x88);
+    let tw = k(g, 0x90);
+    let mut drawn = 0u32;
+    let mut i = 0u32;
+    while i.cast_signed() < gw(g, 0x7e).cast_signed() {
+        let r = recs.wrapping_add(i.wrapping_mul(0x68));
+        let rd = |g: &G, o: u32| g.read::<f32>(r + o);
+        let rw = |g: &G, o: u32| g.read::<i32>(r + o);
+        if g.read::<u32>(r + 0x60) == 0 {
+            i += 1;
+            continue;
+        }
+        drawn += 1;
+        let wait = rw(g, 0x54);
+        if wait > 0 {
+            g.write::<i32>(r + 0x54, wait.wrapping_sub(1));
+            i += 1;
+            continue;
+        }
+        let size0 = rd(g, 0x1c);
+        let ratio = |at: i32, n: i32| {
+            #[allow(clippy::cast_precision_loss)] // cvtdq2ps
+            div(at as f32, n as f32)
+        };
+        let size = if rw(g, 0x44) > 0 {
+            let (n, at) = (rw(g, 0x44), rw(g, 0x50));
+            let x = ratio(at, n);
+            g.write::<i32>(r + 0x50, at.wrapping_add(1));
+            if at.wrapping_add(1) > n {
+                g.write::<u32>(r + 0x44, 0);
+                g.write::<u32>(r + 0x50, 0);
+            }
+            mul(add(mul(sub(one, x), rd(g, 0x20)), x), size0)
+        } else if rw(g, 0x48) > 0 {
+            let at = rw(g, 0x50).wrapping_add(1);
+            g.write::<i32>(r + 0x50, at);
+            if at > rw(g, 0x48) {
+                g.write::<u32>(r + 0x48, 0);
+                g.write::<u32>(r + 0x50, 0);
+            }
+            size0
+        } else if rw(g, 0x4c) > 0 {
+            let (n, at) = (rw(g, 0x4c), rw(g, 0x50));
+            let x = ratio(at, n);
+            let s = mul(add(mul(rd(g, 0x20), x), sub(one, x)), size0);
+            g.write::<i32>(r + 0x50, at.wrapping_add(1));
+            if at.wrapping_add(1) > n {
+                g.write::<u32>(r + 0x4c, 0);
+            }
+            s
+        } else {
+            mul(rd(g, 0x20), size0)
+        };
+        let ang = add(rd(g, 0x2c), rd(g, 0x28));
+        for o in [0x28u32, 0x14, 0] {
+            g.write::<f32>(c + o, size);
+        }
+        let ang = if ang > k(g, 0x1cf) {
+            sub(ang, tw)
+        } else if k(g, 0x1df) > ang {
+            add(ang, tw)
+        } else {
+            ang
+        };
+        g.write::<f32>(r + 0x28, ang);
+        // call width: 3
+        g.call(t(g, 0x200, 330), 0, &[d, c, ang.to_bits()]);
+        let flags = g.read::<u8>(r + 0x64);
+        let owner = if flags & 2 == 0 { 0 } else { r };
+        let who = g.read::<u32>(r + 0x30);
+        let h = if who == u32::MAX {
+            gw(g, 0x228)
+        } else {
+            let sel = g.read::<u8>(gw(g, 0x22f).wrapping_add(who));
+            g.read::<u32>(w(0x23a).wrapping_add(4 * u32::from(sel)))
+        };
+        let bone = g.read::<u32>(r + 0x34);
+        // call width: 4
+        g.call(t(g, 0x249, 237), 0, &[h, bone, owner, p]);
+        g.write::<u32>(p + 0xc, ONE);
+        // call width: 3
+        g.call(t(g, 0x26b, 229), 0, &[pt, b, p]);
+        g.write::<u32>(w(0x284), 0);
+        if flags & 1 != 0 {
+            // call width: 2
+            g.call(t(g, 0x2a0, 230), 0, &[e, d]);
+            let z = add(rd(g, 0x24), g.read::<f32>(e + 0x38));
+            g.write::<u32>(w(0x2c2), e);
+            g.write::<f32>(e + 0x38, z);
+        }
+        let n = rw(g, 0x3c);
+        if n > 0 {
+            let tt = rw(g, 0x40).wrapping_abs();
+            for (j, op) in (0u32..).zip([0x2fbu32, 0x319, 0x337, 0x359]) {
+                let from = i32::from(g.read::<u8>(r + 0x58 + j));
+                let to = i32::from(g.read::<u8>(r + 0x5c + j));
+                let v = from
+                    .wrapping_mul(n.wrapping_sub(tt))
+                    .wrapping_add(to.wrapping_mul(tt))
+                    / n;
+                g.write::<u8>(w(op), v.to_le_bytes()[0]);
+            }
+            let tt = rw(g, 0x40).wrapping_add(1);
+            g.write::<i32>(r + 0x40, tt);
+            if tt > rw(g, 0x3c) {
+                g.write::<u32>(r + 0x3c, 0);
+            }
+        } else {
+            let x = g.read::<u32>(r + 0x5c);
+            g.write::<u32>(w(0x375), x);
+        }
+        let entry = crate::sb_common::anim_step(g, img, call(0x37d), r + 0x10);
+        if rw(g, 0x38) < 0 && g.read::<u32>(r + 0x14) != 1 {
+            g.write::<u32>(r + 0x38, 1);
+        } else {
+            // push i; push G_L; the call's return address below them
+            let esp = s.wrapping_sub(0xc);
+            g.write::<u32>(esp + 4, w(0x398));
+            g.write::<u32>(esp + 8, i);
+            let link = Frame {
+                at: call(0x3a2),
+                esp,
+                ecx: r + 0x10,
+                edx: entry,
+                ..*fr
+            };
+            crate::sa_misc::link_part(g, img, &link);
+        }
+        let life = rw(g, 0x38);
+        if life > 0 {
+            g.write::<i32>(r + 0x38, life - 1);
+            if life == 1 {
+                g.write::<u32>(r + 0x60, 0);
+            }
+        }
+        i += 1;
+    }
+    g.write::<u32>(w(0xce), drawn);
+    Ret::eax(drawn)
+}
+
+/// [`draw_0385`] (the `rel32`s: the frame step, the part link, the
+/// cookie check).
+pub const DRAW_0385: Sig = Sig {
+    len: 990,
+    hash: 0x91e9_1f09_e6c9_02b8,
+    calls: &[
+        (0xd3, Callee::Any),
+        (0x37d, Callee::Sig(&crate::sb_common::ANIM_STEP)),
+        (0x3a2, Callee::Sig(&crate::sa_misc::LINK_PART)),
+    ],
+    imports: &[],
+};
+
+/// `magic_0385`'s start-up (0x10003f00, 2922 bytes; internal, no
+/// arguments, run by its load step; a /GS `ebp` frame, the point `V` at
+/// `ebp - 0x14`):
+/// - three words, `*G_C` = slot 719 `(D, 8, 0)`; the part set-up
+///   ([`part_init`](crate::l5_objhost::part_init)); slot 333 `(*G_A)`
+///   (its answer dropped);
+/// - 22 objects in pairs (0x130 apart; [`start_object_at`](crate::s4_misc::start_object_at)
+///   `(1, 0x28 + 4 j, -, 0)`), each with its number at `+0x120`, the step
+///   `CB` at `+0x104` and byte `+0x126` 2;
+/// - per actor `i` (`*G_N`; 0x390 apart): `V` = slot 262 of its handle
+///   (`w` 1), three objects `(0, o, -, CB2 or CB1)` (`o` from 0x8c up by
+///   `13 + rand() % 8` each; `CB2` for the third), each with three
+///   random spins (slot 314), `V` at `+0xd0` and the actor's pick
+///   ([`pick`](crate::m0074::pick)) at `+0x120`;
+/// - 64 records cleared and their counts; the sprite pool
+///   ([`pool_reset_take`](crate::o6_fam_pool::pool_reset_take));
+/// - 22 sprite records taken from the ring (`*G_R`, `*G_N`, the rover
+///   `*G_I`; none left ends it): colours, sizes, the frame cursor
+///   (`*G_F + 0xc`), a bone `TAB[j]`, waits 0, 0, 2, 2, 4, ...;
+/// - blocks of globals and eight task nodes off the free ring: two marked
+///   1 with their records, three with records and no mark, the camera
+///   words (slot 413 or 215 of `*G_X` by a flag), then one marked 1, one
+///   unmarked and one marked 2.
+///
+/// Returns 0.
+#[allow(clippy::too_many_lines)] // the original's steps, in order
+pub fn start_up_0385<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let gw = |g: &G, o: u32| g.read::<u32>(w(o));
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let call = |o: u32| img.rel32_target(f + o);
+    let ebp = fr.esp.wrapping_sub(4);
+    let lf = |o: u32| ebp.wrapping_sub(o);
+    let cookie = gw(g, 0x7) ^ ebp;
+    g.write::<u32>(lf(4), cookie);
+    for (to, v) in [(0x29u32, 0x2du32), (0x33, 0x37), (0x3d, 0x41)] {
+        g.write::<u32>(w(to), w(v));
+    }
+    // call width: 3
+    let c = g.call(t(g, 0x11, 719), 0, &[w(0x23), 8, 0]).eax;
+    g.write::<u32>(w(0x4b), c);
+    crate::l5_objhost::part_init(g, img, call(0x50));
+    let a = gw(g, 0x5b);
+    // call width: 1 (`fstp st(0)`: the answer is dropped)
+    g.call(t(g, 0x55, 333), 0, &[a]);
+    let start =
+        |g: &mut G, (at, obj, scale): (u32, u32, f32), (index, owner, b): (u32, u32, u32)| {
+            crate::s4_misc::start_object_at(g, img, call(at), obj, scale, index, owner, b);
+        };
+    // the 22 objects
+    let mut o = w(0x6d);
+    let mut n = 0u32;
+    let mut owner = 0x28u32;
+    for _ in 0..0xb {
+        let scale = k(g, 0x84);
+        start(g, (0x91, o, scale), (1, owner, 0));
+        let scale = k(g, 0x99);
+        g.write::<u32>(o + 0x120, n);
+        g.write::<u32>(o + 0x104, w(0xb8));
+        g.write::<u8>(o + 0x126, 2);
+        n += 1;
+        start(g, (0xc5, o + 0x130, scale), (1, owner, 0));
+        g.write::<u32>(o + 0x250, n);
+        g.write::<u32>(o + 0x234, w(0xd5));
+        g.write::<u8>(o + 0x256, 2);
+        o += 0x260;
+        n += 1;
+        owner += 4;
+    }
+    // the actors' objects
+    let v = lf(0x14);
+    let mut i = 0u32;
+    while i.cast_signed() < gw(g, 0xf6).cast_signed() {
+        let mut o = i.wrapping_mul(0x390).wrapping_add(w(0x10a));
+        let mut id = 0x8cu32;
+        let h = {
+            let b = g.read::<u8>(gw(g, 0x122).wrapping_add(i));
+            g.read::<u32>(w(0x12d).wrapping_add(4 * u32::from(b)))
+        };
+        // call width: 4
+        g.call(t(g, 0x13f, 262), 0, &[h, v, v + 4, v + 8]);
+        g.write::<u32>(v + 0xc, ONE);
+        for j in 0..3u32 {
+            let r = g.rand().cast_signed() % 8;
+            id = id.wrapping_add(0xd).wrapping_add(r.cast_unsigned());
+            let scale = k(g, 0x170);
+            let cb = if j == 2 { w(0x17a) } else { w(0x17f) };
+            start(g, (0x194, o, scale), (0, id, cb));
+            for (op, x, at) in [
+                (0x199u32, 0x3e32_b8c3u32, 0xc0u32),
+                (0x1b6, 0x40c9_0fdb, 0xc4),
+                (0x1d0, 0x3e32_b8c3, 0xc8),
+            ] {
+                // call width: 1
+                let r = st0_f32(g.call(t(g, op, 314), 0, &[x]).st0);
+                g.write::<f32>(o + at, r);
+            }
+            for q in 0..4u32 {
+                let x = g.read::<u32>(v + 4 * q);
+                g.write::<u32>(o + 0xd0 + 4 * q, x);
+            }
+            let p = crate::m0074::pick(g, img, call(0x223), i);
+            g.write::<u32>(o + 0x120, p);
+            o += 0x130;
+        }
+        i += 1;
+    }
+    // the records, the sprite pool
+    g.write::<u32>(w(0x24c), w(0x250));
+    let mut rec = w(0x255);
+    for _ in 0..0x40 {
+        g.write::<u32>(rec, 0);
+        rec = rec.wrapping_add(0x140);
+    }
+    g.write::<u32>(w(0x271), 0);
+    g.write::<u32>(w(0x27c), 0x40);
+    crate::o6_fam_pool::pool_reset_take(g, img, call(0x285), w(0x276));
+    // the sprite records
+    let count = gw(g, 0x28b).cast_signed();
+    let base = gw(g, 0x291);
+    let mut rover = gw(g, 0x297);
+    let mut wait = 0u32;
+    'recs: for j in 0..0x16u32 {
+        let mut tried = 0i32;
+        let r = loop {
+            if tried >= count {
+                break 'recs;
+            }
+            let r = rover.wrapping_mul(0x68).wrapping_add(base);
+            rover = rover.wrapping_add(1);
+            if rover.cast_signed() >= count {
+                rover = 0;
+            }
+            if g.read::<u32>(r + 0x60) == 0 {
+                break r;
+            }
+            tried += 1;
+        };
+        for (o, x) in [
+            (0x58u32, 0x8080_8080u32),
+            (0x5c, 0x8080_8080),
+            (0x54, 0),
+            (0x40, 0),
+            (0x20, ONE),
+            (0x60, 1),
+        ] {
+            g.write::<u32>(r + o, x);
+        }
+        g.write::<u16>(r + 0x64, 0);
+        g.write::<u32>(r + 0x44, 0);
+        g.write::<u32>(r + 0x2c, 0);
+        let fr0 = gw(g, 0x30c);
+        g.write::<u32>(w(0x312), rover);
+        let x = g.read::<u32>(fr0 + 0xc);
+        g.write::<u32>(r + 0x10, x);
+        g.write::<u32>(r + 0x14, 1);
+        g.write::<u16>(r + 0x18, 0xffff);
+        g.write::<u16>(r + 0x1a, 0x200);
+        for (o, x) in [
+            (0x1cu32, 0x3e4c_cccdu32),
+            (0x28, 0),
+            (0x2c, 0),
+            (0x30, u32::MAX),
+        ] {
+            g.write::<u32>(r + o, x);
+        }
+        let bone = g.read::<u32>(w(0x352).wrapping_add(4 * j));
+        g.write::<u32>(r + 0x34, bone);
+        for (o, x) in [
+            (0x38u32, 0x28u32),
+            (0x3c, 0),
+            (0x20, 0),
+            (0x44, 0xf),
+            (0x48, 0xa),
+            (0x4c, 0xf),
+            (0x50, 0),
+            (0x54, wait),
+        ] {
+            g.write::<u32>(r + o, x);
+        }
+        if j & 1 != 0 {
+            wait = wait.wrapping_add(2);
+        }
+    }
+    // blocks of globals and the task nodes
+    let put = |g: &mut G, list: &[(u32, u32)]| {
+        for &(to, v) in list {
+            g.write::<u32>(w(to), v);
+        }
+    };
+    let mut free = g.read::<u16>(w(0x3a8));
+    put(
+        g,
+        &[
+            (0x3b0, 0),
+            (0x3ba, 0x50),
+            (0x3c4, 0),
+            (0x3ce, 0x90),
+            (0x3d8, 0x4c),
+            (0x3e2, 0x4c),
+        ],
+    );
+    g.write::<u16>(w(0x3ec), 0);
+    let head = gw(g, 0x406);
+    let (na, head) = ring_take(g, img, f, head, &mut free, (0x42b, 0x450, 0x45b));
+    let first = gw(g, 0x461);
+    g.write::<u8>(na + 0x18, 1);
+    g.write::<u32>(na + 0x14, w(0x46d));
+    let last = gw(g, 0x47b);
+    task_append(g, img, f, na, first, last, 0x48e);
+    put(
+        g,
+        &[
+            (0x499, w(0x49d)),
+            (0x4a3, 0),
+            (0x4ad, 0),
+            (0x4b7, 0x3c57_9436),
+            (0x4c1, 0),
+            (0x4cb, 0x4c),
+        ],
+    );
+    g.write::<u16>(w(0x4d5), 0);
+    let (nb, head) = ring_take(g, img, f, head, &mut free, (0x519, 0x537, 0x542));
+    let first = gw(g, 0x548);
+    g.write::<u8>(nb + 0x18, 1);
+    g.write::<u32>(nb + 0x14, w(0x554));
+    task_append(g, img, f, nb, first, na, 0x578);
+    let first = if first == 0 { nb } else { gw(g, 0x568) };
+    let x = g.read::<u16>(w(0x589)) | 3;
+    g.write::<u16>(w(0x589), x);
+    for q in 0..4u32 {
+        let x = g.read::<u32>(w(0x57f) + 4 * q);
+        g.write::<u32>(w(0x593) + 4 * q, x);
+    }
+    put(
+        g,
+        &[
+            (0x599, 0x4080_0000),
+            (0x5a3, 0),
+            (0x5ad, 0x90),
+            (0x5b7, w(0x5bb)),
+            (0x5c1, 0),
+            (0x5cb, 0x8c),
+            (0x5d5, 0x40),
+            (0x5df, 0x4000_0000),
+            (0x5e9, 0x4000_0000),
+            (0x5f3, 0x4000_0000),
+            (0x5fd, 0x20),
+            (0x607, 0),
+            (0x611, 0x10),
+            (0x61b, 0x6e),
+            (0x625, u32::MAX),
+            (0x62f, ONE),
+            (0x639, ONE),
+            (0x643, ONE),
+        ],
+    );
+    g.write::<u16>(w(0x64d), 0);
+    let (nc, head) = ring_take(g, img, f, head, &mut free, (0x699, 0x6b7, 0x6c2));
+    g.write::<u32>(nc + 0x14, w(0x6c9));
+    task_append(g, img, f, nc, first, nb, 0x6ef);
+    let first = if first == 0 { nc } else { gw(g, 0x6df) };
+    put(
+        g,
+        &[
+            (0x6fa, 0),
+            (0x704, 0),
+            (0x70e, 0),
+            (0x718, 0),
+            (0x722, w(0x726)),
+            (0x72c, w(0x730)),
+            (0x736, 0),
+            (0x740, 0),
+            (0x751, 1),
+        ],
+    );
+    g.write::<u16>(w(0x74b), 0);
+    g.write::<u16>(w(0x75c), 0);
+    let (nd, head) = ring_take(g, img, f, head, &mut free, (0x7a3, 0x7c1, 0x7cc));
+    g.write::<u32>(nd + 0x14, w(0x7d3));
+    task_append(g, img, f, nd, first, nc, 0x7f3);
+    let first = if first == 0 { nd } else { first };
+    put(
+        g,
+        &[
+            (0x7fe, u32::MAX),
+            (0x808, 0),
+            (0x812, 0),
+            (0x81c, 0),
+            (0x826, 0),
+            (0x830, w(0x834)),
+            (0x83a, w(0x83e)),
+            (0x844, 0),
+            (0x84e, 0),
+            (0x85e, 2),
+        ],
+    );
+    g.write::<u16>(w(0x858), 0);
+    g.write::<u16>(w(0x868), 0);
+    let (ne, _) = ring_take(g, img, f, head, &mut free, (0x88e, 0x8c7, 0x8d2));
+    g.write::<u32>(ne + 0x14, w(0x8d9));
+    task_append(g, img, f, ne, first, nd, 0x8f7);
+    // the camera words
+    let flag = gw(g, 0x900);
+    let x = gw(g, 0x906);
+    g.write::<u32>(w(0x90b), x);
+    g.write::<u32>(w(0x917), ne);
+    g.write::<u32>(w(0x91d), w(0x921));
+    g.write::<u32>(w(0x927), u32::MAX);
+    let slot = if flag == 0 {
+        t(g, 0x911, 215)
+    } else {
+        t(g, 0x911, 413)
+    };
+    // call width: 1
+    let c = g.call(slot, 0, &[x]).eax;
+    let flag = gw(g, 0x946);
+    put(g, &[(0x951, c), (0x957, u32::MAX), (0x961, 0), (0x96b, 1)]);
+    if flag == 0 {
+        g.write::<u16>(w(0x975), 0);
+    } else {
+        g.write::<u16>(w(0x97e), 1);
+    }
+    let mut free = g.read::<u16>(w(0x985));
+    let head = gw(g, 0x99a);
+    let (nf, head) = ring_take(g, img, f, head, &mut free, (0x9c4, 0x9e9, 0x9f4));
+    let first = gw(g, 0x9fa);
+    g.write::<u8>(nf + 0x18, 1);
+    let last = gw(g, 0xa0d);
+    task_append(g, img, f, nf, first, last, 0xa20);
+    let (ng, head) = ring_take(g, img, f, head, &mut free, (0xa67, 0xa85, 0xa90));
+    let first = gw(g, 0xa96);
+    task_append(g, img, f, ng, first, nf, 0xabb);
+    let first = if first == 0 { ng } else { gw(g, 0xaab) };
+    let (nh, _) = ring_take(g, img, f, head, &mut free, (0xae4, 0xb1d, 0xb28));
+    g.write::<u8>(nh + 0x18, 2);
+    task_append(g, img, f, nh, first, ng, 0xb4a);
+    g.write::<u32>(w(0xb5a), nh);
+    Ret::eax(0)
+}
+
+/// [`start_up_0385`] (the `rel32`s: its callees and the cookie check;
+/// `rand` through the IAT).
+pub const START_UP_0385: Sig = Sig {
+    len: 2922,
+    hash: 0x590c_9ade_d57a_004f,
+    calls: &[
+        (0x50, Callee::Sig(&crate::l5_objhost::PART_INIT)),
+        (0x91, Callee::Sig(&crate::s4_misc::START_OBJECT_AT)),
+        (0xc5, Callee::Sig(&crate::s4_misc::START_OBJECT_AT)),
+        (0x194, Callee::Sig(&crate::s4_misc::START_OBJECT_AT)),
+        (0x223, Callee::Sig(&crate::m0074::PICK)),
+        (
+            0x285,
+            Callee::Sig(&crate::o6_fam_pool::POOL_RESET_TAKE_0385_1DF0),
+        ),
+        (0xb62, Callee::Any),
+    ],
+    imports: &[(0x159, "rand")],
+};
+
+/// `magic_0385`'s load step (0x10003dd0, 118 bytes; a table entry): the
+/// object hosts' load step ([`load_step`](crate::r9_load::load_step))
+/// running [`start_up_0385`].
+pub fn load_0385<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    crate::r9_load::load_step(g, img, fr, crate::r9_load::Shape::Zero, start_up_0385)
+}
+
+/// [`load_0385`] (the 118-byte load step's `Sig`, the `rel32` the
+/// start-up).
+pub const LOAD_0385: Sig = Sig {
+    len: 118,
+    hash: 0xf93b_1968_cd8e_f184,
+    calls: &[(0x5b, Callee::Sig(&START_UP_0385))],
+    imports: &[],
+};
