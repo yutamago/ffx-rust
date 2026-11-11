@@ -211,7 +211,7 @@ pub const LOAD_0162: Sig = Sig {
 };
 
 /// The index of `x` in the -1-ended word table at `table`, or -1.
-fn find_word<G: Game>(g: &G, table: u32, x: u32) -> u32 {
+pub(crate) fn find_word<G: Game>(g: &G, table: u32, x: u32) -> u32 {
     let mut i = 0u32;
     loop {
         let v = g.read::<u32>(table.wrapping_add(4 * i));

@@ -1806,8 +1806,9 @@ fn sparks_0434() {
         m.w32(k, c + 1);
         0x0314_0000 ^ a[0] ^ c
     });
+    // (never 0: b11 test gap, the place's x offset fell on 0 each time)
     t.stub_st0(314, move |m, a| {
-        f64::from(f32::from_bits(a[0])) * 0.125 * f64::from(m.r32(k) % 7) - 0.25
+        f64::from(f32::from_bits(a[0])) * 0.125 * f64::from(m.r32(k) % 5) + 0.375
     });
     rec(&mut t, 719, 3, |_, a| 0x7190_0000 ^ a[1]);
     let take = t.img.rel32_target(f + 0x64);
@@ -1834,5 +1835,119 @@ fn sparks_0434() {
         t.set_u32(tw(0x2b), 0);
         ownb::dirty_stack(&mut t, 0x6bd0 + c, &[]);
         t.check_entry(f, Call::default(), &[o], Eax::Checked);
+    }
+}
+
+/// What `magic_0397`'s aim start needs: slots 262/268 writing places,
+/// 333's facing, 520's id, the party's list (slot 288) and handles (215).
+fn aim_0397_setup(t: &mut Twin, f: u32, k: u32, found: bool) {
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    all_stubs(t);
+    rec(t, 262, 4, |m, a| {
+        for i in 1..4 {
+            wf(m, a[i], (a[0] & 0xff) as f32 * 0.5 + i as f32 * 1.5 - 4.0);
+        }
+        0x262
+    });
+    rec(t, 268, 3, |m, a| {
+        for i in 0..4 {
+            wf(m, a[2] + 4 * i, (a[0] & 0xf) as f32 - i as f32 * 0.75);
+        }
+        0x268
+    });
+    rec(t, 333, 1, |_, a| 0x0333_0000 ^ a[0]);
+    t.stub_st0(333, move |_, a| {
+        f64::from(a[0] & 3) * 2.5 - 3.0 + f64::from(k)
+    });
+    let table = w(0xa9);
+    let id = if found { t.u32(table + 4) } else { 0x7fff_0001 };
+    rec(t, 520, 0, move |_, _| id);
+    let list = SCRATCH + 0x700;
+    t.write(list, &[2, 0, 1, 3]);
+    let n = 1 + k % 3;
+    rec(t, 288, 2, move |m, a| {
+        m.w32(a[1], n);
+        list
+    });
+    rec(t, 215, 1, |_, a| 0x0215_0000 ^ a[0]);
+    let sel = SCRATCH + 0x180;
+    t.set_u32(w(0x14e), sel);
+    t.write(sel, &[k as u8 + 1, 0x5a]);
+    for i in 0..0x14 {
+        t.set_u32(w(0x15e) + 4 * i, 0x0c00 + 3 * i);
+    }
+    let s = SCRATCH + 0x1_0000;
+    t.set_u32(w(0xe), s);
+    junk(t, s + 0x18f0, 0x20, k);
+    junk(t, s + 0x23f0, 0x20, k);
+    t.set_u32(w(0x28), 0x0ca0 + k);
+    t.set_u32(w(0x42), 0x0ca0 + k);
+    junk_ops(t, f, &[0x1d8, 0x1e2]);
+}
+
+/// `magic_0397` 0x10004300 (`r45::aim_start_0397`): slot 520's id in the
+/// table and not (the party's mean), the facing and the aim wrapping and
+/// not.
+#[test]
+fn aim_start_0397() {
+    let Some(mut t) = sa::twin(397) else { return };
+    let f = t.at(0x4300);
+    for (k, found) in (0u32..).zip([true, false, true, false, false, true]) {
+        aim_0397_setup(&mut t, f, k, found);
+        ownb::dirty_stack(&mut t, 0x4300 + k, &[]);
+        t.check_entry(f, Call::default(), &[], Eax::Junk);
+    }
+}
+
+/// `magic_0397` 0x10006530 (`r45::start_up_0397`, internal) and its load
+/// step 0x10003f30 (`r45::load_0397`): the task list empty and not.
+#[test]
+fn start_up_0397() {
+    let Some(mut t) = sa::twin(397) else { return };
+    let f = t.at(0x6530);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    let aim = t.img.rel32_target(f + 0x4e);
+    let setup = |t: &mut Twin, k: u32, listed: bool| {
+        aim_0397_setup(t, aim, k, k % 2 == 0);
+        for (s, n) in [(271u32, 1usize), (711, 3), (710, 4), (719, 3)] {
+            rec(t, s, n, move |_, a| (s << 16) ^ a[0]);
+        }
+        let take = img.rel32_target(f + 0x8e);
+        magic_r11::ring(
+            t,
+            img.word(take + 0x04),
+            img.word(take + 0x17),
+            6,
+            SCRATCH + 0x5000,
+        );
+        t.write(SCRATCH + 0x600, &[0x44; 0x20]);
+        t.set_u32(w(0x94), if listed { SCRATCH + 0x600 } else { 0 });
+        t.set_u32(w(0xab), SCRATCH + 0x600);
+        junk_ops(t, f, &[0x44, 0x63, 0x6e, 0x76]);
+    };
+    for (k, listed) in (0u32..).zip([false, true, true]) {
+        setup(&mut t, k, listed);
+        ownb::dirty_stack(&mut t, 0x6530 + k, &[]);
+        t.check(f, Call::default(), &[], Eax::Checked, |g, img, fr| {
+            ffx_magic::r45::start_up_0397(g, img, fr)
+        });
+    }
+    let load = t.at(0x3f30);
+    for (busy, loaded, ready) in [(1u32, 0u32, 1u32), (0, 0, 0), (0, 1, 1), (0, 0, 2)] {
+        setup(&mut t, 2, true);
+        rec(&mut t, 225, 1, move |_, _| busy);
+        rec(&mut t, 226, 2, |_, a| 0x0226_0000 ^ a[0]);
+        rec(&mut t, 227, 1, move |_, _| ready);
+        let at = t.img.word(load + 0x18);
+        t.set_u32(at, loaded);
+        for o in [0x26u32, 0x46] {
+            let at = t.img.word(load + o);
+            t.set_u32(at, 0x0b0b_0000 + o);
+        }
+        junk_ops(&mut t, load, &[0x61, 0x6b]);
+        ownb::dirty_stack(&mut t, 0x3f30, &[]);
+        t.check_entry(load, Call::default(), &[], Eax::Checked);
     }
 }

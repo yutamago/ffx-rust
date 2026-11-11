@@ -2751,3 +2751,179 @@ pub const SPARKS_0434: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `magic_0397`'s aim start (0x10004300, 495 bytes; a table entry, no
+/// arguments; an aligned frame): with `S = *G_S`, the caster's place `P
+/// = S + 0x18f0` (slot 262 `(*G_C, ...)`, `w` 1.0), its facing `K -
+/// slot 333 (*G_C)` wrapped once into `S + 0x23f4`; the target `Q = S +
+/// 0x1900`: when slot 520's id is in the DLL's -1-ended table, the
+/// selected character's place (slots 262 and 268 `(c, 16, &Q)`, `w`
+/// 1.0), else the party's mean ([`party_mean`](crate::m0397::party_mean));
+/// `Q.y` = `P.y`, the aim `K - atan2(Q.z - P.z, Q.x - P.x)` (`_CIatan2`
+/// of the doubles) wrapped once into `S + 0x23f8`, `+0x23fc` 16, `+0x2404`
+/// -1, `+0x2408` 0, `*G_ON` 1, `*G_I` -1. The original's `eax` is the
+/// `_CIatan2` import's leftover (junk; 0 here).
+pub fn aim_start_0397<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let s = g.read::<u32>(w(0xe));
+    let p = s + 0x18f0;
+    let c = g.read::<u32>(w(0x28));
+    let mut st = Pushes::default();
+    st.push_all(&[p + 8, p + 4, p, c]);
+    st.call(g, t(g, 0x21, 262), 0);
+    g.write::<u32>(p + 0xc, 0x3f80_0000);
+    st.push(g.read::<u32>(w(0x42)));
+    let v = st0_f32(st.call(g, t(g, 0x35, 333), 0).st0);
+    let x = sub(k(g, 0x56), v);
+    let x = wrap_once(g, img, f, x, [0x6e, 0x64, 0x7e, 0x64]);
+    g.write::<f32>(s + 0x23f4, x);
+    let id = g.call(t(g, 0x8c, 520), 0, &[]).eax;
+    let q = s + 0x1900;
+    let i = crate::r34::find_word(g, w(0xa9), id);
+    if i == u32::MAX {
+        // push ebp; and esp, -8; sub esp, 0xc; three pushes; the call
+        let esp = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0x1c);
+        let pm = Frame {
+            at: img.rel32_target(f + 0xcf),
+            esp,
+            ecx: q,
+            ..*fr
+        };
+        crate::m0397::party_mean(g, img, &pm);
+    } else {
+        let b = u32::from(g.read::<u8>(g.read::<u32>(w(0x14e))));
+        let c = g.read::<u32>(w(0x15e).wrapping_add(4 * b));
+        let mut st = Pushes::default();
+        st.push_all(&[q + 8, q + 4, q, c]);
+        st.call(g, t(g, 0x16b, 262), 0);
+        st.push_all(&[q, 0x10, c]);
+        st.call(g, t(g, 0x17a, 268), 0);
+        g.write::<u32>(q + 0xc, 0x3f80_0000);
+    }
+    let y = g.read::<u32>(s + 0x18f4);
+    g.write::<u32>(s + 0x1904, y);
+    let dz = sub(g.read::<f32>(q + 8), g.read::<f32>(s + 0x18f8));
+    let dx = sub(g.read::<f32>(q), g.read::<f32>(s + 0x18f0));
+    // fstp qword; cvtpd2ps
+    #[allow(clippy::cast_possible_truncation)]
+    let a = g.atan2(f64::from(dz), f64::from(dx)) as f32;
+    let y = sub(k(g, 0x125), a);
+    let y = wrap_once(g, img, f, y, [0x134, 0x13e, 0x19d, 0x1aa]);
+    g.write::<f32>(s + 0x23f8, y);
+    g.write::<u32>(s + 0x23fc, 0x10);
+    g.write::<u32>(s + 0x2404, u32::MAX);
+    g.write::<u32>(s + 0x2408, 0);
+    g.write::<u32>(w(0x1d8), 1);
+    g.write::<u32>(w(0x1e2), u32::MAX);
+    Ret::eax(0)
+}
+
+/// [`aim_start_0397`] (the `rel32`s: the party's mean, `_CIatan2`).
+pub const AIM_START_0397: Sig = Sig {
+    len: 495,
+    hash: 0xce33_b6b6_0c17_8626,
+    calls: &[
+        (0xcf, Callee::Sig(&crate::m0397::PARTY_MEAN)),
+        (0x113, Callee::Import("_CIatan2")),
+    ],
+    imports: &[],
+};
+
+/// `magic_0397`'s start-up (0x10006530, 266 bytes; internal, no
+/// arguments, run by its load step):
+/// [`start_up_0447`](crate::m0390::start_up_0447)'s shape with four
+/// pointers set, the part set up without a buffer word
+/// ([`part_init`](crate::l5_objhost::part_init)) and the aim start
+/// ([`aim_start_0397`]) where `magic_0447` places the caster (operands
+/// five bytes later from there): slot 719 `(PART, 8, 0)` into `G_H`;
+/// four words set; slot 271 `(4)`; two task nodes (kinds 1 and 2) from
+/// the pool appended to the task list. Each slot call passes the words
+/// the original leaves on the stack. Returns 0.
+pub fn start_up_0397<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let mut s = Pushes::default();
+    s.push_all(&[0, 8, w(0x12)]);
+    for (dst, src) in [(0x18, 0x1c), (0x22, 0x26), (0x2c, 0x30), (0x36, 0x3a)] {
+        g.write::<u32>(w(dst), w(src));
+    }
+    let h = s.call(g, slot_target(g, w(0x1), 719), 0).eax;
+    s.pop(1);
+    g.write::<u32>(w(0x44), h);
+    crate::l5_objhost::part_init(g, img, img.rel32_target(f + 0x49));
+    // push esi; push edi; slot 719's two words; the call
+    let aim = Frame {
+        at: img.rel32_target(f + 0x4e),
+        esp: fr.esp.wrapping_sub(0x14),
+        ..*fr
+    };
+    aim_start_0397(g, img, &aim);
+    g.write::<u32>(w(0x59), w(0x5d));
+    g.write::<u32>(w(0x63), 0);
+    g.write::<u16>(w(0x6e), 0);
+    g.write::<u8>(w(0x76), 1);
+    s.push(4);
+    s.call(g, slot_target(g, w(0x53), 271), 0);
+    let first = crate::sa_pool::take(g, img, img.rel32_target(f + 0x8e), w(0x89));
+    let head = g.read::<u32>(w(0x94));
+    g.write::<u8>(first.wrapping_add(0x18), 1);
+    g.write::<u32>(first.wrapping_add(4), 0);
+    let linked = if head == 0 {
+        g.write::<u32>(first, 0);
+        g.write::<u32>(w(0xc0), first);
+        first
+    } else {
+        let last = g.read::<u32>(w(0xab));
+        g.write::<u32>(first, last);
+        g.write::<u32>(last.wrapping_add(4), first);
+        head
+    };
+    g.write::<u32>(first.wrapping_add(8), first);
+    let second = crate::sa_pool::take(g, img, img.rel32_target(f + 0xcd), w(0xc5));
+    g.write::<u8>(second.wrapping_add(0x18), 2);
+    g.write::<u32>(second.wrapping_add(4), 0);
+    if linked == 0 {
+        // only with no first node (an empty pool)
+        g.write::<u32>(second, 0);
+        g.write::<u32>(w(0xfa), second);
+        g.write::<u32>(second.wrapping_add(8), second);
+        g.write::<u32>(w(0x102), second);
+    } else {
+        g.write::<u32>(second, first);
+        g.write::<u32>(first.wrapping_add(4), second);
+        g.write::<u32>(second.wrapping_add(8), second);
+        g.write::<u32>(w(0xea), second);
+    }
+    Ret::eax(0)
+}
+
+/// [`start_up_0397`] (the `rel32`s: the part, the aim start, two pool
+/// takes).
+pub const START_UP_0397: Sig = Sig {
+    len: 266,
+    hash: 0x6a72_00b5_eca4_54e0,
+    calls: &[
+        (0x49, Callee::Sig(&crate::l5_objhost::PART_INIT)),
+        (0x4e, Callee::Sig(&AIM_START_0397)),
+        (0x8e, Callee::Sig(&crate::sa_pool::TAKE)),
+        (0xcd, Callee::Sig(&crate::sa_pool::TAKE)),
+    ],
+    imports: &[],
+};
+
+/// `magic_0397`'s load step (0x10003f30, the 118-byte shape) running
+/// [`start_up_0397`].
+pub fn load_0397<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    crate::r9_load::load_step(g, img, fr, crate::r9_load::Shape::Zero, start_up_0397)
+}
+
+/// [`load_0397`].
+pub const LOAD_0397: Sig = Sig {
+    len: 118,
+    hash: 0xf93b_1968_cd8e_f184,
+    calls: &[(0x5b, Callee::Sig(&START_UP_0397))],
+    imports: &[],
+};
