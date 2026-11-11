@@ -1262,8 +1262,19 @@ fn caster_record_0250() {
 /// ways. Matrix and vector slots write what they read.
 #[test]
 fn spawn_0250() {
-    let Some(mut t) = sa::twin(250) else { return };
-    let f = t.at(0x4af0);
+    spawn(250, 0x4af0);
+}
+
+/// `magic_0251` 0x10005490 (`r43::spawn_0250` through `r45::SPAWN_0251`):
+/// the same cases on `magic_0251`'s copy.
+#[test]
+fn spawn_0251() {
+    spawn(251, 0x5490);
+}
+
+fn spawn(n: u16, at: u32) {
+    let Some(mut t) = sa::twin(n) else { return };
+    let f = t.at(at);
     let img = t.img.clone();
     let w = |o: u32| img.word(f + o);
     all_stubs(&mut t);
@@ -1747,6 +1758,23 @@ fn landing_0394() {
             Eax::Junk
         };
         t.check_entry(f, Call::default(), &[o], eax);
+    }
+    // (r45) the dx term: P's x is 2.0 here (slot 262's word 0x45), the
+    // mark 29 off in x (27 away; 31 if the term's sign flipped) and its z
+    // swept in steps of 10, so one case sits near the mark in z too
+    for (k, mz) in (6u32..).zip([
+        -70.0f32, -60.0, -50.0, -40.0, -30.0, -20.0, -10.0, 0.0, 10.0,
+    ]) {
+        let gs = t.img.word(f + 0x1a);
+        let s = block_0394(&mut t, gs, k);
+        setf(&mut t, s + 0xc84, 5.5);
+        setf(&mut t, s + 0xb40, 29.0);
+        setf(&mut t, s + 0xb44, 0.0);
+        setf(&mut t, s + 0xb48, mz);
+        junk(&mut t, o, 0x60, k);
+        t.set_u32(t.img.word(f + 0x38), 0x0000_0045);
+        ownb::dirty_stack(&mut t, 0x4b80 + k, &[]);
+        t.check_entry(f, Call::default(), &[o], Eax::Junk);
     }
 }
 

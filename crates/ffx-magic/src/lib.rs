@@ -95,6 +95,7 @@ pub mod r41;
 pub mod r42;
 pub mod r43;
 pub mod r44;
+pub mod r45;
 pub mod r46;
 pub mod r9_load;
 pub mod r9_misc;
@@ -3459,6 +3460,54 @@ ports! {
     "r46 scene task 0071" => r46::SCENE_TASK_0071, r46::scene_task_0071;
     "r46 main task 0070" => r46::MAIN_TASK_0070, r46::main_task_0070;
     // round 46 (magic-r46): end
+    // round 45 (magic-r45)
+    "r45 summon start 0394" => r45::SUMMON_START_0394, r45::summon_start_0394;
+    "r45 object start 0348" => r45::OBJECT_START_0348, r45::object_start_0348;
+    "r45 spawn 0251" => r45::SPAWN_0251, r43::spawn_0250;
+    "r45 task step 0392" => r45::TASK_STEP_PASS_0392, m0449::task_step_pass;
+    "r45 shard burst 0385" => r45::SHARD_BURST_0385, r45::shard_burst_0385;
+    "r45 summon start 0297" => r45::SUMMON_START_0297, r45::summon_start_0297;
+    "r45 light set-up 0348" => r45::LIGHT_SETUP_0348, r45::light_setup_0348;
+    "r45 packed 0348" => r45::PACKED_0348, r45::packed_0348;
+    "r45 glow start 0348" => r45::GLOW_START_0348, r45::glow_start_0348;
+    "r45 orbs start 0348" => r45::ORBS_START_0348, r45::orbs_start_0348;
+    "r45 script end 0431" => r45::SCRIPT_END_0431, r45::script_end_0431;
+    "r45 sprite frame 0431" => r45::SPRITE_FRAME_0431, r45::sprite_frame_0431;
+    "r45 objects start 0431" => r45::OBJECTS_START_0431, r45::objects_start_0431;
+    "r45 object place 0431" => r45::OBJECT_PLACE_0431, r45::object_place_0431;
+    "r45 frame 0266" => r45::FRAME_0266, r45::frame_0266;
+    "r45 load step 0266" => r45::LOAD_0266, r45::load_0266;
+    "r45 glow start 0434" => r45::GLOW_START_0434, r45::glow_start_0434;
+    "r45 summon glow 0434" => r45::SUMMON_GLOW_0434, r45::summon_glow_0434;
+    "r45 objects start 0434" => r45::OBJECTS_START_0434, r45::objects_start_0434;
+    "r45 turn start 0434" => r45::TURN_START_0434, r45::turn_start_0434;
+    "r45 turn end 0434" => r45::TURN_END_0434, r45::turn_end_0434;
+    "r45 sparks 0434" => r45::SPARKS_0434, r45::sparks_0434;
+    "r45 aim start 0397" => r45::AIM_START_0397, r45::aim_start_0397;
+    "r45 load step 0397" => r45::LOAD_0397, r45::load_0397;
+    "r45 glide step 0392" => r45::GLIDE_STEP_0392, r45::glide_step_0392;
+    "r45 glide run 0392" => r45::GLIDE_RUN_0392, r45::glide_run_0392;
+    "r45 summon place 0392" => r45::SUMMON_PLACE_0392, r45::summon_place_0392;
+    "r45 objhost start 0392" => r45::START_0392, l5_objhost::start;
+    "r45 load step 0392" => r45::LOAD_0392, r45::load_0392;
+    "r45 throw flight 0392" => r45::THROW_FLIGHT_0392, r45::throw_flight_0392;
+    "r45 landing 0392" => r45::LANDING_0392, r45::landing_0392;
+    "r45 trails start 0392" => r45::TRAILS_START_0392, r45::trails_start_0392;
+    "r45 summon place 0449" => r45::SUMMON_PLACE_0449, r45::summon_place_0392;
+    "r45 load step 0449" => r45::LOAD_0449, r45::load_0449;
+    "r45 trails start 0449" => r45::TRAILS_START_0449, r45::trails_start_0392;
+    "r45 throw flight 0449" => r45::THROW_FLIGHT_0449, r45::throw_flight_0392;
+    "r45 actors tilt 0449" => r45::ACTORS_TILT_0449, r45::actors_tilt_0392;
+    "r45 landing 0449" => r45::LANDING_0449, r45::landing_0449;
+    "r45 objects start 0397" => r45::OBJECTS_START_0397, r45::objects_start_0397;
+    "r45 glide curve 0397" => r45::GLIDE_CURVE_0397, r45::glide_curve_0397;
+    "r45 glide start 0397" => r45::GLIDE_START_0397, r45::glide_start_0397;
+    "r45 object start 0396" => r45::OBJECT_START_0396, r45::object_start_0396;
+    "r45 objects start 0396" => r45::OBJECTS_START_0396, r45::objects_start_0396;
+    "r45 weights step 0387" => r45::WEIGHTS_STEP_0387, r45::weights_step_0387;
+    "r45 actors sway 0397" => r45::ACTORS_SWAY_0397, r45::actors_sway_0397;
+    "r45 actors settle 0397" => r45::ACTORS_SETTLE_0397, r45::actors_settle_0397;
+    // round 45 (magic-r45): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
     // round 34 (magic-r34)
@@ -5417,6 +5466,34 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r43 set-up 0420", &r43::SETUP_0420),
     ("r43 sparks 0394", &r43::SPARKS_0394),
     // round 43 (magic-r43): end of INTERNAL
+    // round 45 (magic-r45)
+    ("r45 actors pass 0392", &r45::ACTORS_PASS_0392),
+    ("r45 packed sprite 0431", &r45::PACKED_SPRITE_0431),
+    ("r45 packet 0431", &r45::PACKET_0431),
+    ("r45 actor motions 0431", &r45::ACTOR_MOTIONS_0431),
+    ("r45 fading sprite 0266", &r45::FADING_SPRITE_0266),
+    ("r45 actors step 0266", &r45::ACTORS_STEP_0266),
+    ("r45 sparks 0266", &r45::SPARKS_0266),
+    ("r45 start-up 0266", &r45::START_UP_0266),
+    ("r45 project 0434", &r45::PROJECT_0434),
+    ("r45 bone matrix 0434", &r45::BONE_MATRIX_0434),
+    ("r45 start-up 0397", &r45::START_UP_0397),
+    ("r45 glide start 0392", &r45::GLIDE_START_0392),
+    ("r45 nearest actor 0392", &r45::NEAREST_ACTOR_0392),
+    ("r45 glide target 0392", &r45::GLIDE_TARGET_0392),
+    ("r45 throw aim 0392", &r45::THROW_AIM_0392),
+    ("r45 aim set-up 0392", &r45::AIM_SETUP_0392),
+    ("r45 start-up 0392", &r45::START_UP_0392),
+    ("r45 actors tilt 0392", &r45::ACTORS_TILT_0392),
+    ("r45 trails 0392", &r45::TRAILS_0392),
+    ("r45 start-up 0449", &r45::START_UP_0449),
+    ("r45 throw target 0449", &r45::THROW_TARGET_0449),
+    ("r45 trails 0449", &r45::TRAILS_0449),
+    ("r45 glow draw 0431", &r45::GLOW_DRAW_0431),
+    ("r45 bone place 0387", &r45::BONE_PLACE_0387),
+    ("r45 weights task 0387", &r45::WEIGHTS_TASK_0387),
+    ("r45 start-up 0396", &r45::START_UP_0396),
+    // round 45 (magic-r45): end of INTERNAL
 ];
 
 /// What covers the function at `addr`: a port's name (an entry
