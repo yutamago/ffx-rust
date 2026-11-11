@@ -3422,6 +3422,7 @@ ports! {
     "r44 scene 0042" => r44::SCENE_0042, r44::scene_0042;
     "r44 camera task 0042" => r44::CAMERA_TASK_0042, r44::camera_task_0042;
     "r44 summon task 0164" => r44::SUMMON_TASK_0164, r44::summon_task_0164;
+    "r44 summon task 0155" => r44::SUMMON_TASK_0155, r44::summon_task_0155;
     // round 44 (magic-r44): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
