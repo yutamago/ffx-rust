@@ -516,6 +516,16 @@ Interface::Method(args) -> result`, `QueryInterface`'s IID by name).
 Methods the layer doesn't answer return `E_NOTIMPL` (or nothing) and are
 listed in the report (`gfx unhandled`); on the boot so far there are none.
 
+**Gate captures** (2026-11-12, wp4-audio; `src/gfx/gate.rs`). With
+`FFX_HOST_GFX_CAPTURE=1` the layer keeps no recording but a store of
+what a scene gate needs: the description messages and every 2D
+texture's contents as uploaded (initial data, `UpdateSubresource` boxes,
+`Unmap`), packed at the layout's row pitch; buffers come from their arena
+copies. The harness's `gfxcapture <dir> hash frames N now` then writes the
+presents that show updates `f + 1` .. `f + N` as the hook's hash-mode
+capture writes them (docs/harness.md, "Two processes"), so
+`tools/scene-gate.sh` compares them with the original's references.
+
 ## The clock
 
 `src/clock.rs` applies the hook harness's fast mode, virtual clock and
