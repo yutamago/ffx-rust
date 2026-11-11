@@ -4506,3 +4506,205 @@ pub const MESH_0434: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// The three turns of a [`summon_draw_0434`] matrix `m`: slots 330, 328,
+/// 329 `(m, m, a)` with the effect's angles `+0xc88`, `+0xc80`, `+0xc84`
+/// (or `+0xc68`, `+0xc60`, `+0xc64`); `ops` their loads.
+fn turns_0434<G: Game>(g: &mut G, img: &Image, f: u32, m: u32, angles: [u32; 3], ops: [u32; 3]) {
+    for ((slot, a), op) in [330u32, 328, 329].into_iter().zip(angles).zip(ops) {
+        let x = g.read::<u32>(a);
+        // call width: 3
+        g.call(slot_target(g, img.word(f + op), slot), 0, &[m, m, x]);
+    }
+}
+
+/// `magic_0434`'s summon draw (0x10006f60, 1556 bytes; a stored
+/// callback, no arguments; an 8-aligned /GS frame, `S` = `esp` after the
+/// two pushes). The summon's model `h` (the selection's character
+/// table): slots 357 `(h, -1, 0x3c00)`, 356 `(h, -1, 0x2ee0)`, 355 and
+/// 354 `(h, -1)`, slot 382 `(0, 0)`; the effect `E` drifts (`+0x1a6c`,
+/// `+0x1a70` less `K`), a wait `+0x1a78` counts down, else a second
+/// wait `+0x1a7c` turns `+0x1a74` by `K'` (wrapped once). The point `V =
+/// (0, -drift)` through `M1` (slot 235 turned by `E`'s angles; 229) times
+/// `K4` moves `E + 0xc50..`; `V = (0, drift)` through `M1` again; `M1` =
+/// `E + 0xc20` (230) moved by `V`; the camera
+/// ([`scaled_camera`](crate::m0052::scaled_camera)); `M2` turned by the
+/// second angles; the bones ([`bone_matrix_0434`](crate::r45::bone_matrix_0434)
+/// 0, 1, 2); `M3` (turned -pi/2, pi/2), `M4` (turned by `E`'s angles),
+/// `M5` (turned by `+0x1a74`); the mesh ([`mesh_0434`] `(M1, M3, M4, M5,
+/// slot 719 (TEX, 2, 0xb)'s word, 0, 80)` on `*G_B + 0x30`); slots 357
+/// and 356 `(h, -1, -1)`. Returns slot 356's `eax`.
+#[allow(clippy::too_many_lines)] // the original's steps, in order
+pub fn summon_draw_0434<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let gw = |g: &G, o: u32| g.read::<u32>(w(o));
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let call = |o: u32| img.rel32_target(f + o);
+    let b0 = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0x1a0);
+    let cookie = gw(g, 0xd) ^ b0;
+    g.write::<u32>(b0 + 0x19c, cookie);
+    let s = b0.wrapping_sub(8);
+    let sel = g.read::<u8>(gw(g, 0x1b));
+    let h = g.read::<u32>(w(0x27).wrapping_add(4 * u32::from(sel)));
+    let e = gw(g, 0x32);
+    g.write::<u32>(s + 0xc, h);
+    // call width: 3
+    g.call(t(g, 0x2c, 357), 0, &[h, u32::MAX, 0x3c00]);
+    // call width: 3
+    g.call(t(g, 0x4b, 356), 0, &[h, u32::MAX, 0x2ee0]);
+    // call width: 2
+    g.call(t(g, 0x63, 355), 0, &[h, u32::MAX]);
+    // call width: 2
+    g.call(t(g, 0x76, 354), 0, &[h, u32::MAX]);
+    // call width: 2
+    g.call(t(g, 0x86, 382), 0, &[0, 0]);
+    let rd = |g: &G, o: u32| g.read::<f32>(e + o);
+    let dx = sub(rd(g, 0x1a6c), k(g, 0xa2));
+    g.write::<f32>(e + 0x1a6c, dx);
+    let dy = sub(rd(g, 0x1a70), k(g, 0xc3));
+    g.write::<f32>(e + 0x1a70, dy);
+    let wait = g.read::<i32>(e + 0x1a78);
+    if wait > 0 {
+        g.write::<i32>(e + 0x1a78, wait - 1);
+    } else {
+        let w2 = g.read::<i32>(e + 0x1a7c);
+        if w2 > 0 {
+            g.write::<i32>(e + 0x1a7c, w2 - 1);
+            let a = add(rd(g, 0x1a74), k(g, 0xf9));
+            let a = if a > k(g, 0x100) {
+                sub(a, k(g, 0x10a))
+            } else if k(g, 0x114) > a {
+                add(a, k(g, 0x121))
+            } else {
+                a
+            };
+            g.write::<f32>(e + 0x1a74, a);
+        }
+    }
+    let neg = |x: f32| f32::from_bits(x.to_bits() ^ 0x8000_0000);
+    let v = s + 0x10;
+    let m1 = s + 0x20;
+    for (i, x) in (0u32..).zip([0u32, neg(dx).to_bits(), neg(dy).to_bits(), ONE]) {
+        g.write::<u32>(v + 4 * i, x);
+    }
+    let angles = [e + 0xc88, e + 0xc80, e + 0xc84];
+    // call width: 1
+    g.call(t(g, 0x157, 235), 0, &[m1]);
+    turns_0434(g, img, f, m1, angles, [0x18d, 0x1b0, 0x1d3]);
+    // call width: 3
+    g.call(t(g, 0x1f2, 229), 0, &[v, m1, v]);
+    let lanes =
+        [0u32, 1, 2, 3].map(|i| mul(g.read::<f32>(v + 4 * i), g.read::<f32>(w(0x20e) + 4 * i)));
+    for (i, x) in (0u32..).zip(lanes) {
+        g.write::<f32>(v + 4 * i, x);
+    }
+    g.write::<u32>(v, 0);
+    let x = add(rd(g, 0xc50), lanes[0]);
+    g.write::<f32>(e + 0xc50, x);
+    let x = add(rd(g, 0xc54), lanes[1]);
+    g.write::<u32>(v + 0xc, ONE);
+    g.write::<f32>(e + 0xc54, x);
+    let x = add(rd(g, 0xc58), lanes[2]);
+    g.write::<f32>(e + 0xc58, x);
+    for (i, o) in (1u32..).zip([0x1a6cu32, 0x1a70]) {
+        let x = g.read::<u32>(e + o);
+        g.write::<u32>(v + 4 * i, x);
+    }
+    // call width: 1
+    g.call(t(g, 0x21f, 235), 0, &[m1]);
+    turns_0434(g, img, f, m1, angles, [0x2ab, 0x2ce, 0x2f1]);
+    // call width: 3
+    g.call(t(g, 0x310, 229), 0, &[v, m1, v]);
+    let em = e + 0xc20;
+    // call width: 2
+    g.call(t(g, 0x32c, 230), 0, &[m1, em]);
+    for i in 0..3u32 {
+        let x = add(g.read::<f32>(m1 + 0x30 + 4 * i), g.read::<f32>(v + 4 * i));
+        g.write::<f32>(m1 + 0x30 + 4 * i, x);
+    }
+    // the 230 call's two words still pushed: the return address at S - 0xc
+    crate::m0052::scaled_camera(g, img, call(0x376), s + 0x160, s.wrapping_sub(0xc));
+    let m2 = s + 0xe0;
+    // call width: 1
+    g.call(t(g, 0x383, 235), 0, &[m2]);
+    turns_0434(
+        g,
+        img,
+        f,
+        m2,
+        [e + 0xc68, e + 0xc60, e + 0xc64],
+        [0x3a9, 0x3cf, 0x3f5],
+    );
+    for (j, (at, b)) in (0u32..).zip([(0x40eu32, em), (0x422, m1), (0x436, m1)]) {
+        // push B: the call's return address at S - 8
+        let esp = s.wrapping_sub(8);
+        g.write::<u32>(esp + 4, b);
+        let bf = Frame {
+            at: call(at),
+            esp,
+            ecx: h,
+            edx: j,
+            ..*fr
+        };
+        crate::r45::bone_matrix_0434(g, img, &bf);
+    }
+    let m3 = s + 0x60;
+    // call width: 1
+    g.call(t(g, 0x443, 235), 0, &[m3]);
+    // call width: 3
+    g.call(t(g, 0x45d, 328), 0, &[m3, m3, 0xbfc9_0fdb]);
+    // call width: 3
+    g.call(t(g, 0x47a, 329), 0, &[m3, m3, 0x3fc9_0fdb]);
+    let y = sub(k(g, 0x49a), mul(rd(g, 0x1a6c), k(g, 0x492)));
+    g.write::<u32>(s + 0x90, 0x44af_0000);
+    g.write::<f32>(s + 0x94, y);
+    g.write::<u32>(s + 0x98, 0xc3d2_0000);
+    let m4 = s + 0xa0;
+    // call width: 1
+    g.call(t(g, 0x4ae, 235), 0, &[m4]);
+    turns_0434(g, img, f, m4, angles, [0x4f0, 0x516, 0x53c]);
+    let m5 = s + 0x120;
+    // call width: 1
+    g.call(t(g, 0x554, 235), 0, &[m5]);
+    let a = g.read::<u32>(e + 0x1a74);
+    // call width: 3
+    g.call(t(g, 0x577, 329), 0, &[m5, m5, a]);
+    let b = gw(g, 0x58a);
+    // call width: 3
+    let p = g.call(t(g, 0x584, 719), 0, &[w(0x59c), 2, 0xb]).eax;
+    let tex = g.read::<u32>(p);
+    // seven words (80.0 over slot 719's 2): the return address at S - 0x24
+    let esp = s.wrapping_sub(0x24);
+    for (i, x) in (1u32..).zip([m1, m3, m4, m5, tex, 0, 0x42a0_0000]) {
+        g.write::<u32>(esp + 4 * i, x);
+    }
+    let mf = Frame {
+        at: call(0x5ce),
+        esp,
+        edx: b.wrapping_add(0x30),
+        ..*fr
+    };
+    mesh_0434(g, img, &mf);
+    // call width: 3
+    g.call(t(g, 0x5d3, 357), 0, &[h, u32::MAX, u32::MAX]);
+    // call width: 3
+    Ret::eax(g.call(t(g, 0x5e9, 356), 0, &[h, u32::MAX, u32::MAX]).eax)
+}
+
+/// [`summon_draw_0434`] (the `rel32`s: the camera, the bones, the mesh,
+/// the cookie check).
+pub const SUMMON_DRAW_0434: Sig = Sig {
+    len: 1556,
+    hash: 0x50e_2259_9d1e_d2d2,
+    calls: &[
+        (0x376, Callee::Sig(&crate::m0052::SCALED_CAMERA)),
+        (0x40e, Callee::Sig(&crate::r45::BONE_MATRIX_0434)),
+        (0x422, Callee::Sig(&crate::r45::BONE_MATRIX_0434)),
+        (0x436, Callee::Sig(&crate::r45::BONE_MATRIX_0434)),
+        (0x5ce, Callee::Sig(&MESH_0434)),
+        (0x60c, Callee::Any),
+    ],
+    imports: &[],
+};

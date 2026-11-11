@@ -2003,10 +2003,12 @@ fn shards_draw_0348() {
     let at = t.img.word(sd + 0xba8);
     t.set_u32(at, SCRATCH + 0x3_a300);
     floats(&mut t, SCRATCH + 0x3_a300, 16, 0.5);
-    rec(&mut t, 779, 2, move |m, a| {
-        m.w32(SCRATCH + 0x7f48, m.r32(lock));
-        0x0779_0000 ^ a[0]
-    });
+    for s in [779u32, 775] {
+        rec(&mut t, s, 2, move |m, a| {
+            m.w32(SCRATCH + 0x7f48 + (s & 4), m.r32(lock));
+            (s << 16) ^ a[0]
+        });
+    }
     let task = SCRATCH + 0x7c00;
     #[allow(clippy::type_complexity)]
     let cases: [(&[(u8, u16)], u32, u32); 7] = [
@@ -2146,13 +2148,21 @@ fn mesh_0434() {
         }
         0x231
     });
+    // 229 (out, M, v): every word of M and v counts
     rec(&mut t, 229, 3, |m, a| {
-        for i in 0..3 {
-            let x = rf(m, a[1] + 0x30 + 4 * i) + rf(m, a[2] + 4 * i) * 1.5;
+        let mut o = [0f32; 4];
+        for (i, oi) in o.iter_mut().enumerate() {
+            let i = i as u32;
+            let mut x = 0.0;
+            for j in 0..4u32 {
+                x += rf(m, a[1] + 0x10 * j + 4 * i) * rf(m, a[2] + 4 * j) * 0.125;
+            }
+            *oi = x;
+        }
+        o[3] += 1.25;
+        for (i, x) in (0u32..).zip(o) {
             wf(m, a[0] + 4 * i, x);
         }
-        let ww = 1.25 + rf(m, a[2]) * 0.0625 + rf(m, a[2] + 0xc) * 0.5;
-        wf(m, a[0] + 0xc, ww);
         0x229
     });
     rec(&mut t, 232, 2, |m, a| {
@@ -2197,6 +2207,11 @@ fn mesh_0434() {
     ];
     for (k, (groups, answer)) in (0u32..).zip(cases) {
         mesh_part(&mut t, part, k, groups);
+        // the two packet buffers
+        for o in [0x1a4u32, 0x196] {
+            let at = w(&t, o);
+            junk(&mut t, at, 0x1a60, k + o);
+        }
         t.set_u32(model, 0x0941_0001);
         t.set_u32(model + 4, 0x0941_0002);
         t.set_u32(SCRATCH + 0x7f40, answer);
@@ -2218,5 +2233,151 @@ fn mesh_0434() {
         t.check(f, call, &args, Eax::Checked, |g, img, fr| {
             ffx_magic::r47::mesh_0434(g, img, fr)
         });
+    }
+}
+
+/// `magic_0434` 0x10006f60 (`r47::summon_draw_0434`, a stored callback)
+/// running the mesh 0x10004840: the drift with the first wait running,
+/// the second wait turning the spin (wrapped both ways and not), both
+/// waits out; the summon model with and without a handle (the bones).
+#[test]
+fn summon_draw_0434() {
+    let Some(mut t) = twin(434) else { return };
+    all_stubs(&mut t);
+    let f = t.at(0x6f60);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let mf = t.img.rel32_target(f + 0x5ce);
+    let wm = |t: &Twin, o: u32| t.img.word(mf + o);
+    let part = SCRATCH + 0x2_0000;
+    let bone = SCRATCH + 0x2_3000;
+    floats(&mut t, bone, 16, 0.25);
+    rec(&mut t, 941, 1, move |_, a| {
+        if a[0] == 0x0941_0002 { bone } else { part }
+    });
+    rec(&mut t, 772, 2, |_, a| 0x0772_0000 ^ a[0]);
+    t.stub_edx(772, |_, a| a[1] ^ 0x0077_2000);
+    let texp = SCRATCH + 0x2_3100;
+    t.set_u32(texp, 0x7e70_0000);
+    rec(&mut t, 719, 3, move |_, _| texp);
+    let proj = SCRATCH + 0x2_4000;
+    rec(&mut t, 562, 0, move |_, _| proj);
+    for s in [235u32, 723, 724] {
+        rec(&mut t, s, 1, move |m, a| {
+            for i in 0..16 {
+                wf(m, a[0] + 4 * i, s as f32 * 0.001 + i as f32 * 0.25 - 1.0);
+            }
+            s
+        });
+    }
+    rec(&mut t, 544, 2, |m, a| {
+        for i in 0..4 {
+            wf(m, a[1] + 4 * i, a[0] as f32 + i as f32 * 0.5);
+        }
+        0x544
+    });
+    for s in [330u32, 328, 329] {
+        rec(&mut t, s, 3, move |m, a| {
+            log16(m, a[1]);
+            let ang = f32::from_bits(a[2]);
+            for i in 0..16 {
+                let x = rf(m, a[1] + 4 * i) * 0.5 + ang * 0.25 + s as f32 * 0.001;
+                wf(m, a[0] + 4 * i, x);
+            }
+            s
+        });
+    }
+    rec(&mut t, 325, 2, |m, a| {
+        for i in 0..4 {
+            let x = m.r32(a[1] + 4 * i);
+            m.w32(a[0] + 4 * i, x);
+        }
+        0x325
+    });
+    rec(&mut t, 230, 2, |m, a| {
+        for i in 0..16 {
+            let x = m.r32(a[1] + 4 * i);
+            m.w32(a[0] + 4 * i, x);
+        }
+        0x230
+    });
+    rec(&mut t, 231, 3, |m, a| {
+        log16(m, a[2]);
+        for i in 0..16 {
+            let x = rf(m, a[1] + 4 * i) * 0.5 + rf(m, a[2] + 4 * i) * 0.25;
+            wf(m, a[0] + 4 * i, x);
+        }
+        0x231
+    });
+    rec(&mut t, 229, 3, |m, a| {
+        let mut o = [0f32; 4];
+        for (i, oi) in o.iter_mut().enumerate() {
+            let i = i as u32;
+            let mut x = 0.0;
+            for j in 0..4u32 {
+                x += rf(m, a[1] + 0x10 * j + 4 * i) * rf(m, a[2] + 4 * j) * 0.125;
+            }
+            *oi = x;
+        }
+        o[3] += 1.25;
+        for (i, x) in (0u32..).zip(o) {
+            wf(m, a[0] + 4 * i, x);
+        }
+        0x229
+    });
+    rec(&mut t, 232, 2, |m, a| {
+        for i in 0..3 {
+            let x = rf(m, a[1] + 4 * i) * 0.5;
+            wf(m, a[0] + 4 * i, x);
+        }
+        0x232
+    });
+    let lock = SCRATCH + 0x4100;
+    for o in [0x51u32, 0x6e, 0x3f9, 0x426, 0xbeb, 0xc15, 0xd65, 0xd89] {
+        let at = wm(&t, o);
+        t.set_u32(at, lock);
+    }
+    // the selection, the summon model, the effect block, the mesh's model
+    let sel = SCRATCH + 0x1e0;
+    t.set_u8(sel, 3);
+    let at = w(&t, 0x1b);
+    t.set_u32(at, sel);
+    let h = SCRATCH + 0x2_5000;
+    let tab = w(&t, 0x27);
+    t.set_u32(tab + 4 * 3, h);
+    let e = SCRATCH + 0x2_8000;
+    let at = w(&t, 0x32);
+    t.set_u32(at, e);
+    let b = SCRATCH + 0x2_3600;
+    let at = w(&t, 0x58a);
+    t.set_u32(at, b);
+    // (waits, spin, with a model handle)
+    for (k, (wait, wait2, spin, handle)) in (0u32..).zip([
+        (3i32, 2i32, 0.5f32, true),
+        (0, 2, 3.1, false),
+        (0, 2, -3.1, true),
+        (0, 0, 1.0, true),
+        (-1, 1, 0.25, false),
+    ]) {
+        mesh_part(&mut t, part, k, &[(0x10, 2)]);
+        for o in [0x1a4u32, 0x196] {
+            let at = wm(&t, o);
+            junk(&mut t, at, 0x1a60, k + o);
+        }
+        t.set_u32(b + 0x30, 0x0941_0001);
+        t.set_u32(b + 0x34, 0x0941_0002);
+        junk(&mut t, h, 0x840, k);
+        t.set_u32(h + 0x830, if handle { 0x0083_0000 + k } else { 0 });
+        let recs = SCRATCH + 0x2_7000;
+        junk(&mut t, recs, 0x100, k);
+        t.set_u32(h + 0x1bc, recs);
+        t.set_u32(h + 0x328, SCRATCH + 0x2_7400);
+        floats(&mut t, e + 0xc20, 0x30, 0.5 + k as f32);
+        floats(&mut t, e + 0x1a6c, 2, 1.0 + k as f32);
+        t.set_u32(e + 0x1a74, spin.to_bits());
+        t.set_u32(e + 0x1a78, wait.cast_unsigned());
+        t.set_u32(e + 0x1a7c, wait2.cast_unsigned());
+        t.set_u32(lock, 0x40 + k);
+        magic_h6::scrub(&mut t);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
