@@ -90,6 +90,7 @@ pub fn summon_start_0394<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         let b = u32::from(g.read::<u8>(g.read::<u32>(w(0x13b))));
         let mut st = Pushes::default();
         st.push_all(&[1, b]);
+        // call width: 12 (Pushes caps the words at 12)
         st.call(g, t(g, 0x146, 238), 0);
         crate::m0394::root(
             g,
@@ -101,6 +102,7 @@ pub fn summon_start_0394<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         g.write::<u32>(s + 0xaf0, 0);
         let b = u32::from(g.read::<u8>(g.read::<u32>(w(0x168))));
         st.push(g.read::<u32>(w(0x172).wrapping_add(4 * b)));
+        // call width: 12 (Pushes caps the words at 12)
         let rot = st0_f32(st.call(g, t(g, 0x177, 333), 0).st0);
         st.pop(3);
         let x = sub(k(g, 0x18a), rot);
@@ -112,6 +114,7 @@ pub fn summon_start_0394<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         let chr = g.read::<u32>(w(0x1eb).wrapping_add(4 * b));
         let p = s + 0xb00;
         st.push_all(&[p + 8, p + 4, p, chr]);
+        // call width: 12 (Pushes caps the words at 12)
         st.call(g, t(g, 0x1f8, 262), chr);
         g.write::<u32>(p + 0xc, 0x3f80_0000);
         let yaw = g.read::<u32>(s + 0xc84);
@@ -124,19 +127,24 @@ pub fn summon_start_0394<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
             g.write::<u32>(v + 4 * i, x);
         }
         st.push(mat);
+        // call width: 12 (Pushes caps the words at 12)
         st.call(g, t(g, 0x21a, 235), 0);
         st.pop(4);
         st.set_top(0);
         st.push_all(&[mat, mat]);
+        // call width: 12 (Pushes caps the words at 12)
         st.call(g, t(g, 0x281, 328), 0);
         st.pop(2);
         st.set_top(yaw);
         st.push_all(&[mat, mat]);
+        // call width: 12 (Pushes caps the words at 12)
         st.call(g, t(g, 0x2a0, 329), 0);
         st.push_all(&[v, mat, out]);
         g.write::<u32>(v + 0xc, 0x3f80_0000);
+        // call width: 12 (Pushes caps the words at 12)
         st.call(g, t(g, 0x2b9, 229), 0);
         st.push_all(&[out, q, q]);
+        // call width: 12 (Pushes caps the words at 12)
         st.call(g, t(g, 0x2d1, 248), 0);
         g.write::<u32>(q + 0xc, 0x3f80_0000);
         let x = mul(g.read::<f32>(q), k(g, 0x2ee));
@@ -148,6 +156,7 @@ pub fn summon_start_0394<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         g.write::<f32>(s + 0xb28, z);
         let b = u32::from(g.read::<u8>(g.read::<u32>(w(0x333))));
         st.push_all(&[0, b]);
+        // call width: 12 (Pushes caps the words at 12)
         st.call(g, t(g, 0x33c, 295), 0);
         // the turning step's node, appended to the task list
         let node = crate::sa_pool::take(g, img, take, w(0x34c));
@@ -301,13 +310,16 @@ pub fn actors_pass_0392<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         let i = g.read::<u32>(w(0x27));
         if i.cast_signed() < 0x20 {
             st.push_all(&[m_at, i]);
+            // call width: 12 (Pushes caps the words at 12)
             st.call(g, slot_target(g, w(0x36), 217), 0);
             st.push_all(&[m_at, i]);
+            // call width: 12 (Pushes caps the words at 12)
             st.call(g, slot_target(g, w(0x49), 255), 0);
             st.pop(4);
         }
     }
     st.push_all(&[0, m]);
+    // call width: 12 (Pushes caps the words at 12)
     let mut eax = st.call(g, slot_target(g, w(0x5a), 211), 0).eax;
     let reg = img.rel32_target(f + 0x78);
     let mut p = w(0x6d);
@@ -498,6 +510,7 @@ pub fn summon_start_0297<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     crate::sa_summon::statics_init(g, img, img.rel32_target(f + 0xd), fr.esp.wrapping_sub(12));
     let mut s = Pushes::default();
     s.push_all(&[0x10, 0xf_a000]);
+    // call width: 12 (Pushes caps the words at 12)
     let env = s.call(g, t(g, 0x12, 803), 0).eax;
     g.write::<u32>(w(0x26), env);
     g.write::<u32>(w(0x30), env.wrapping_add(0x8_0000));
@@ -516,24 +529,30 @@ pub fn summon_start_0297<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     g.write::<u32>(w(0xbb), w(0xbf));
     g.write::<u32>(w(0xc5), 0);
     s.push(w(0xd4));
+    // call width: 12 (Pushes caps the words at 12)
     s.call(g, t(g, 0x35, 718), 0);
     s.push_all(&[0, 8, w(0xea)]);
+    // call width: 12 (Pushes caps the words at 12)
     let handle = s.call(g, t(g, 0xdb, 719), 0).eax;
     let lock = g.read::<u32>(w(0xf2));
     let saved = g.read::<u32>(lock);
     g.write::<u32>(w(0xfb), handle);
     s.push_all(&[0, w(0x100), handle]);
     g.write::<u32>(lock, 1);
+    // call width: 12 (Pushes caps the words at 12)
     s.call(g, t(g, 0x106, 711), 0);
     let lock = g.read::<u32>(w(0x119));
     g.write::<u32>(lock, saved);
     let handle = g.read::<u32>(w(0x130));
     s.push_all(&[0x8_0000, w(0x12a), handle, w(0x13b)]);
+    // call width: 12 (Pushes caps the words at 12)
     s.call(g, t(g, 0x125, 710), 0);
     s.push_all(&[2, 1000, 0, w(0x156)]);
+    // call width: 12 (Pushes caps the words at 12)
     s.call(g, t(g, 0x142, 222), 0);
     s.pop(17);
     s.push_all(&[2, 1000, 0, w(0x174)]);
+    // call width: 12 (Pushes caps the words at 12)
     s.call(g, t(g, 0x15d, 221), 0);
     let tail = g.read::<u32>(w(0x17b));
     for (dst, src) in [(0x181, 0x185), (0x18b, 0x18f), (0x195, 0x199)] {
@@ -1046,8 +1065,10 @@ pub fn sprite_frame_0431<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     g.write::<f32>(s + 0xd04, a);
     let mut st = Pushes::default();
     st.push(m);
+    // call width: 12 (Pushes caps the words at 12)
     st.call(g, t(g, 0x9e, 235), 0);
     st.push(g.read::<u32>(w(0xb9)));
+    // call width: 12 (Pushes caps the words at 12)
     let v = st0_f32(st.call(g, t(g, 0xb3, 333), 0).st0);
     st.pop(2);
     let k2 = k(g, 0xcd);
@@ -1056,6 +1077,7 @@ pub fn sprite_frame_0431<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let y = add(add(y, k2), g.read::<f32>(s + 0xd04));
     let y = wrap_once(g, img, f, y, [0xd5, 0xe5, 0xdd, 0xe5]);
     st.push_all(&[y.to_bits(), m, m]);
+    // call width: 12 (Pushes caps the words at 12)
     st.call(g, t(g, 0x136, 329), 0);
     // the frame, ebx/esi/edi, slot 329's yaw word, four pushes, the
     // return address
@@ -1115,20 +1137,26 @@ pub fn actor_motions_0431<G: Game>(g: &mut G, img: &Image, f: u32) -> u32 {
     ] {
         let c = chr(g, sel, nth, table);
         st.push_all(&[0x3c00, u32::MAX, c]);
+        // call width: 12 (Pushes caps the words at 12)
         st.call(g, t(g, ops[0], 357), 0);
         st.push_all(&[0x2ee0, u32::MAX, c]);
+        // call width: 12 (Pushes caps the words at 12)
         st.call(g, t(g, ops[1], 356), 0);
         let m = g.read::<u32>(w(gm));
         st.push_all(&[0, 1, c, m]);
+        // call width: 12 (Pushes caps the words at 12)
         st.call(g, t(g, ops[2], 362), 0);
         st.push_all(&[u32::MAX, u32::MAX, c]);
+        // call width: 12 (Pushes caps the words at 12)
         st.call(g, t(g, ops[3], 357), 0);
         st.push_all(&[u32::MAX, u32::MAX, c]);
+        // call width: 12 (Pushes caps the words at 12)
         eax = st.call(g, t(g, ops[4], 356), 0).eax;
         if nth == 1 {
             st.pop(16);
             let c = chr(g, 0x78, 1, 0x88);
             st.push_all(&[1, c]);
+            // call width: 12 (Pushes caps the words at 12)
             st.call(g, t(g, 0x8d, 399), 0);
         }
     }
@@ -1231,8 +1259,10 @@ pub fn object_place_0431<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let chr = g.read::<u32>(w(0x3c).wrapping_add(4 * b));
     let mut st = Pushes::default();
     st.push_all(&[m1, chr]);
+    // call width: 12 (Pushes caps the words at 12)
     st.call(g, t(g, 0x41, 210), 0);
     st.push_all(&[g.read::<u32>(r), m2]);
+    // call width: 12 (Pushes caps the words at 12)
     st.call(g, t(g, 0x59, 230), 0);
     let k1 = k(g, 0x6e);
     for d in [0x30u32, 0x34, 0x38] {
@@ -1240,6 +1270,7 @@ pub fn object_place_0431<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         g.write::<f32>(m2 + d, x);
     }
     st.push_all(&[m2, m1, m3]);
+    // call width: 12 (Pushes caps the words at 12)
     st.call(g, t(g, 0xa5, 231), 0);
     let (pa, pb) = (g.read::<u32>(r + 4), g.read::<u32>(r + 8));
     let f32_at = |g: &G, p: u32| g.read::<f32>(p);
@@ -1257,12 +1288,15 @@ pub fn object_place_0431<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         g.write::<f32>(v + d, c);
     }
     st.push_all(&[v, m3, o.wrapping_add(0xd0)]);
+    // call width: 12 (Pushes caps the words at 12)
     st.call(g, t(g, 0x147, 229), 0);
     g.write::<u32>(o.wrapping_add(0xdc), 0x3f80_0000);
     let p = w(0x176);
     st.push_all(&[0, 9, p]);
+    // call width: 12 (Pushes caps the words at 12)
     let h = st.call(g, t(g, 0x171, 719), 0).eax;
     st.push_all(&[h, 1, 7]);
+    // call width: 12 (Pushes caps the words at 12)
     let eax = st.call(g, t(g, 0x184, 306), 0).eax;
     g.write::<u32>(o.wrapping_add(0x104), 0);
     Ret::eax(eax)
@@ -1443,6 +1477,7 @@ pub fn actors_step_0266<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     // (the registers the original saves stay under the calls' words)
     let mut st = Pushes::default();
     st.push(m);
+    // call width: 12 (Pushes caps the words at 12)
     st.call(g, t(g, 0x61, 235), 0);
     st.pop(1);
     let n = g.read::<u32>(w(0x74));
@@ -1485,16 +1520,20 @@ pub fn actors_step_0266<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         let word = |g: &G, d: u32| g.read::<u32>(r - d);
         st.push(word(g, 0x1c));
         st.push_all(&[m, m2]);
+        // call width: 12 (Pushes caps the words at 12)
         st.call(g, t(g, 0x152, 330), 0);
         st.pop(2);
         st.set_top(word(g, 0x24));
         st.push_all(&[m2, m2]);
+        // call width: 12 (Pushes caps the words at 12)
         st.call(g, t(g, 0x171, 328), 0);
         st.pop(2);
         st.set_top(word(g, 0x20));
         st.push_all(&[m2, m2]);
+        // call width: 12 (Pushes caps the words at 12)
         st.call(g, t(g, 0x190, 329), 0);
         st.push_all(&[r - 0x14, m2, v]);
+        // call width: 12 (Pushes caps the words at 12)
         st.call(g, t(g, 0x1a9, 229), 0);
         let a_m = r - 0x84;
         crate::sa_misc::actor_scale(g, img, scale, i, a_m);
@@ -1502,6 +1541,7 @@ pub fn actors_step_0266<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         for (op, slot, d) in [(0x1ca, 330, 0x3c), (0x1e6, 328, 0x44), (0x202, 329, 0x40)] {
             st.set_top(word(g, d));
             st.push_all(&[a_m, a_m]);
+            // call width: 12 (Pushes caps the words at 12)
             st.call(g, t(g, op, slot), 0);
             st.pop(2);
         }
@@ -1892,6 +1932,7 @@ pub fn start_up_0266<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         g.write::<u32>(w(dst), w(src));
     }
     st.push_all(&[0, 8, w(0x23)]);
+    // call width: 12 (Pushes caps the words at 12)
     let h = st.call(g, t(g, 0x14, 719), 0).eax;
     // (its two last words stay on the stack under two the object start
     // leaves unwritten; the later calls' words are compared up to there)
@@ -1910,10 +1951,12 @@ pub fn start_up_0266<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     crate::r9_misc::start_object_reset_arg(g, img, &start);
     let c = g.read::<u32>(w(0x8f));
     st.push_all(&[w(0x79), w(0x84), w(0x89), c]);
+    // call width: 12 (Pushes caps the words at 12)
     st.call(g, t(g, 0x74, 262), 0);
     st.push(g.read::<u32>(w(0x9c)));
     g.write::<u32>(w(0xa2), 0x3f80_0000);
     g.write::<u32>(w(0xac), 0x3f06_0a92);
+    // call width: 12 (Pushes caps the words at 12)
     let v = st0_f32(st.call(g, t(g, 0x96, 333), 0).st0);
     st.pop(5);
     let yaw = sub(k(g, 0xc6), v);
@@ -1931,18 +1974,23 @@ pub fn start_up_0266<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     g.write::<f32>(q + 4, y);
     g.write::<u32>(q + 0xc, pw);
     st.push(m);
+    // call width: 12 (Pushes caps the words at 12)
     st.call(g, t(g, 0x159, 235), 0);
     st.set_top(g.read::<u32>(w(0x17b)));
     st.push_all(&[m, m]);
+    // call width: 12 (Pushes caps the words at 12)
     st.call(g, t(g, 0x18d, 328), 0);
     st.pop(2);
     st.set_top(g.read::<u32>(w(0x19d)));
     st.push_all(&[m, m]);
+    // call width: 12 (Pushes caps the words at 12)
     st.call(g, t(g, 0x1b2, 329), 0);
     st.push_all(&[w(0x1bf), m, o2]);
     g.write::<u32>(w(0x1d5), 0x3f80_0000);
+    // call width: 12 (Pushes caps the words at 12)
     st.call(g, t(g, 0x1cf, 229), 0);
     st.push_all(&[o2, q, q]);
+    // call width: 12 (Pushes caps the words at 12)
     st.call(g, t(g, 0x1ef, 248), 0);
     st.pop(9);
     g.write::<u32>(q + 0xc, 0x3f80_0000);
@@ -1975,6 +2023,7 @@ pub fn start_up_0266<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
             ] {
                 st.push(g.read::<u32>(r.wrapping_add(d)));
                 st.push_all(&[a, a]);
+                // call width: 12 (Pushes caps the words at 12)
                 st.call(g, t(g, op, slot), 0);
                 st.pop(3);
             }
@@ -1999,13 +2048,16 @@ pub fn start_up_0266<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
             g.write::<u32>(r + 0x24, 0);
             g.write::<u32>(r + 0x28, 0);
             st.push(m2);
+            // call width: 12 (Pushes caps the words at 12)
             st.call(g, t(g, 0x3aa, 235), 0);
             // xorps with the sign mask: the yaw negated
             let neg = g.read::<u32>(w(0x3cd)) ^ g.read::<u32>(w(0x3d4));
             st.set_top(neg);
             st.push_all(&[m2, m2]);
+            // call width: 12 (Pushes caps the words at 12)
             st.call(g, t(g, 0x3e3, 329), 0);
             st.push_all(&[r + 0xc, m2, wv]);
+            // call width: 12 (Pushes caps the words at 12)
             st.call(g, t(g, 0x3fc, 229), 0);
             g.write::<u32>(r + 0xc, 0);
             let wx = g.read::<u32>(wv);
@@ -2013,12 +2065,15 @@ pub fn start_up_0266<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
             g.write::<u32>(wv, 0);
             g.write::<u32>(r + 0x24, 0x4049_0fdb);
             st.push(m2);
+            // call width: 12 (Pushes caps the words at 12)
             st.call(g, t(g, 0x412, 235), 0);
             st.pop(6);
             st.set_top(g.read::<u32>(w(0x43c)));
             st.push_all(&[m2, m2]);
+            // call width: 12 (Pushes caps the words at 12)
             st.call(g, t(g, 0x44e, 329), 0);
             st.push_all(&[wv, m2, r + 0xc]);
+            // call width: 12 (Pushes caps the words at 12)
             st.call(g, t(g, 0x467, 229), 0);
             for (d, x) in [
                 (0x30u32, 0u32),
@@ -2040,20 +2095,26 @@ pub fn start_up_0266<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     // the caster's motions
     let c = g.read::<u32>(w(0x4bb));
     st.push_all(&[0x3c00, u32::MAX, c]);
+    // call width: 12 (Pushes caps the words at 12)
     st.call(g, t(g, 0x4b5, 357), 0);
     st.push_all(&[0x2ee0, u32::MAX, c]);
+    // call width: 12 (Pushes caps the words at 12)
     st.call(g, t(g, 0x4d0, 356), 0);
     let x = g.read::<u32>(w(0x4f6));
     st.push_all(&[0, 1, c, x]);
+    // call width: 12 (Pushes caps the words at 12)
     st.call(g, t(g, 0x4e5, 362), 0);
     let c = g.read::<u32>(w(0x503));
     st.push_all(&[u32::MAX, u32::MAX, c]);
+    // call width: 12 (Pushes caps the words at 12)
     st.call(g, t(g, 0x4fd, 357), 0);
     st.push_all(&[u32::MAX, u32::MAX, c]);
+    // call width: 12 (Pushes caps the words at 12)
     st.call(g, t(g, 0x515, 356), 0);
     st.pop(16);
     let c = g.read::<u32>(w(0x538));
     st.push_all(&[1, c]);
+    // call width: 12 (Pushes caps the words at 12)
     st.call(g, t(g, 0x527, 399), 0);
     st.pop(2);
     let battle = g.read::<u32>(w(0x545)) != 0;
@@ -2514,8 +2575,10 @@ fn scaled_turn_0434<G: Game>(g: &mut G, img: &Image, f: u32, s: u32, o: &TurnOps
     let m = s + 0xc20;
     let mut st = Pushes::default();
     st.push(m);
+    // call width: 12 (Pushes caps the words at 12)
     st.call(g, t(g, o.s235, 235), 0);
     st.push(chr(g, o.chr[0]));
+    // call width: 12 (Pushes caps the words at 12)
     let v = st0_f32(st.call(g, t(g, o.s277, 277), 0).st0);
     let v = mul(v, g.read::<f32>(w(o.k)));
     for d in [0x28u32, 0x14, 0] {
@@ -2524,6 +2587,7 @@ fn scaled_turn_0434<G: Game>(g: &mut G, img: &Image, f: u32, s: u32, o: &TurnOps
     let c = chr(g, o.chr[1]);
     for (i, (op, d)) in o.scales.iter().zip([0u32, 0x14, 0x28]).enumerate() {
         st.push(c);
+        // call width: 12 (Pushes caps the words at 12)
         let x = st0_f32(st.call(g, t(g, *op, 15 + i as u32), 0).st0);
         let y = if i == 1 && o.swapped {
             mul(x, g.read::<f32>(m + d))
@@ -2541,6 +2605,7 @@ fn scaled_turn_0434<G: Game>(g: &mut G, img: &Image, f: u32, s: u32, o: &TurnOps
     ] {
         st.set_top(g.read::<u32>(s + d));
         st.push_all(&[m, m]);
+        // call width: 12 (Pushes caps the words at 12)
         eax = st.call(g, t(g, op, slot), 0).eax;
         st.pop(2);
     }
@@ -2773,9 +2838,11 @@ pub fn aim_start_0397<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let c = g.read::<u32>(w(0x28));
     let mut st = Pushes::default();
     st.push_all(&[p + 8, p + 4, p, c]);
+    // call width: 12 (Pushes caps the words at 12)
     st.call(g, t(g, 0x21, 262), 0);
     g.write::<u32>(p + 0xc, 0x3f80_0000);
     st.push(g.read::<u32>(w(0x42)));
+    // call width: 12 (Pushes caps the words at 12)
     let v = st0_f32(st.call(g, t(g, 0x35, 333), 0).st0);
     let x = sub(k(g, 0x56), v);
     let x = wrap_once(g, img, f, x, [0x6e, 0x64, 0x7e, 0x64]);
@@ -2798,8 +2865,10 @@ pub fn aim_start_0397<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         let c = g.read::<u32>(w(0x15e).wrapping_add(4 * b));
         let mut st = Pushes::default();
         st.push_all(&[q + 8, q + 4, q, c]);
+        // call width: 12 (Pushes caps the words at 12)
         st.call(g, t(g, 0x16b, 262), 0);
         st.push_all(&[q, 0x10, c]);
+        // call width: 12 (Pushes caps the words at 12)
         st.call(g, t(g, 0x17a, 268), 0);
         g.write::<u32>(q + 0xc, 0x3f80_0000);
     }
@@ -2850,6 +2919,7 @@ pub fn start_up_0397<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     for (dst, src) in [(0x18, 0x1c), (0x22, 0x26), (0x2c, 0x30), (0x36, 0x3a)] {
         g.write::<u32>(w(dst), w(src));
     }
+    // call width: 12 (Pushes caps the words at 12)
     let h = s.call(g, slot_target(g, w(0x1), 719), 0).eax;
     s.pop(1);
     g.write::<u32>(w(0x44), h);
@@ -2866,6 +2936,7 @@ pub fn start_up_0397<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     g.write::<u16>(w(0x6e), 0);
     g.write::<u8>(w(0x76), 1);
     s.push(4);
+    // call width: 12 (Pushes caps the words at 12)
     s.call(g, slot_target(g, w(0x53), 271), 0);
     let first = crate::sa_pool::take(g, img, img.rel32_target(f + 0x8e), w(0x89));
     let head = g.read::<u32>(w(0x94));
@@ -3177,6 +3248,7 @@ pub fn glide_target_0392<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let chr = actor_chr_0392(g, img, f, i, (0x27, 0x2e, 0x39));
     let mut st = Pushes::default();
     st.push_all(&[p + 8, p + 4, p, chr]);
+    // call width: 12 (Pushes caps the words at 12)
     st.call(g, t(g, 0x4e, 262), 0);
     let yaw = g.read::<u32>(s + 0x5378);
     let i = g.read::<u32>(s + 0x537c);
@@ -3195,19 +3267,24 @@ pub fn glide_target_0392<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     st.push(m);
     g.write::<u32>(v + 0xc, 0x3f80_0000);
     g.write::<f32>(v + 8, d);
+    // call width: 12 (Pushes caps the words at 12)
     st.call(g, t(g, 0x99, 235), 0);
     st.pop(4);
     st.set_top(0);
     st.push_all(&[m, m]);
+    // call width: 12 (Pushes caps the words at 12)
     st.call(g, t(g, 0xc4, 328), 0);
     st.pop(2);
     st.set_top(g.read::<u32>(e));
     st.push_all(&[m, m]);
+    // call width: 12 (Pushes caps the words at 12)
     st.call(g, t(g, 0xe5, 329), 0);
     st.push_all(&[v, m, o]);
     g.write::<u32>(v + 0xc, 0x3f80_0000);
+    // call width: 12 (Pushes caps the words at 12)
     st.call(g, t(g, 0x101, 229), 0);
     st.push_all(&[o, p, p]);
+    // call width: 12 (Pushes caps the words at 12)
     st.call(g, t(g, 0x121, 248), 0);
     let y = g.read::<f32>(s + 0xf74);
     let dx = sub(g.read::<f32>(s + 0xf70), g.read::<f32>(p));
@@ -3432,6 +3509,7 @@ fn summon_place_with<G: Game>(g: &mut G, img: &Image, fr: &Frame, l: &PlaceLayou
     let mut st = Pushes::default();
     if m != 0 {
         st.push_all(&[m, c]);
+        // call width: 12 (Pushes caps the words at 12)
         st.call(g, t(g, 0x12f, 210), 0);
         st.pop(2);
     } else if g.read::<u32>(v(0x144)) == 0 {
@@ -3439,13 +3517,16 @@ fn summon_place_with<G: Game>(g: &mut G, img: &Image, fr: &Frame, l: &PlaceLayou
         if i.cast_signed() < 0x20 {
             let p = fr.esp.wrapping_sub(4).wrapping_sub(0x14);
             st.push_all(&[p, i]);
+            // call width: 12 (Pushes caps the words at 12)
             st.call(g, t(g, 0x15b, 217), 0);
             st.push_all(&[p, i]);
+            // call width: 12 (Pushes caps the words at 12)
             st.call(g, t(g, 0x16d, 255), 0);
             st.pop(4);
         }
     }
     st.push_all(&[m, c]);
+    // call width: 12 (Pushes caps the words at 12)
     Ret::eax(st.call(g, t(g, 0x17e, 211), 0).eax)
 }
 
@@ -3512,6 +3593,7 @@ pub fn throw_aim_0392<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let chr = actor_chr_0392(g, img, f, i, (0x44, 0x4b, 0x56));
     let mut st = Pushes::default();
     st.push_all(&[p + 8, p + 4, p, chr]);
+    // call width: 12 (Pushes caps the words at 12)
     st.call(g, t(g, 0x6b, 262), 0);
     let yaw = g.read::<u32>(s + 0x5378);
     let i = g.read::<u32>(s + 0x537c);
@@ -3531,19 +3613,24 @@ pub fn throw_aim_0392<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     g.write::<f32>(v + 8, d);
     let y = g.read::<u32>(s + 0xf74);
     g.write::<u32>(p + 4, y);
+    // call width: 12 (Pushes caps the words at 12)
     st.call(g, t(g, 0xae, 235), 0);
     st.pop(4);
     st.set_top(0);
     st.push_all(&[m, m]);
+    // call width: 12 (Pushes caps the words at 12)
     st.call(g, t(g, 0xe7, 328), 0);
     st.pop(2);
     st.set_top(g.read::<u32>(e));
     st.push_all(&[m, m]);
+    // call width: 12 (Pushes caps the words at 12)
     st.call(g, t(g, 0x108, 329), 0);
     st.push_all(&[v, m, o]);
     g.write::<u32>(v + 0xc, 0x3f80_0000);
+    // call width: 12 (Pushes caps the words at 12)
     st.call(g, t(g, 0x124, 229), 0);
     st.push_all(&[o, p, p]);
+    // call width: 12 (Pushes caps the words at 12)
     st.call(g, t(g, 0x144, 248), 0);
     let (px, py, pz) = (g.read::<f32>(p), g.read::<f32>(p + 4), g.read::<f32>(p + 8));
     g.write::<f32>(s + 0xfa0, px);
@@ -3665,10 +3752,12 @@ pub fn aim_setup_0392<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     };
     let mut st = Pushes::default();
     st.push_all(&[a, 0]);
+    // call width: 12 (Pushes caps the words at 12)
     st.call(g, t(g, 0xad, 523), 0);
     let mut eax = 0;
     for (k, (op, x)) in (1u32..).zip([(0xc2, 0xbd), (0xd7, 0xd2), (0xec, 0xe7)]) {
         st.push_all(&[g.read::<u32>(w(x)), k]);
+        // call width: 12 (Pushes caps the words at 12)
         eax = st.call(g, t(g, op, 523), 0).eax;
     }
     Ret::eax(eax)
@@ -3727,17 +3816,20 @@ pub fn start_up_0392<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     for (dst, src) in [(0x64, 0x68), (0x6e, 0x72), (0x78, 0x7c)] {
         g.write::<u32>(w(dst), w(src));
     }
+    // call width: 12 (Pushes caps the words at 12)
     let h = st.call(g, t(g, 0x1, 719), 0).eax;
     let lock = g.read::<u32>(w(0x84));
     g.write::<u32>(w(0x8b), h);
     let saved = g.read::<u32>(lock);
     st.push_all(&[0, w(0x92), h]);
     g.write::<u32>(lock, 1);
+    // call width: 12 (Pushes caps the words at 12)
     st.call(g, t(g, 0x98, 711), 0);
     let lock = g.read::<u32>(w(0xab));
     g.write::<u32>(lock, saved);
     let h = g.read::<u32>(w(0xc2));
     st.push_all(&[0x4_0000, w(0xbc), h, w(0xcd)]);
+    // call width: 12 (Pushes caps the words at 12)
     st.call(g, t(g, 0xb7, 710), 0);
     let model = g.read::<u32>(w(0xd5));
     for o in [0xdbu32, 0xe5, 0xef, 0xf9] {
@@ -3747,6 +3839,7 @@ pub fn start_up_0392<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let b = u32::from(g.read::<u8>(g.read::<u32>(w(0x107))));
     let s = g.read::<u32>(w(0x10d));
     st.push_all(&[b, g.read::<u32>(w(0x11c))]);
+    // call width: 12 (Pushes caps the words at 12)
     let r = st.call(g, t(g, 0x116, 622), 0).eax;
     st.pop(12);
     let i = g.read::<u32>(s + 0x537c);
@@ -3758,6 +3851,7 @@ pub fn start_up_0392<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         u32::from(g.read::<u8>(g.read::<u32>(w(0x147)).wrapping_add(i)))
     };
     st.push_all(&[4, 0xa, a, 0, 2, c]);
+    // call width: 12 (Pushes caps the words at 12)
     st.call(g, t(g, 0x157, 537), 0);
     g.write::<u32>(s + 0x5394, u32::MAX);
     g.write::<u32>(s + 0x53a0, 0);
@@ -3767,6 +3861,7 @@ pub fn start_up_0392<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     g.write::<u16>(w(0x1a2), 0);
     g.write::<u8>(w(0x1aa), 1);
     st.push(4);
+    // call width: 12 (Pushes caps the words at 12)
     st.call(g, t(g, 0x169, 271), 0);
     take_pair_0266(
         g,
@@ -3941,6 +4036,7 @@ fn actors_tilt_with<G: Game>(g: &mut G, img: &Image, fr: &Frame, l: &TiltLayout)
                 if g.read::<u32>(r + 0xd8) == 1 {
                     let mut st = Pushes::default();
                     st.push(m);
+                    // call width: 12 (Pushes caps the words at 12)
                     st.call(g, t(g, s235, 235), 0);
                     for (op, slot, d) in
                         [(s330, 330, 0x88u32), (s328, 328, 0x80), (s329, 329, 0x84)]
@@ -3950,9 +4046,11 @@ fn actors_tilt_with<G: Game>(g: &mut G, img: &Image, fr: &Frame, l: &TiltLayout)
                         }
                         st.set_top(g.read::<u32>(r + d));
                         st.push_all(&[m, m]);
+                        // call width: 12 (Pushes caps the words at 12)
                         st.call(g, t(g, op, slot), 0);
                     }
                     st.push_all(&[m, r, r + 0x40]);
+                    // call width: 12 (Pushes caps the words at 12)
                     st.call(g, t(g, s231, 231), 0);
                 }
                 for j in 0..4u32 {
@@ -4645,6 +4743,7 @@ fn trails_start_with<G: Game>(g: &mut G, img: &Image, fr: &Frame, l: &TrailsLayo
     let mut st = Pushes::default();
     st.push(ma);
     g.write::<u32>(at(0x10), s);
+    // call width: 12 (Pushes caps the words at 12)
     st.call(g, t(g, 0x2c, 235), 0);
     let yaw = g.read::<u32>(s + 0xfb4);
     st.set_top(yaw);
@@ -4662,8 +4761,10 @@ fn trails_start_with<G: Game>(g: &mut G, img: &Image, fr: &Frame, l: &TrailsLayo
     ] {
         g.write::<u32>(at(o), x);
     }
+    // call width: 12 (Pushes caps the words at 12)
     st.call(g, t(g, 0x5a, 329), 0);
     st.push_all(&[v1, mb, o1]);
+    // call width: 12 (Pushes caps the words at 12)
     st.call(g, t(g, 0xbd, 229), 0);
     let x = add(g.read::<f32>(s + 0xf60), g.read::<f32>(o1));
     let y = add(g.read::<f32>(s + 0xf64), g.read::<f32>(o1 + 4));
@@ -4676,12 +4777,14 @@ fn trails_start_with<G: Game>(g: &mut G, img: &Image, fr: &Frame, l: &TrailsLayo
     let colour = g.read::<u32>(p.wrapping_add(0x10));
     g.write::<u32>(at(0xc), colour);
     st.push(mc);
+    // call width: 12 (Pushes caps the words at 12)
     st.call(g, t(g, 0x122, 235), 0);
     let yaw = g.read::<u32>(s + 0xfb4);
     st.pop(6);
     st.set_top(yaw);
     st.push_all(&[mc, mc]);
     g.write::<u32>(mc + 0x28, 0x3f00_0000);
+    // call width: 12 (Pushes caps the words at 12)
     st.call(g, t(g, 0x148, 329), 0);
     st.pop(3);
     let table = w(0x163);
@@ -4690,23 +4793,29 @@ fn trails_start_with<G: Game>(g: &mut G, img: &Image, fr: &Frame, l: &TrailsLayo
         let mut st = Pushes::default();
         if l.lift {
             st.push(0x41a0_0000);
+            // call width: 12 (Pushes caps the words at 12)
             let r0 = st0_f32(st.call(g, t(g, 0x171, 314), 0).st0);
             g.write::<f32>(v1 + 4, r0);
             st.set_top(0x4248_0000);
         } else {
             st.push(0x4248_0000);
         }
+        // call width: 12 (Pushes caps the words at 12)
         let r1 = st0_f32(st.call(g, t(g, 0x171, 314), 0).st0);
         g.write::<f32>(v1 + 8, r1);
         st.set_top(0x4049_0fdb);
+        // call width: 12 (Pushes caps the words at 12)
         let r2 = st0_f32(st.call(g, t(g, 0x18a, 314), 0).st0);
         g.write::<f32>(e, r2);
         st.set_top(r2.to_bits());
         st.push_all(&[ma, mb]);
+        // call width: 12 (Pushes caps the words at 12)
         st.call(g, t(g, 0x1bd, 329), 0);
         st.push_all(&[mb, mc, mb]);
+        // call width: 12 (Pushes caps the words at 12)
         st.call(g, t(g, 0x1e2, 231), 0);
         st.push_all(&[v1, mb, o2]);
+        // call width: 12 (Pushes caps the words at 12)
         st.call(g, t(g, 0x204, 229), 0);
         let px = add(g.read::<f32>(s + 0xfc0), g.read::<f32>(o2));
         let py = add(g.read::<f32>(s + 0xfc4), g.read::<f32>(o2 + 4));
@@ -4754,23 +4863,29 @@ fn trails_start_with<G: Game>(g: &mut G, img: &Image, fr: &Frame, l: &TrailsLayo
         let yaw2 = wrap_once(g, img, f, yaw2, [0x3d9, 0x3e9, 0x3f3, 0x400].map(m));
         let mut st = Pushes::default();
         st.push(0x4049_0fdb);
+        // call width: 12 (Pushes caps the words at 12)
         let r3 = st0_f32(st.call(g, t(g, 0x40b, 314), 0).st0);
         st.set_top(r3.to_bits());
         st.push_all(&[ma, mb]);
+        // call width: 12 (Pushes caps the words at 12)
         st.call(g, t(g, 0x43f, 330), 0);
         st.pop(2);
         st.set_top(pitch.to_bits());
         st.push_all(&[mb, mb]);
+        // call width: 12 (Pushes caps the words at 12)
         st.call(g, t(g, 0x467, 328), 0);
         st.pop(2);
         st.set_top(yaw2.to_bits());
         st.push_all(&[mb, mb]);
+        // call width: 12 (Pushes caps the words at 12)
         st.call(g, t(g, 0x48b, 329), 0);
         st.pop(2);
         st.set_top(0x42c8_0000);
+        // call width: 12 (Pushes caps the words at 12)
         let r4 = st0_f32(st.call(g, t(g, 0x498, 404), 0).st0);
         g.write::<f32>(v2 + 4, r4);
         st.push_all(&[v2, mb, o3]);
+        // call width: 12 (Pushes caps the words at 12)
         st.call(g, t(g, 0x4cb, 229), 0);
         for d in [0u32, 4] {
             let v = add(g.read::<f32>(o3 + d), g.read::<f32>(q + 0x10 + d));
@@ -4903,17 +5018,20 @@ pub fn start_up_0449<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     for (dst, src) in [(0x66, 0x6a), (0x70, 0x74), (0x7a, 0x7e)] {
         g.write::<u32>(w(dst), w(src));
     }
+    // call width: 12 (Pushes caps the words at 12)
     let h = st.call(g, t(g, 0x1, 719), 0).eax;
     let lock = g.read::<u32>(w(0x86));
     g.write::<u32>(w(0x8d), h);
     let saved = g.read::<u32>(lock);
     st.push_all(&[0, w(0x94), h]);
     g.write::<u32>(lock, 1);
+    // call width: 12 (Pushes caps the words at 12)
     st.call(g, t(g, 0x9a, 711), 0);
     let lock = g.read::<u32>(w(0xad));
     g.write::<u32>(lock, saved);
     let h = g.read::<u32>(w(0xc4));
     st.push_all(&[0x4_0000, w(0xbe), h, w(0xcf)]);
+    // call width: 12 (Pushes caps the words at 12)
     st.call(g, t(g, 0xb9, 710), 0);
     for o in [0xd7u32, 0xe1, 0xeb, 0xf5] {
         g.write::<u32>(w(o), 0);
@@ -4930,6 +5048,7 @@ pub fn start_up_0449<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     g.write::<u16>(w(0x11e), 0);
     g.write::<u8>(w(0x126), 1);
     st.push(4);
+    // call width: 12 (Pushes caps the words at 12)
     st.call(g, t(g, 0x103, 271), 0);
     take_pair_0266(
         g,
@@ -5006,18 +5125,23 @@ pub fn throw_target_0449<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     ] {
         g.write::<u32>(v + d, x);
     }
+    // call width: 12 (Pushes caps the words at 12)
     st.call(g, t(g, 0x5a, 235), 0);
     st.set_top(0);
     st.push_all(&[m, m]);
+    // call width: 12 (Pushes caps the words at 12)
     st.call(g, t(g, 0xa8, 328), 0);
     st.pop(2);
     st.set_top(g.read::<u32>(yl));
     st.push_all(&[m, m]);
+    // call width: 12 (Pushes caps the words at 12)
     st.call(g, t(g, 0xc9, 329), 0);
     st.push_all(&[v, m, o]);
     g.write::<u32>(v + 0xc, 0x3f80_0000);
+    // call width: 12 (Pushes caps the words at 12)
     st.call(g, t(g, 0xe5, 229), 0);
     st.push_all(&[o, p, p]);
+    // call width: 12 (Pushes caps the words at 12)
     st.call(g, t(g, 0x105, 248), 0);
     let yaw = g.read::<u32>(s + 0x56dc);
     g.write::<u32>(s + 0xfb4, yaw);
@@ -5358,12 +5482,15 @@ pub fn landing_0449<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
             let mut st = Pushes::default();
             st.push(pitch.to_bits());
             st.push_all(&[m2, m3]);
+            // call width: 12 (Pushes caps the words at 12)
             st.call(g, t(g, 0x3b1, 328), 0);
             st.pop(2);
             st.set_top(yaw.to_bits());
             st.push_all(&[m3, m3]);
+            // call width: 12 (Pushes caps the words at 12)
             st.call(g, t(g, 0x3da, 329), 0);
             st.push_all(&[v, m3, r + 0xb0]);
+            // call width: 12 (Pushes caps the words at 12)
             st.call(g, t(g, 0x3f1, 229), 0);
             let nk = mul(crate::sb_sse::cvt(g.read::<u32>(r + 0xd0)), k(g, 0x411));
             for d in [0u32, 4, 8] {
@@ -5373,6 +5500,7 @@ pub fn landing_0449<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
             let x = g.read::<u32>(r + 0xbc);
             g.write::<u32>(r + 0xcc, x);
             st.push_all(&[m, r]);
+            // call width: 12 (Pushes caps the words at 12)
             st.call(g, t(g, 0x445, 230), 0);
             for d in [0x80u32, 0x84, 0x88] {
                 g.write::<u32>(r + d, 0);
@@ -5635,18 +5763,23 @@ pub fn glide_start_0397<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     // `M` = slot 235 turned by X 0 and Y the yaw, `O` = `M V`, `to += O`
     let turn = |g: &mut G, st: &mut Pushes, m: u32, to: u32, ops: [u32; 5]| {
         st.push(m);
+        // call width: 12 (Pushes caps the words at 12)
         st.call(g, t(g, ops[0], 235), 0);
         st.set_top(0);
         st.push_all(&[m, m]);
+        // call width: 12 (Pushes caps the words at 12)
         st.call(g, t(g, ops[1], 328), 0);
         st.pop(2);
         st.set_top(g.read::<u32>(at(0xb8)));
         st.push_all(&[m, m]);
+        // call width: 12 (Pushes caps the words at 12)
         st.call(g, t(g, ops[2], 329), 0);
         st.push_all(&[v, m, o]);
         g.write::<u32>(v + 0xc, 0x3f80_0000);
+        // call width: 12 (Pushes caps the words at 12)
         st.call(g, t(g, ops[3], 229), 0);
         st.push_all(&[o, to, to]);
+        // call width: 12 (Pushes caps the words at 12)
         st.call(g, t(g, ops[4], 248), 0);
     };
     turn(g, &mut st, m1, p, [0x65, 0x9b, 0xbd, 0xd6, 0xee]);
@@ -5900,15 +6033,20 @@ pub fn glow_draw_0431<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     g.write::<u16>(r + 0x4c, 0x80);
     let mut st = Pushes::default();
     st.push(m1);
+    // call width: 12 (Pushes caps the words at 12)
     st.call(g, t(g, 0x9d, 723), 0);
     st.push(m2);
+    // call width: 12 (Pushes caps the words at 12)
     st.call(g, t(g, 0xff, 724), 0);
     st.push_all(&[obj, m2, m3]);
+    // call width: 12 (Pushes caps the words at 12)
     st.call(g, t(g, 0x118, 231), 0);
     // sub esp, 0x1c8; esi, edi; five words; the call
     crate::m0052::scaled_camera(g, img, img.rel32_target(f + 0x12b), m4, at(0x1e8));
+    // call width: 12 (Pushes caps the words at 12)
     let x = st.call(g, t(g, 0x130, 545), 0).eax;
     st.push_all(&[x, m5]);
+    // call width: 12 (Pushes caps the words at 12)
     st.call(g, t(g, 0x145, 230), 0);
     g.write::<u32>(r + 0x20, m3);
     g.write::<u32>(r + 0x24, m4);
@@ -5916,6 +6054,7 @@ pub fn glow_draw_0431<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let e = g.read::<u32>(w(0x18f));
     g.write::<u32>(r + 0x2c, obj);
     st.push_all(&[m1, m2, obj, r, e]);
+    // call width: 12 (Pushes caps the words at 12)
     Ret::eax(st.call(g, t(g, 0x189, 567), 0).eax)
 }
 
@@ -5968,15 +6107,19 @@ pub fn bone_place_0387<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     if img.matches(rot, &crate::s3_wrap::JMP_ROTATION_19D0) {
         crate::sb_matrix::rotation_19d0(g, img, img.rel32_target(rot + 11), m, b + 0x4c);
     } else {
+        // call width: 12 (Pushes caps the words at 12)
         st.call(g, rot, 0);
     }
     st.push_all(&[b + 0x2c, q]);
+    // call width: 12 (Pushes caps the words at 12)
     st.call(g, t(g, 0x49, 325), 0);
     let p = g.read::<u32>(b + 0x6c).wrapping_add(0x9c);
     st.push_all(&[m, p, m]);
+    // call width: 12 (Pushes caps the words at 12)
     st.call(g, t(g, 0x67, 231), 0);
     let to = g.read::<u32>(pair + 4);
     st.push_all(&[v, m, to]);
+    // call width: 12 (Pushes caps the words at 12)
     st.call(g, t(g, 0x7c, 229), 0);
     let to = g.read::<u32>(pair + 4);
     let k = g.read::<u32>(w(0x95));
@@ -6303,11 +6446,14 @@ pub fn actors_sway_0397<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         g.write::<u32>(v + 8, size.to_bits() ^ mask);
         let mut st = Pushes::default();
         st.push(m1);
+        // call width: 12 (Pushes caps the words at 12)
         st.call(g, t(g, 0x21d, 235), 0);
         st.set_top(g.read::<u32>(r + 0x7c));
         st.push_all(&[m1, m1]);
+        // call width: 12 (Pushes caps the words at 12)
         st.call(g, t(g, 0x241, 329), 0);
         st.push_all(&[v, m1, o]);
+        // call width: 12 (Pushes caps the words at 12)
         st.call(g, t(g, 0x25a, 229), 0);
         crate::sa_misc::actor_scale(g, img, img.rel32_target(f + 0x26c), i, m);
         st.pop(5);
@@ -6321,6 +6467,7 @@ pub fn actors_sway_0397<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
             }
             st.set_top(g.read::<u32>(r + a));
             st.push_all(&[m, m]);
+            // call width: 12 (Pushes caps the words at 12)
             st.call(g, t(g, op, slot), 0);
         }
         let x1 = g.read::<f32>(r + 0x6c);
@@ -6464,11 +6611,14 @@ pub fn actors_settle_0397<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
         g.write::<f32>(r + 0x50, b);
         let mut st = Pushes::default();
         st.push(m1);
+        // call width: 12 (Pushes caps the words at 12)
         st.call(g, t(g, 0x1e6, 235), 0);
         st.set_top(g.read::<u32>(r + 0x7c));
         st.push_all(&[m1, m1]);
+        // call width: 12 (Pushes caps the words at 12)
         st.call(g, t(g, 0x20c, 329), 0);
         st.push_all(&[v, m1, o]);
+        // call width: 12 (Pushes caps the words at 12)
         st.call(g, t(g, 0x225, 229), 0);
         crate::sa_misc::actor_scale(g, img, img.rel32_target(f + 0x237), i, m);
         st.pop(5);
@@ -6482,6 +6632,7 @@ pub fn actors_settle_0397<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
             }
             st.set_top(g.read::<u32>(r + a));
             st.push_all(&[m, m]);
+            // call width: 12 (Pushes caps the words at 12)
             st.call(g, t(g, op, slot), 0);
         }
         let x1 = g.read::<f32>(r + 0x6c);
@@ -6547,6 +6698,7 @@ pub fn start_up_0396<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     }
     let mut st = Pushes::default();
     st.push_all(&[0, 8, w(0x3a)]);
+    // call width: 12 (Pushes caps the words at 12)
     let h = st.call(g, t(g, 0x1, 719), 0).eax;
     let lock = g.read::<u32>(w(0x74));
     let p = g.read::<u32>(w(0x7a));
@@ -6554,11 +6706,13 @@ pub fn start_up_0396<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     let saved = g.read::<u32>(lock);
     st.push_all(&[0, w(0x88), h]);
     g.write::<u32>(lock, 1);
+    // call width: 12 (Pushes caps the words at 12)
     st.call(g, t(g, 0x8e, 711), 0);
     let lock = g.read::<u32>(w(0xa1));
     g.write::<u32>(lock, saved);
     let h = g.read::<u32>(w(0xb4));
     st.push_all(&[0x4_0000, p, h, w(0xbf)]);
+    // call width: 12 (Pushes caps the words at 12)
     st.call(g, t(g, 0xad, 710), 0);
     for o in [0xc7u32, 0xd1, 0xdb, 0xe5] {
         g.write::<u32>(w(o), 0);
@@ -6569,6 +6723,7 @@ pub fn start_up_0396<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     g.write::<u16>(w(0x10e), 0);
     g.write::<u8>(w(0x116), 1);
     st.push(4);
+    // call width: 12 (Pushes caps the words at 12)
     st.call(g, t(g, 0xf3, 271), 0);
     // a node off the free ring (u16 count, head), reset with its callback
     // and kind, appended to the task list (first, last)
