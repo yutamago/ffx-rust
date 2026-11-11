@@ -3334,3 +3334,87 @@ fn landing_0449() {
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
+
+/// `magic_0397` 0x10006070 (`r45::objects_start_0397`): `S` not on the
+/// list (empty, or another item), its only node, its node the tail
+/// after another; the task list empty and not.
+#[test]
+fn objects_start_0397() {
+    let Some(mut t) = sa::twin(397) else { return };
+    let f = t.at(0x6070);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    all_stubs(&mut t);
+    magic_r11::object_slots(&mut t);
+    let start = t.img.rel32_target(f + 0x59);
+    magic_r11::object_start_auto(&mut t, start);
+    rec(&mut t, 713, 1, |_, a| 0x0713_0000 ^ a[0]);
+    let s = SCRATCH + 0x1_0000;
+    t.set_u32(w(0x4), s);
+    let a = SCRATCH + 0x7e60;
+    t.set_u32(w(0x19), a);
+    let list = w(0xb);
+    let (n1, n2) = (SCRATCH + 0x9000, SCRATCH + 0x9100);
+    // (the list's nodes' items: none, other, S, other then S; listed)
+    for (k, (items, listed)) in (0u32..).zip([
+        (&[][..], false),
+        (&[0x0bad_0001][..], true),
+        (&[s][..], false),
+        (&[0x0bad_0002, s][..], true),
+    ]) {
+        junk(&mut t, s, 0x2500, k);
+        floats(&mut t, s + 0x1900, 4, k);
+        t.set_u32(a, 0x0a0a_0000 + k);
+        t.write(list, &[0; 0x10]);
+        let nodes = [n1, n2];
+        for (j, &item) in items.iter().enumerate() {
+            let n = nodes[j];
+            t.write(n, &[0; 0x10]);
+            t.set_u32(n + 8, item);
+            if j > 0 {
+                t.set_u32(nodes[j - 1] + 4, n);
+                t.set_u32(n, nodes[j - 1]);
+            }
+        }
+        if let Some(&last) = nodes[..items.len()].last() {
+            t.set_u32(list, n1);
+            t.set_u32(list + 4, last);
+            t.set_u32(list + 8, last);
+            t.set_u32(list + 0xc, items.len() as u32);
+        }
+        magic_r11::pools(&mut t, f, 455);
+        let take = img.rel32_target(f + 0x186);
+        magic_r11::ring(
+            &mut t,
+            img.word(take + 0x04),
+            img.word(take + 0x17),
+            4,
+            SCRATCH + 0x5000,
+        );
+        let tail = SCRATCH + 0x1800;
+        junk(&mut t, tail, 0x20, k);
+        t.set_u32(w(0x18c), if listed { tail } else { 0 });
+        t.set_u32(w(0x1a1), tail);
+        ownb::dirty_stack(&mut t, 0x6070 + k, &[]);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
+
+/// `magic_0397` 0x10004a80 (`r45::glide_curve_0397`): steps above 1,
+/// reaching 0, at 0 and below; the ends either way round.
+#[test]
+fn glide_curve_0397() {
+    let Some(mut t) = sa::twin(397) else { return };
+    let f = t.at(0x4a80);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    let s = SCRATCH + 0x1_0000;
+    t.set_u32(w(0x5), s);
+    for (k, n) in (0u32..).zip([20i32, 7, 1, 0, -3, 33]) {
+        junk(&mut t, s + 0xc0, 0x40, k);
+        floats(&mut t, s + 0x1900, 8, k);
+        t.set_u32(s + 0x2400, n.cast_unsigned());
+        ownb::dirty_stack(&mut t, 0x4a80 + k, &[]);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}

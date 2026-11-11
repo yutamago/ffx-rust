@@ -5467,3 +5467,135 @@ pub const LANDING_0449: Sig = Sig {
     ],
     imports: &[(0x25a, "rand"), (0x46f, "rand")],
 };
+
+/// `magic_0397`'s objects start (0x10006070, 455 bytes; a table entry,
+/// no arguments). With `S = *G_S`: when `S` comes off the list `L`
+/// ([`list_remove`](crate::l5_objhost::list_remove)), `**G_A` = `ITEM`,
+/// slot 713 `(S)` and `S + 0x124` loses its top bit; the objects `S +
+/// 0x130` (index 1) and `S + 0x390` (index 3, the last owner `CB`) start
+/// ([`start_object_owners`](crate::s4_misc::start_object_owners), scale
+/// `K`) at `S + 0x1900..` with `y` less `K1` and the yaw `S + 0x23f8`;
+/// the light record `L2 = S + 0x1920` is set up and a task node holding
+/// it ([`take`](crate::sa_pool::take)) appended to the task list.
+/// Returns the node.
+pub fn objects_start_0397<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let s = g.read::<u32>(w(0x4));
+    if crate::l5_objhost::list_remove(g, img, img.rel32_target(f + 0x10), w(0xb), s) != 0 {
+        let a = g.read::<u32>(w(0x19));
+        g.write::<u32>(a, w(0x20));
+        g.call(slot_target(g, w(0x25), 713), 0, &[s]);
+        let x = g.read::<u16>(s + 0x124);
+        g.write::<u16>(s + 0x124, x & 0x7fff);
+    }
+    for (o, scale, index, b, rel, k1) in [
+        (0x130u32, 0x44u32, 1u32, None, 0x59u32, 0xa1u32),
+        (0x390, 0x67, 3, Some(0xac), 0xcd, 0x113),
+    ] {
+        let o = s + o;
+        let b = b.map_or(0, w);
+        let at = img.rel32_target(f + rel);
+        crate::s4_misc::start_object_owners(g, img, at, o, k(g, scale), index, 0, (0, b));
+        for j in 0..4u32 {
+            let x = g.read::<u32>(s + 0x1900 + 4 * j);
+            g.write::<u32>(o + 0xd0 + 4 * j, x);
+        }
+        let y = sub(g.read::<f32>(o + 0xd4), k(g, k1));
+        let yaw = g.read::<u32>(s + 0x23f8);
+        g.write::<u32>(o + 0xc4, yaw);
+        g.write::<f32>(o + 0xd4, y);
+    }
+    let l = s + 0x1920;
+    g.write::<u32>(l + 0x81, 0xff80_ffff);
+    g.write::<u8>(l + 0x80, 0xff);
+    g.write::<u16>(l + 0x85, 0xffff);
+    g.write::<u8>(l + 0x87, 0);
+    g.write::<u32>(l + 0x88, 0);
+    g.write::<u16>(l + 0x98, 0x48);
+    g.write::<u32>(l + 0x90, 0x1e);
+    g.write::<u32>(l + 0x8c, 0x1e);
+    g.write::<u32>(l + 0x94, 0);
+    let node = crate::sa_pool::take(g, img, img.rel32_target(f + 0x186), w(0x121));
+    let listed = g.read::<u32>(w(0x18c)) != 0;
+    g.write::<u32>(node.wrapping_add(0x14), l);
+    g.write::<u32>(node.wrapping_add(4), 0);
+    if listed {
+        let tail = g.read::<u32>(w(0x1a1));
+        g.write::<u32>(node, tail);
+        g.write::<u32>(tail.wrapping_add(4), node);
+        g.write::<u32>(w(0x1ab), node);
+    } else {
+        g.write::<u32>(node, 0);
+        g.write::<u32>(w(0x1ba), node);
+        g.write::<u32>(w(0x1bf), node);
+    }
+    g.write::<u32>(node.wrapping_add(8), node);
+    Ret::eax(node)
+}
+
+/// [`objects_start_0397`] (the `rel32`s: the list removal, the object
+/// starts, the pool take).
+pub const OBJECTS_START_0397: Sig = Sig {
+    len: 455,
+    hash: 0x6541_10a2_5223_6b16,
+    calls: &[
+        (0x10, Callee::Sig(&crate::l5_objhost::LIST_REMOVE)),
+        (0x59, Callee::Sig(&crate::s4_misc::START_OBJECT_OWNERS)),
+        (0xcd, Callee::Sig(&crate::s4_misc::START_OBJECT_OWNERS)),
+        (0x186, Callee::Sig(&crate::sa_pool::TAKE)),
+    ],
+    imports: &[],
+};
+
+/// `magic_0397`'s glide curve (0x10004a80, 461 bytes; a table entry, no
+/// arguments; a frame of four locals): with `S = *G_S`, the steps `S +
+/// 0x2400` drop while positive; `t` = steps / `K`, `u = K1 - t`; `S +
+/// 0xd0` and `S + 0xd8` = the `x` and `z` of [`throw_axis_0392`]'s curve
+/// (`magic_0449`'s form, `K54` 0) from `S + 0x1910..` to `S + 0x1900..`.
+/// Returns the steps.
+pub fn glide_curve_0397<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let s = g.read::<u32>(w(0x5));
+    let mut n = g.read::<u32>(s + 0x2400);
+    if n.cast_signed() > 0 {
+        n -= 1;
+        g.write::<u32>(s + 0x2400, n);
+    }
+    let t = div(crate::sb_sse::cvt(g.read::<u32>(s + 0x2400)), k(g, 0x34));
+    let u = sub(k(g, 0x2c), t);
+    for (d, ops) in [
+        (0u32, [0x50u32, 0x50, 0x50, 0x85, 0xb9, 0xc1]),
+        (8, [0x13e, 0x155, 0x198, 0x14d, 0x173, 0x17b]),
+    ] {
+        let kk = [
+            k(g, ops[0]),
+            k(g, ops[1]),
+            k(g, ops[2]),
+            k(g, ops[3]),
+            k(g, ops[4]),
+            0.0,
+        ];
+        let x = throw_axis_0392(
+            g.read::<f32>(s + 0x1900 + d),
+            g.read::<f32>(s + 0x1910 + d),
+            t,
+            u,
+            kk,
+            Some(k(g, ops[5])),
+        );
+        g.write::<f32>(s + 0xd0 + d, x);
+    }
+    Ret::eax(n)
+}
+
+/// [`glide_curve_0397`].
+pub const GLIDE_CURVE_0397: Sig = Sig {
+    len: 461,
+    hash: 0x8925_9b14_1e64_7dae,
+    calls: &[],
+    imports: &[],
+};
