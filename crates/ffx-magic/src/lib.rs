@@ -3514,6 +3514,7 @@ ports! {
     "r48 matrix move thunk 0387" => r48::JMP_MATRIX_MOVE_0387, r48::jmp_matrix_move_0387;
     "r48 laser move call 0387" => r48::CALL_LASER_MOVE_0387, r48::call_laser_move_0387;
     "r48 start task 0387" => r48::START_TASK_0387, r48::start_task_0387;
+    "r48 shots task 0387" => r48::SHOTS_TASK_0387, r48::shots_task_0387;
     // round 48 (magic-r48): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
@@ -5505,6 +5506,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r48 line place 0387", &r48::LINE_PLACE_0387),
     ("r48 matrix move 0387", &r48::MATRIX_MOVE_0387),
     ("r48 laser move 0387", &r48::LASER_MOVE_0387),
+    ("r48 shot set-up 0387", &r48::SHOT_SETUP_0387),
     // round 48 (magic-r48): end of INTERNAL
 ];
 
