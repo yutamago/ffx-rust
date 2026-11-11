@@ -355,16 +355,16 @@ ported! {
         st::set_value(&mut mem(), f.at() + st::SET_VALUE_FRAME, this, key, slots + 4)
     }
     /// `Settings_Save(this)`: the original's `alloca` buffer is a zeroed
-    /// heap block here.
+    /// [`super::AllocaFrame`] here.
     Settings_Save @ 0x0040_1d80 => extern "thiscall" fn settings_save(this: u32) -> u32 {
-        let mut store = Vec::new();
-        st::save(&mut mem(), this, |n| zeroed(&mut store, n))
+        let mut store = super::AllocaFrame::new();
+        st::save(&mut mem(), this, |n| store.alloc(n))
     }
     /// `Settings_Load(this)`: the same for the file's bytes (and the 0x20
     /// spare ones, junk in the original).
     Settings_Load @ 0x0040_1cb0 => extern "thiscall" fn settings_load(this: u32) -> u32 {
-        let mut store = Vec::new();
-        st::load(&mut mem(), this, |n| zeroed(&mut store, n))
+        let mut store = super::AllocaFrame::new();
+        st::load(&mut mem(), this, |n| store.alloc(n))
     }
     // ---- the platform glue (ffx_system::m5a_platform) ----
     /// `fiosClose(f)`.
@@ -1359,18 +1359,4 @@ ported! {
         let mut f = StackFrame::<{ (ip::UPDATE_FRAME / 4) as usize }>::new();
         ip::update_input(&mut mem(), f.at() + ip::UPDATE_FRAME, this)
     }
-}
-
-/// `n` zero bytes in `store` (replacing what it held), for an original's
-/// `alloca` buffer; returns their address, or 0 when the allocation fails
-/// (no panic in the game: the original's `alloca` of that size fails too,
-/// at its stack guard).
-fn zeroed(store: &mut Vec<u8>, n: u32) -> u32 {
-    store.clear();
-    let n = n as usize;
-    if store.try_reserve_exact(n).is_err() {
-        return 0;
-    }
-    store.resize(n, 0);
-    u32::try_from(store.as_mut_ptr() as usize).unwrap_or(0)
 }

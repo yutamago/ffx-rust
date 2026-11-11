@@ -63,11 +63,14 @@ fn graphic_get_abmap() -> u32 {
 /// `graphicDrawUIElement(element, 0, 1, 0, 0)` (`0x0063eee0`), the
 /// renderer's, on an element built from `fields` (the rest zero).
 fn graphic_draw_ui_element(fields: &[(u32, u32)]) -> u32 {
-    let mut element = [0u32; 0x26];
+    use ffx_bridge::Mem;
+    let mut element = super::StackFrame::<0x26>::new();
+    let p = element.at();
     for &(o, v) in fields {
-        element[(o / 4) as usize] = v;
+        if o < 0x26 * 4 {
+            mem().write(p + (o & !3), v);
+        }
     }
-    let p = u32::try_from(element.as_mut_ptr() as usize).expect("32-bit");
     call_ptr(
         u32::try_from(crate::rebase(0x0063_eee0)).expect("32-bit"),
         &[p, 0, 1, 0, 0],
@@ -3485,9 +3488,13 @@ ported! {
         let mut m = mem();
         let done = gu::gu_window_control_set_textf(&mut m, window, id, fmt, &args, &mut |_, p| user_free(p), &mut |_, n| user_malloc(n));
         if !done {
-            let mut buf = [0u8; 0x400];
-            let at = u32::try_from(buf.as_mut_ptr() as usize).unwrap_or(0);
-            let list = u32::try_from(args.as_ptr() as usize).unwrap_or(0);
+            let mut buf = super::StackFrame::<256>::new();
+            let at = buf.at();
+            let mut words = super::StackFrame::<12>::new();
+            let list = words.at();
+            for (i, w) in (0u32..).zip(args) {
+                ffx_bridge::Mem::write(&mut m, list + 4 * i, w);
+            }
             let vsprintf = super::import_slot(0x00b0_c430);
             call_ptr(vsprintf, &[at, fmt, list]);
             gu::gu_window_control_set_text(&mut m, window, id, at, &mut |_, p| user_free(p), &mut |_, n| user_malloc(n));
