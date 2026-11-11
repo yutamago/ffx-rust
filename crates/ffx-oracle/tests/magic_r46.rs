@@ -1344,3 +1344,213 @@ fn scene_task_0071() {
         t.check_entry(f, Call::default(), &[a], Eax::Checked);
     }
 }
+
+/// `magic_0070` 0x1000b6e0 (`r46::main_task_0070`): every state on both
+/// sides of its wait (and the chains: 0 into 0xa, 0x68 into 0x5a, 0x60
+/// into 10000, 0x3c into 0x3d, 0x48 into 0x49), slots 411 and 313 both
+/// ways, the float bound of 0x28, the level word below 4, the end
+/// (10000..10002), the states between and past the table; the lists
+/// empty and not.
+#[test]
+fn main_task_0070() {
+    let Some(mut t) = twin(70) else { return };
+    all_stubs(&mut t);
+    summon_stubs::float_matrix_stubs(&mut t);
+    summon_stubs::vector_stubs(&mut t);
+    summon_stubs::summon_stubs(&mut t);
+    let f = t.at(0xb6e0);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let answer = SCRATCH + 0x7f0;
+    rec(&mut t, 411, 1, move |m, _| m.r32(answer) & 1);
+    rec(&mut t, 313, 1, move |m, _| (m.r32(answer) >> 1) & 1);
+    rec(&mut t, 325, 2, |m, a| {
+        for i in 0..4 {
+            let x = m.r32(a[1] + 4 * i);
+            m.w32(a[0] + 4 * i, x ^ 0x10);
+        }
+        0x0325_0000 ^ a[0]
+    });
+    rec(&mut t, 230, 2, |m, a| {
+        for i in 0..4 {
+            let x = rf(m, a[1] + 4 * i) * 0.5 + 1.0;
+            wf(m, a[0] + 4 * i, x);
+        }
+        0x230
+    });
+    rec(&mut t, 237, 4, |m, a| {
+        for i in 0..3 {
+            wf(m, a[3] + 4 * i, 0.5 * i as f32 + (a[1] & 7) as f32);
+        }
+        0x237
+    });
+    rec(&mut t, 719, 3, |_, a| {
+        0x0719_0000 ^ a[0] ^ (a[1] << 8) ^ (a[2] << 12)
+    });
+    rec(&mut t, 558, 1, |m, a| {
+        for i in 0..4 {
+            m.w32(a[0] + 4 * i, 0x40 * i + 7);
+        }
+        0x558
+    });
+    t.stub_edx(771, |_, a| 0x0077_1000 ^ a[0]);
+    t.stub_st0(790, |_, _| 0.375);
+    for (s, x) in [(12u32, -1.5f64), (333, 0.75), (282, 2.25), (277, 4.0)] {
+        t.stub_st0(s, move |_, a| {
+            x + f64::from(a.first().copied().unwrap_or(0) & 3)
+        });
+    }
+    prime(&mut t, f, SCRATCH + 0x3_8000);
+    // the owned nodes' vtable visits through a stub
+    let (visit, class) = (1000u32, SCRATCH + 0x3700);
+    visit_stub(&mut t, visit, class);
+    let owned = t.img.rel32_target(f + 0x423);
+    let vt = t.img.word(owned + 5);
+    t.set_u32(vt + 0x1c, magic::TRAPS + 16 * visit);
+    // the DLL's other node classes' visits (overlay code the original
+    // runs inline: the sub walk 0x10006950, the visitors 0x100059d0 and
+    // 0x10008460)
+    for rva in [
+        0x1_0534u32,
+        0x1_0358,
+        0x1_03b4,
+        0x1_0454,
+        0x1_04f4,
+        0x1_0630,
+        0x1_06b0,
+        0x1_055c,
+    ] {
+        t.set_u32(t.at(rva), magic::TRAPS + 16 * visit);
+    }
+    // the summon bones' function table (behind the bone rate's call)
+    let bone = t.img.rel32_target(t.img.rel32_target(f + 0xed0) + 0x15);
+    let table = t.img.word(bone + 0xed);
+    for i in 0..4 {
+        t.set_u32(table + 4 * i, magic::TRAPS + 16 * 32);
+    }
+    let (a, r) = (SCRATCH + 0x100, SCRATCH + 0x1_0000);
+    let lists = [w(&t, 0x383), w(&t, 0x56d), w(&t, 0x616), w(&t, 0x8fa)];
+    // (state, the wait `R + 0x30`, the answers (bit 0 slot 411, bit 1
+    // slot 313), the variant (bit 0 the level word low, bit 1 0x28's
+    // float below its bound), lists empty)
+    let mut cases: Vec<(u32, i32, u32, u32, bool)> = vec![
+        (0, 0, 0, 0, true),
+        (0, 0, 0, 0, false),
+        (0, 0, 0, 1, true),
+        (0xa, 0, 0, 0, true),
+        (0xb, 0, 0, 0, true),
+        (0xc, 0, 0, 0, true),
+        (0xc, 0, 1, 0, true),
+        (0xc, 0, 1, 0, false),
+        (0x14, 0, 0, 0, true),
+        (0x15, 1, 0, 0, true),
+        (0x15, 2, 0, 0, true),
+        (0x16, 0x58, 0, 0, true),
+        (0x16, 0x59, 0, 0, true),
+        (0x1e, 0x4f, 0, 0, true),
+        (0x1e, 0x50, 0, 0, false),
+        (0x1f, 0x4f, 0, 0, true),
+        (0x1f, 0x50, 0, 0, true),
+        (0x20, 0x59, 0, 0, true),
+        (0x20, 0x5a, 0, 0, true),
+        (0x28, 0, 2, 0, true),
+        (0x28, 0, 0, 2, true),
+        (0x28, 0, 0, 0, true),
+        (0x29, 0, 0, 0, true),
+        (0x29, 0, 1, 0, true),
+        (0x32, 0x13, 0, 0, true),
+        (0x32, 0x14, 0, 0, true),
+        (0x33, 0x1d, 0, 0, true),
+        (0x33, 0x1e, 0, 0, true),
+        (0x34, 0x20, 0, 0, true),
+        (0x34, 0x21, 0, 0, false),
+        (0x3c, 0x74, 1, 0, true),
+        (0x3c, 0x75, 1, 0, true),
+        (0x3c, 0x75, 0, 0, true),
+        (0x3d, 0, 0, 0, true),
+        (0x3d, 0, 1, 0, true),
+        (0x3e, 7, 0, 0, true),
+        (0x3e, 8, 0, 0, false),
+        (0x46, 0x27, 0, 0, true),
+        (0x46, 0x28, 0, 0, true),
+        (0x47, 0x35, 0, 0, true),
+        (0x47, 0x36, 0, 0, false),
+        (0x48, 0x6f, 0, 0, true),
+        (0x48, 0x70, 0, 0, true),
+        (0x48, 0x74, 0, 0, true),
+        (0x49, 0x73, 0, 0, true),
+        (0x49, 0x74, 0, 0, true),
+        (0x50, 0, 0, 0, true),
+        (0x51, 0, 0, 0, true),
+        (0x51, 0, 1, 0, true),
+        (0x5a, 0, 0, 0, true),
+        (0x5b, 0, 0, 0, true),
+        (0x5c, 0x1f, 0, 0, true),
+        (0x5c, 0x20, 0, 0, false),
+        (0x5d, 0x34, 0, 0, true),
+        (0x5d, 0x35, 0, 0, true),
+        (0x5e, 0x3b, 0, 0, true),
+        (0x5e, 0x3c, 0, 0, true),
+        (0x5f, 0x63, 0, 0, true),
+        (0x5f, 0x64, 0, 0, true),
+        (0x60, 0x7c, 0, 0, true),
+        (0x60, 0x7d, 0, 0, true),
+        (0x64, 0, 0, 0, true),
+        (0x65, 0, 0, 0, true),
+        (0x65, 1, 0, 0, true),
+        (0x66, 0xb, 0, 0, true),
+        (0x66, 0xc, 0, 0, true),
+        (0x67, 0xb, 0, 0, true),
+        (0x67, 0xc, 0, 0, true),
+        (0x68, 0x1d, 0, 0, true),
+        (0x68, 0x1e, 0, 0, true),
+        (0x2710, 0, 0, 0, true),
+        (0x2711, 0, 0, 0, true),
+        (0x2712, 0, 0, 0, true),
+        (0x2713, 0, 0, 0, true),
+        (5, 0, 0, 0, true),
+        (0x69, 0, 0, 0, true),
+    ];
+    cases.push((0x4e20, 0, 0, 0, true));
+    for (k, (state, wait, ans, v, empty)) in (0u32..).zip(cases) {
+        junk(&mut t, r, 0x60, k);
+        t.set_u32(r + 0x18, state);
+        t.set_u32(r + 0x30, wait.cast_unsigned());
+        set_f(&mut t, r + 0x20, 1.25 + k as f32 / 16.0);
+        set_f(&mut t, r + 0x24, -0.75 + k as f32 / 32.0);
+        t.set_u32(answer, ans);
+        t.set_u32(w(&t, 0x16), if v & 1 != 0 { 3 } else { 4 + (k & 3) });
+        t.set_u32(a, SCRATCH + 0x3600);
+        t.set_u32(a + 4, r);
+        let (node, n0, n1) = (SCRATCH + 0x3600, SCRATCH + 0x3680, SCRATCH + 0x36c0);
+        for (x, next, prev) in [(node, n0, n1), (n0, n1, node), (n1, node, n0)] {
+            t.set_u32(x + 4, next);
+            t.set_u32(x + 8, prev);
+        }
+        for (i, &l) in (0u32..).zip(&lists) {
+            let blk = SCRATCH + 0x7800 + 0x40 * i;
+            junk(&mut t, blk, 0x20, k + i);
+            t.set_u32(l + 0x10, if empty { l } else { blk });
+            t.set_u32(l + 0xc, l);
+            t.set_u16(l + 0x18, 1 + i as u16);
+        }
+        // 0x28's float on either side of its bound
+        let kb = f32::from_bits(t.u32(w(&t, 0xdb6)));
+        let gb = w(&t, 0xdaf);
+        set_f(&mut t, gb, if v & 2 != 0 { kb - 1.0 } else { kb + 1.0 });
+        junk_floats(
+            &mut t,
+            f,
+            &[
+                0x5e, 0x6e, 0x395, 0x3a5, 0x3cc, 0x4d3, 0x565, 0x588, 0x654, 0x108e, 0x12ac,
+                0x12d8, 0x12fc,
+            ],
+            k,
+        );
+        for (i, op) in (0u32..).zip([0x1fau32, 0x255, 0x6fc, 0x8f4, 0xfb4, 0x10ec, 0x10f3, 0x1166])
+        {
+            t.set_u32(w(&t, op), 0x5a5a_0f0f ^ (k << 4) ^ (i << 8));
+        }
+        ownb::dirty_stack(&mut t, 0xb6e0 + k, &[]);
+        t.check_entry(f, Call::default(), &[a], Eax::Checked);
+    }
+}
