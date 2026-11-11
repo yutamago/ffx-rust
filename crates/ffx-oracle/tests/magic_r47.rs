@@ -1903,3 +1903,125 @@ fn mesh_register_0267() {
         });
     }
 }
+
+/// `magic_0348` 0x10006b40 (`r47::shards_step_0348`, a task step) running
+/// the shard mesh 0x100058e0 (`r47::shards_draw_0348`): slot 773 with no
+/// mesh, one group with living and dead shards, groups of another kind
+/// and one slot 886 refuses, more than 20 shards (the count's run), no
+/// shard drawn (the handle released, the task given back).
+#[test]
+fn shards_draw_0348() {
+    let Some(mut t) = twin(348) else { return };
+    all_stubs(&mut t);
+    let f = t.at(0x6b40);
+    let m = SCRATCH + 0x2_8000;
+    let e = SCRATCH + 0x2_c000;
+    let at = t.img.word(f + 0x17);
+    t.set_u32(at, e);
+    rec(&mut t, 719, 3, move |_, _| m);
+    rec(&mut t, 772, 2, |_, a| 0x0772_0000 ^ a[1]);
+    t.stub_edx(772, |_, a| a[0] ^ 0x0077_2000);
+    rec(&mut t, 773, 2, |m, _| m.r32(SCRATCH + 0x7f40));
+    rec(&mut t, 887, 2, |_, a| 0x0887_0000 + a[1]);
+    rec(&mut t, 886, 4, |m, a| {
+        u32::from(m.r32(SCRATCH + 0x7f44) != a[1])
+    });
+    // the packet's buffers
+    let (pos, uv, col, idx) = (
+        SCRATCH + 0x3_0000,
+        SCRATCH + 0x3_2000,
+        SCRATCH + 0x3_4000,
+        SCRATCH + 0x3_8000,
+    );
+    for (s, b) in [(898u32, pos), (901, uv), (900, col), (902, idx)] {
+        rec(&mut t, s, 1, move |_, a| b + 0x400 * (a[0] & 3));
+    }
+    let (mm, bmin, bmax) = (SCRATCH + 0x3_a000, SCRATCH + 0x3_a100, SCRATCH + 0x3_a200);
+    for (s, b) in [(893u32, mm), (890, bmin), (891, bmax)] {
+        rec(&mut t, s, 1, move |_, _| b);
+    }
+    for s in [723u32, 724, 235] {
+        rec(&mut t, s, 1, move |m, a| {
+            for i in 0..16 {
+                wf(m, a[0] + 4 * i, s as f32 * 0.001 + i as f32 * 0.5 - 1.0);
+            }
+            s
+        });
+    }
+    for s in [329u32, 328, 231, 230] {
+        let n = if s == 230 { 2 } else { 3 };
+        rec(&mut t, s, n, move |m, a| {
+            log16(m, a[1]);
+            let ang = if s == 230 {
+                0.0
+            } else {
+                f32::from_bits(a[2]) * 0.01
+            };
+            for i in 0..16 {
+                let x = rf(m, a[1] + 4 * i) * 0.5 + ang + i as f32 * 0.125;
+                wf(m, a[0] + 4 * i, x);
+            }
+            s
+        });
+    }
+    rec(&mut t, 234, 3, |m, a| {
+        for i in 0..3 {
+            let x = rf(m, a[1] + 4 * i) * 0.75 + rf(m, a[2] + 4 * i);
+            wf(m, a[0] + 4 * i, x);
+        }
+        0x234
+    });
+    // 229: a point with a w of its own (the corners divide by it)
+    rec(&mut t, 229, 3, |m, a| {
+        for i in 0..3 {
+            let x = rf(m, a[1] + 0x30 + 4 * i) + rf(m, a[2] + 4 * i) * 1.5;
+            wf(m, a[0] + 4 * i, x);
+        }
+        let ww = 1.25 + rf(m, a[2]) * 0.0625;
+        wf(m, a[0] + 0xc, ww);
+        0x229
+    });
+    let lock = SCRATCH + 0x4100;
+    let sd = t.img.rel32_target(f + 0xb3);
+    for o in [0x86u32, 0xb0, 0xc53, 0xc74] {
+        let at = t.img.word(sd + o);
+        t.set_u32(at, lock);
+    }
+    for o in [0xebu32, 0x107] {
+        let at = t.img.word(f + o);
+        t.set_u32(at, lock);
+    }
+    let at = t.img.word(sd + 0xba8);
+    t.set_u32(at, SCRATCH + 0x3_a300);
+    floats(&mut t, SCRATCH + 0x3_a300, 16, 0.5);
+    let task = SCRATCH + 0x7c00;
+    #[allow(clippy::type_complexity)]
+    let cases: [(&[(u8, u16)], u32, u32); 6] = [
+        (&[(2, 3)], 0, 9),
+        (&[(2, 3)], 1, 9),
+        (&[(2, 2), (1, 2), (2, 3)], 1, 9),
+        (&[(2, 2), (2, 3)], 1, 0),
+        (&[(2, 12), (2, 11)], 1, 9),
+        (&[(2, 2)], 1, 9),
+    ];
+    for (k, (groups, mesh, refuse)) in (0u32..).zip(cases) {
+        shard_model(&mut t, m, k, groups);
+        floats(&mut t, e + 0xd20, 4, 1.0 + k as f32);
+        // the records: a life by index (0 dead), the divisor, steps
+        let total: u32 = groups.iter().map(|&(_, n)| u32::from(n)).sum();
+        for i in 0..total {
+            let r = e + 0xd30 + 0x7c * i;
+            floats(&mut t, r, 0x1f, -2.0 + 0.125 * i as f32);
+            let life = if k == 5 || i % 4 == 1 { 0 } else { 1 + i };
+            t.set_u32(r + 0x78, life);
+            t.set_u32(r + 0x74, 3 + i % 5);
+        }
+        t.set_u32(SCRATCH + 0x7f40, mesh);
+        t.set_u32(SCRATCH + 0x7f44, refuse);
+        t.set_u32(lock, 0x40 + k);
+        t.write(task, &[0; 0x20]);
+        t.set_u32(task + 8, task + 0x10);
+        magic_h6::scrub(&mut t);
+        t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+}

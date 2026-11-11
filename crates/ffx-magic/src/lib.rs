@@ -3524,6 +3524,7 @@ ports! {
     "r47 load step 0267" => r47::LOAD_0267, r47::load_0267;
     "r47 spin 0267" => r47::SPIN_0267, r47::spin_0267;
     "r47 spin thunk 0267" => r47::SPIN_THUNK_0267, r47::spin_thunk_0267;
+    "r47 shards step 0348" => r47::SHARDS_STEP_0348, r47::shards_step_0348;
     // round 47 (magic-r47): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
@@ -5522,6 +5523,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r47 image visit 0297", &r47::IMAGE_VISIT_0297),
     ("r47 start-up 0267", &r47::START_UP_0267),
     ("r47 mesh register 0267", &r47::MESH_REGISTER_0267),
+    ("r47 shards draw 0348", &r47::SHARDS_DRAW_0348),
     // round 47 (magic-r47): end of INTERNAL
 ];
 
