@@ -129,35 +129,23 @@ fn phyre_free_cb<M: Mem>(m: &mut M, p: u32) {
 
 /// Runs `f` with a sorter of `size`-byte records over the game's
 /// comparator `pred` (cdecl, two record addresses, `bool` in `al`) and a
-/// scratch record on this stack.
+/// scratch record in a [`super::StackFrame`].
 fn with_sorter<R>(
     size: u32,
     pred: u32,
     f: impl FnOnce(
         &mut super::RawMem,
-        &mut sort::bridge::Sorter<fn(&mut super::RawMem, u32, u32) -> bool>,
+        &mut sort::bridge::Sorter<&mut dyn FnMut(&mut super::RawMem, u32, u32) -> bool>,
     ) -> R,
 ) -> R {
-    thread_local! {
-        static PRED: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
-    }
-    fn less(m: &mut super::RawMem, a: u32, b: u32) -> bool {
-        let pred = PRED.with(std::cell::Cell::get);
-        call_ptr(m, pred, &[a, b]) & 0xff != 0
-    }
-    let mut tmp = [0u32; 7];
-    #[allow(clippy::cast_possible_truncation)] // 32-bit process
-    let at = tmp.as_mut_ptr() as u32;
-    let saved = PRED.with(|c| c.replace(pred));
+    let mut less = |m: &mut super::RawMem, a: u32, b: u32| call_ptr(m, pred, &[a, b]) & 0xff != 0;
+    let mut tmp = super::StackFrame::<7>::new();
     let mut sorter = sort::bridge::Sorter {
         size,
-        tmp: at,
-        less: less as fn(&mut super::RawMem, u32, u32) -> bool,
+        tmp: tmp.at(),
+        less: &mut less as &mut dyn FnMut(&mut super::RawMem, u32, u32) -> bool,
     };
-    let r = f(&mut mem(), &mut sorter);
-    PRED.with(|c| c.set(saved));
-    std::hint::black_box(&mut tmp);
-    r
+    f(&mut mem(), &mut sorter)
 }
 
 /// A name lookup through a kernel or battle table (`get(id, &strings)`):
@@ -175,12 +163,9 @@ fn table_name(
     } else {
         field
     };
-    let mut tmp = 0u32;
-    #[allow(clippy::cast_possible_truncation)] // 32-bit process
-    let at = std::ptr::addr_of_mut!(tmp) as u32;
-    let r = tolib::bridge::table_name(m, id, field, at, get);
-    std::hint::black_box(&mut tmp);
-    r
+    let mut tmp = super::StackFrame::<1>::new();
+    let at = tmp.at();
+    tolib::bridge::table_name(m, id, field, at, get)
 }
 
 /// The menu, script and sound calls of the TO library, through the
@@ -432,12 +417,10 @@ impl<M> tolib::bridge::MenuMusic<M> for GameMenu {
 
 /// `graphicFontGetScreenWH(&w, &h)` (the original, or its hook).
 fn font_screen_wh<M>(m: &mut M) -> (i32, i32) {
-    let mut wh = [0i32; 2];
-    #[allow(clippy::cast_possible_truncation)] // 32-bit process
-    let at = wh.as_mut_ptr() as u32;
+    let mut wh = super::StackFrame::<2>::new();
+    let at = wh.at();
     call_sym(m, 0x0064_0db0, &[at, at + 4]);
-    std::hint::black_box(&mut wh);
-    (wh[0], wh[1])
+    (mem().read(at), mem().read(at + 4))
 }
 
 /// `SndIsSepPlay(id)` or, with `stop`, `SndSepStop(id)` (their hooks).
@@ -5120,12 +5103,9 @@ ported! {
     }
     /// `TOBtlMakeTargetCommandBit()`.
     TOBtlMakeTargetCommandBit @ 0x0089_83f0 => extern "C" fn to_btl_make_target_command_bit() -> u32 {
-        let mut tmp = 0u32;
-        #[allow(clippy::cast_possible_truncation)] // 32-bit process
-        let at = std::ptr::addr_of_mut!(tmp) as u32;
-        let r = tolib::bridge::btl_make_target_command_bit(&mut mem(), at, ffx_battle::stat::bridge::ms_get_com_data);
-        std::hint::black_box(&mut tmp);
-        r
+        let mut tmp = super::StackFrame::<1>::new();
+        let at = tmp.at();
+        tolib::bridge::btl_make_target_command_bit(&mut mem(), at, ffx_battle::stat::bridge::ms_get_com_data)
     }
     /// `TOBtlMakeTargetChrStatusBit()`.
     TOBtlMakeTargetChrStatusBit @ 0x0089_8330 => extern "C" fn to_btl_make_target_chr_status_bit() {
@@ -5200,11 +5180,9 @@ ported! {
     }
     /// `TOSeqInitParam()`.
     TOSeqInitParam @ 0x008a_e6f0 => extern "C" fn to_seq_init_param() {
-        let mut local = 0u32;
-        #[allow(clippy::cast_possible_truncation)] // 32-bit process
-        let at = std::ptr::addr_of_mut!(local) as u32;
+        let mut local = super::StackFrame::<1>::new();
+        let at = local.at();
         scene::bridge::init_param(&mut mem(), at, menu_scene::tk_menu_get_param_handle, menu_scene::tk_menu_get_param_offset);
-        std::hint::black_box(&mut local);
     }
     /// `TOCopyWindowLayout` from the table at `0x00c5b460`.
     TOCopyWindowLayout_008fa7d0 @ 0x008f_a7d0 => extern "C" fn to_copy_window_layout_008fa7d0(i: u32) -> u32 {
@@ -5246,11 +5224,9 @@ ported! {
     }
     /// `TOPlayerListInit(flags)`.
     TOPlayerListInit_008a8f40 @ 0x008a_8f40 => extern "C" fn to_player_list_init(flags: u32) {
-        let mut count = 0i32;
-        #[allow(clippy::cast_possible_truncation)] // 32-bit process
-        let at = std::ptr::addr_of_mut!(count) as u32;
+        let mut count = super::StackFrame::<1>::new();
+        let at = count.at();
         tolib::bridge::player_list_init(&mut mem(), flags, at, &mut GameMenu);
-        std::hint::black_box(&mut count);
     }
     /// `TOBtlInitInfoWinMes()`.
     TOBtlInitInfoWinMes @ 0x0089_7bd0 => extern "C" fn to_btl_init_info_win_mes() -> u32 {
@@ -5348,21 +5324,17 @@ ported! {
     }
     /// `TOBtlMakeTargetGroupBit()`.
     TOBtlMakeTargetGroupBit @ 0x0089_8490 => extern "C" fn to_btl_make_target_group_bit() {
-        let mut tmp = 0u32;
-        #[allow(clippy::cast_possible_truncation)] // 32-bit process
-        let at = std::ptr::addr_of_mut!(tmp) as u32;
+        let mut tmp = super::StackFrame::<1>::new();
+        let at = tmp.at();
         tolib::bridge::btl_make_target_group_bit(&mut mem(), at, ffx_battle::stat::bridge::ms_get_com_data, |m, chr| {
             call_sym(m, 0x0079_5040, &[chr])
         });
-        std::hint::black_box(&mut tmp);
     }
     /// `TOBtlMakeTargetTargetBit()`.
     TOBtlMakeTargetTargetBit @ 0x0089_8640 => extern "C" fn to_btl_make_target_target_bit() {
-        let mut tmp = [0u32; 3];
-        #[allow(clippy::cast_possible_truncation)] // 32-bit process
-        let at = tmp.as_mut_ptr() as u32;
+        let mut tmp = super::StackFrame::<3>::new();
+        let at = tmp.at();
         tolib::bridge::btl_make_target_target_bit(&mut mem(), at, ffx_battle::stat::bridge::ms_get_com_data);
-        std::hint::black_box(&mut tmp);
     }
     /// `TOBtlStartLimitTimer(t)`.
     TOBtlStartLimitTimer @ 0x0089_a2a0 => extern "C" fn to_btl_start_limit_timer(t: f32) {
@@ -5382,12 +5354,9 @@ ported! {
     }
     /// `TOStdGetItemName(item)`.
     TOStdGetItemName @ 0x008b_8db0 => extern "C" fn to_std_get_item_name(item: u32) -> u32 {
-        let mut tmp = 0u32;
-        #[allow(clippy::cast_possible_truncation)] // 32-bit process
-        let at = std::ptr::addr_of_mut!(tmp) as u32;
-        let r = tolib::bridge::std_get_item_name(&mut mem(), item, at, call_sym);
-        std::hint::black_box(&mut tmp);
-        r
+        let mut tmp = super::StackFrame::<1>::new();
+        let at = tmp.at();
+        tolib::bridge::std_get_item_name(&mut mem(), item, at, call_sym)
     }
     /// `TOStdGetWeaponName(id)`.
     TOStdGetWeaponName @ 0x008b_8dd0 => extern "C" fn to_std_get_weapon_name(id: u32) -> u32 {
@@ -5423,12 +5392,9 @@ ported! {
     }
     /// `MagicFile_isPrxPreloaded(id)`.
     MagicFile_isPrxPreloaded @ 0x009d_ae60 => extern "C" fn magic_file_is_prx_preloaded(id: u32) -> u32 {
-        let mut tmp = 0u32;
-        #[allow(clippy::cast_possible_truncation)] // 32-bit process
-        let at = std::ptr::addr_of_mut!(tmp) as u32;
-        let r = menu::bridge::magic_file_is_prx_preloaded(&mut mem(), id, at, call_sym);
-        std::hint::black_box(&mut tmp);
-        r
+        let mut tmp = super::StackFrame::<1>::new();
+        let at = tmp.at();
+        menu::bridge::magic_file_is_prx_preloaded(&mut mem(), id, at, call_sym)
     }
     /// `TOCheckMapMessage(id)`.
     TOCheckMapMessage @ 0x008a_f6a0 => extern "C" fn to_check_map_message(id: u32) -> u32 {
@@ -5456,12 +5422,9 @@ ported! {
     }
     /// `TOBtlSearchRevNearTarget()`.
     TOBtlSearchRevNearTarget @ 0x0089_90f0 => extern "C" fn to_btl_search_rev_near_target() -> u32 {
-        let mut v = [0f32; 4];
-        #[allow(clippy::cast_possible_truncation)] // 32-bit process
-        let at = v.as_mut_ptr() as u32;
-        let r = tolib::bridge::btl_search_rev_near_target(&mut mem(), at, &mut GameMenu);
-        std::hint::black_box(&mut v);
-        r
+        let mut v = super::StackFrame::<4>::new();
+        let at = v.at();
+        tolib::bridge::btl_search_rev_near_target(&mut mem(), at, &mut GameMenu)
     }
     /// `TOInitSceneMessageWindow()`.
     TOInitSceneMessageWindow @ 0x008a_dbf0 => extern "C" fn to_init_scene_message_window() {
@@ -5743,14 +5706,11 @@ ported! {
     }
     /// `TOGetTextWidth(text, arg)`.
     TOGetTextWidth @ 0x008b_70c0 => extern "C" fn to_get_text_width(text: u32, arg: u32) -> f32 {
-        let mut w = 0f32;
-        #[allow(clippy::cast_possible_truncation)] // 32-bit process
-        let at = std::ptr::addr_of_mut!(w) as u32;
-        let r = tolib::bridge::text_width(&mut mem(), text, arg, at, |m, p, out, arg| {
+        let mut w = super::StackFrame::<1>::new();
+        let at = w.at();
+        tolib::bridge::text_width(&mut mem(), text, arg, at, |m, p, out, arg| {
             call_sym(m, 0x008b_7c00, &[p, 0, out, arg])
-        });
-        std::hint::black_box(&mut w);
-        r
+        })
     }
     /// `KernelMonsterCapture_00772790(id)`.
     KernelMonsterCapture_00772790 @ 0x0077_2790 => extern "C" fn kernel_forward_00772790(id: u32) -> u32 {
@@ -6652,9 +6612,8 @@ ported! {
     }
     /// `TOGetSaveWindow(a, kind, &count)`.
     TOGetSaveWindow @ 0x0089_b5a0 => extern "C" fn to_get_save_window(a: u32, kind: u32, count: u32) -> u32 {
-        let mut n = 0u32;
-        #[allow(clippy::cast_possible_truncation)] // 32-bit process
-        let local = (&raw mut n) as usize as u32;
+        let mut n = super::StackFrame::<1>::new();
+        let local = n.at();
         tolib::bridge::to_get_save_window(&mut mem(), a, kind, count, local, call_sym)
     }
     /// `TOValueToMesFontL(value, out, width)`.
@@ -6663,16 +6622,14 @@ ported! {
     }
     /// `TOCheckBtlCommandUse(chr, command)`.
     TOCheckBtlCommandUse @ 0x0089_aca0 => extern "C" fn to_check_btl_command_use(chr: u32, command: u32) -> u32 {
-        let mut scratch = [0u32; 2];
-        #[allow(clippy::cast_possible_truncation)] // 32-bit process
-        let at = scratch.as_mut_ptr() as usize as u32;
+        let mut scratch = super::StackFrame::<2>::new();
+        let at = scratch.at();
         tolib::bridge::to_check_btl_command_use(&mut mem(), chr, command, at, call_sym)
     }
     /// `TOBtlOpenSimpleHelpMes(i, message)`.
     TOBtlOpenSimpleHelpMes @ 0x0089_dba0 => extern "C" fn to_btl_open_simple_help_mes(i: u32, message: u32) -> u32 {
-        let mut scratch = 0u32;
-        #[allow(clippy::cast_possible_truncation)] // 32-bit process
-        let at = (&raw mut scratch) as usize as u32;
+        let mut scratch = super::StackFrame::<1>::new();
+        let at = scratch.at();
         tolib::bridge::to_btl_open_simple_help_mes(&mut mem(), i, message, at, call_sym)
     }
     /// `TOIntToMes(value, out, digits, mode)`.
@@ -6697,9 +6654,8 @@ ported! {
     }
     /// `ToGetBtlEasyDigitWidth(digits, value, &width, scale)`.
     ToGetBtlEasyDigitWidth @ 0x0090_5190 => extern "C" fn to_get_btl_easy_digit_width(digits: u32, value: u32, out: u32, scale: u32) {
-        let mut text = [0u32; 8];
-        #[allow(clippy::cast_possible_truncation)] // 32-bit process
-        let at = text.as_mut_ptr() as usize as u32;
+        let mut text = super::StackFrame::<8>::new();
+        let at = text.at();
         tolib::bridge::to_get_btl_easy_digit_width(&mut mem(), digits, value, out, scale, at, call_sym, fcall);
     }
     /// `ToGetBtlEasyDigitWidth2(value, &width, scale, extra)`.
@@ -6712,38 +6668,30 @@ ported! {
     }
     /// `ToGetCrossExtMesFontWidth(table, text, &width, scale, extra)`.
     ToGetCrossExtMesFontWidth @ 0x0090_5320 => extern "C" fn to_get_cross_ext_mes_font_width(table: u32, text: u32, out: u32, scale: u32, extra: u32) {
-        let mut wh = [0u32; 2];
-        #[allow(clippy::cast_possible_truncation)] // 32-bit process
-        let at = wh.as_mut_ptr() as usize as u32;
+        let mut wh = super::StackFrame::<2>::new();
+        let at = wh.at();
         tolib::bridge::to_get_cross_ext_mes_font_width(&mut mem(), table, text, out, scale, extra, at, call_sym, fcall);
     }
     /// `TOGetChangeMacroAddress(window, code)`.
     TOGetChangeMacroAddress @ 0x008b_6660 => extern "C" fn to_get_change_macro_address(window: u32, code: u32) -> u32 {
         // The original keeps a folded macro's code in its own argument
-        // slot and may return a pointer to it; a static keeps that text
-        // readable after the return (a nested lookup reuses it only after
-        // reading its code). One per thread, not a process-wide static
+        // slot and may return a pointer to it; a per-thread block keeps
+        // that text readable after the return (a nested lookup reuses it
+        // only after reading its code). Not a process-wide static
         // (docs/hooking.md, "Threads").
-        thread_local! {
-            static SCRATCH: [std::sync::atomic::AtomicU32; 2] =
-                const { [std::sync::atomic::AtomicU32::new(0), std::sync::atomic::AtomicU32::new(0)] };
-        }
-        #[allow(clippy::cast_possible_truncation)] // 32-bit process
-        let at = SCRATCH.with(|s| s.as_ptr() as usize as u32);
+        let at = super::shim_scratch();
         tolib::bridge::to_get_change_macro_address(&mut mem(), window, code, at, call_sym)
     }
     /// `TOGetChangeMacroWidth(window, code, mode)`.
     TOGetChangeMacroWidth @ 0x008b_6a30 => extern "C" fn to_get_change_macro_width(window: u32, code: u32, mode: u32) -> f32 {
-        let mut w = 0u32;
-        #[allow(clippy::cast_possible_truncation)] // 32-bit process
-        let at = (&raw mut w) as usize as u32;
+        let mut w = super::StackFrame::<1>::new();
+        let at = w.at();
         tolib::bridge::to_get_change_macro_width(&mut mem(), window, code, mode, at, call_sym, fcall)
     }
     /// `TOGetMessageWH(window, text, &w, &h, mode, flags)`.
     TOGetMessageWH @ 0x008b_9650 => extern "C" fn to_get_message_wh(window: u32, text: u32, out_w: u32, out_h: u32, mode: u32, flags: u32) -> u32 {
-        let mut scratch = [0u32; 16];
-        #[allow(clippy::cast_possible_truncation)] // 32-bit process
-        let at = scratch.as_mut_ptr() as usize as u32;
+        let mut scratch = super::StackFrame::<16>::new();
+        let at = scratch.at();
         tolib::bridge::to_get_message_wh(&mut mem(), window, text, out_w, out_h, mode, flags, at, call_sym, fcall)
     }
     /// `TOBtlFinishCommand()`.
@@ -6752,23 +6700,20 @@ ported! {
     }
     /// `TOBtlSetCommand(level, chr, command)`.
     TOBtlSetCommand @ 0x0089_9870 => extern "C" fn to_btl_set_command(level: u32, chr: u32, command: u32) -> u32 {
-        let mut slot = 0u32;
-        #[allow(clippy::cast_possible_truncation)] // 32-bit process
-        let at = (&raw mut slot) as usize as u32;
+        let mut slot = super::StackFrame::<1>::new();
+        let at = slot.at();
         tolib::bridge::to_btl_set_command(&mut mem(), level, chr, command, at, call_sym)
     }
     /// `TOBtlSetNextAction(chr, command)`.
     TOBtlSetNextAction @ 0x0089_a330 => extern "C" fn to_btl_set_next_action(chr: u32, command: u32) -> u32 {
-        let mut word = 0u32;
-        #[allow(clippy::cast_possible_truncation)] // 32-bit process
-        let at = (&raw mut word) as usize as u32;
+        let mut word = super::StackFrame::<1>::new();
+        let at = word.at();
         tolib::bridge::to_btl_set_next_action(&mut mem(), chr, command, at, call_sym)
     }
     /// `ToMakeBtlEasyDigit(digits, value, x, y, alpha, scale)`.
     ToMakeBtlEasyDigit @ 0x0090_5440 => extern "C" fn to_make_btl_easy_digit(digits: u32, value: u32, x: u32, y: u32, alpha: u32, scale: u32) {
-        let mut text = [0u32; 8];
-        #[allow(clippy::cast_possible_truncation)] // 32-bit process
-        let at = text.as_mut_ptr() as usize as u32;
+        let mut text = super::StackFrame::<8>::new();
+        let at = text.at();
         tolib::bridge::to_make_btl_easy_digit(&mut mem(), digits, value, x, y, alpha, scale, at, call_sym);
     }
     /// `ToMakeBtlEasyDigit2(value, x, y, alpha, scale, extra)`.
@@ -6777,9 +6722,8 @@ ported! {
     }
     /// `ToMakeBtlEasyDigitRight(value, x, y, alpha, scale, extra)`.
     ToMakeBtlEasyDigitRight @ 0x0090_55c0 => extern "C" fn to_make_btl_easy_digit_right(value: u32, x: u32, y: u32, alpha: u32, scale: u32, extra: u32) {
-        let mut width = 0u32;
-        #[allow(clippy::cast_possible_truncation)] // 32-bit process
-        let at = (&raw mut width) as usize as u32;
+        let mut width = super::StackFrame::<1>::new();
+        let at = width.at();
         tolib::bridge::to_make_btl_easy_digit_right(&mut mem(), [value, x, y, alpha, scale, extra], at, call_sym);
     }
     /// `TOMkpBtlDigitRight_008f3300(ret, value, x, y, alpha)`.
@@ -6797,18 +6741,15 @@ ported! {
     }
     /// `TOBtlSetCommandHelpMes(command)`.
     TOBtlSetCommandHelpMes @ 0x0089_9970 => extern "C" fn to_btl_set_command_help_mes(command: u32) -> u32 {
-        let mut scratch = 0u32;
-        #[allow(clippy::cast_possible_truncation)] // 32-bit process
-        let at = std::ptr::addr_of_mut!(scratch) as usize as u32;
+        let mut scratch = super::StackFrame::<1>::new();
+        let at = scratch.at();
         tolib::bridge::to_btl_set_command_help_mes(&mut mem(), command, at, call_sym)
     }
     /// `TOMenuDrawTimer(frames, x, y, alpha, kind)`.
     TOMenuDrawTimer @ 0x008e_19f0 => extern "C" fn to_menu_draw_timer(frames: u32, x: u32, y: u32, alpha: u32, kind: u32) {
-        let mut frame = [0u32; 4];
-        #[allow(clippy::cast_possible_truncation)] // 32-bit process
-        let at = frame.as_mut_ptr() as u32;
+        let mut frame = super::StackFrame::<4>::new();
+        let at = frame.at();
         tolib::bridge::to_menu_draw_timer(&mut mem(), [frames, x, y, alpha, kind], at, call_sym, fcall);
-        std::hint::black_box(&mut frame);
     }
     /// `DrawCrossCtbIcon(id, x, y, w, h)`.
     DrawCrossCtbIcon @ 0x0089_e660 => extern "C" fn draw_cross_ctb_icon(id: u32, x: u32, y: u32, w: u32, h: u32) -> u32 {
@@ -6820,11 +6761,9 @@ ported! {
     }
     /// `TOBtlDrawHelpWin()`.
     TOBtlDrawHelpWin @ 0x0089_36d0 => extern "C" fn to_btl_draw_help_win() {
-        let mut width = 0f32;
-        #[allow(clippy::cast_possible_truncation)] // 32-bit process
-        let at = std::ptr::addr_of_mut!(width) as u32;
+        let mut width = super::StackFrame::<1>::new();
+        let at = width.at();
         tolib::bridge::to_btl_draw_help_win(&mut mem(), at, call_sym, fcall);
-        std::hint::black_box(&mut width);
     }
     /// `TOGetPadStatusPrepare(w)`.
     TOGetPadStatusPrepare @ 0x0089_d610 => extern "C" fn to_get_pad_status_prepare(w: u32) {
@@ -6877,25 +6816,19 @@ ported! {
     }
     /// `MenuItem_ApplyHeal_008c8c40(target)`.
     MenuItem_ApplyHeal_008c8c40 @ 0x008c_8c40 => extern "C" fn menu_item_apply_heal(target: u32) -> u32 {
-        let mut strings = 0u32;
-        #[allow(clippy::cast_possible_truncation)] // 32-bit process
-        let at = std::ptr::addr_of_mut!(strings) as u32;
-        let r = tolib::bridge::menu_item_apply_heal(&mut mem(), target, at, call_sym);
-        std::hint::black_box(&mut strings);
-        r
+        let mut strings = super::StackFrame::<1>::new();
+        let at = strings.at();
+        tolib::bridge::menu_item_apply_heal(&mut mem(), target, at, call_sym)
     }
     /// `DrawWaterWaveShapeC2(x, y, w, h, u, v, uw, vh, su, sv, c0, c1)`.
     DrawWaterWaveShapeC2 @ 0x008e_7d30 => extern "C" fn draw_water_wave_shape_c2(
         x: u32, y: u32, w: u32, h: u32, u: u32, v: u32, uw: u32, vh: u32, su: u32, sv: u32, c0: u32, c1: u32
     ) -> u32 {
-        let mut frame = [0u32; 0x28];
-        #[allow(clippy::cast_possible_truncation)] // 32-bit process
-        let at = frame.as_mut_ptr() as u32;
-        let r = tolib::bridge::draw_water_wave_shape_c2(
+        let mut frame = super::StackFrame::<40>::new();
+        let at = frame.at();
+        tolib::bridge::draw_water_wave_shape_c2(
             &mut mem(), [x, y, w, h, u, v, uw, vh, su, sv, c0, c1], at, call_sym, fcall,
-        );
-        std::hint::black_box(&mut frame);
-        r
+        )
     }
     /// `TOBtlDrawCommandWindow(w)`: the battle command window.
     TOBtlDrawCommandWindow @ 0x0089_f370 => extern "C" fn to_btl_draw_command_window(w: u32) -> u32 {
@@ -6916,28 +6849,24 @@ ported! {
     QuickRecoverMenuDraw @ 0x0090_4ba0 => extern "C" fn quick_recover_menu_draw(
         text: u32, x: u32, y: u32, w: u32, alpha: u32, scale: u32, extra: u32, align: u32, scroll: u32, slot: u32
     ) {
-        let mut frame = [0u32; 0x14];
-        #[allow(clippy::cast_possible_truncation)] // 32-bit process
-        let at = frame.as_mut_ptr() as u32;
+        let mut frame = super::StackFrame::<20>::new();
+        let at = frame.at();
         tolib::bridge::quick_recover_menu_draw(
             &mut mem(), [text, x, y, w, alpha, scale, extra, align, scroll, slot], at, call_sym, fcall,
         );
-        std::hint::black_box(&mut frame);
     }
     /// `ToMakeBtlEasyEdgeDigitRight(value, x, y, alpha, scale, extra)`.
     ToMakeBtlEasyEdgeDigitRight @ 0x0090_5890 => extern "C" fn to_make_btl_easy_edge_digit_right(
         value: u32, x: u32, y: u32, alpha: u32, scale: u32, extra: u32
     ) -> u32 {
-        let mut scratch = 0u32;
-        #[allow(clippy::cast_possible_truncation)] // 32-bit process
-        let at = std::ptr::addr_of_mut!(scratch) as usize as u32;
+        let mut scratch = super::StackFrame::<1>::new();
+        let at = scratch.at();
         tolib::bridge::to_make_btl_easy_edge_digit_right(&mut mem(), [value, x, y, alpha, scale, extra], at, call_sym)
     }
     /// `ToMakeBtlEasyEdgeDigit(digits, value, x, y, alpha, scale, extra)`.
     ToMakeBtlEasyEdgeDigit @ 0x0090_57c0 => extern "C" fn to_make_btl_easy_edge_digit(digits: u32, value: u32, x: u32, y: u32, alpha: u32, scale: u32, extra: u32) {
-        let mut text = [0u32; 8];
-        #[allow(clippy::cast_possible_truncation)] // 32-bit process
-        let at = text.as_mut_ptr() as usize as u32;
+        let mut text = super::StackFrame::<8>::new();
+        let at = text.at();
         tolib::bridge::to_make_btl_easy_edge_digit(&mut mem(), digits, [value, x, y, alpha, scale, extra], at, call_sym);
     }
     /// `ToMakeBtlEasyEdgeDigit2(value, x, y, alpha, scale, extra)`.
@@ -6958,23 +6887,20 @@ ported! {
     }
     /// `TOMakePktBtlEasyFont(pen, glyph, scale)`.
     TOMakePktBtlEasyFont @ 0x008f_b940 => extern "C" fn to_make_pkt_btl_easy_font(pen: u32, glyph: u32, scale: u32) {
-        let mut scratch = [0u32; 0x2c];
-        #[allow(clippy::cast_possible_truncation)] // 32-bit process
-        let at = scratch.as_mut_ptr() as usize as u32;
+        let mut scratch = super::StackFrame::<44>::new();
+        let at = scratch.at();
         tolib::bridge::to_make_pkt_btl_easy_font(&mut mem(), pen, glyph, scale, false, false, at, call_sym, fcall);
     }
     /// `TOMakePktBtlEasyFontShadow(pen, glyph, scale)`.
     TOMakePktBtlEasyFontShadow @ 0x008f_bae0 => extern "C" fn to_make_pkt_btl_easy_font_shadow(pen: u32, glyph: u32, scale: u32) {
-        let mut scratch = [0u32; 0x2c];
-        #[allow(clippy::cast_possible_truncation)] // 32-bit process
-        let at = scratch.as_mut_ptr() as usize as u32;
+        let mut scratch = super::StackFrame::<44>::new();
+        let at = scratch.at();
         tolib::bridge::to_make_pkt_btl_easy_font(&mut mem(), pen, glyph, scale, true, false, at, call_sym, fcall);
     }
     /// `TOMakeBtlEasyFontEdge(pen, glyph, scale)`.
     TOMakeBtlEasyFontEdge @ 0x008f_ae40 => extern "C" fn to_make_btl_easy_font_edge(pen: u32, glyph: u32, scale: u32) {
-        let mut scratch = [0u32; 0x2c];
-        #[allow(clippy::cast_possible_truncation)] // 32-bit process
-        let at = scratch.as_mut_ptr() as usize as u32;
+        let mut scratch = super::StackFrame::<44>::new();
+        let at = scratch.at();
         tolib::bridge::to_make_pkt_btl_easy_font(&mut mem(), pen, glyph, scale, false, true, at, call_sym, fcall);
     }
     /// `TODrawScaleButtonIconRGBA(c, x, y, scale, r, g, b, a)`.
@@ -6987,9 +6913,8 @@ ported! {
     }
     /// `TOGetMessageSizePacked_008b7170(text)`.
     TOGetMessageSizePacked_008b7170 @ 0x008b_7170 => extern "C" fn to_get_message_size_packed(text: u32) -> u32 {
-        let mut scratch = [0u32; 2];
-        #[allow(clippy::cast_possible_truncation)] // 32-bit process
-        let at = scratch.as_mut_ptr() as usize as u32;
+        let mut scratch = super::StackFrame::<2>::new();
+        let at = scratch.at();
         tolib::bridge::message_size_packed(&mut mem(), text, at, call_sym)
     }
     /// `TOCountMessageWords_008b80b0(window, text)`.
@@ -6998,44 +6923,38 @@ ported! {
     }
     /// `TOGetMessageSize_008b7130(text, &w, &h)`.
     TOGetMessageSize_008b7130 @ 0x008b_7130 => extern "C" fn to_get_message_size(text: u32, w: u32, h: u32) -> u32 {
-        let mut scratch = [0u32; 2];
-        #[allow(clippy::cast_possible_truncation)] // 32-bit process
-        let at = scratch.as_mut_ptr() as usize as u32;
+        let mut scratch = super::StackFrame::<2>::new();
+        let at = scratch.at();
         tolib::bridge::message_size(&mut mem(), text, w, h, at, call_sym)
     }
     /// `TOFirstInitMessageNormal(window, text, pos)`.
     TOFirstInitMessageNormal @ 0x008d_f520 => extern "C" fn to_first_init_message_normal(window: u32, text: u32, pos: u32) -> u32 {
-        let mut scratch = [0u32; 2];
-        #[allow(clippy::cast_possible_truncation)] // 32-bit process
-        let at = scratch.as_mut_ptr() as usize as u32;
+        let mut scratch = super::StackFrame::<2>::new();
+        let at = scratch.at();
         tolib::bridge::to_first_init_message_normal(&mut mem(), window, text, pos, at, call_sym)
     }
     /// `ToMakeBtlEasyDigitRightAbmap(value, x, y, alpha, scale, extra)`.
     ToMakeBtlEasyDigitRightAbmap @ 0x0090_5660 => extern "C" fn to_make_btl_easy_digit_right_abmap(value: u32, x: u32, y: u32, alpha: u32, scale: u32, extra: u32) {
-        let mut scratch = [0u32; 9];
-        #[allow(clippy::cast_possible_truncation)] // 32-bit process
-        let at = scratch.as_mut_ptr() as usize as u32;
+        let mut scratch = super::StackFrame::<9>::new();
+        let at = scratch.at();
         tolib::bridge::to_make_btl_easy_digit_right_abmap(&mut mem(), [value, x, y, alpha, scale, extra], at, call_sym);
     }
     /// `TOSetMessageWindowTexts_008b89d0(window, text, other)`.
     TOSetMessageWindowTexts_008b89d0 @ 0x008b_89d0 => extern "C" fn to_set_message_window_texts(window: u32, text: u32, other: u32) {
-        let mut scratch = [0u32; 0x107];
-        #[allow(clippy::cast_possible_truncation)] // 32-bit process
-        let at = scratch.as_mut_ptr() as usize as u32;
+        let mut scratch = super::StackFrame::<263>::new();
+        let at = scratch.at();
         tolib::bridge::set_message_window_texts(&mut mem(), window, text, other, at, call_sym, |m, f, w| call_ptr(m, f, &[w]));
     }
     /// `TOMkpShapeXYWHUV(shape, x, y, w, h, u0, v0, u1, v1)`.
     TOMkpShapeXYWHUV @ 0x0090_3bb0 => extern "C" fn to_mkp_shape_xywhuv(shape: u32, x: u32, y: u32, w: u32, h: u32, u0: u32, v0: u32, u1: u32, v1: u32) {
-        let mut scratch = [0u32; 0x34];
-        #[allow(clippy::cast_possible_truncation)] // 32-bit process
-        let at = scratch.as_mut_ptr() as usize as u32;
+        let mut scratch = super::StackFrame::<52>::new();
+        let at = scratch.at();
         tolib::bridge::to_mkp_shape_xywhuv(&mut mem(), [shape, x, y, w, h, u0, v0, u1, v1], None, at, call_sym);
     }
     /// `TOMkpShapeXYWHUVC2(shape, x, y, w, h, u0, v0, u1, v1, c0, c1)`.
     TOMkpShapeXYWHUVC2 @ 0x0090_3ee0 => extern "C" fn to_mkp_shape_xywhuv_c2(shape: u32, x: u32, y: u32, w: u32, h: u32, u0: u32, v0: u32, u1: u32, v1: u32, c0: u32, c1: u32) {
-        let mut scratch = [0u32; 0x34];
-        #[allow(clippy::cast_possible_truncation)] // 32-bit process
-        let at = scratch.as_mut_ptr() as usize as u32;
+        let mut scratch = super::StackFrame::<52>::new();
+        let at = scratch.at();
         tolib::bridge::to_mkp_shape_xywhuv(&mut mem(), [shape, x, y, w, h, u0, v0, u1, v1], Some([c0, c1]), at, call_sym);
     }
     /// `TODrawMenuPlateXYWHType(x, y, w, h, kind)`.
@@ -7049,30 +6968,26 @@ ported! {
     }
     /// `TODrawCrossBoxXYWHC2(x, y, w, h, c0, c1)`.
     TODrawCrossBoxXYWHC2 @ 0x008f_4b20 => extern "C" fn to_draw_cross_box_xywh_c2(x: u32, y: u32, w: u32, h: u32, c0: u32, c1: u32) {
-        let mut scratch = [0u32; 0x28];
-        #[allow(clippy::cast_possible_truncation)] // 32-bit process
-        let at = scratch.as_mut_ptr() as usize as u32;
+        let mut scratch = super::StackFrame::<40>::new();
+        let at = scratch.at();
         tolib::bridge::to_draw_cross_box_xywh_c2(&mut mem(), [x, y, w, h, c0, c1], at, call_sym);
     }
     /// `TODrawSheetCell_008f8bb0(cell, x, y, w, h)`.
     TODrawSheetCell_008f8bb0 @ 0x008f_8bb0 => extern "C" fn to_draw_sheet_cell(cell: u32, x: u32, y: u32, w: u32, h: u32) {
-        let mut scratch = [0u32; 0x28];
-        #[allow(clippy::cast_possible_truncation)] // 32-bit process
-        let at = scratch.as_mut_ptr() as usize as u32;
+        let mut scratch = super::StackFrame::<40>::new();
+        let at = scratch.at();
         tolib::bridge::draw_sheet_cell(&mut mem(), [cell, x, y, w, h], at, call_sym);
     }
     /// `TODrawBoxXYWHC2(x, y, w, h, c0, c1)`.
     TODrawBoxXYWHC2 @ 0x008f_3db0 => extern "C" fn to_draw_box_xywh_c2(x: u32, y: u32, w: u32, h: u32, c0: u32, c1: u32) {
-        let mut rec = [0u32; 0x26];
-        #[allow(clippy::cast_possible_truncation)] // 32-bit process
-        let at = rec.as_mut_ptr() as usize as u32;
+        let mut rec = super::StackFrame::<38>::new();
+        let at = rec.at();
         tolib::bridge::to_draw_box_xywh_c2(&mut mem(), [x, y, w, h, c0, c1], at, call_sym);
     }
     /// `TOMakePktBoxXYWHRGBA(x, y, w, h, r, g, b, a)`.
     TOMakePktBoxXYWHRGBA @ 0x008f_b150 => extern "C" fn to_make_pkt_box_xywh_rgba(x: u32, y: u32, w: u32, h: u32, r: u32, g: u32, b: u32, a: u32) {
-        let mut rec = [0u32; 0x26];
-        #[allow(clippy::cast_possible_truncation)] // 32-bit process
-        let at = rec.as_mut_ptr() as usize as u32;
+        let mut rec = super::StackFrame::<38>::new();
+        let at = rec.at();
         tolib::bridge::to_make_pkt_box_xywh_rgba(&mut mem(), [x, y, w, h, r, g, b, a], at, call_sym);
     }
     /// `TODrawMenuBG()`.
@@ -7085,23 +7000,20 @@ ported! {
     }
     /// `TOMakePktFont1612Edge(pen, glyph)`.
     TOMakePktFont1612Edge @ 0x008f_c870 => extern "C" fn to_make_pkt_font_1612_edge(pen: u32, glyph: u32) {
-        let mut scratch = [0u32; 0x2c];
-        #[allow(clippy::cast_possible_truncation)] // 32-bit process
-        let at = scratch.as_mut_ptr() as usize as u32;
+        let mut scratch = super::StackFrame::<44>::new();
+        let at = scratch.at();
         tolib::bridge::to_make_pkt_font_1612_pass(&mut mem(), pen, glyph, tolib::bridge::Font1612Pass::Edge, at, call_sym, fcall);
     }
     /// `TOMakePktFont1612Shadow(pen, glyph, layer)`.
     TOMakePktFont1612Shadow @ 0x008f_cca0 => extern "C" fn to_make_pkt_font_1612_shadow(pen: u32, glyph: u32, layer: u32) {
-        let mut scratch = [0u32; 0x2c];
-        #[allow(clippy::cast_possible_truncation)] // 32-bit process
-        let at = scratch.as_mut_ptr() as usize as u32;
+        let mut scratch = super::StackFrame::<44>::new();
+        let at = scratch.at();
         tolib::bridge::to_make_pkt_font_1612_pass(&mut mem(), pen, glyph, tolib::bridge::Font1612Pass::Shadow(layer), at, call_sym, fcall);
     }
     /// `TOMakePktFont1612Font(pen, glyph, mode)`.
     TOMakePktFont1612Font @ 0x008f_cad0 => extern "C" fn to_make_pkt_font_1612_font(pen: u32, glyph: u32, mode: u32) {
-        let mut scratch = [0u32; 0x2c];
-        #[allow(clippy::cast_possible_truncation)] // 32-bit process
-        let at = scratch.as_mut_ptr() as usize as u32;
+        let mut scratch = super::StackFrame::<44>::new();
+        let at = scratch.at();
         tolib::bridge::to_make_pkt_font_1612_pass(&mut mem(), pen, glyph, tolib::bridge::Font1612Pass::Face(mode), at, call_sym, fcall);
     }
     /// `TOMakePktFont1612(pen, glyph)`.
@@ -7118,9 +7030,8 @@ ported! {
     }
     /// `TODrawCrossMenuIconAbilityName(id, x, y, alpha)`.
     TODrawCrossMenuIconAbilityName @ 0x008f_4f10 => extern "C" fn to_draw_cross_menu_icon_ability_name(id: u32, x: u32, y: u32, alpha: u32) {
-        let mut base = 0u32;
-        #[allow(clippy::cast_possible_truncation)] // 32-bit process
-        let at = (&raw mut base) as usize as u32;
+        let mut base = super::StackFrame::<1>::new();
+        let at = base.at();
         tolib::bridge::to_draw_cross_menu_icon_name(
             &mut mem(),
             tolib::bridge::CrossMenuIconName::Ability,
@@ -7134,9 +7045,8 @@ ported! {
     }
     /// `TODrawCrossMenuIconCommandName(id, x, y, alpha)`.
     TODrawCrossMenuIconCommandName @ 0x008f_5000 => extern "C" fn to_draw_cross_menu_icon_command_name(id: u32, x: u32, y: u32, alpha: u32) {
-        let mut base = 0u32;
-        #[allow(clippy::cast_possible_truncation)] // 32-bit process
-        let at = (&raw mut base) as usize as u32;
+        let mut base = super::StackFrame::<1>::new();
+        let at = base.at();
         tolib::bridge::to_draw_cross_menu_icon_name(
             &mut mem(),
             tolib::bridge::CrossMenuIconName::Command,
@@ -7152,9 +7062,8 @@ ported! {
     TOMkpRotateShapeXYWHUVC2 @ 0x0090_2ef0 => extern "C" fn to_mkp_rotate_shape_xywhuv_c2(
         shape: u32, x: u32, y: u32, w: u32, h: u32, u0: u32, v0: u32, u1: u32, v1: u32, c0: u32, c1: u32, angle: u32
     ) {
-        let mut scratch = [0u32; 0x28];
-        #[allow(clippy::cast_possible_truncation)] // 32-bit process
-        let at = scratch.as_mut_ptr() as usize as u32;
+        let mut scratch = super::StackFrame::<40>::new();
+        let at = scratch.at();
         tolib::bridge::to_mkp_rotate_shape_xywhuv_c2(
             &mut mem(),
             [shape, x, y, w, h, u0, v0, u1, v1, c0, c1, angle],
@@ -7209,9 +7118,8 @@ ported! {
     TOGetMessageWH1612_008b6cb0 @ 0x008b_6cb0 => extern "C" fn to_get_message_wh_1612(
         window: u32, text: u32, w: u32, h: u32, scale: u32, extra: u32, kind: u32, flags: u32
     ) -> u32 {
-        let mut scratch = [0u32; 0xc];
-        #[allow(clippy::cast_possible_truncation)] // 32-bit process
-        let at = scratch.as_mut_ptr() as usize as u32;
+        let mut scratch = super::StackFrame::<12>::new();
+        let at = scratch.at();
         tolib::bridge::to_get_message_wh_1612(
             &mut mem(),
             [window, text, w, h, scale, extra, kind, flags],
@@ -7233,25 +7141,22 @@ ported! {
     }
     /// `TOMakePktFontLItalicEdge(pen, glyph)`.
     TOMakePktFontLItalicEdge @ 0x008f_ce90 => extern "C" fn to_make_pkt_font_l_italic_edge(pen: u32, glyph: u32) {
-        let mut scratch = [0u32; 0x2c];
-        #[allow(clippy::cast_possible_truncation)] // 32-bit process
-        let at = scratch.as_mut_ptr() as usize as u32;
+        let mut scratch = super::StackFrame::<44>::new();
+        let at = scratch.at();
         tolib::bridge::to_make_pkt_font_1612_pass(&mut mem(), pen, glyph, tolib::bridge::Font1612Pass::ItalicEdge, at, call_sym, fcall);
     }
     /// `TOMakePktFontLItalicFont(pen, glyph)`.
     TOMakePktFontLItalicFont @ 0x008f_d0a0 => extern "C" fn to_make_pkt_font_l_italic_font(pen: u32, glyph: u32) {
-        let mut scratch = [0u32; 0x2c];
-        #[allow(clippy::cast_possible_truncation)] // 32-bit process
-        let at = scratch.as_mut_ptr() as usize as u32;
+        let mut scratch = super::StackFrame::<44>::new();
+        let at = scratch.at();
         tolib::bridge::to_make_pkt_font_1612_pass(&mut mem(), pen, glyph, tolib::bridge::Font1612Pass::ItalicFace, at, call_sym, fcall);
     }
     /// `DrawCrossMenuIconXYWHRGBA(x, y, w, h, icon, r, g, b, a)`.
     DrawCrossMenuIconXYWHRGBA @ 0x008e_6af0 => extern "C" fn draw_cross_menu_icon_xywh_rgba(
         x: u32, y: u32, w: u32, h: u32, icon: u32, r: u32, g: u32, b: u32, a: u32
     ) {
-        let mut scratch = [0u32; 0x28];
-        #[allow(clippy::cast_possible_truncation)] // 32-bit process
-        let at = scratch.as_mut_ptr() as usize as u32;
+        let mut scratch = super::StackFrame::<40>::new();
+        let at = scratch.at();
         tolib::bridge::draw_cross_menu_icon_xywh_rgba(&mut mem(), [x, y, w, h, icon, r, g, b, a], at, call_sym);
     }
     /// `Fixup_WriteLeb128(value, &cursor)`.
