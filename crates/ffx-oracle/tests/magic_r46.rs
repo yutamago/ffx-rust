@@ -840,3 +840,200 @@ fn summon_main_case(n: u16, rva: u32, is_0164: bool) {
         t.check_entry(f, Call::default(), &[a], Eax::Checked);
     }
 }
+
+/// One case of [`main_task_0042`]: the state, the count `R + 0x2a98`
+/// (before the call's step), the timers `R + 0x290c`/`R + 0x2a90`, the
+/// bone step `R + 0x2a94`, and a variant `v`: bit 0 slot 20 answers, bit
+/// 1 slot 549 answers, bit 3 `R + 0x78` negative, bit 4 the fade words
+/// in order.
+#[derive(Clone, Copy)]
+struct Case0042 {
+    state: u32,
+    count: i32,
+    t1: f32,
+    t2: f32,
+    step: u32,
+    v: u32,
+}
+
+const fn c042(state: u32, count: i32, t1: f32, t2: f32, step: u32, v: u32) -> Case0042 {
+    Case0042 {
+        state,
+        count,
+        t1,
+        t2,
+        step,
+        v,
+    }
+}
+
+/// `magic_0042` 0x10009490 (`r46::main_task_0042`): every state waiting
+/// and going on, the chains (0 into 0x64, 0x66 into 0x5a into 0x5b into
+/// 0x14, 0x28 into 0x32, 0xca into 0xcc, 0x46 into 0x48, 0x50 into 0x51
+/// and the end), slots 20 and 549 both ways, the bones' steps, the
+/// states past the table.
+#[test]
+fn main_task_0042() {
+    let Some(mut t) = twin(42) else { return };
+    all_stubs(&mut t);
+    summon_stubs::float_matrix_stubs(&mut t);
+    summon_stubs::vector_stubs(&mut t);
+    summon_stubs::summon_stubs(&mut t);
+    let f = t.at(0x9490);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let answer = SCRATCH + 0x7f0;
+    rec(&mut t, 20, 1, move |m, a| (m.r32(answer) & 1) * (a[0] | 1));
+    rec(&mut t, 549, 1, move |m, _| (m.r32(answer) >> 1) & 1);
+    rec(&mut t, 324, 0, |m, _| {
+        let k = m.r32(SCRATCH + 0x7f8);
+        m.w32(SCRATCH + 0x7f8, k + 0x0123_0457);
+        k ^ 0xfc00
+    });
+    rec(&mut t, 325, 2, |m, a| {
+        for i in 0..4 {
+            let x = m.r32(a[1] + 4 * i);
+            m.w32(a[0] + 4 * i, x ^ 0x10);
+        }
+        0x0325_0000 ^ a[0]
+    });
+    rec(&mut t, 558, 1, |m, a| {
+        for i in 0..4 {
+            m.w32(a[0] + 4 * i, 0x40 * i + 7);
+        }
+        0x558
+    });
+    rec(&mut t, 413, 1, |_, a| 0x0413_0000 ^ a[0]);
+    rec(&mut t, 719, 3, |_, a| {
+        0x0719_0000 ^ a[0] ^ (a[1] << 8) ^ (a[2] << 12)
+    });
+    t.stub_st0(790, |_, _| 0.375);
+    for (s, x) in [(12u32, -1.5f64), (333, 0.75), (282, 2.25), (307, 0.625)] {
+        t.stub_st0(s, move |_, a| {
+            x + f64::from(a.first().copied().unwrap_or(0) & 3)
+        });
+    }
+    prime(&mut t, f, SCRATCH + 0x3_8000);
+    // the owned nodes' vtable visits through a stub
+    let (visit, class) = (1000u32, SCRATCH + 0x3700);
+    visit_stub(&mut t, visit, class);
+    let owned = t.img.rel32_target(f + 0x185);
+    let vt = t.img.word(owned + 5);
+    t.set_u32(vt + 0x1c, magic::TRAPS + 16 * visit);
+    let (a, r) = (SCRATCH + 0x100, SCRATCH + 0x1_0000);
+    let (node, n0, n1) = (SCRATCH + 0x3600, SCRATCH + 0x3680, SCRATCH + 0x36c0);
+    let (lo, hi) = (-100.0f32, 1000.0f32);
+    let cases = vec![
+        c042(0, 0, 0.0, 0.0, 0, 0),
+        c042(0x64, 0, 0.0, 0.0, 0, 0),
+        c042(0x65, 0x17, 0.0, 0.0, 0, 0),
+        c042(0x65, 0x18, 0.0, 0.0, 0, 0),
+        c042(0x66, 0x53, 0.0, 0.0, 0, 0),
+        c042(0x66, 0x54, lo, 0.0, 0, 0),
+        c042(0x66, 0x54, hi, lo, 0, 0),
+        c042(0x5a, 0, lo, 0.0, 0, 0),
+        c042(0x5a, 0, hi, lo, 0, 1),
+        c042(0x5b, 0, lo, 0.0, 0, 0),
+        c042(0x5b, 0x2c, hi, hi, 0, 0),
+        c042(0x5b, 0x2c, hi, lo, 0, 1),
+        c042(0x14, 0, 0.0, lo, 0, 0),
+        c042(0x14, 0, 0.0, lo, 0, 1),
+        c042(0x14, 0, 0.0, hi, 2, 0),
+        c042(0x14, 0x2c, 0.0, hi, 3, 1),
+        c042(0x14, 0x2c, 0.0, hi, 4, 0),
+        c042(0x1e, 0, 0.0, 0.0, 0, 0),
+        c042(0x1f, 0, 0.0, 0.0, 0, 0),
+        c042(0x1f, 0, 0.0, 0.0, 0, 0x10),
+        c042(0x20, 0, 0.0, 0.0, 0, 0),
+        c042(0x20, 0, 0.0, 0.0, 0, 8),
+        c042(0x20, 0, 0.0, 0.0, 0, 9),
+        c042(0x28, 0, 0.0, lo, 0, 0),
+        c042(0x28, 0, 0.0, hi, 0, 0),
+        c042(0x28, 0, 0.0, hi, 0, 2),
+        c042(0x32, 0, 0.0, 0.0, 0, 0),
+        c042(0x32, 0, 0.0, 0.0, 0, 2),
+        c042(0xc8, 0, 0.0, 0.0, 0, 0),
+        c042(0xc9, 0, 0.0, 0.0, 0, 0),
+        c042(0xc9, 1, 0.0, 0.0, 0, 0),
+        c042(0xca, 0, 0.0, lo, 0, 0),
+        c042(0xca, 0, 0.0, 2.0, 0, 0),
+        c042(0xca, 0, 0.0, hi, 0, 0),
+        c042(0xcb, 0, 0.0, lo, 0, 0),
+        c042(0xcb, 0, 0.0, hi, 0, 0),
+        c042(0xcc, 0, 0.0, lo, 0, 0),
+        c042(0xcc, 0, 0.0, hi, 0, 0),
+        c042(0x46, 0, 0.0, 0.0, 0, 0),
+        c042(0x46, 0, 0.0, 0.0, 0, 1),
+        c042(0x47, 0, 0.0, 0.0, 0, 2),
+        c042(0x48, 0, 0.0, 0.0, 0, 0),
+        c042(0x50, 0, 0.0, 0.0, 0, 0),
+        c042(0x51, 0, 0.0, lo, 0, 0),
+        c042(0x51, 0, 0.0, hi, 0, 0),
+        c042(0x2710, 0, 0.0, 0.0, 0, 0),
+        c042(0x2711, 0, 0.0, 0.0, 0, 0),
+        c042(0xcd, 0, 0.0, 0.0, 0, 0),
+        c042(5, 0, 0.0, 0.0, 0, 0),
+        c042(0xffff_fff0, 0, 0.0, 0.0, 0, 0),
+    ];
+    for (k, cs) in (0u32..).zip(cases) {
+        t.write(r, &vec![0u8; 0x2aa0]);
+        // the record's floats and words: junk-ish but finite
+        for o in (0u32..0x2a80).step_by(0x40) {
+            t.set_u32(r + o + 0x1c, (0.5f32 + (o >> 6) as f32).to_bits());
+        }
+        for o in [
+            0x94cu32, 0x974, 0x99c, 0x9c4, 0xa38, 0xa40, 0xa90, 0xa64, 0xa6c, 0xabc,
+        ] {
+            t.set_u32(r + o, 0x6c6c_0000 + o);
+        }
+        t.set_u32(r + 0x2a88, cs.state);
+        t.set_u32(r + 0x2a98, cs.count.cast_unsigned());
+        set_f(&mut t, r + 0x2a8c, cs.t1);
+        set_f(&mut t, r + 0x2a90, cs.t2);
+        t.set_u32(r + 0x2a94, cs.step);
+        t.set_u32(
+            r + 0x78,
+            if cs.v & 8 != 0 {
+                0xffff_ff00
+            } else {
+                0x100 + k
+            },
+        );
+        t.set_u32(answer, cs.v & 3);
+        // the fade's two words: in order (the fade runs) or not
+        let (fa, fb) = if cs.v & 0x10 != 0 {
+            (2.0f32, 1.0f32)
+        } else {
+            (1.0, 2.0)
+        };
+        let (ga, gb) = (w(&t, 0xae6), w(&t, 0xaed));
+        set_f(&mut t, ga, fa);
+        set_f(&mut t, gb, fb);
+        junk_floats(
+            &mut t,
+            f,
+            &[
+                0xd8, 0x328, 0x821, 0x831, 0x841, 0xb8a, 0xbf8, 0xc08, 0xc5a, 0xdbf, 0xde1, 0xe03,
+            ],
+            k,
+        );
+        t.set_u32(a, node);
+        t.set_u32(a + 4, r);
+        for (x, next, prev) in [(node, n0, n1), (n0, n1, node), (n1, node, n0)] {
+            t.set_u32(x + 4, next);
+            t.set_u32(x + 8, prev);
+        }
+        // the DLL's lists empty or with a last child
+        let kid = SCRATCH + 0x5e00;
+        t.write(kid, &[0x21; 0x40]);
+        for op in [
+            0xe4u32, 0x135, 0x202, 0x22d, 0x372, 0x37c, 0x401, 0x57a, 0x5b2, 0x610, 0x74f, 0xd96,
+        ] {
+            let l = w(&t, op);
+            t.set_u32(l + 0x10, if k % 3 == 1 { kid } else { l });
+            t.set_u32(l + 0xc, l);
+            t.set_u16(l + 0x18, 2);
+        }
+        ownb::dirty_stack(&mut t, 0x9490 + k, &[]);
+        t.check_entry(f, Call::default(), &[a], Eax::Checked);
+    }
+}
