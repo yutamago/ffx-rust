@@ -2329,7 +2329,20 @@ fn summon_task_0164() {
     ];
     let more: [(u32, u32, u32, u32, u8); 3] =
         [(7, 0, 0, 0, 0), (0x1a0, 0, 0, 0, 0), (0x3000, 0, 0, 0, 0)];
+    // the globals the states store to (the block the code names): floats
+    // first, the pointers and lists set after
+    let lo = w(&t, 0x9a) & !0xfff;
     for (k, (state, n38, r1, r2, flag)) in (0u32..).zip(cases.into_iter().chain(more)) {
+        for i in 0..0x1600u32 {
+            let x = 1.25 + ((i * 13 + k) % 61) as f32 * 0.0625;
+            t.set_u32(lo + 4 * i, x.to_bits());
+        }
+        // pointers the paths follow: the leaving node, the current list node
+        let at = w(&t, 0xd2a);
+        t.set_u32(at + 0x14, 0);
+        let lu = call(&t, 0xd34);
+        let at = t.img.word(lu + 0x02);
+        t.set_u32(at, 0);
         junk(&mut t, r, 0x60, k);
         for o in [0x1cu32, 0x20, 0x24, 0x28, 0x2c] {
             t.set_u32(r + o, (0.75 + 0.125 * (o + k) as f32).to_bits());
