@@ -404,9 +404,16 @@ fn burst_task_0387() {
     });
     // slot 773: the object `OBJ` or 0 by the bits of the mask word
     let (mask, k773, obj) = (BURST_LOG + 4, BURST_LOG + 8, SCRATCH + 0x3_c800);
+    let lock_at = t.img.word(f + 0xd1);
     rec(&mut t, 773, 2, move |m, _| {
         let k = m.r32(k773);
         m.w32(k773, k + 1);
+        // the lock as the slot sees it
+        let l = m.r32(lock_at);
+        m.w32(
+            BURST_LOG + 0x10,
+            m.r32(BURST_LOG + 0x10).rotate_left(1) ^ m.r32(l),
+        );
         if (m.r32(mask) >> (k % 32)) & 1 == 1 {
             obj
         } else {
@@ -429,10 +436,11 @@ fn burst_task_0387() {
         }
         0x908
     });
+    // slot 910 reads its `&Q`
+    rec(&mut t, 910, 4, |m, a| m.r32(a[2]) ^ 0x0910_0000);
     for (s, n) in [
         (907u32, 5usize),
         (909, 2),
-        (910, 4),
         (775, 2),
         (779, 2),
         (776, 1),
@@ -440,7 +448,13 @@ fn burst_task_0387() {
     ] {
         rec(&mut t, s, n, move |_, a| a[0] ^ (s << 16));
     }
-    rec(&mut t, VISIT_SLOT, 1, |m, a| m.r32(a[0]) ^ 0x0e00_0000);
+    // the visit logs its visitor (the node and the mode word)
+    let vlog = BURST_LOG + 0x200;
+    rec(&mut t, VISIT_SLOT, 1, move |m, a| {
+        m.w32(vlog, m.r32(a[0]));
+        m.w32(vlog + 4, m.r32(a[0] + 4));
+        0x0e00_0000
+    });
     let (tk, hh, x, n, src, class, q, lock, par, e) = (
         SCRATCH + 0x100,
         SCRATCH + 0x180,
@@ -468,6 +482,7 @@ fn burst_task_0387() {
         (1, 4, 0, 0xc7c6_3c3c, 1, 0.1, 0.0),
         (1, 9, 0, 0xffff_fffe, 1, 2.5, 0.25),
         (1, 2, 0, 0x0f0f_0f0f, 1, 0.45, 0.0),
+        (1, 3, 0, 0x00ff_ffff, 1, 0.45, 0.0),
     ]) {
         if step == 0.0 {
             t.set_u32(w(0x57c), k_step);
