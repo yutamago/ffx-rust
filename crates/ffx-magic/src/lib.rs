@@ -97,6 +97,7 @@ pub mod r43;
 pub mod r44;
 pub mod r45;
 pub mod r46;
+pub mod r48;
 pub mod r9_load;
 pub mod r9_misc;
 pub mod r9_summon;
@@ -3508,6 +3509,11 @@ ports! {
     "r45 actors sway 0397" => r45::ACTORS_SWAY_0397, r45::actors_sway_0397;
     "r45 actors settle 0397" => r45::ACTORS_SETTLE_0397, r45::actors_settle_0397;
     // round 45 (magic-r45): end
+    // round 48 (magic-r48)
+    "r48 line place thunk 0387" => r48::JMP_LINE_PLACE_0387, r48::jmp_line_place_0387;
+    "r48 matrix move thunk 0387" => r48::JMP_MATRIX_MOVE_0387, r48::jmp_matrix_move_0387;
+    "r48 laser move call 0387" => r48::CALL_LASER_MOVE_0387, r48::call_laser_move_0387;
+    // round 48 (magic-r48): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
     // round 34 (magic-r34)
@@ -5494,6 +5500,11 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r45 weights task 0387", &r45::WEIGHTS_TASK_0387),
     ("r45 start-up 0396", &r45::START_UP_0396),
     // round 45 (magic-r45): end of INTERNAL
+    // round 48 (magic-r48)
+    ("r48 line place 0387", &r48::LINE_PLACE_0387),
+    ("r48 matrix move 0387", &r48::MATRIX_MOVE_0387),
+    ("r48 laser move 0387", &r48::LASER_MOVE_0387),
+    // round 48 (magic-r48): end of INTERNAL
 ];
 
 /// What covers the function at `addr`: a port's name (an entry
