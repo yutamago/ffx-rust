@@ -6200,3 +6200,169 @@ pub const WEIGHTS_STEP_0387: Sig = Sig {
     calls: &[],
     imports: &[],
 };
+
+/// `magic_0397`'s actors' sway (0x10004c50, 976 bytes; a table entry, no
+/// arguments; a /GS frame: the matrix `M1` at `ebp - 0x64`, the turned
+/// `O` at `ebp - 0x24`, `V` = `(0, 0, -s, 0)` at `ebp - 0x14`). Unless
+/// slot 561 answers (its `eax` returned), with `S = *G_S`, for each actor
+/// `i` below `*G_N` (its matrix `M = S + 0x1e90 + 0xac i`, its record `R
+/// = M + 0x14`):
+/// - while the delay `R[0x94]` is positive it drops and that is all;
+/// - while the steps `R[0x90]` are positive: `t` = steps / `K`, the size
+///   `s = (K1 - t) R[0x8c] + R[0x88] t`, `R[0x30] += R[0x40]`, `R[0x60]
+///   += R[0x30]`, the spin `R[0x80] += R[0x84]` (below `K2` it is
+///   -0.1256), the yaw `R[0x7c] += R[0x80]` wrapped once, the steps drop;
+///   else `s = R[0x8c]`;
+/// - the angles `R[0x4c] += frnd(0.0157) + K3` and
+///   `R[0x50] -= frnd(0.0157) + K4` (slots 404, 314), each wrapped once;
+/// - `M1` = slot 235 turned by Y the yaw (slot 329), `O` = `M1 V` (slot
+///   229); `M` the actor's scale ([`actor_scale`](crate::sa_misc::actor_scale))
+///   turned by Z `R[0x54]`, X `R[0x4c]` and Y `R[0x50]` (slots 330, 328,
+///   329), its rows scaled by `R[0x6c]`, `R[0x70]`, `R[0x74]`; its
+///   place `S + 0x1900.. + O` with `y` = `R[0x60]` and `w` = `S[0x190c]`.
+///
+/// Each slot call passes the words the original leaves on the stack.
+/// Returns the last value in `eax`.
+#[allow(clippy::too_many_lines)] // the counts, the angles, the matrices
+pub fn actors_sway_0397<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let ebp = fr.esp.wrapping_sub(4);
+    let (m1, o, v) = (
+        ebp.wrapping_sub(0x64),
+        ebp.wrapping_sub(0x24),
+        ebp.wrapping_sub(0x14),
+    );
+    let busy = g.call(t(g, 0x11, 561), 0, &[]).eax;
+    if busy != 0 {
+        return Ret::eax(busy);
+    }
+    let s = g.read::<u32>(w(0x27));
+    for d in [0u32, 4, 0xc] {
+        g.write::<u32>(v + d, 0);
+    }
+    let mask = g.read::<u32>(w(0x1d7));
+    let wrap = |g: &G, x: f32, ops: [u32; 4]| wrap_once(g, img, f, x, ops);
+    let mut eax = 0;
+    let mut i = 0u32;
+    while i.cast_signed() < g.read::<u32>(w(0x45)).cast_signed() {
+        let m = s + 0x1e90 + 0xac * i;
+        let r = m + 0x14;
+        let c = g.read::<u32>(r + 0x94);
+        if c.cast_signed() > 0 {
+            eax = c - 1;
+            g.write::<u32>(r + 0x94, eax);
+            i += 1;
+            continue;
+        }
+        let d = g.read::<u32>(r + 0x90);
+        let size = if d.cast_signed() > 0 {
+            let tt = div(crate::sb_sse::cvt(d), k(g, 0x97));
+            let u = sub(k(g, 0x8f), tt);
+            let size = add(
+                mul(u, g.read::<f32>(r + 0x8c)),
+                mul(g.read::<f32>(r + 0x88), tt),
+            );
+            let x = add(g.read::<f32>(r + 0x40), g.read::<f32>(r + 0x30));
+            g.write::<f32>(r + 0x30, x);
+            let y = add(x, g.read::<f32>(r + 0x60));
+            g.write::<f32>(r + 0x60, y);
+            let spin = add(g.read::<f32>(r + 0x84), g.read::<f32>(r + 0x80));
+            g.write::<u32>(r + 0x90, d - 1);
+            g.write::<f32>(r + 0x80, spin);
+            // comiss K2, spin; jbe: below `K2` (ordered) it is reset
+            if k(g, 0xaf) > spin {
+                g.write::<u32>(r + 0x80, 0xbe00_adfd);
+            }
+            let yaw = add(g.read::<f32>(r + 0x7c), g.read::<f32>(r + 0x80));
+            let tw = k(g, 0x53);
+            let yaw = if yaw > k(g, 0x11a) {
+                sub(yaw, tw)
+            } else if k(g, 0x12f) > yaw {
+                add(yaw, tw)
+            } else {
+                yaw
+            };
+            g.write::<f32>(r + 0x7c, yaw);
+            size
+        } else {
+            g.read::<f32>(r + 0x8c)
+        };
+        g.write::<f32>(ebp.wrapping_sub(0x70), size);
+        let a = st0_f32(g.call(t(g, 0x151, 404), 0, &[0x3c80_adfd]).st0);
+        let a = add(g.read::<f32>(r + 0x4c), add(a, k(g, 0x171)));
+        let a = wrap(g, a, [0x184, 0x18e, 0x198, 0x1a5]);
+        g.write::<f32>(r + 0x4c, a);
+        let b = st0_f32(g.call(t(g, 0x1aa, 314), 0, &[0x3c80_adfd]).st0);
+        let b = f32::from_bits(add(b, k(g, 0x1cf)).to_bits() ^ mask);
+        let b = add(b, g.read::<f32>(r + 0x50));
+        let b = wrap(g, b, [0x1e9, 0x1f3, 0x1fd, 0x20a]);
+        g.write::<f32>(r + 0x50, b);
+        g.write::<u32>(v + 8, size.to_bits() ^ mask);
+        let mut st = Pushes::default();
+        st.push(m1);
+        st.call(g, t(g, 0x21d, 235), 0);
+        st.set_top(g.read::<u32>(r + 0x7c));
+        st.push_all(&[m1, m1]);
+        st.call(g, t(g, 0x241, 329), 0);
+        st.push_all(&[v, m1, o]);
+        st.call(g, t(g, 0x25a, 229), 0);
+        crate::sa_misc::actor_scale(g, img, img.rel32_target(f + 0x26c), i, m);
+        st.pop(5);
+        for (op, slot, a) in [
+            (0x283, 330, 0x54u32),
+            (0x2a2, 328, 0x4c),
+            (0x2c1, 329, 0x50),
+        ] {
+            if slot != 330 {
+                st.pop(2);
+            }
+            st.set_top(g.read::<u32>(r + a));
+            st.push_all(&[m, m]);
+            st.call(g, t(g, op, slot), 0);
+        }
+        let x1 = g.read::<f32>(r + 0x6c);
+        let x = mul(g.read::<f32>(m), x1);
+        g.write::<f32>(m, x);
+        let x = mul(g.read::<f32>(m + 4), x1);
+        g.write::<f32>(m + 4, x);
+        let x = mul(x1, g.read::<f32>(m + 8));
+        g.write::<f32>(m + 8, x);
+        let x2 = g.read::<f32>(r + 0x70);
+        for d in [0x10u32, 0x14, 0x18] {
+            let x = mul(g.read::<f32>(m + d), x2);
+            g.write::<f32>(m + d, x);
+        }
+        let x3 = g.read::<f32>(r + 0x74);
+        for d in [0x20u32, 0x24] {
+            let x = mul(g.read::<f32>(m + d), x3);
+            g.write::<f32>(m + d, x);
+        }
+        let x = mul(x3, g.read::<f32>(m + 0x28));
+        g.write::<f32>(m + 0x28, x);
+        for d in [0u32, 4, 8] {
+            let x = add(g.read::<f32>(s + 0x1900 + d), g.read::<f32>(o + d));
+            g.write::<f32>(m + 0x30 + d, x);
+        }
+        let x = g.read::<u32>(s + 0x190c);
+        g.write::<u32>(m + 0x3c, x);
+        eax = g.read::<u32>(r + 0x60);
+        g.write::<u32>(m + 0x34, eax);
+        i += 1;
+    }
+    Ret::eax(eax)
+}
+
+/// [`actors_sway_0397`] (the `rel32`s: the actor's scale, the cookie
+/// check).
+pub const ACTORS_SWAY_0397: Sig = Sig {
+    len: 976,
+    hash: 0x84e6_f841_8343_f31c,
+    calls: &[
+        (0x26c, Callee::Sig(&crate::sa_misc::ACTOR_SCALE)),
+        (0x3c8, Callee::Any),
+    ],
+    imports: &[],
+};

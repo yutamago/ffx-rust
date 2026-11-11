@@ -3787,3 +3787,88 @@ fn weights_step_0387() {
         });
     }
 }
+
+/// `magic_0397` 0x10004c50 (`r45::actors_sway_0397`): slot 561 busy;
+/// none, one and three actors, each delayed, with steps left (the spin
+/// reset below its floor or not, the yaw wrapping) and without.
+#[test]
+fn actors_sway_0397() {
+    let Some(mut t) = sa::twin(397) else { return };
+    let f = t.at(0x4c50);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    all_stubs(&mut t);
+    let busy = SCRATCH + 0x7e80;
+    rec(&mut t, 561, 0, move |m, _| m.r32(busy));
+    rec(&mut t, 235, 1, |m, a| {
+        for i in 0..16 {
+            wf(m, a[0] + 4 * i, if i % 5 == 0 { 1.0 } else { 0.125 });
+        }
+        0x235
+    });
+    for s in [330u32, 328, 329] {
+        rec(&mut t, s, 3, move |m, a| {
+            let x = f32::from_bits(a[2]);
+            for i in 0..16 {
+                let v = rf(m, a[1] + 4 * i) + x * ((i + s) % 3) as f32;
+                wf(m, a[0] + 4 * i, v);
+            }
+            s
+        });
+    }
+    rec(&mut t, 229, 3, |m, a| {
+        for i in 0..4 {
+            let mut v = 0.0f32;
+            for j in 0..4 {
+                v += rf(m, a[1] + 16 * i + 4 * j) * rf(m, a[2] + 4 * j);
+            }
+            wf(m, a[0] + 4 * i, v + i as f32 * 0.5);
+        }
+        0x229
+    });
+    for s in [404u32, 314, 277, 15, 16, 17] {
+        rec(&mut t, s, 1, move |_, a| (s << 16) ^ a[0]);
+        t.stub_st0(s, move |_, a| {
+            f64::from(f32::from_bits(a[0])) * 0.5 + f64::from((a[0] ^ s) & 3) * 0.25
+        });
+    }
+    let sc = t.img.rel32_target(f + 0x26c);
+    let scw = |o: u32| img.word(sc + o);
+    let sel = SCRATCH + 0x180;
+    t.write(sel, &[3, 1, 4, 2]);
+    for (l, objs) in [(0x28, 0x33), (0x74, 0x7f)] {
+        t.set_u32(scw(l), sel);
+        for i in 0..8 {
+            t.set_u32(scw(objs) + 4 * i, 0x0c00 + 3 * i);
+        }
+    }
+    let s = SCRATCH + 0x1_0000;
+    t.set_u32(w(0x27), s);
+    // (busy, actors, per actor (delay, steps, spin))
+    let cases: [(u32, u32, [(i32, i32, f32); 3]); 5] = [
+        (1, 3, [(0, 3, 0.0); 3]),
+        (0, 0, [(0, 3, 0.0); 3]),
+        (0, 1, [(0, 5, 0.25); 3]),
+        (0, 3, [(2, 0, 0.0), (0, 4, -1.0), (0, 0, 0.5)]),
+        (0, 3, [(0, 1, 3.5), (-1, 7, -0.05), (1, 2, 0.0)]),
+    ];
+    for (k, (b, n, recs)) in (0u32..).zip(cases) {
+        t.set_u32(busy, b);
+        t.set_u32(w(0x45), n);
+        junk(&mut t, s + 0x18f0, 0x20, k);
+        floats(&mut t, s + 0x1900, 4, k);
+        for (j, (delay, steps, spin)) in (0u32..).zip(recs) {
+            let m = s + 0x1e90 + 0xac * j;
+            let r = m + 0x14;
+            junk(&mut t, m, 0xac, k + j);
+            floats(&mut t, r + 0x2c, 0x18, k + j);
+            floats(&mut t, r + 0x6c, 0x8, k + j + 3);
+            setf(&mut t, r + 0x7c, 3.0 - j as f32 * 2.5);
+            setf(&mut t, r + 0x80, spin);
+            t.set_u32(r + 0x90, steps.cast_unsigned());
+            t.set_u32(r + 0x94, delay.cast_unsigned());
+        }
+        ownb::dirty_stack(&mut t, 0x4c50 + k, &[]);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
