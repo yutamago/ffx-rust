@@ -1943,3 +1943,108 @@ fn orbs_start_0431() {
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
+
+/// `magic_0431` 0x10001a90 (`r48::model_bounds_0431`, internal): no
+/// models; two models with vertices, triangle groups (type 0x10) and a
+/// group of another type, none or several primitives.
+#[test]
+fn model_bounds_0431() {
+    let Some(mut t) = sa::twin(431) else { return };
+    let f = t.at(0x1a90);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    all_stubs(&mut t);
+    let models = SCRATCH + 0x8000;
+    rec(&mut t, 941, 1, move |_, a| models + 0x800 * (a[0] & 3));
+    rec(&mut t, 230, 2, |m, a| {
+        for i in 0..16 {
+            let x = rf(m, a[1] + 4 * i);
+            wf(m, a[0] + 4 * i, x);
+        }
+        0x230
+    });
+    rec(&mut t, 231, 3, |m, a| {
+        for i in 0..16 {
+            let x = rf(m, a[1] + 4 * i) * 0.5 + rf(m, a[2] + 4 * i);
+            wf(m, a[0] + 4 * i, x);
+        }
+        0x231
+    });
+    rec(&mut t, 229, 3, |m, a| {
+        let mut out = [0.0f32; 4];
+        for i in 0..4 {
+            for j in 0..4 {
+                out[i as usize] += rf(m, a[1] + 16 * j + 4 * i) * rf(m, a[2] + 4 * j);
+            }
+        }
+        out[3] = out[3].abs() + 1.0;
+        for i in 0..4 {
+            wf(m, a[0] + 4 * i, out[i as usize]);
+        }
+        0x229
+    });
+    junk_ops(&mut t, f, &[0xee, 0x172]);
+    setf(&mut t, w(0xee), 0.5);
+    setf(&mut t, w(0x172), 2.0);
+    let (set, xm, buf, lo, hi) = (
+        SCRATCH + 0x100,
+        SCRATCH + 0x200,
+        SCRATCH + 0x4000,
+        SCRATCH + 0x300,
+        SCRATCH + 0x320,
+    );
+    // a model at `models + 0x800 n`: `+4` the groups, `+8` the vertices
+    let model = |t: &mut Twin, n: u32, nv: u16, groups: &[(u8, i16)], k: u32| {
+        let at = models + 0x800 * n;
+        junk(t, at, 0x800, k + n);
+        t.set_u32(at + 4, 0x40);
+        t.set_u32(at + 8, 0x400);
+        t.write(at + 0x12, &nv.to_le_bytes());
+        let prims: i16 = groups.iter().map(|g| g.1).sum();
+        t.write(at + 0x10, &prims.to_le_bytes());
+        floats(t, at + 0x400, 4 * u32::from(nv), k + n);
+        let mut p = at + 0x40;
+        for &(kind, cnt) in groups {
+            t.write(p + 1, &[kind]);
+            t.write(p + 2, &cnt.to_le_bytes());
+            p += 0x20;
+            if kind == 0x10 {
+                for tn in 0..cnt.max(0) as u32 {
+                    for c in 0..3u32 {
+                        let idx = ((tn * 3 + c + k) % u32::from(nv.max(1))) as u16;
+                        t.write(p + 2 * c, &idx.to_le_bytes());
+                    }
+                    p += 0x1c;
+                }
+            }
+        }
+    };
+    for (k, n) in (0u32..).zip([0u16, 2, 1]) {
+        junk(&mut t, set, 0x40, k);
+        t.write(set + 4, &n.to_le_bytes());
+        for i in 0..u32::from(n) {
+            t.set_u32(set + 0x10 + 0x10 * i, i + 1);
+            t.set_u32(set + 0x14 + 0x10 * i, 3 - i);
+        }
+        model(&mut t, 1, 6, &[(0x10, 2), (0x07, 3), (0x10, 1)], k);
+        model(&mut t, 2, 4, &[(0x10, 3)], k);
+        floats(&mut t, models + 0x800 * 3, 16, k);
+        floats(&mut t, models + 0x800 * 2 + 0x400, 16, k);
+        floats(&mut t, xm, 16, k + 1);
+        junk(&mut t, buf, 0x200, k);
+        junk(&mut t, lo, 0x40, k);
+        let call = Call {
+            ecx: set,
+            edx: xm,
+            ..Call::default()
+        };
+        ownb::dirty_stack(&mut t, 0x1a90 + k, &[]);
+        t.check(
+            f,
+            call,
+            &[buf, lo, hi],
+            Eax::Checked,
+            ffx_magic::r48::model_bounds_0431,
+        );
+    }
+}

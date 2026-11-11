@@ -3349,3 +3349,111 @@ pub const ORBS_START_0431: Sig = Sig {
     ],
     imports: &[(0x211, "rand")],
 };
+
+/// `magic_0431`'s models' bounds (0x10001a90, 1093 bytes; internal, `ecx`
+/// = the model set `L` (u16 `+4` its count, `+0x10 + 0x10 i` the entries:
+/// the model and its matrix's model), `edx` = the view matrix `X`, stack
+/// `(B, MIN, MAX)`; a /GS frame: the matrix `M` at `ebp - 0x44`, `M2` at
+/// `ebp - 0x84`). `MIN` starts at 20000 and `MAX` at -20000 (three
+/// floats each); for each entry: the model `m` (slot 941 `(E[0])`, its
+/// groups at `m + m[4]`, vertices at `m + m[8]`), `M` = slot 230 of slot
+/// 941 `(E[4])` with its translation times `K`, `M2` = slot 231 `(M2, X,
+/// M)`; the `i16 m[0x12]` vertices go through `M2` (slot 229) into `B`
+/// (then over their `w` times `K2`); the `i16 m[0x10]` primitives are
+/// counted; in each group (type byte `+1`, count `i16 +2`; 0x20 header
+/// bytes) of type 0x10 the triangles' (0x1c bytes, three u16 indices)
+/// corners widen `MIN`/`MAX` (`comiss`: only an ordered smaller or larger
+/// value). `B` moves on by the vertices. Returns the primitives' count.
+#[allow(clippy::too_many_lines)] // the original's loops
+pub fn model_bounds_0431<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let (set, x) = (fr.ecx, fr.edx);
+    let ebp = fr.esp.wrapping_sub(4);
+    let (m, m2) = (ebp.wrapping_sub(0x44), ebp.wrapping_sub(0x84));
+    let mut buf = fr.arg(g, 0);
+    let (lo, hi) = (fr.arg(g, 1), fr.arg(g, 2));
+    for i in 0..3 {
+        g.write::<u32>(lo + 4 * i, 0x469c_4000);
+    }
+    for i in 0..3 {
+        g.write::<u32>(hi + 4 * i, 0xc69c_4000);
+    }
+    let mut count = 0u32;
+    let mut i = 0u32;
+    while i < u32::from(g.read::<u16>(set + 4)) {
+        let e = set + 0x10 + 0x10 * i;
+        let model = g.call(t(g, 0x91, 941), 0, &[g.read::<u32>(e)]).eax;
+        let mut grp = model.wrapping_add(g.read::<u32>(model + 4));
+        let verts = model.wrapping_add(g.read::<u32>(model + 8));
+        let mm = g.call(t(g, 0xc7, 941), 0, &[g.read::<u32>(e + 4)]).eax;
+        g.call(t(g, 0xd9, 230), 0, &[m, mm]);
+        let k = g.read::<f32>(w(0xee));
+        for off in [0x30u32, 0x34, 0x38] {
+            let v = mul(g.read::<f32>(m + off), k);
+            g.write::<f32>(m + off, v);
+        }
+        g.call(t(g, 0x116, 231), 0, &[m2, x, m]);
+        let nv = i32::from(g.read::<i16>(model + 0x12));
+        for j in 0..nv.max(0).cast_unsigned() {
+            let dst = buf + 0x10 * j;
+            g.call(t(g, 0x15e, 229), 0, &[dst, m2, verts + 0x10 * j]);
+            let q = div(g.read::<f32>(w(0x172)), g.read::<f32>(dst + 0xc));
+            let d0 = mul(q, g.read::<f32>(dst));
+            g.write::<f32>(dst, d0);
+            let d1 = mul(g.read::<f32>(dst + 4), q);
+            g.write::<f32>(dst + 4, d1);
+            let d2 = mul(g.read::<f32>(dst + 8), q);
+            g.write::<f32>(dst + 8, d2);
+        }
+        let prims = i32::from(g.read::<i16>(model + 0x10));
+        count = count.wrapping_add(prims.cast_unsigned());
+        let mut left = prims;
+        while left > 0 {
+            let n = i32::from(g.read::<i16>(grp + 2));
+            let mut tri = grp + 0x20;
+            if g.read::<u8>(grp + 1) == 0x10 {
+                let mut tn = 0i32;
+                while tn < i32::from(g.read::<i16>(grp + 2)) {
+                    for c in 0..3u32 {
+                        let idx = u32::from(g.read::<u16>(tri + 2 * c));
+                        let v = buf.wrapping_add(idx << 4);
+                        for a in 0..3u32 {
+                            let x = g.read::<f32>(v + 4 * a);
+                            if g.read::<f32>(lo + 4 * a) > x {
+                                g.write::<f32>(lo + 4 * a, x);
+                            }
+                        }
+                        for a in 0..3u32 {
+                            let x = g.read::<f32>(v + 4 * a);
+                            if x > g.read::<f32>(hi + 4 * a) {
+                                g.write::<f32>(hi + 4 * a, x);
+                            }
+                        }
+                    }
+                    tn += 1;
+                    tri += 0x1c;
+                }
+            }
+            let n = if g.read::<u8>(grp + 1) == 0x10 {
+                i32::from(g.read::<i16>(grp + 2))
+            } else {
+                n
+            };
+            left -= n;
+            grp = tri;
+        }
+        buf = buf.wrapping_add(nv.cast_unsigned() << 4);
+        i += 1;
+    }
+    Ret::eax(count)
+}
+
+/// [`model_bounds_0431`] (the `rel32`: the cookie check).
+pub const MODEL_BOUNDS_0431: Sig = Sig {
+    len: 1093,
+    hash: 0x703a_7735_ee88_1735,
+    calls: &[(0x43d, Callee::Any)],
+    imports: &[],
+};
