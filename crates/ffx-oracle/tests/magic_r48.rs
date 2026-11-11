@@ -557,7 +557,8 @@ fn shots_task_0387() {
     let sf = img.rel32_target(f + 0x321);
     let ws = |o: u32| img.word(sf + o);
     all_stubs(&mut t);
-    for (s, n) in [(325u32, 2), (676, 3), (941, 1), (678, 1), (268, 3)] {
+    copy_325(&mut t);
+    for (s, n) in [(676u32, 3), (941, 1), (678, 1), (268, 3)] {
         rec(&mut t, s, n, move |_, a| a[0] ^ (s << 16));
     }
     let row = SCRATCH + 0x3_e000;
@@ -602,6 +603,7 @@ fn shots_task_0387() {
     for (k, (state, wait, at, first, count, shot, gate, all)) in (0u32..).zip([
         (0u32, 2u32, 0u32, 0u32, 9u32, 0x2000u32, 4u32, 0x2000u32),
         (0, 0, 3, 0, 9, 0x2000, 4, 0x2000),
+        (0, 0xffff_fffe, 3, 0, 9, 0x2001, 4, 0x2000),
         (11, 3, 3, 0, 9, 0x2000, 4, 0x2000),
         (11, 0, 5, 0, 9, 0x2001, 4, 0x2000),
         (11, 0, 6, 1, 20, 0x2000, 4, 0x2000),
@@ -670,6 +672,311 @@ fn shots_task_0387() {
             t.set_u32(a + 8, c);
         }
         ownb::dirty_stack(&mut t, 0x9170 + k, &[]);
+        t.check_entry(f, Call::default(), &[tk], Eax::Checked);
+    }
+}
+
+/// `magic_0387` 0x1000ba40 (`r48::pulse_setup_0387`, internal): none,
+/// one and three parts (slot 291's counts varied), the effect's time by
+/// slot 333 or slot 601, the root with children or not.
+#[test]
+fn pulse_setup_0387() {
+    let Some(mut t) = sa::twin(387) else { return };
+    let f = t.at(0xba40);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    all_stubs(&mut t);
+    rec(&mut t, 291, 5, |_, a| 3 + (a[1] & 0xf));
+    rec(&mut t, 333, 1, |_, _| 0x333);
+    t.stub_st0(333, |_, a| f64::from(a[0] & 0xff) * 0.25);
+    rec(&mut t, 601, 2, |m, a| {
+        m.w32(a[1], 1.5f32.to_bits());
+        0x601
+    });
+    let tl = img.rel32_target(f + 0xd2);
+    let (n, e, o, last, kid) = (
+        SCRATCH + 0x1_0000,
+        SCRATCH + 0x100,
+        SCRATCH + 0x1000,
+        SCRATCH + 0x200,
+        SCRATCH + 0x300,
+    );
+    junk_ops(&mut t, f, &[0x1af]);
+    junk_ops(&mut t, tl, &[0x55, 0x66, 0x6e]);
+    for (op, x) in [(0x55u32, 30.0f32), (0x66, 2.0), (0x6e, 0.5)] {
+        setf(&mut t, img.word(tl + op), x);
+    }
+    let root = w(0x5a);
+    for (k, parts) in (0u32..).zip([0u32, 1, 3]) {
+        junk(&mut t, n, 0x8800, k);
+        junk(&mut t, e, 0x100, k);
+        t.write(e + 0x90, &[k as u8 & 1]);
+        junk(&mut t, last, 0x10, k);
+        t.set_u32(w(0x22), last);
+        t.set_u32(w(0x40), 0x0f0f_0f0f + k);
+        junk(&mut t, root, 0x20, k);
+        t.set_u32(root + 0x10, if k == 1 { kid } else { root });
+        t.set_u32(o + 0x4dc, parts);
+        for j in 0..3u32 {
+            t.set_u32(o + 0x6c + 0x98 * j, 0x0a00 + 5 * j + k);
+        }
+        let call = Call {
+            ecx: n,
+            edx: e,
+            ..Call::default()
+        };
+        ownb::dirty_stack(&mut t, 0xba40 + k, &[]);
+        t.check(
+            f,
+            call,
+            &[o, 0x4000_0000 + k],
+            Eax::Checked,
+            ffx_magic::r48::pulse_setup_0387,
+        );
+    }
+}
+
+/// `magic_0387` 0x1000bf10 (`r48::glow_task_0387`): every state (0 with
+/// the part flag clear and set, 0x50, 0x51 waiting and out, 0x80 into
+/// 0x81 and on, 0x81 waiting, 0x1000 gate closed and open, unknown
+/// states below and above 0x51).
+#[test]
+fn glow_task_0387() {
+    let Some(mut t) = sa::twin(387) else { return };
+    let f = t.at(0xbf10);
+    all_stubs(&mut t);
+    copy_325(&mut t);
+    let p = SCRATCH + 0x400;
+    rec(&mut t, 941, 1, move |_, _| p);
+    let (tk, d, prev, next, n) = (
+        SCRATCH + 0x100,
+        SCRATCH + 0x140,
+        SCRATCH + 0x180,
+        SCRATCH + 0x1c0,
+        SCRATCH + 0x1_0000,
+    );
+    // (state, wait, part flag, byte N[0x3458])
+    for (k, (state, wait, flag, gate)) in (0u32..).zip([
+        (0u32, 3u32, 0x07ffu16, 0x04u8),
+        (0, 3, 0x0800, 0x04),
+        (0x50, 0, 0x0800, 0x04),
+        (0x51, 2, 0x0800, 0x04),
+        (0x51, 0xffff_fffe, 0x0800, 0x04),
+        (0x80, 3, 0x0800, 0x04),
+        (0x81, 3, 0x0800, 0x04),
+        (0x81, 1, 0x0800, 0xfb),
+        (0x1000, 1, 0x0800, 0xfb),
+        (0x1000, 1, 0x0800, 0x0f),
+        (0x20, 1, 0x0800, 0x0f),
+        (0x60, 1, 0x0800, 0x0f),
+    ]) {
+        junk(&mut t, n + 0x3000, 0x480, k);
+        t.set_u32(n + 0x18, state);
+        t.set_u32(n + 0x1c, wait);
+        t.write(n + 0x3458, &[gate]);
+        floats(&mut t, n + 0x32e8, 1, k);
+        junk(&mut t, p, 0x40, k);
+        t.write(p + 0x3e, &flag.to_le_bytes());
+        for off in [0x32c0u32, 0x3274, 0x3128, 0x30d0, 0x30fc, 0x3320] {
+            t.set_u32(n + off + 0x14, 0);
+        }
+        t.set_u32(n + 0x32c0, n + 0x3200);
+        t.set_u32(n + 0x3200 + 0x14, 0);
+        let (node, parent) = (n + 0x30d0, SCRATCH + 0x300);
+        t.set_u32(node + 0x14, parent);
+        t.set_u32(node + 4, parent);
+        t.set_u32(node + 8, parent);
+        t.set_u32(parent + 0xc, node);
+        t.set_u32(parent + 0x10, node);
+        t.set_u16(parent + 0x18, 3);
+        t.set_u32(tk, d);
+        t.set_u32(tk + 4, n);
+        for (a, b, c) in [(d, prev, next), (prev, next, d), (next, d, prev)] {
+            t.set_u32(a + 4, b);
+            t.set_u32(a + 8, c);
+        }
+        ownb::dirty_stack(&mut t, 0xbf10 + k, &[]);
+        t.check_entry(f, Call::default(), &[tk], Eax::Checked);
+    }
+}
+
+/// `magic_0387` 0x1000b1a0 (`r48::pulse_init_0387`, internal): the task
+/// list, the root and the list with and without children; the draws and
+/// slot 229's vector logged.
+#[test]
+fn pulse_init_0387() {
+    let Some(mut t) = sa::twin(387) else { return };
+    let f = t.at(0xb1a0);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    all_stubs(&mut t);
+    copy_325(&mut t);
+    let row = SCRATCH + 0x3_e000;
+    rec(&mut t, 307, 0, |_, _| 0x307);
+    t.stub_st0(307, move |m, _| {
+        let k = m.r32(row);
+        m.w32(row, k + 1);
+        f64::from(k as f32 * 0.125 + 0.3)
+    });
+    rec(&mut t, 229, 3, |m, a| {
+        for i in 0..4 {
+            let x = rf(m, a[1] + 4 * i) + rf(m, a[2] + 4 * i) * 0.5;
+            wf(m, a[0] + 4 * i, x);
+        }
+        0x229
+    });
+    for (s, n) in [(719u32, 3), (235, 1), (230, 2)] {
+        rec(&mut t, s, n, move |_, a| a[0] ^ (s << 16));
+    }
+    let (n, pv, a4, last, kid) = (
+        SCRATCH + 0x1_0000,
+        SCRATCH + 0x100,
+        SCRATCH + 0x400,
+        SCRATCH + 0x200,
+        SCRATCH + 0x300,
+    );
+    let ops = [
+        0x110u32, 0x11d, 0x125, 0x142, 0x14f, 0x157, 0x174, 0x188, 0x197,
+    ];
+    junk_ops(&mut t, f, &ops);
+    for (i, &op) in ops.iter().enumerate() {
+        setf(&mut t, w(op), 0.5 + i as f32 * 0.25);
+    }
+    let root = w(0x66);
+    let jl = w(0x424);
+    for k in 0..3u32 {
+        junk(&mut t, n, 0x600, k);
+        floats(&mut t, pv, 4, k);
+        junk(&mut t, a4, 0x100, k);
+        floats(&mut t, a4 + 0x9c, 16, k + 2);
+        junk(&mut t, last, 0x10, k);
+        t.set_u32(w(0x31), last);
+        t.set_u32(w(0x4c), 0x0f0f_0f0f + k);
+        junk(&mut t, root, 0x20, k);
+        t.set_u32(root + 0x10, if k == 1 { kid } else { root });
+        junk(&mut t, jl, 0x20, k + 1);
+        t.set_u32(jl + 0x10, if k == 2 { kid } else { jl });
+        let args = [
+            0x0bad_0000,
+            0x0bad_0001,
+            0xffff_ffff - k,
+            0x0a03,
+            a4,
+            0x0a05 + k,
+        ];
+        let call = Call {
+            ecx: n,
+            edx: pv,
+            ..Call::default()
+        };
+        ownb::dirty_stack(&mut t, 0xb1a0 + k, &[]);
+        t.check(f, call, &args, Eax::Checked, |g, img, fr| {
+            ffx_magic::r48::pulse_init_0387(g, img, fr)
+        });
+    }
+}
+
+/// `magic_0387` 0x1000b640 (`r48::pulse_task_0387`): state 0 waiting
+/// and out (into 10 and 11), 11 waiting, the pulse busy, a drawn part
+/// (weights left: each part, a negative `N[0x24]`), a part by the draw's
+/// remainder, the count out (into 10000), 10000 with a pulse busy and
+/// all done, an unknown state.
+#[test]
+fn pulse_task_0387() {
+    let Some(mut t) = sa::twin(387) else { return };
+    let f = t.at(0xb640);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    let pi = img.rel32_target(f + 0x1f2);
+    let wp = |o: u32| img.word(pi + o);
+    all_stubs(&mut t);
+    copy_325(&mut t);
+    let row = SCRATCH + 0x3_e000;
+    rec(&mut t, 324, 0, move |m, _| {
+        let k = m.r32(row);
+        m.w32(row, k + 1);
+        0x1235 + 0x3b * k
+    });
+    let draw = SCRATCH + 0x3_e010;
+    rec(&mut t, 307, 0, |_, _| 0x307);
+    t.stub_st0(307, move |m, _| f64::from(rf(m, draw)));
+    rec(&mut t, 229, 3, |m, a| {
+        for i in 0..4 {
+            let x = rf(m, a[1] + 4 * i) + rf(m, a[2] + 4 * i) * 0.5;
+            wf(m, a[0] + 4 * i, x);
+        }
+        0x229
+    });
+    for (s, n) in [(719u32, 3), (235, 1), (230, 2)] {
+        rec(&mut t, s, n, move |_, a| a[0] ^ (s << 16));
+    }
+    let (tk, d, prev, next, n, o) = (
+        SCRATCH + 0x100,
+        SCRATCH + 0x140,
+        SCRATCH + 0x180,
+        SCRATCH + 0x1c0,
+        SCRATCH + 0x1_8000,
+        SCRATCH + 0x1000,
+    );
+    junk_ops(&mut t, f, &[0xd5]);
+    setf(&mut t, w(0xd5), 0.25);
+    let root = w(0x119);
+    let list = wp(0x424);
+    // (state, wait, N[0x24], weights left, count, pulse state, all, draw)
+    for (k, (state, wait, at, left, count, pulse, all, x)) in (0u32..).zip([
+        (0u32, 2u32, 0u32, 0u32, 9u32, 0x2000u32, 0x2000u32, 0.0f32),
+        (0, 0, 3, 0, 9, 0x2001, 0x2000, 0.0),
+        (11, 2, 3, 0, 9, 0x2000, 0x2000, 0.0),
+        (11, 0, 5, 3, 9, 0x2000, 0x2000, 0.3),
+        (11, 0, 6, 3, 9, 0x2000, 0x2000, 0.6),
+        (11, 0, 0xffff_fff3, 3, 9, 0x2000, 0x2000, 2.0),
+        (11, 0, 2, 0, 9, 0x2000, 0x2000, 0.0),
+        (11, 0, 2, 3, 0, 0x2000, 0xffff_dfff, 0.1),
+        (10000, 0, 2, 0, 9, 0x2000, 0xffff, 0.0),
+        (7, 0, 2, 0, 9, 0x2000, 0x2000, 0.0),
+    ]) {
+        junk(&mut t, n - 0x8000, 0x11000, k);
+        t.set_u32(n + 0x18, state);
+        t.set_u32(n + 0x1c, wait);
+        t.set_u32(n + 0x20, count);
+        t.set_u32(n + 0x24, at);
+        t.set_u32(n + 0x28, left);
+        for (j, c) in (0u32..).zip([3u32, 2, 1]) {
+            t.set_u32(n + 0x2c + 4 * j, c);
+            setf(&mut t, n + 0x38 + 4 * j, c as f32 / 6.0);
+        }
+        t.set_u32(n + 0x48, o);
+        for i in 0..16u32 {
+            t.set_u32(n + 0x78 + 0x860 * i, all);
+        }
+        let s = (at as i32) % 16;
+        t.set_u32(n.wrapping_add(0x78).wrapping_add((s * 0x860) as u32), pulse);
+        junk(&mut t, o, 0x200, k);
+        t.set_u32(o + 0x4dc, 3);
+        floats(&mut t, n + 0x876c, 16, k);
+        for off in [0x868cu32, 0x8660, 0x86d0] {
+            t.set_u32(n + off + 0x14, 0);
+        }
+        let (node, parent) = (n + 0x8660, SCRATCH + 0x300);
+        t.set_u32(node + 0x14, parent);
+        t.set_u32(node + 4, parent);
+        t.set_u32(node + 8, parent);
+        t.set_u32(parent + 0xc, node);
+        t.set_u32(parent + 0x10, node);
+        t.set_u16(parent + 0x18, 3);
+        junk(&mut t, root, 0x20, k);
+        t.set_u32(root + 0x10, root);
+        junk(&mut t, list, 0x20, k + 1);
+        t.set_u32(list + 0x10, list);
+        t.set_u32(wp(0x31), SCRATCH + 0x200);
+        setf(&mut t, draw, x);
+        t.set_u32(tk, d);
+        t.set_u32(tk + 4, n);
+        for (a, b, c) in [(d, prev, next), (prev, next, d), (next, d, prev)] {
+            t.set_u32(a + 4, b);
+            t.set_u32(a + 8, c);
+        }
+        ownb::dirty_stack(&mut t, 0xb640 + k, &[]);
         t.check_entry(f, Call::default(), &[tk], Eax::Checked);
     }
 }
