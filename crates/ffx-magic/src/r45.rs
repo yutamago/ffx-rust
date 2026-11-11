@@ -2690,7 +2690,7 @@ pub fn sparks_0434<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
     }
     // `shl 7; imul 0x66666667; sar 5` and the sign fix: c * 128 / 80
     #[allow(clippy::cast_possible_truncation)] // a byte of it
-    let fade = (c.wrapping_shl(7).cast_signed() / 80) as u8;
+    let fade = (c.wrapping_shl(7).cast_signed() / 80).cast_unsigned() as u8;
     let frnd = |g: &mut G, op: u32, x: u32| {
         let out = g.call(t(g, op, 314), 0, &[x]);
         (st0_f32(out.st0), out.eax)
