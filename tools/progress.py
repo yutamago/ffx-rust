@@ -181,15 +181,37 @@ def duplicate_hooks(repo=None):
             hand[int(addr.replace("_", ""), 16)] = f"{f.name}: {name}"
     seen, out = {}, []
     for f in sorted((repo / "crates/ffx-hook/src/ported").glob("*.rs")):
-        for name, addr in re.findall(r"^\s*(\w+) @ 0x([0-9a-f_]+) =>", f.read_text(encoding="utf-8"), re.M):
+        text = f.read_text(encoding="utf-8")
+        owned = wrapper_owned_lines(text)
+        for name, addr in re.findall(r"^\s*(\w+) @ 0x([0-9a-f_]+) =>", text, re.M):
             a = int(addr.replace("_", ""), 16)
             where = f"{f.name}: {name} @ {a:#010x}"
             if a in seen:
                 out.append(f"{where}: also ported as {seen[a]}")
-            if a in hand:
+            if a in owned:
+                if a not in hand:
+                    out.append(f"{where}: wrapper_owned! line, but no hand-written hook holds the address")
+            elif a in hand:
                 out.append(f"{where}: also hooked by hand ({hand[a]})")
             seen.setdefault(a, f"{name} ({f.name})")
     return out
+
+
+def wrapper_owned_lines(text):
+    """The addresses of the lines inside `wrapper_owned! { ... }` blocks
+    (ffx-host table entries for addresses a hand-written hook holds in the
+    32-bit game; crates/ffx-hook/src/ported/mod.rs)."""
+    found = set()
+    for m in re.finditer(r"^wrapper_owned!\s*\{", text, re.M):
+        depth, i = 0, m.end() - 1
+        while i < len(text):
+            depth += {"{": 1, "}": -1}.get(text[i], 0)
+            if depth == 0:
+                break
+            i += 1
+        found |= {int(a.replace("_", ""), 16)
+                  for a in re.findall(r"^\s*\w+ @ 0x([0-9a-f_]+) =>", text[m.end():i], re.M)}
+    return found
 
 
 SIZES = "symbols/sizes.tsv"

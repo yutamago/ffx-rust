@@ -406,6 +406,10 @@ pub enum Scratch {
     Graphic,
     /// `ffx_script`'s `NativeHost::scratch`.
     Script,
+    /// A shim's per-thread block that the game reads after the shim
+    /// returns (`TOGetChangeMacroAddress`'s folded macro text, a
+    /// `thread_local!` in the hooked game).
+    Shim,
 }
 
 /// The thread's scratch `slot` in game memory, when a router serves one.
