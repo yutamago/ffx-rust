@@ -3845,12 +3845,14 @@ fn actors_sway_0397() {
     let s = SCRATCH + 0x1_0000;
     t.set_u32(w(0x27), s);
     // (busy, actors, per actor (delay, steps, spin))
-    let cases: [(u32, u32, [(i32, i32, f32); 3]); 5] = [
+    let cases: [(u32, u32, [(i32, i32, f32); 3]); 6] = [
         (1, 3, [(0, 3, 0.0); 3]),
         (0, 0, [(0, 3, 0.0); 3]),
         (0, 1, [(0, 5, 0.25); 3]),
         (0, 3, [(2, 0, 0.0), (0, 4, -1.0), (0, 0, 0.5)]),
         (0, 3, [(0, 1, 3.5), (-1, 7, -0.05), (1, 2, 0.0)]),
+        // (b36 test gap: the yaw below the lower limit)
+        (0, 3, [(0, 1, 0.0), (0, 2, 0.1), (0, 2, -0.2)]),
     ];
     for (k, (b, n, recs)) in (0u32..).zip(cases) {
         t.set_u32(busy, b);
@@ -3863,7 +3865,10 @@ fn actors_sway_0397() {
             junk(&mut t, m, 0xac, k + j);
             floats(&mut t, r + 0x2c, 0x18, k + j);
             floats(&mut t, r + 0x6c, 0x8, k + j + 3);
-            setf(&mut t, r + 0x7c, 3.0 - j as f32 * 2.5);
+            setf(&mut t, r + 0x7c, 3.0 - j as f32 * 3.2);
+            // (b36 test gap: the sizes set)
+            setf(&mut t, r + 0x88, 1.5 + j as f32);
+            setf(&mut t, r + 0x8c, 0.75 * k as f32 - 1.0);
             setf(&mut t, r + 0x80, spin);
             t.set_u32(r + 0x90, steps.cast_unsigned());
             t.set_u32(r + 0x94, delay.cast_unsigned());
