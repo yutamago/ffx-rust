@@ -598,3 +598,405 @@ pub const JMP_LASER_VISIT_0387: Sig = Sig {
     calls: &[(8, Callee::Sig(&LASER_VISIT_0387))],
     imports: &[],
 };
+
+/// Slot 771 `(h)`'s 64-bit handle `(lo, hi)`, then slot `slot` `(lo, hi,
+/// rest...)` with the lock `**G_L` held at 1 and set back after (`ops`:
+/// the slot table words of the two calls and the lock's two reads, in
+/// the function's order). Returns the slot's result and the lock pointer
+/// as read last (the `eax` some callers leave).
+fn under_lock<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    ops: [u32; 4],
+    slot: u32,
+    h: u32,
+    rest: &[u32],
+) -> (crate::Out, u32) {
+    let w = |o: u32| img.word(f + o);
+    // call width: 1
+    let id = g.call(slot_target(g, w(ops[0]), 771), 0, &[h]);
+    let lock = g.read::<u32>(w(ops[1]));
+    let saved = g.read::<u32>(lock);
+    g.write::<u32>(lock, 1);
+    let mut args = [id.eax, id.edx, 0, 0, 0];
+    args[2..2 + rest.len()].copy_from_slice(rest);
+    // call width: 2 + rest (at most 5)
+    let out = g.call(slot_target(g, w(ops[2]), slot), 0, &args[..2 + rest.len()]);
+    let lock = g.read::<u32>(w(ops[3]));
+    g.write::<u32>(lock, saved);
+    (out, lock)
+}
+
+/// [`burst_task_0387`]'s draw of the burst at `A2` (`b + 0xa8`): the
+/// draw matrix `b + 0x138` (its first two rows `M` (`b + 0xf8`) times
+/// the size `s = b[0x2c]`, its last row `A2` through the DLL's matrix
+/// `G`), the colour bytes `R[4..8]` = `trunc(A1)` (`b + 0x98`), `R[0x14]
+/// = *G_B`; slot 908 `(lo, hi, Z, R)` when slot 773 answers.
+fn burst_draw<G: Game>(g: &mut G, img: &Image, f: u32, b: u32, h: u32) {
+    let w = |o: u32| img.word(f + o);
+    let rf = |g: &G, a: u32| g.read::<f32>(a);
+    let (m, d, r) = (b + 0xf8, b + 0x138, b + 0x60);
+    let s = rf(g, b + 0x2c);
+    for o in [0, 4, 8, 0x10, 0x14, 0x18] {
+        let x = mul(rf(g, m + o), s);
+        g.write::<f32>(d + o, x);
+    }
+    for i in 0..4 {
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // `mov byte`
+        let c = cvtt(rf(g, b + 0x98 + 4 * i)) as u8;
+        g.write::<u8>(r + 4 + i, c);
+    }
+    let (x, y, z, ww) = (
+        rf(g, b + 0xa8),
+        rf(g, b + 0xac),
+        rf(g, b + 0xb0),
+        rf(g, b + 0xb4),
+    );
+    let k = |g: &G, o: u32| rf(g, w(o));
+    // each row: y G[1, i] + x G[0, i] + z G[2, i] + w G[3, i]
+    let row = |g: &G, o: [u32; 4]| {
+        let t = add(mul(y, k(g, o[0])), mul(x, k(g, o[1])));
+        let t = add(t, mul(z, k(g, o[2])));
+        add(t, mul(ww, k(g, o[3])))
+    };
+    let tx = row(g, [0x6ac, 0x762, 0x77c, 0x793]);
+    let ty = row(g, [0x6ec, 0x7ab, 0x7c3, 0x7db]);
+    let tz = row(g, [0x76d, 0x7f3, 0x80b, 0x826]);
+    // the last column: the matrix words first
+    let tw = add(mul(k(g, 0x813), y), mul(k(g, 0x832), x));
+    let tw = add(tw, mul(k(g, 0x84b), z));
+    let tw = add(tw, mul(k(g, 0x85d), ww));
+    let gb = g.read::<u32>(w(0x7b4));
+    g.write::<u32>(r + 0x14, gb);
+    for (o, v) in [(0x30, tx), (0x34, ty), (0x38, tz), (0x3c, tw)] {
+        g.write::<f32>(d + o, v);
+    }
+    let (ok, _) = under_lock(g, img, f, [0x7cc, 0x87c, 0x888, 0x89c], 773, h, &[]);
+    if ok.eax != 0 {
+        let z = g.read::<u32>(b + 0x3c);
+        under_lock(g, img, f, [0x8aa, 0x8bc, 0x8d7, 0x8e4], 908, h, &[z, r]);
+    }
+}
+
+/// [`burst_task_0387`]'s path step: the points behind `A2` until the
+/// path's length `pos` (`b + 0x24`) passes the distance `d`: the ring's
+/// next point `cur` (none past `lim`: `None`), the segment from the last
+/// (`b + 0xb8`, `b + 0xd8`, the step `b + 0xc8`), its length (x, y, z;
+/// `_libm_sse2_sqrt_precise`) added to `pos`; then `A2` = the segment's
+/// start plus the step times `acc / len` (`acc` at `b + 0x20`), `pos -=
+/// d`, `acc += d`. Returns the ring's point.
+fn burst_follow<G: Game>(g: &mut G, b: u32, n: u32, mut cur: u32, lim: u32, d: f32) -> Option<u32> {
+    let rf = |g: &G, a: u32| g.read::<f32>(a);
+    let (base, step, next) = (b + 0xb8, b + 0xc8, b + 0xd8);
+    let mut pos = rf(g, b + 0x24);
+    // comiss pos, d; jae: an ordered `pos >= d` keeps the segment
+    if pos.is_nan() || d.is_nan() || pos < d {
+        loop {
+            cur = if cur == 3 { 0 } else { cur + 1 };
+            if cur == lim {
+                return None;
+            }
+            for o in [0, 4, 8, 0xc] {
+                let x = g.read::<u32>(next + o);
+                g.write::<u32>(base + o, x);
+            }
+            let p = n.wrapping_add(0x2c).wrapping_add(cur << 4);
+            for o in [0, 4, 8, 0xc] {
+                let x = g.read::<u32>(p + o);
+                g.write::<u32>(next + o, x);
+            }
+            let dv = [0u32, 4, 8, 0xc].map(|o| sub(rf(g, next + o), rf(g, base + o)));
+            for (o, x) in [0u32, 4, 8, 0xc].into_iter().zip(dv) {
+                g.write::<f32>(step + o, x);
+            }
+            let acc = sub(rf(g, b + 0x20), rf(g, b + 0x14));
+            g.write::<f32>(b + 0x20, acc);
+            let sq = add(add(mul(dv[1], dv[1]), mul(dv[0], dv[0])), mul(dv[2], dv[2]));
+            // `_libm_sse2_sqrt_precise` of the double: exact, as Rust's
+            #[allow(clippy::cast_possible_truncation)] // `cvtsd2ss`
+            let len = f64::from(sq).sqrt() as f32;
+            g.write::<f32>(b + 0x14, len);
+            pos = add(rf(g, b + 0x24), len);
+            g.write::<f32>(b + 0x24, pos);
+            // comiss pos, d; jb: below or unordered goes on
+            if !(pos.is_nan() || d.is_nan() || pos < d) {
+                break;
+            }
+        }
+    }
+    let t = div(rf(g, b + 0x20), rf(g, b + 0x14));
+    for o in [0, 4, 8, 0xc] {
+        let x = add(rf(g, base + o), mul(rf(g, step + o), t));
+        g.write::<f32>(b + 0xa8 + o, x);
+    }
+    g.write::<f32>(b + 0x24, sub(pos, d));
+    let acc = add(rf(g, b + 0x20), d);
+    g.write::<f32>(b + 0x20, acc);
+    Some(cur)
+}
+
+/// [`burst_task_0387`]'s start (state 1 once `N[0x20]` reached 2): the
+/// colour `A1 = (128, 110, 60, 64)`, its step down `(A1 - (128, 0, 0,
+/// 0)) / 15` (slots 234, 667), the draw request `R` (`b + 0x60`), `Z =
+/// Q + i16 Q[0x10]` (`Q = N[0x24]`), `M` = `G_M` (slot 230) scaled by `K`
+/// on its diagonal, the draw matrix an identity (slot 235); with no
+/// object yet (slot 773 0) slot 907 `(lo, hi, &Q, 4, slot 776 (u8 Z[Z[4] +
+/// 4]) | slot 777 (0))`; slot 909. Returns `lim`: the newest point when
+/// `N[0x20] > 4`, else 0.
+fn burst_start<G: Game>(g: &mut G, img: &Image, f: u32, b: u32, n: u32, h: u32, idx: u32) -> u32 {
+    let w = |o: u32| img.word(f + o);
+    let rf = |g: &G, a: u32| g.read::<f32>(a);
+    let (a1, a2) = (b + 0x98, b + 0xa8);
+    for (o, x) in [
+        (0, 0x4300_0000),
+        (4, 0x42dc_0000),
+        (8, 0x4270_0000),
+        (0xc, 0x4280_0000),
+        (0x10, 0x4300_0000),
+        (0x14, 0),
+        (0x18, 0),
+        (0x1c, 0),
+    ] {
+        g.write::<u32>(a1 + o, x);
+    }
+    // call width: 3
+    g.call(slot_target(g, w(0x18e), 234), 0, &[b + 0xb8, a1, a2]);
+    // call width: 3
+    g.call(
+        slot_target(g, w(0x215), 667),
+        0,
+        &[b + 0xe8, b + 0xb8, 0x4170_0000],
+    );
+    let r = b + 0x60;
+    g.write::<u32>(r + 0x10, b + 0x138);
+    g.write::<u16>(r + 2, 0x80);
+    for o in [0xc, 0x1c, 8] {
+        g.write::<u32>(r + o, 0);
+    }
+    g.write::<u8>(r + 0x18, 0);
+    let q = g.read::<u32>(n + 0x24);
+    let z = q.wrapping_add_signed(i32::from(g.read::<i16>(q + 0x10)));
+    g.write::<u32>(b + 0x3c, z);
+    let m = b + 0xf8;
+    // call width: 2
+    g.call(slot_target(g, w(0x271), 230), 0, &[m, w(0x26b)]);
+    let k = rf(g, w(0x28a));
+    for o in [0, 0x14, 0x28] {
+        let x = mul(rf(g, m + o), k);
+        g.write::<f32>(m + o, x);
+    }
+    // call width: 1
+    g.call(slot_target(g, w(0x29b), 235), 0, &[b + 0x138]);
+    g.write::<u32>(b + 0x38, q);
+    let (none, _) = under_lock(g, img, f, [0x2dd, 0x2f6, 0x302, 0x316], 773, h, &[]);
+    if none.eax == 0 {
+        let at = z.wrapping_add(g.read::<u32>(z + 4)).wrapping_add(4);
+        let x = u32::from(g.read::<u8>(at));
+        // call width: 1
+        let e1 = g.call(slot_target(g, w(0x331), 776), 0, &[x]).eax;
+        let y = g.read::<u32>(b + 0x7c);
+        // call width: 1
+        let e2 = g.call(slot_target(g, w(0x33f), 777), 0, &[y]).eax;
+        let rest = [b + 0x38, 4, e1 | e2];
+        under_lock(g, img, f, [0x356, 0x36d, 0x387, 0x394], 907, h, &rest);
+    }
+    under_lock(g, img, f, [0x3a2, 0x3b4, 0x3c0, 0x3d3], 909, h, &[]);
+    if g.read::<u32>(n + 0x20).cast_signed() > 4 {
+        idx
+    } else {
+        0
+    }
+}
+
+/// `magic_0387`'s burst task (0x10009c20, 3251 bytes; the callback of
+/// [`burst_setup_0387`](crate::r48::burst_setup_0387), cdecl `(T)`, `N
+/// = T[4]`, `H = T[0]` the handle's source; a 16-aligned frame, `b` its
+/// base below the saved `esi`/`edi`). First `N`'s source `N[0x28]` is
+/// visited with `(N[0x28], *G_MODE)` (its method, see
+/// [`method`](crate::r48::method)); then by the state `N[0x18]`:
+/// - 0x1000: with bit 2 of `N[0x328]` the four nodes `N + 0x6c..0xf0`
+///   leave their parent ([`leave`](crate::sa_misc::leave)), `T` is
+///   unlinked, slot 779 `(slot 771 (H))` under the lock, state 0x2000
+///   (the lock pointer returned; without the bit 0);
+/// - 0 (count `N[0x20]` = 0, state 1) and 1: the source's position
+///   `N[0x28] + 0xcc` goes to the ring `N + 0x2c + 16 (3 - c % 4)`
+///   (slot 325), the count up; from 2 on the burst runs: its start
+///   ([`burst_start`]), `A2` = the newest point, the length to the next
+///   (slots 325, 234, 706); up to 16 times slot 910 `(lo, hi, &Q, 0)`
+///   (while slot 773 answers; until `K - 0.1 n` is no longer above 0);
+///   with an object, slot 886 `(o, 0, o[0x94][4], o[0x94][8])` (0 ends:
+///   0); slot 909; then up to 16 draws ([`burst_draw`]), `A1` stepping
+///   down, the distance `d` and the size `s` shrinking by `K`, `A2`
+///   following the path ([`burst_follow`]) until `d` reaches 0 or the
+///   path its end; at the end slot 775 `(slot 771 (H))` when slot 773
+///   answers (the lock pointer returned; else 0);
+/// - anything else: nothing (`state - 0x1000`).
+pub fn burst_task_0387<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let rf = |g: &G, a: u32| g.read::<f32>(a);
+    let a = (fr.esp.wrapping_sub(4) & !0xf).wrapping_sub(0x178);
+    let b = a.wrapping_sub(8);
+    // the cookie word (`ds:__security_cookie ^ esp`)
+    let cookie = g.read::<u32>(w(0xd)) ^ a;
+    g.write::<u32>(b + 0x17c, cookie);
+    let mode = g.read::<u8>(w(0x1b));
+    let tk = fr.arg(g, 0);
+    let n = g.read::<u32>(tk + 4);
+    let src = g.read::<u32>(n + 0x28);
+    let l = b + 0x58;
+    g.write::<u32>(l, src);
+    g.write::<u8>(l + 5, mode);
+    let visit = g.read::<u32>(g.read::<u32>(src) + 0x1c);
+    crate::r48::method(g, img, visit, b.wrapping_sub(8), l, l);
+    let state = g.read::<u32>(n + 0x18);
+    let h = g.read::<u32>(tk);
+    match state {
+        0 | 1 => {}
+        0x1000 => {
+            if g.read::<u8>(n + 0x328) & 4 == 0 {
+                return Ret::eax(0);
+            }
+            for o in [0x6c, 0x98, 0xc4, 0xf0] {
+                crate::sa_misc::leave(g, n + o, 0);
+            }
+            crate::r48::unlink_task(g, tk);
+            let (_, lock) = under_lock(g, img, f, [0xbd, 0xd1, 0xdd, 0xf0], 779, h, &[]);
+            g.write::<u32>(n + 0x18, 0x2000);
+            return Ret::eax(lock);
+        }
+        s => return Ret::eax(s.wrapping_sub(0x1000)),
+    }
+    if state == 0 {
+        g.write::<u32>(n + 0x20, 0);
+        g.write::<u32>(n + 0x18, 1);
+    }
+    let count = g.read::<u32>(n + 0x20).cast_signed();
+    let idx = (3 - count % 4).cast_unsigned();
+    let src = g.read::<u32>(n + 0x28);
+    let ring = |i: u32| n.wrapping_add(0x2c).wrapping_add(i << 4);
+    // call width: 2
+    let eax = g
+        .call(slot_target(g, w(0x151), 325), 0, &[ring(idx), src + 0xcc])
+        .eax;
+    let count = g.read::<u32>(n + 0x20).wrapping_add(1);
+    g.write::<u32>(n + 0x20, count);
+    if count.cast_signed() < 2 {
+        return Ret::eax(eax);
+    }
+    let lim = burst_start(g, img, f, b, n, h, idx);
+    let k = rf(g, w(0x3db));
+    g.write::<f32>(b + 0x2c, k);
+    g.write::<f32>(b + 0x30, k);
+    // call width: 2
+    g.call(slot_target(g, w(0x40b), 325), 0, &[b + 0xa8, ring(idx)]);
+    // call width: 2
+    g.call(slot_target(g, w(0x42e), 325), 0, &[b + 0xb8, b + 0xa8]);
+    let cur = if idx == 3 { 0 } else { idx + 1 };
+    // call width: 2
+    g.call(slot_target(g, w(0x463), 325), 0, &[b + 0xd8, ring(cur)]);
+    // call width: 3
+    g.call(
+        slot_target(g, w(0x488), 234),
+        0,
+        &[b + 0xc8, b + 0xd8, b + 0xb8],
+    );
+    let acc = rf(g, w(0x498));
+    g.write::<f32>(b + 0x20, acc);
+    // call width: 1
+    let st0 = g.call(slot_target(g, w(0x4a8), 706), 0, &[b + 0xc8]).st0;
+    let len = crate::m0018::st0_f32(st0);
+    g.write::<f32>(b + 0x14, len);
+    g.write::<f32>(b + 0x24, len);
+    let mut x = rf(g, w(0x4d8));
+    for left in (0..16).rev() {
+        let (busy, _) = under_lock(g, img, f, [0x4f1, 0x500, 0x50c, 0x520], 773, h, &[]);
+        if busy.eax != 0 {
+            let rest = [b + 0x38, 0];
+            under_lock(g, img, f, [0x52e, 0x53d, 0x556, 0x563], 910, h, &rest);
+        }
+        if left == 0 {
+            break;
+        }
+        x = sub(x, rf(g, w(0x57c)));
+        // comiss 0, x; jb: above 0 or unordered goes on
+        if !(x.is_nan() || 0.0 < x) {
+            break;
+        }
+    }
+    let (obj, _) = under_lock(g, img, f, [0x593, 0x5a2, 0x5ae, 0x5c2], 773, h, &[]);
+    if obj.eax != 0 {
+        let (o, _) = under_lock(g, img, f, [0x5d4, 0x5e6, 0x5f2, 0x606], 773, h, &[]);
+        let e = g.read::<u32>(o.eax + 0x94);
+        let (e4, e8) = (g.read::<u32>(e + 4), g.read::<u32>(e + 8));
+        // call width: 4
+        let ok = g.call(slot_target(g, w(0x61c), 886), 0, &[o.eax, 0, e4, e8]);
+        if ok.eax == 0 {
+            return Ret::eax(0);
+        }
+    }
+    under_lock(g, img, f, [0x634, 0x646, 0x652, 0x665], 909, h, &[]);
+    burst_run(g, img, f, b, n, h, cur, lim)
+}
+
+/// [`burst_task_0387`]'s draws (16 at most) and its end.
+#[allow(clippy::too_many_arguments)]
+fn burst_run<G: Game>(
+    g: &mut G,
+    img: &Image,
+    f: u32,
+    b: u32,
+    n: u32,
+    h: u32,
+    mut cur: u32,
+    lim: u32,
+) -> Ret {
+    let w = |o: u32| img.word(f + o);
+    let rf = |g: &G, a: u32| g.read::<f32>(a);
+    for left in (0..16).rev() {
+        burst_draw(g, img, f, b, h);
+        if left == 0 {
+            break;
+        }
+        for o in [0, 4, 8, 0xc] {
+            let x = sub(rf(g, b + 0x98 + o), rf(g, b + 0xe8 + o));
+            g.write::<f32>(b + 0x98 + o, x);
+        }
+        let d = sub(rf(g, b + 0x30), rf(g, w(0x913)));
+        g.write::<f32>(b + 0x30, d);
+        let s = sub(rf(g, b + 0x2c), rf(g, w(0x981)));
+        g.write::<f32>(b + 0x2c, s);
+        // comiss 0, d; jae: an ordered `0 >= d` ends
+        if 0.0 >= d {
+            break;
+        }
+        match burst_follow(g, b, n, cur, lim, d) {
+            Some(c) => cur = c,
+            None => break,
+        }
+    }
+    let (any, _) = under_lock(g, img, f, [0xc27, 0xc3a, 0xc46, 0xc5a], 773, h, &[]);
+    if any.eax == 0 {
+        return Ret::eax(0);
+    }
+    let (_, lock) = under_lock(g, img, f, [0xc68, 0xc77, 0xc83, 0xc96], 775, h, &[]);
+    Ret::eax(lock)
+}
+
+/// [`burst_task_0387`] (the `rel32`s: four node leaves, two cookie
+/// checks, `_libm_sse2_sqrt_precise`).
+pub const BURST_TASK_0387: Sig = Sig {
+    len: 3251,
+    hash: 0xb067_680c_8950_5df8,
+    calls: &[
+        (0x7e, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0x89, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0x94, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0x9f, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0x110, Callee::Any),
+        (0xae6, Callee::Import("_libm_sse2_sqrt_precise")),
+        (0xcab, Callee::Any),
+    ],
+    imports: &[],
+};

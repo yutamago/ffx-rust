@@ -3551,6 +3551,7 @@ ports! {
     // round 48 (magic-r48): end
     // round 50 (magic-r50)
     "r50 laser visit thunk 0387" => r50::JMP_LASER_VISIT_0387, r50::jmp_laser_visit_0387;
+    "r50 burst task 0387" => r50::BURST_TASK_0387, r50::burst_task_0387;
     // round 50 (magic-r50): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;

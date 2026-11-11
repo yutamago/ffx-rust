@@ -228,8 +228,19 @@ fn laser_visit_0387() {
     let wm = |o: u32| img.word(fm + o);
     all_stubs(&mut t);
     copy_325(&mut t);
-    matrix_231(&mut t);
     draw_308(&mut t);
+    // slot 231 (the particles' matrices, into the frame): each matrix's
+    // words folded into a log
+    let mlog = SCRATCH + 0x3_d000;
+    rec(&mut t, 231, 3, move |m, a| {
+        for i in 0..16 {
+            let x = m.r32(mlog + 4 * i).rotate_left(5) ^ m.r32(a[2] + 4 * i);
+            m.w32(mlog + 4 * i, x);
+            let v = rf(m, a[1] + 4 * i) * 0.5 + rf(m, a[2] + 4 * i);
+            wf(m, a[0] + 4 * i, v);
+        }
+        0x231
+    });
     vec_slot(&mut t, 234, 4, -1.0, false);
     vec_slot(&mut t, 233, 4, 0.75, true);
     vec_slot(&mut t, 248, 4, 1.5, false);
@@ -257,15 +268,18 @@ fn laser_visit_0387() {
         SCRATCH + 0x300,
     );
     let class = SCRATCH + 0x700;
+    let mut draws = 0;
     // (O's mode, the window: length, start, window; c, j, G_F)
     for (k, (omode, len, start, window, c, j, gf)) in (0u32..).zip([
-        (3u8, 10u16, 2u16, 3u16, 5u8, 2i32, 0u32),
-        (7, 10, 2, 3, 5, 2, 0),
-        (3, 10, 4, 1, 4, 4, 0),
-        (3, 10, 1, 6, 0x30, 0, 1),
-        (3, 10, 8, 5, 6, -1, 0),
-        (3, 8, 0, 8, 9, 3, 0),
-        (3, 10, 3, 4, 3, 0, 0),
+        (7u8, 10u16, 2u16, 3u16, 5u8, 2i32, 0u32),
+        (3, 10, 2, 3, 5, 2, 0),
+        (7, 10, 4, 1, 4, 4, 0),
+        (7, 10, 1, 6, 0x30, 0, 1),
+        (7, 10, 8, 5, 6, -1, 0),
+        (7, 8, 0, 8, 9, 3, 0),
+        (7, 10, 4, 2, 1, 0, 0),
+        (7, 10, 3, 6, 2, 0, 0),
+        (7, 10, 3, 4, 3, 0, 0),
     ]) {
         for (n, op) in [(16, 0x3c), (16, 0x30), (16, 0x5e), (16, 0x59)] {
             floats(&mut t, wm(op), n, k + op);
@@ -292,7 +306,8 @@ fn laser_visit_0387() {
         }
         t.set_u32(o + 0x3dc, s);
         setf(&mut t, o + 0x3e4, 30.0);
-        t.write(o + 0x3e8, &[c]);
+        // the count's next byte junk (the count is a byte)
+        t.write(o + 0x3e8, &[c, 0x41]);
         t.set_u32(o + 0x3ec, q);
         t.set_u32(o + 0x3f0, 0x00c0_ffee ^ k);
         t.set_u32(o + 0x3f4, 0x1234_5678 + k);
@@ -322,12 +337,201 @@ fn laser_visit_0387() {
         t.set_u32(v, o);
         t.write(v + 5, &[3]);
         ownb::dirty_stack(&mut t, 0x37a0 + k, &[]);
-        if k == 6 {
+        if k == 8 {
             t.check_entry(t.at(0x46b0), Call::default(), &[v], Eax::Checked);
         } else {
             t.check(f, Call::this(v), &[], Eax::Checked, |g, img, fr| {
                 ffx_magic::r50::laser_visit_0387(g, img, fr)
             });
         }
+        // the mesh drew when the walk went on and the window holds 2
+        if omode != 3 && window >= 2 {
+            draws += 1;
+        }
+        assert_eq!(t.u32(DRAW_LOG), draws);
+    }
+}
+
+/// The slot whose trap stands for the source's visit method
+/// (`Ch_Allocate`, unused by the overlays).
+const VISIT_SLOT: u32 = 0;
+
+/// Where [`burst_task_0387`]'s stubs keep their counters and logs.
+const BURST_LOG: u32 = SCRATCH + 0x3_c000;
+
+/// `magic_0387` 0x10009c20 (`r50::burst_task_0387`, the burst set-up's
+/// task callback): the source's visit (a trap); states other, 0x1000
+/// with and without its bit (the nodes leaving, the task unlinked), 0
+/// (the first point), 1 with the count below 2 and from 2 on: no object
+/// (slots 776/777/907), objects found or not (slot 773 by a mask), slot
+/// 886 failing, the path's points close together (several segments per
+/// draw, the path's end) or far apart (16 draws), `d` reaching 0.
+#[test]
+fn burst_task_0387() {
+    let Some(mut t) = sa::twin(387) else { return };
+    let f = t.at(0x9c20);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    all_stubs(&mut t);
+    copy_325(&mut t);
+    vec_slot(&mut t, 234, 4, -1.0, false);
+    vec_slot(&mut t, 667, 4, 0.0625, true);
+    rec(&mut t, 230, 2, |m, a| {
+        for i in 0..16 {
+            let x = rf(m, a[1] + 4 * i) * 0.5;
+            wf(m, a[0] + 4 * i, x);
+        }
+        0x230
+    });
+    rec(&mut t, 235, 1, |m, a| {
+        for i in 0..16 {
+            m.w32(a[0] + 4 * i, if i % 5 == 0 { 0x3f80_0000 } else { 0 });
+        }
+        0x235
+    });
+    rec(&mut t, 706, 1, |_, _| 0x706);
+    t.stub_st0(706, |m, a| {
+        let v: Vec<f64> = (0..3).map(|i| f64::from(rf(m, a[0] + 4 * i))).collect();
+        (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt() * 0.75
+    });
+    // slot 771: a handle per call (eax the source word, edx a count)
+    let cnt = BURST_LOG;
+    rec(&mut t, 771, 1, |_, a| a[0] ^ 0x0771_0000);
+    t.stub_edx(771, move |m, _| {
+        let k = m.r32(cnt);
+        m.w32(cnt, k + 1);
+        0x0077_1000 + k
+    });
+    // slot 773: the object `OBJ` or 0 by the bits of the mask word
+    let (mask, k773, obj) = (BURST_LOG + 4, BURST_LOG + 8, SCRATCH + 0x3_c800);
+    rec(&mut t, 773, 2, move |m, _| {
+        let k = m.r32(k773);
+        m.w32(k773, k + 1);
+        if (m.r32(mask) >> (k % 32)) & 1 == 1 {
+            obj
+        } else {
+            0
+        }
+    });
+    let ok886 = BURST_LOG + 0xc;
+    rec(&mut t, 886, 4, move |m, _| m.r32(ok886));
+    // the draws: the request's words and its matrix folded into a log
+    let dlog = BURST_LOG + 0x100;
+    rec(&mut t, 908, 4, move |m, a| {
+        for i in 0..8 {
+            let x = m.r32(dlog + 4 * i).rotate_left(3) ^ m.r32(a[3] + 4 * i);
+            m.w32(dlog + 4 * i, x);
+        }
+        let mx = m.r32(a[3] + 0x10);
+        for i in 0..16 {
+            let x = m.r32(dlog + 0x20 + 4 * i).rotate_left(3) ^ m.r32(mx + 4 * i);
+            m.w32(dlog + 0x20 + 4 * i, x);
+        }
+        0x908
+    });
+    for (s, n) in [
+        (907u32, 5usize),
+        (909, 2),
+        (910, 4),
+        (775, 2),
+        (779, 2),
+        (776, 1),
+        (777, 1),
+    ] {
+        rec(&mut t, s, n, move |_, a| a[0] ^ (s << 16));
+    }
+    rec(&mut t, VISIT_SLOT, 1, |m, a| m.r32(a[0]) ^ 0x0e00_0000);
+    let (tk, hh, x, n, src, class, q, lock, par, e) = (
+        SCRATCH + 0x100,
+        SCRATCH + 0x180,
+        SCRATCH + 0x1c0,
+        SCRATCH + 0x4000,
+        SCRATCH + 0x600,
+        SCRATCH + 0x700,
+        SCRATCH + 0x800,
+        SCRATCH + 0x900,
+        SCRATCH + 0xa00,
+        SCRATCH + 0x3_c900,
+    );
+    let k_step = t.u32(w(0x57c));
+    // (state, count, flags byte, mask, 886's answer, point spacing, K's step)
+    for (k, (state, count, flags, m773, ok, gap, step)) in (0u32..).zip([
+        (2u32, 0i32, 0u8, 0u32, 1u32, 0.3f32, 0.0f32),
+        (0x1000, 0, 0, 0, 1, 0.3, 0.0),
+        (0x1000, 0, 4, 0, 1, 0.3, 0.0),
+        (0, 7, 0, 0, 1, 0.3, 0.0),
+        (1, 0, 0, 0, 1, 0.3, 0.0),
+        (1, 1, 0, 0x5555_5555, 1, 0.3, 0.0),
+        (1, 5, 0, 0xffff_ffff, 0, 0.3, 0.0),
+        (1, 6, 0, 0, 1, 0.3, 0.0),
+        (1, 7, 0, 0xffff_ffff, 1, 2.5, 0.0),
+        (1, 4, 0, 0xc7c6_3c3c, 1, 0.1, 0.0),
+        (1, 9, 0, 0xffff_fffe, 1, 2.5, 0.25),
+        (1, 2, 0, 0x0f0f_0f0f, 1, 0.45, 0.0),
+    ]) {
+        if step == 0.0 {
+            t.set_u32(w(0x57c), k_step);
+        } else {
+            setf(&mut t, w(0x57c), step);
+        }
+        t.write(w(0x1b), &[3]);
+        t.set_u32(w(0xd1), lock);
+        t.set_u32(lock, 0x1234_0000 + k);
+        t.set_u32(w(0x7b4), 0x0cd0_0000 + k);
+        floats(&mut t, w(0x26b), 16, k + 2);
+        floats(&mut t, w(0x762), 16, k + 4);
+        t.set_u32(mask, m773);
+        t.set_u32(k773, 0);
+        t.set_u32(ok886, ok);
+        junk(&mut t, obj, 0x100, k);
+        t.set_u32(obj + 0x94, e);
+        junk(&mut t, e, 0x10, k + 1);
+        // the task and its ring of two
+        t.set_u32(tk, hh);
+        t.set_u32(tk + 4, n);
+        for (a, b) in [(hh, x), (x, hh)] {
+            t.set_u32(a + 4, b);
+            t.set_u32(a + 8, b);
+        }
+        junk(&mut t, n, 0x340, k);
+        t.set_u32(n + 0x18, state);
+        t.set_u32(n + 0x20, count as u32);
+        t.set_u32(n + 0x24, q);
+        t.set_u32(n + 0x28, src);
+        for i in 0..4u32 {
+            let fi = i as f32;
+            let p = n + 0x2c + 16 * i;
+            setf(&mut t, p, fi * gap + 0.25);
+            setf(&mut t, p + 4, fi * gap * 0.5 - 1.0);
+            setf(&mut t, p + 8, fi * fi * gap * 0.25);
+            setf(&mut t, p + 0xc, 1.0 + fi);
+        }
+        t.write(n + 0x328, &[flags]);
+        // the nodes: two under `par`, two without a parent
+        for o in [0x6c, 0x98, 0xc4, 0xf0] {
+            t.set_u32(n + o + 0x14, 0);
+        }
+        let (n1, n2) = (n + 0x6c, n + 0xc4);
+        t.set_u32(n1 + 0x14, par);
+        t.set_u32(n2 + 0x14, par);
+        t.set_u32(n1 + 4, n2);
+        t.set_u32(n1 + 8, par);
+        t.set_u32(n2 + 4, par);
+        t.set_u32(n2 + 8, n1);
+        junk(&mut t, par, 0x20, k);
+        t.set_u32(par + 0xc, n1);
+        t.set_u32(par + 0x10, n2);
+        t.write(par + 0x18, &2u16.to_le_bytes());
+        // the source: its visit a trap, its position
+        junk(&mut t, src, 0x100, k + 2);
+        t.set_u32(src, class);
+        t.set_u32(class + 0x1c, magic::TRAPS + 16 * VISIT_SLOT);
+        floats(&mut t, src + 0xcc, 4, k + 3);
+        // Q and Z = Q + 0x20, Z's byte at Z + 0x10 + 4
+        junk(&mut t, q, 0x60, k);
+        t.write(q + 0x10, &0x20u16.to_le_bytes());
+        t.set_u32(q + 0x24, 0x10);
+        ownb::dirty_stack(&mut t, 0x9c20 + k, &[]);
+        t.check_entry(f, Call::default(), &[tk], Eax::Checked);
     }
 }
