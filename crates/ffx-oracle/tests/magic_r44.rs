@@ -1986,6 +1986,9 @@ fn node_sparks_0071() {
                 t.set_u16(r + 0x10, (i % 4) as u16);
                 t.set_u16(r + 0x12, 0x80);
             }
+            // the render state's word `*G_Z`
+            let at = w(&t, 0x2b8);
+            t.set_u32(at, 0x5a5a_0071 ^ case);
             t.set_u32(loaded, case % 2);
             t.set_u32(lock, 0x5a5a_0000 + case);
             t.set_u32(SPLOG, 0);
@@ -2092,6 +2095,11 @@ fn scene_0042() {
         t.set_u32(at, if second { other + 0x10 } else { r2 });
         let at = sw(&t, 0xb1);
         t.set_u16(at, 7 + k as u16);
+        // the words the time is copied into
+        for o in [0x6abu32, 0x6b5, 0x6bf] {
+            let at = w(&t, o);
+            t.set_u32(at, 0x5a5a_0000 ^ o ^ k);
+        }
         // the static link's last node
         t.write(link, &[0x77; 0x20]);
         let at = t.img.word(sl + 0x1);
