@@ -97,6 +97,7 @@ pub mod r43;
 pub mod r44;
 pub mod r45;
 pub mod r46;
+pub mod r47;
 pub mod r9_load;
 pub mod r9_misc;
 pub mod r9_summon;
@@ -3508,6 +3509,25 @@ ports! {
     "r45 actors sway 0397" => r45::ACTORS_SWAY_0397, r45::actors_sway_0397;
     "r45 actors settle 0397" => r45::ACTORS_SETTLE_0397, r45::actors_settle_0397;
     // round 45 (magic-r45): end
+    // round 47 (magic-r47)
+    "r47 load step 0417" => r47::LOAD_0417, r47::load_0417;
+    "r47 frame 0417" => r47::FRAME_0417, r47::frame_0417;
+    "r47 draw 0417" => r47::DRAW_0417, r47::draw_0417;
+    "r47 load step 0434" => r47::LOAD_0434, r47::load_0434;
+    "r47 load step 0251" => r47::LOAD_0251, r47::load_0251;
+    "r47 draw 0385" => r47::DRAW_0385, r47::draw_0385;
+    "r47 load step 0385" => r47::LOAD_0385, r47::load_0385;
+    "r47 shards start 0348" => r47::SHARDS_START_0348, r47::shards_start_0348;
+    "r47 visit thunk 0297" => r47::VISIT_THUNK_0297, r47::visit_thunk_0297;
+    "r47 image thunk 0297" => r47::IMAGE_THUNK_0297, r47::image_thunk_0297;
+    "r47 summon task 0297" => r47::SUMMON_TASK_0297, r47::summon_task_0297;
+    "r47 load step 0267" => r47::LOAD_0267, r47::load_0267;
+    "r47 spin 0267" => r47::SPIN_0267, r47::spin_0267;
+    "r47 spin thunk 0267" => r47::SPIN_THUNK_0267, r47::spin_thunk_0267;
+    "r47 shards step 0348" => r47::SHARDS_STEP_0348, r47::shards_step_0348;
+    "r47 summon draw 0434" => r47::SUMMON_DRAW_0434, r47::summon_draw_0434;
+    "r47 draw 0267" => r47::DRAW_0267, r47::draw_0267;
+    // round 47 (magic-r47): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
     // round 34 (magic-r34)
@@ -5494,6 +5514,21 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r45 weights task 0387", &r45::WEIGHTS_TASK_0387),
     ("r45 start-up 0396", &r45::START_UP_0396),
     // round 45 (magic-r45): end of INTERNAL
+    // round 47 (magic-r47)
+    ("r47 start-up 0417", &r47::START_UP_0417),
+    ("r47 flames 0417", &r47::FLAMES_0417),
+    ("r47 start-up 0434", &r47::START_UP_0434),
+    ("r47 start-up 0251", &r47::START_UP_0251),
+    ("r47 start-up 0385", &r47::START_UP_0385),
+    ("r47 shards 0348", &r47::SHARDS_0348),
+    ("r47 visit 0297", &r47::VISIT_0297),
+    ("r47 image visit 0297", &r47::IMAGE_VISIT_0297),
+    ("r47 start-up 0267", &r47::START_UP_0267),
+    ("r47 mesh register 0267", &r47::MESH_REGISTER_0267),
+    ("r47 shards draw 0348", &r47::SHARDS_DRAW_0348),
+    ("r47 mesh 0434", &r47::MESH_0434),
+    ("r47 mesh 0267", &r47::MESH_0267),
+    // round 47 (magic-r47): end of INTERNAL
 ];
 
 /// What covers the function at `addr`: a port's name (an entry
