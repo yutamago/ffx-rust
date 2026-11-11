@@ -1101,12 +1101,17 @@ fn main_task_0071() {
         (0x1000, 0, true, 0, true),
     ];
     cases.push((0xc, 0, true, 0, true));
+    // (bit 3: 0x32 waits after 0xb; bit 4: 0xa's bound met exactly)
+    cases.push((0xb, 0, true, 8, true));
+    cases.push((0, 2, true, 0, true));
+    cases.push((0xa, 1, false, 0x10, true));
     for (k, (state, step, go, bits, empty)) in (0u32..).zip(cases) {
+        let bits_flag = bits & 7;
         junk(&mut t, r, 0x60, k);
         t.set_u32(r + 0x18, state);
         t.set_u32(r + 0x38, step);
         set_f(&mut t, r + 0x2c, 0.5 + k as f32 / 8.0);
-        set_f(&mut t, r + 0x28, 1.0);
+        set_f(&mut t, r + 0x28, if bits & 0x10 != 0 { 0.0 } else { 1.0 });
         t.set_u32(a, SCRATCH + 0x3600);
         t.set_u32(a + 4, r);
         let (node, n0, n1) = (SCRATCH + 0x3600, SCRATCH + 0x3680, SCRATCH + 0x36c0);
@@ -1128,16 +1133,26 @@ fn main_task_0071() {
         }
         // the light's flag (bit 0)
         let fl = w(&t, 0x58d);
-        t.set_u8(fl, bits | 0xa0);
+        t.set_u8(fl, bits_flag | 0xa0);
         // the bounds: 0xb's `K >= G`, 0x32's `G >= K`, 0xa's `G - t >= s K`
         let kb = f32::from_bits(t.u32(w(&t, 0x29)));
         let gb = w(&t, 0x43);
         set_f(&mut t, gb, if go { kb - 1.0 } else { kb + 1.0 });
         let k32 = f32::from_bits(t.u32(w(&t, 0xba)));
         let g32 = w(&t, 0xb3);
-        set_f(&mut t, g32, if go { k32 + 1.0 } else { k32 - 1.0 });
+        let go32 = go && bits & 8 == 0;
+        set_f(&mut t, g32, if go32 { k32 + 1.0 } else { k32 - 1.0 });
         let gt = w(&t, 0xae0);
-        set_f(&mut t, gt, if go { 1000.0 } else { -1000.0 });
+        let exact = 0.5 + k as f32 / 8.0;
+        let kx = f32::from_bits(t.u32(w(&t, 0xaf0)));
+        let gval = if bits & 0x10 != 0 {
+            exact * kx
+        } else if go {
+            1000.0
+        } else {
+            -1000.0
+        };
+        set_f(&mut t, gt, gval);
         // the eight parts: every other one with a parent, its flag bit 2
         // by the case
         let p0 = w(&t, 0x3cf);
@@ -1157,7 +1172,7 @@ fn main_task_0071() {
                 t.set_u32(n + 0x14, 0);
             }
             t.set_u32(part + 0x4c, 0x4c00 + i + (k << 8));
-            t.set_u8(part + 0xe4, if i % 3 == 0 { bits } else { 0 });
+            t.set_u8(part + 0xe4, if i % 3 == 0 { bits_flag } else { 0 });
         }
         let env = SCRATCH + 0x7a80;
         for op in [0x3e1u32, 0x449] {
