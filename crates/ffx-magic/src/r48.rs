@@ -243,7 +243,7 @@ pub const MATRIX_MOVE_0387: Sig = Sig {
 /// The visit thunk over an internal visit with the visitor in `ecx`
 /// (`push ebp; mov ebp, esp; mov ecx, [ebp + 8]; pop ebp; jmp target`):
 /// the target runs on the thunk's own stack.
-fn thunk_to<G: Game>(
+pub(crate) fn thunk_to<G: Game>(
     g: &mut G,
     img: &Image,
     fr: &Frame,
@@ -1218,7 +1218,7 @@ fn child_append<G: Game>(g: &mut G, n: u32, parent: u32, class: u32) {
 
 /// `T[0]` unlinked from its ring (made its own): the overlays' task end.
 /// Returns the `eax` the original leaves (`T[0]`'s `+4` as read last).
-fn unlink_task<G: Game>(g: &mut G, tk: u32) -> u32 {
+pub(crate) fn unlink_task<G: Game>(g: &mut G, tk: u32) -> u32 {
     let d = g.read::<u32>(tk);
     let (next, prev) = (g.read::<u32>(d + 4), g.read::<u32>(d + 8));
     g.write::<u32>(next + 8, prev);

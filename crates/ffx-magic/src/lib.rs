@@ -100,6 +100,7 @@ pub mod r46;
 pub mod r47;
 pub mod r48;
 pub mod r49;
+pub mod r50;
 pub mod r9_load;
 pub mod r9_misc;
 pub mod r9_summon;
@@ -3554,6 +3555,10 @@ ports! {
     "r48 orbs task 0431" => r48::ORBS_TASK_0431, r48::orbs_task_0431;
     "r48 pulse step 0387" => r48::PULSE_STEP_0387, r48::pulse_step_0387;
     // round 48 (magic-r48): end
+    // round 50 (magic-r50)
+    "r50 laser visit thunk 0387" => r50::JMP_LASER_VISIT_0387, r50::jmp_laser_visit_0387;
+    "r50 burst task 0387" => r50::BURST_TASK_0387, r50::burst_task_0387;
+    // round 50 (magic-r50): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
     // round 34 (magic-r34)
@@ -5575,6 +5580,10 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r48 triangle pick 0431", &r48::TRI_PICK_0431),
     ("r48 orbs aim 0431", &r48::ORBS_AIM_0431),
     // round 48 (magic-r48): end of INTERNAL
+    // round 50 (magic-r50)
+    ("r50 strip mesh 0387", &r50::STRIP_MESH_0387),
+    ("r50 laser visit 0387", &r50::LASER_VISIT_0387),
+    // round 50 (magic-r50): end of INTERNAL
 ];
 
 /// What covers the function at `addr`: a port's name (an entry
