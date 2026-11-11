@@ -2496,6 +2496,23 @@ records).
   (with `--gfx`) arms the hook's capture before the device exists, so it
   holds the frames from the first `Present` on; a script waits for it with
   `gfxcapture result`.
+- **Scene-gate captures** (2026-11-12, wp4-audio). `gfxcapture <dir>
+  [hash] [frames N] [now] [async]` and `gfxcapture result`, as the hook's
+  (docs/drawdiff.md, "Scene gates"), when `ffx-rust.exe` runs with
+  `FFX_HOST_GFX_CAPTURE=1` (`tools/scene-gate-capture.sh <replay> <run>
+  rust` sets it; `crates/ffx-host/src/gfx/gate.rs`). The layer then keeps
+  the views', shaders', layouts' and states' messages and every 2D
+  texture's uploaded contents (no frames). Armed at boundary `f`, the
+  capture takes the presents that show updates `f + 1` .. `f + N` and
+  writes `capture.ffxgfx` with the objects those frames use declared as
+  the hook's hash mode declares them (texture content hashes, static
+  buffers' hashes, index buffers' bytes, the dynamic buffers' bytes at the
+  window's start), the `World` message (the last `.ebp` opened, the
+  camera) and the frames, plus `frames.txt`. No `hashes.txt` (target
+  contents need GPU read-backs): `tools/scene-gate.sh` runs drawdiff alone
+  for such a run. The present of the update the capture waits for is not
+  held in lockstep: its frame is taken inside that present, and the
+  script's `gfxcapture result` waits at that update's boundary.
 - **How far it gets (2026-10-29, host-pc2).** The 64-bit build
   (x86_64, which `tools/run-game.sh --rust` installs) plays field-walk on PC2 with the same trace
   events as PC2's original recordings and screenshots within the limits

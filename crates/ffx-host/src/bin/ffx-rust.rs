@@ -101,6 +101,9 @@ fn main() -> ExitCode {
         && std::env::var("FFX_HOST_GFX_RECORD")
             .ok()
             .is_none_or(|v| v != "1");
+    // what the harness's scene-gate captures need (`gfxcapture ... hash
+    // frames N now`; crate::gfx::gate)
+    opts.gfx.gate = std::env::var("FFX_HOST_GFX_CAPTURE").is_ok_and(|v| v == "1");
     // the harness's sandbox (FFX_HARNESS_HOME) unless --documents says
     if opts.documents.is_none() {
         opts.documents = ffx_host::harness::home();

@@ -41,6 +41,7 @@
 #               "Two processes"). Only with --background.
 #               (the 64-bit build, x86_64-pc-windows-msvc, the only one);
 #               FFX_HOST_GFX_RECORD=1 keeps the draw recording (gfxcapture),
+#               FFX_HOST_GFX_CAPTURE=1 the scene-gate captures (gfxcapture ... now),
 #               FFX_HOST_NOTES=1, FFX_HOST_TRACE=n, FFX_HOST_WATCH, FFX_HOST_DISABLE, FFX_HOST_ONLY and FFX_HOST_IGGY_OUT reach it (docs/host.md)
 # FFX_HOST_PROFILE=1|FILE in the environment (with --rust): ffx-rust.exe
 #               --profile: every function that ran in Unicorn (FFX.exe by
@@ -84,7 +85,7 @@ while [[ $# -gt 0 ]]; do
         --rust-map=build) export FFX_RUST_MAP=build FFX_GFX="${FFX_GFX:-1}"; export WSLENV="${WSLENV:+$WSLENV:}FFX_RUST_MAP:FFX_GFX:FFX_GFX_REDIRECT" ;;
         --seed) export FFX_HARNESS_SEED="$2"; export WSLENV="${WSLENV:+$WSLENV:}FFX_HARNESS_SEED"; shift ;;
         --hook-disable) export FFX_HOOK_DISABLE="$2"; export WSLENV="${WSLENV:+$WSLENV:}FFX_HOOK_DISABLE"; shift ;;
-        --rust) rust=1; export WSLENV="${WSLENV:+$WSLENV:}FFX_HOST_GFX_RECORD:FFX_HOST_NOTES:FFX_HOST_TRACE:FFX_HOST_WATCH:FFX_HOST_DISABLE:FFX_HOST_ONLY:FFX_HOST_IGGY_OUT/p" ;;
+        --rust) rust=1; export WSLENV="${WSLENV:+$WSLENV:}FFX_HOST_GFX_RECORD:FFX_HOST_GFX_CAPTURE:FFX_HOST_NOTES:FFX_HOST_TRACE:FFX_HOST_WATCH:FFX_HOST_DISABLE:FFX_HOST_ONLY:FFX_HOST_IGGY_OUT/p" ;;
         *) echo "unknown option $1" >&2; exit 2 ;;
     esac
     shift

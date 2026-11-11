@@ -8,14 +8,15 @@
 # - drawdiff: the scene streams (order, states, decoded constants, ring
 #   bytes, texture and buffer keys);
 # - tools/compare-captures.py: the hashes.txt records (target and back
-#   buffer contents, held scene inputs), with the allow file's noise.
+#   buffer contents, held scene inputs), with the allow file's noise; left
+#   out (and said so) when a run has none (ffx-rust.exe's captures).
 # Scenes: bsil0000, bsil0300 (replay besaid), kami0100 (replay kami),
 # menu (replay deck), battle (replay battle), draw-field (fw-101, fw-459, besaid-101; as
 # ~/ffx-work/m4/draw-field-gate.sh). Exit 0 when both pass, 3 when two
 # battle runs loaded in other update counts (rerun).
 set -u
 repo="$(cd "$(dirname "$0")/.." && pwd)"
-[ $# -ge 3 ] || { sed -n '2,15p' "$0"; exit 2; }
+[ $# -ge 3 ] || { sed -n '2,16p' "$0"; exit 2; }
 scene="$1"; a="$2"; b="$3"
 case "$scene" in
     draw-field) caps=(fw-101 fw-459 besaid-101) ;;
@@ -47,7 +48,17 @@ for cap in "${caps[@]}"; do
     "$DRAWDIFF" "$c/$a/$cap" "$c/$b/$cap" --allow "$allow" --limit "${LIMIT:-2}" > "$out/$cap.txt" 2>&1 || bad=1
     grep -E "^frame|^  (missing|extra|changed|moved) |^    |^result|^error" "$out/$cap.txt" | head -"${LINES_MAX:-30}"
 done
-python3 -I "$repo/tools/compare-captures.py" "$c/$a" "$c/$b" --allow "$allow" "${caps[@]}" || bad=1
+# ffx-rust's captures (scene-gate-capture.sh ... rust) carry no hashes.txt
+# (target contents need GPU read-backs): drawdiff alone then
+hashes=1
+for cap in "${caps[@]}"; do
+    [ -f "$c/$a/$cap/hashes.txt" ] && [ -f "$c/$b/$cap/hashes.txt" ] || hashes=""
+done
+if [ -n "$hashes" ]; then
+    python3 -I "$repo/tools/compare-captures.py" "$c/$a" "$c/$b" --allow "$allow" "${caps[@]}" || bad=1
+else
+    echo "=== no hashes.txt in both runs (an ffx-rust capture): target and back buffer hashes not compared"
+fi
 rm -rf "$out"
 echo "gate $scene $a $b: $([ $bad = 0 ] && echo PASS || echo FAIL)"
 exit $bad
