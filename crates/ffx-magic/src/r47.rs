@@ -3177,3 +3177,191 @@ pub const SUMMON_TASK_0297: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `magic_0267`'s start-up (0x10002500, 1021 bytes; internal, no
+/// arguments, run by its load step; an `ebp` frame, the place `P` at
+/// `ebp - 0x14..`):
+/// - four words; the actors looked up
+///   ([`lookup_actors`](crate::sb_misc::lookup_actors)); `*G_C` = slot
+///   719 `(D, 8, 0)`; the part set-up ([`part_init`](crate::l5_objhost::part_init));
+/// - object 0 ([`start_object_anim`](crate::s4_misc::start_object_anim)
+///   `(0, 0)`) at the summon's place (slot 262 of `*G_A`, `w` 1) with
+///   the yaw `K - ` slot 333 `(*G_A)` wrapped once; `y` plus `K'` the
+///   place `P`;
+/// - object 1 `(1, 0xf0)` with its own place and yaw the same way, `P`
+///   its place;
+/// - the summon's part shown ([`part_toggle`](crate::s4_misc::part_toggle));
+///   a light at the summon (slot 262, `y` the first yaw); blocks of
+///   globals; a static node ([`static_node`](crate::o4_fam3::static_node));
+///   slot 312 `(CB, 0, 0, 0)` into a global; the actor block
+///   ([`me_block`](crate::sa_misc::me_block) `(D2)`);
+/// - two pool nodes ([`take`](crate::sa_pool::take): marked 1 and 2) at
+///   the task list's end.
+///
+/// Returns 0.
+#[allow(clippy::too_many_lines)] // the original's steps, in order
+pub fn start_up_0267<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let gw = |g: &G, o: u32| g.read::<u32>(w(o));
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let call = |o: u32| img.rel32_target(f + o);
+    let ebp = fr.esp.wrapping_sub(4);
+    let lf = |o: u32| ebp.wrapping_sub(o);
+    g.write::<u32>(w(0x8), w(0xc));
+    g.write::<u32>(w(0x12), w(0x16));
+    g.write::<u32>(w(0x1c), 0x14);
+    g.write::<u32>(w(0x26), 0);
+    crate::sb_misc::lookup_actors(g, img, call(0x2f));
+    // call width: 3
+    let c = g.call(t(g, 0x34, 719), 0, &[w(0x43), 8, 0]).eax;
+    g.write::<u32>(w(0x4d), c);
+    crate::l5_objhost::part_init(g, img, call(0x52));
+    let scale = k(g, 0x5a);
+    crate::s4_misc::start_object_anim(g, img, call(0x68), w(0x63), scale, 0, 0);
+    let a = gw(g, 0x88);
+    // call width: 4
+    g.call(t(g, 0x6d, 262), 0, &[a, w(0x82), w(0x7d), w(0x72)]);
+    let a = gw(g, 0x95);
+    g.write::<u32>(w(0x9b), ONE);
+    // call width: 1
+    let r = st0_f32(g.call(t(g, 0x8f, 333), 0, &[a]).st0);
+    g.write::<f32>(lf(4), r);
+    let yaw = wrap_once(g, img, f, sub(k(g, 0xb2), r), [0xc9, 0xbf, 0xd9, 0xbf]);
+    g.write::<f32>(w(0xf2), yaw);
+    let scale = k(g, 0xea);
+    let y = add(g.read::<f32>(w(0xfa)), k(g, 0x102));
+    g.write::<f32>(lf(0xc), y);
+    g.write::<f32>(w(0x11e), y);
+    for (o, from) in [(8u32, 0x126u32), (0x10, 0x133), (0x14, 0x140)] {
+        let x = gw(g, from);
+        g.write::<u32>(lf(o), x);
+    }
+    crate::s4_misc::start_object_anim(g, img, call(0x14a), w(0x10a), scale, 1, 0xf0);
+    let a = gw(g, 0x16a);
+    // call width: 4
+    g.call(t(g, 0x14f, 262), 0, &[a, w(0x164), w(0x15f), w(0x154)]);
+    let a = gw(g, 0x177);
+    g.write::<u32>(w(0x17d), ONE);
+    // call width: 1
+    let r = st0_f32(g.call(t(g, 0x171, 333), 0, &[a]).st0);
+    g.write::<f32>(lf(4), r);
+    let yaw2 = sub(k(g, 0x194), r);
+    let yaw2 = if yaw2 > k(g, 0x1a3) {
+        sub(yaw2, k(g, 0x1ad))
+    } else if k(g, 0x1b7) > yaw2 {
+        add(yaw2, k(g, 0x1c4))
+    } else {
+        yaw2
+    };
+    g.write::<f32>(w(0x1cc), yaw2);
+    for (o, from) in [(0x1d9u32, 8u32), (0x1e6, 0xc), (0x1f3, 0x10), (0x207, 0x14)] {
+        let x = g.read::<u32>(lf(from));
+        g.write::<u32>(w(o), x);
+    }
+    // push esi; push edi: the call's return address at ebp - 0x20
+    let pt = Frame {
+        at: call(0x20c),
+        esp: lf(0x20),
+        edx: w(0x1ff),
+        ..*fr
+    };
+    crate::s4_misc::part_toggle(g, img, &pt);
+    let y = gw(g, 0x214);
+    let a = gw(g, 0x22e);
+    g.write::<u32>(w(0x234), 0);
+    g.write::<u32>(w(0x240), y);
+    g.write::<u32>(w(0x246), 0);
+    g.write::<u32>(w(0x250), 0);
+    // call width: 4
+    g.call(t(g, 0x219, 262), 0, &[a, w(0x228), w(0x223), w(0x21e)]);
+    for (o, x) in [
+        (0x262u32, ONE),
+        (0x26c, 0),
+        (0x276, ONE),
+        (0x280, 0xbc36_0b61),
+        (0x28a, 0x70),
+        (0x294, 0x0080_ffff),
+    ] {
+        g.write::<u32>(w(o), x);
+    }
+    g.write::<u8>(w(0x29e), 0xff);
+    g.write::<u16>(w(0x2a6), 0);
+    g.write::<u8>(w(0x2ae), 0);
+    g.write::<u32>(w(0x2b5), 0xf0);
+    g.write::<u16>(w(0x2c0), 0x48);
+    let sn = Frame {
+        at: call(0x2c7),
+        esp: lf(0x30),
+        ..*fr
+    };
+    crate::o4_fam3::static_node(g, img, &sn);
+    g.write::<u32>(w(0x2d6), 0);
+    g.write::<u32>(w(0x2e0), 0);
+    g.write::<u32>(w(0x2f7), 0x3dae_147b);
+    g.write::<u32>(w(0x301), 0);
+    // call width: 4
+    let h = g.call(t(g, 0x2cc, 312), 0, &[w(0x2f1), 0, 0, 0]).eax;
+    g.write::<u32>(w(0x30c), h);
+    for (o, x) in [
+        (0x319u32, 0u32),
+        (0x323, 0),
+        (0x32d, 0),
+        (0x337, 0),
+        (0x341, w(0x345)),
+        (0x34b, w(0x34f)),
+        (0x355, 0),
+        (0x35f, 0),
+    ] {
+        g.write::<u32>(w(o), x);
+    }
+    g.write::<u16>(w(0x369), 0);
+    crate::sa_misc::me_block(g, img, call(0x36e), w(0x313));
+    // the two pool nodes at the task list's end
+    let n1 = crate::sa_pool::take(g, img, call(0x37b), w(0x376));
+    let first = gw(g, 0x381);
+    g.write::<u8>(n1 + 0x18, 1);
+    let last = gw(g, 0x398);
+    task_append(g, img, f, n1, first, last, 0x3ad);
+    let first = if first == 0 { n1 } else { first };
+    let n2 = crate::sa_pool::take(g, img, call(0x3ba), w(0x3b2));
+    g.write::<u8>(n2 + 0x18, 2);
+    task_append(g, img, f, n2, first, n1, 0x3ea);
+    g.write::<u32>(w(0x3d7), n2);
+    Ret::eax(0)
+}
+
+/// [`start_up_0267`] (the `rel32`s: its callees).
+pub const START_UP_0267: Sig = Sig {
+    len: 1021,
+    hash: 0x2712_b947_8b0b_d148,
+    calls: &[
+        (0x2f, Callee::Sig(&crate::sb_misc::LOOKUP_ACTORS)),
+        (0x52, Callee::Sig(&crate::l5_objhost::PART_INIT)),
+        (0x68, Callee::Sig(&crate::s4_misc::START_OBJECT_ANIM)),
+        (0x14a, Callee::Sig(&crate::s4_misc::START_OBJECT_ANIM)),
+        (0x20c, Callee::Sig(&crate::s4_misc::PART_TOGGLE)),
+        (0x2c7, Callee::Sig(&crate::o4_fam3::STATIC_NODE_0267_37F0)),
+        (0x36e, Callee::Sig(&crate::sa_misc::ME_BLOCK)),
+        (0x37b, Callee::Sig(&crate::sa_pool::TAKE)),
+        (0x3ba, Callee::Sig(&crate::sa_pool::TAKE)),
+    ],
+    imports: &[],
+};
+
+/// `magic_0267`'s load step (0x10001210, 118 bytes; a table entry): the
+/// object hosts' load step ([`load_step`](crate::r9_load::load_step))
+/// running [`start_up_0267`].
+pub fn load_0267<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    crate::r9_load::load_step(g, img, fr, crate::r9_load::Shape::Zero, start_up_0267)
+}
+
+/// [`load_0267`] (the 118-byte load step's `Sig`, the `rel32` the
+/// start-up).
+pub const LOAD_0267: Sig = Sig {
+    len: 118,
+    hash: 0xf93b_1968_cd8e_f184,
+    calls: &[(0x5b, Callee::Sig(&START_UP_0267))],
+    imports: &[],
+};

@@ -1553,6 +1553,20 @@ fn image_visit_0297() {
     }
 }
 
+/// The globals `r47::summon_task_0297` stores (their operands).
+const STORES_7520: &[u32] = &[
+    0xe5, 0xef, 0x129, 0x145, 0x15d, 0x165, 0x16f, 0x179, 0x183, 0x18c, 0x199, 0x1b8, 0x1c2, 0x1cc,
+    0x1d6, 0x1e0, 0x1ea, 0x1f4, 0x1fb, 0x205, 0x210, 0x218, 0x222, 0x22c, 0x236, 0x23f, 0x24c,
+    0x26b, 0x27e, 0x288, 0x292, 0x29c, 0x2a6, 0x2b0, 0x2ba, 0x338, 0x340, 0x348, 0x356, 0x376,
+    0x37f, 0x38a, 0x394, 0x39a, 0x3a8, 0x3b3, 0x3bb, 0x3c5, 0x3cf, 0x3d9, 0x3e2, 0x3ef, 0x40e,
+    0x418, 0x422, 0x42c, 0x436, 0x440, 0x44b, 0x453, 0x45d, 0x467, 0x471, 0x47a, 0x487, 0x4a7,
+    0x4b1, 0x4bb, 0x4c5, 0x4cf, 0x4d9, 0x4e3, 0x4eb, 0x4f3, 0x4fd, 0x507, 0x511, 0x51b, 0x52d,
+    0x539, 0x545, 0x552, 0x56a, 0x570, 0x57a, 0x584, 0x58e, 0x594, 0x59e, 0x5a8, 0x5fd, 0x607,
+    0x611, 0x61b, 0x625, 0x62f, 0x639, 0x643, 0x660, 0x667, 0x671, 0x67b, 0x705, 0x70f, 0x719,
+    0x723, 0x73a, 0x744, 0x74e, 0x758, 0x7a0, 0x7a7, 0x7b1, 0x7bb, 0x7c5, 0x853, 0x85d, 0x867,
+    0x871, 0x898, 0x8a4, 0x8ae, 0x8b4,
+];
+
 /// `magic_0297` 0x10007520 (`r47::summon_task_0297`, a task step): every
 /// state (0 running into 10, 11 with either flag and slot 20/411 at 0 or
 /// not, 20, 21 and 23 before and after their counts, 22 with the model id
@@ -1601,6 +1615,7 @@ fn summon_task_0297() {
     // (state, counter, flag byte, slot 20/411's answer)
     for (k, (state, count, flag, answer)) in (0u32..).zip([
         (0u32, 0u32, 1u8, 1u32),
+        (0, 0, 0, 1),
         (0xa, 3, 0, 1),
         (0xb, 3, 1, 0),
         (0xb, 3, 1, 1),
@@ -1632,6 +1647,7 @@ fn summon_task_0297() {
         let at = w(&t, 0x4d);
         t.set_u32(at, u32::from(flag) | 0x5a00);
         t.set_u32(SCRATCH + 0x7f50, answer);
+        junk_ops(&mut t, f, STORES_7520, k);
         // the scene's two list heads, empty (one with a child for odd k)
         for o in [0x116u32, 0x230] {
             let head = w(&t, o);
@@ -1649,5 +1665,95 @@ fn summon_task_0297() {
         }
         magic_h6::scrub(&mut t);
         t.check_entry(f, Call::default(), &[task], Eax::Checked);
+    }
+}
+
+/// `magic_0267` 0x10002500 (`r47::start_up_0267`, internal) and its load
+/// step 0x10001210 (`r47::load_0267`): the two yaws wrapped both ways and
+/// not, the task list empty and not; the load step's waits.
+#[test]
+fn start_up_0267() {
+    let Some(mut t) = twin(267) else { return };
+    all_stubs(&mut t);
+    let f = t.at(0x2500);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let setup = |t: &mut Twin, k: u32, listed: bool| {
+        junk_ops(
+            t,
+            f,
+            &[
+                0x8, 0x12, 0x1c, 0x26, 0x4d, 0x9b, 0xf2, 0x11e, 0x17d, 0x1cc, 0x1d9, 0x1e6, 0x1f3,
+                0x207, 0x234, 0x240, 0x246, 0x250, 0x262, 0x26c, 0x276, 0x280, 0x28a, 0x2a6, 0x2b5,
+                0x2c0, 0x2d6, 0x2e0, 0x2f7, 0x301, 0x30c, 0x319, 0x323, 0x32d, 0x337, 0x341, 0x34b,
+                0x355, 0x35f, 0x369,
+            ],
+            k,
+        );
+        // the unaligned word and its bytes
+        let at = w(t, 0x29e);
+        t.write(at, &[0x5b; 8]);
+        magic_r11::pools(t, f, 1021);
+        magic_r11::object_slots(t);
+        rec(t, 262, 4, move |m, a| {
+            for i in 0..3u32 {
+                let v = (a[0] & 0xff) as f32 * 0.5 + i as f32 * 1.25 - 2.0 - k as f32;
+                m.w32(a[1 + i as usize], v.to_bits());
+            }
+            0x262
+        });
+        t.set_u32(SCRATCH + 0x7e70, k);
+        rec(t, 333, 1, |m, a| {
+            let c = m.r32(SCRATCH + 0x7e70) + 1;
+            m.w32(SCRATCH + 0x7e70, c);
+            (333 << 16) ^ a[0]
+        });
+        t.stub_st0(333, |m, a| {
+            let c = m.r32(SCRATCH + 0x7e70);
+            [-9.0, 0.5, 9.0][(c % 3) as usize] + f64::from(a[0] & 0xf) * 0.125
+        });
+        for s in [215u32, 413, 312] {
+            rec(t, s, 1, move |_, a| (s << 16) ^ a[0]);
+        }
+        for call in [0x68u32, 0x14a] {
+            let start = t.img.rel32_target(f + call);
+            magic_r11::object_start_auto(t, start);
+        }
+        for o in [0x88u32, 0x95, 0x16a, 0x177, 0x22e] {
+            let at = w(t, o);
+            t.set_u32(at, 0x00a0_0000 + k);
+        }
+        // the task list
+        t.write(SCRATCH + 0x600, &[0x44; 0x10]);
+        let at = w(t, 0x381);
+        t.set_u32(at, if listed { SCRATCH + 0x600 } else { 0 });
+        let at = w(t, 0x398);
+        t.set_u32(at, SCRATCH + 0x600);
+    };
+    for (k, listed) in (0u32..).zip([false, true, false, true]) {
+        setup(&mut t, k, listed);
+        magic_h6::scrub(&mut t);
+        t.check(f, Call::default(), &[], Eax::Checked, |g, img, fr| {
+            ffx_magic::r47::start_up_0267(g, img, fr)
+        });
+    }
+    let load = t.at(0x1210);
+    for (busy, asked, ready) in [(1u32, 0u32, 1u32), (0, 0, 0), (0, 1, 1), (0, 0, 2)] {
+        setup(&mut t, 1, true);
+        rec(&mut t, 225, 1, move |_, _| busy);
+        rec(&mut t, 226, 2, |_, a| 0x0226_0000 ^ a[0]);
+        rec(&mut t, 227, 1, move |_, _| ready);
+        let op = |t: &Twin, o: u32| t.img.word(load + o);
+        let at = op(&t, 0x18);
+        t.set_u32(at, asked);
+        for o in [0x26u32, 0x46] {
+            let at = op(&t, o);
+            t.set_u32(at, 0x0b0b_0000 + o);
+        }
+        for o in [0x61u32, 0x6b] {
+            let at = op(&t, o);
+            t.set_u32(at, 0x5a5a_0000 ^ o);
+        }
+        magic_h6::scrub(&mut t);
+        t.check_entry(load, Call::default(), &[], Eax::Checked);
     }
 }
