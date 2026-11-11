@@ -5930,3 +5930,64 @@ pub const GLOW_DRAW_0431: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `magic_0387`'s bone place (0x10004800, 174 bytes; internal, `ecx` =
+/// a pair `(B, T)`; a /GS frame: the matrix `M` at `ebp - 0x54`, the
+/// point `Q` at `ebp - 0x24`, the offset `V` = `(5, 10, 0, 1)` at `ebp -
+/// 0x14`): `M` = the rotation of `B + 0x4c` through the DLL's function
+/// pointer `*G_R` (`call [G_R]`, cdecl `(M, B + 0x4c)`; its start value
+/// the thunk over [`rotation_19d0`](crate::sb_matrix::rotation_19d0),
+/// run here, anything else called), `Q` = slot 325
+/// `(Q, B + 0x2c)`, `M` = slot 231 `(M, B[0x6c] + 0x9c, M)`, `T` = `M V`
+/// (slot 229) and `T + 4` = `K`. Each call passes the words the original
+/// leaves on the stack. Returns `T`.
+pub fn bone_place_0387<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let ebp = fr.esp.wrapping_sub(4);
+    let (m, q, v) = (
+        ebp.wrapping_sub(0x54),
+        ebp.wrapping_sub(0x24),
+        ebp.wrapping_sub(0x14),
+    );
+    let pair = fr.ecx;
+    for (d, x) in [
+        (4u32, 0x4120_0000u32),
+        (0, 0x40a0_0000),
+        (8, 0),
+        (0xc, 0x3f80_0000),
+    ] {
+        g.write::<u32>(v + d, x);
+    }
+    let b = g.read::<u32>(pair);
+    let mut st = Pushes::default();
+    st.push_all(&[b + 0x4c, m]);
+    // the pointer's start value: the two-register thunk over the rotation
+    let rot = g.read::<u32>(w(0x3c));
+    if img.matches(rot, &crate::s3_wrap::JMP_ROTATION_19D0) {
+        crate::sb_matrix::rotation_19d0(g, img, img.rel32_target(rot + 11), m, b + 0x4c);
+    } else {
+        st.call(g, rot, 0);
+    }
+    st.push_all(&[b + 0x2c, q]);
+    st.call(g, t(g, 0x49, 325), 0);
+    let p = g.read::<u32>(b + 0x6c).wrapping_add(0x9c);
+    st.push_all(&[m, p, m]);
+    st.call(g, t(g, 0x67, 231), 0);
+    let to = g.read::<u32>(pair + 4);
+    st.push_all(&[v, m, to]);
+    st.call(g, t(g, 0x7c, 229), 0);
+    let to = g.read::<u32>(pair + 4);
+    let k = g.read::<u32>(w(0x95));
+    g.write::<u32>(to.wrapping_add(4), k);
+    Ret::eax(to)
+}
+
+/// [`bone_place_0387`] (the `rel32`: the cookie check).
+pub const BONE_PLACE_0387: Sig = Sig {
+    len: 174,
+    hash: 0xeec4_b38d_d168_8654,
+    calls: &[(0xa6, Callee::Any)],
+    imports: &[],
+};

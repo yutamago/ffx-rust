@@ -3616,3 +3616,61 @@ fn glow_draw_0431() {
         });
     }
 }
+
+/// `magic_0387` 0x10004800 (`r45::bone_place_0387`, internal): the
+/// rotation through the DLL's function pointer (the original's code on
+/// both sides), the bone slots stubbed.
+#[test]
+fn bone_place_0387() {
+    let Some(mut t) = sa::twin(387) else { return };
+    let f = t.at(0x4800);
+    all_stubs(&mut t);
+    rec(&mut t, 325, 2, |m, a| {
+        for i in 0..4 {
+            let x = rf(m, a[1] + 4 * i) * 2.0 - 1.0;
+            wf(m, a[0] + 4 * i, x);
+        }
+        0x325
+    });
+    rec(&mut t, 231, 3, |m, a| {
+        for i in 0..16 {
+            let v = rf(m, a[1] + 4 * i) * 0.5 + rf(m, a[2] + 4 * i);
+            wf(m, a[0] + 4 * i, v);
+        }
+        0x231
+    });
+    rec(&mut t, 229, 3, |m, a| {
+        for i in 0..4 {
+            let mut v = 0.0f32;
+            for j in 0..4 {
+                v += rf(m, a[1] + 16 * i + 4 * j) * rf(m, a[2] + 4 * j);
+            }
+            wf(m, a[0] + 4 * i, v);
+        }
+        0x229
+    });
+    let (pair, b, to, p) = (
+        SCRATCH + 0x100,
+        SCRATCH + 0x200,
+        SCRATCH + 0x300,
+        SCRATCH + 0x400,
+    );
+    for k in 0..3u32 {
+        junk(&mut t, b, 0x80, k);
+        floats(&mut t, b + 0x2c, 4, k);
+        floats(&mut t, b + 0x4c, 4, k + 2);
+        t.set_u32(b + 0x6c, p);
+        floats(&mut t, p + 0x9c, 16, k + 4);
+        junk(&mut t, to, 0x10, k);
+        t.set_u32(pair, b);
+        t.set_u32(pair + 4, to);
+        ownb::dirty_stack(&mut t, 0x4800 + k, &[]);
+        let call = Call {
+            ecx: pair,
+            ..Call::default()
+        };
+        t.check(f, call, &[], Eax::Checked, |g, img, fr| {
+            ffx_magic::r45::bone_place_0387(g, img, fr)
+        });
+    }
+}
