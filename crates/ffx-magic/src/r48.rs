@@ -2344,3 +2344,441 @@ pub const LASERS_TASK_0387: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `magic_0387`'s shots set-up (0x10009820, 1024 bytes; internal, `ecx`
+/// = the task `N`, `edx` = the effect `E`, stack `(a0, a1)`; the records
+/// `R` at `ebp - 0x10` and `R2` at `ebp - 0x30`): `N` is linked as a task
+/// (callback [`shots_task_0387`]); under the root `G0`: `A = N + 0x9698`
+/// ([`time_left`](crate::m0042::time_left) of `E` into `N + 0x96b4`) and
+/// `B = N + 0x9a90` (`B[0x13c] = a1`, `B[0x144] = A`, `B[0x140]` =
+/// `K_P`, `B[0x128]` = `K_O`); for both rows `j`: `X = N + 0x971c + 0x2c
+/// j` (`X[0x1c..0x28] = (T1[j], -33, 0, 1)`), `Y = N + 0x9640 + 0x2c j`
+/// (`Y[0x1c..0x24] = (-0x700, 0, T2[j])`), `Z = N + 0x96c4 + 0x2c j`
+/// (colour `(1, 1, 1, 0.22)`) and `W = N + 0x97f8 + 0x14c j` (`W[0x13c..
+/// 0x144] = (X, Z, Y)`, `W[0x128] = B`) under `G0`, and the particle
+/// node from `R2 = (N + 0x9be0 + 0x100 j, K_L, W, *G_P, K_T, 4)`; the
+/// row counter is the argument word `a1` (the stack above the entry:
+/// 4, then 8). The eight shots' states 0x2000, `N[0x30] = a0`, `N[0x2c]
+/// = E`, `N[0x24]` 0, the wait `N[0x1c]` 20, the state 0. Returns `E`.
+pub fn shots_setup_0387<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let (n, e) = (fr.ecx, fr.edx);
+    let ebp = fr.esp.wrapping_sub(4);
+    let (r, r2) = (ebp.wrapping_sub(0x10), ebp.wrapping_sub(0x30));
+    task_link(g, img, f, n, [0x19, 0x20, 0x28, 0x32, 0x37, 0x46, 0x4d]);
+    let root = w(0x66);
+    let a = n + 0x9698;
+    root_append(g, a, root, w(0x53));
+    g.write::<u32>(r, e);
+    g.write::<u32>(r + 4, n + 0x96b4);
+    crate::m0042::time_left(
+        g,
+        img,
+        img.rel32_target(f + 0xad),
+        r,
+        ebp.wrapping_sub(0x44),
+    );
+    let b = n + 0x9a90;
+    root_append(g, b, root, w(0xbc));
+    let a1 = fr.arg(g, 1);
+    g.write::<u32>(b + 0x13c, a1);
+    g.write::<u32>(b + 0x144, a);
+    g.write::<u32>(b + 0x140, w(0x12f));
+    g.write::<u32>(b + 0x128, w(0x139));
+    g.write::<u8>(b + 0x148, 0);
+    g.write::<u32>(fr.esp + 8, 0);
+    for j in 0..2u32 {
+        let x = n + 0x971c + 0x2c * j;
+        root_append(g, x, root, w(0x19a));
+        let t1 = g.read::<u32>(w(0x1a0) + 4 * j);
+        for (off, v) in [(0x1c, t1), (0x20, 0xc204_0000), (0x24, 0), (0x28, ONE)] {
+            g.write::<u32>(x + off, v);
+        }
+        let y = n + 0x9640 + 0x2c * j;
+        root_append(g, y, root, w(0x1cd));
+        g.write::<u32>(y + 0x1c, 0xffff_f900);
+        g.write::<u32>(y + 0x20, 0);
+        let t2 = g.read::<u32>(w(0x239) + 4 * j);
+        g.write::<u32>(y + 0x24, t2);
+        let z = n + 0x96c4 + 0x2c * j;
+        root_append(g, z, root, w(0x298));
+        for (off, v) in [(0x1c, ONE), (0x20, ONE), (0x24, ONE), (0x28, 0x3e61_47ae)] {
+            g.write::<u32>(z + off, v);
+        }
+        let wn = n + 0x97f8 + 0x14c * j;
+        root_append(g, wn, root, w(0x2bf));
+        g.write::<u32>(wn + 0x13c, x);
+        g.write::<u32>(wn + 0x140, z);
+        g.write::<u32>(wn + 0x144, y);
+        g.write::<u32>(wn + 0x128, b);
+        g.write::<u8>(wn + 0x148, 0);
+        let p = n + 0x9be0 + 0x100 * j;
+        let pp = g.read::<u32>(w(0x339));
+        g.write::<u32>(p, w(0x342));
+        for (i, v) in [p, w(0x34c), wn, pp, w(0x356), 4].into_iter().enumerate() {
+            g.write::<u32>(r2 + 4 * i as u32, v);
+        }
+        crate::sb_nodes::particle_node(g, img, img.rel32_target(f + 0x362), r2);
+        g.write::<u32>(fr.esp + 8, 4 * (j + 1));
+    }
+    for i in 0..8 {
+        g.write::<u32>(n + 0x58 + 0x12c0 * i, 0x2000);
+    }
+    let a0 = fr.arg(g, 0);
+    g.write::<u32>(n + 0x30, a0);
+    g.write::<u32>(n + 0x2c, e);
+    g.write::<u32>(n + 0x24, 0);
+    g.write::<u32>(n + 0x1c, 0x14);
+    g.write::<u32>(n + 0x18, 0);
+    Ret::eax(e)
+}
+
+/// [`shots_setup_0387`] (the `rel32`s: the time left, the particle node).
+pub const SHOTS_SETUP_0387: Sig = Sig {
+    len: 1024,
+    hash: 0x9469_17f5_2741_ef2f,
+    calls: &[
+        (0xad, Callee::Sig(&crate::m0042::TIME_LEFT)),
+        (0x362, Callee::Sig(&crate::sb_nodes::PARTICLE_NODE)),
+    ],
+    imports: &[],
+};
+
+/// `out = k - *src` (`subss`, the constant first) for the globals at the
+/// operands `(src, out)` of `f`, in order.
+fn global_rests<G: Game>(g: &mut G, img: &Image, f: u32, k: f32, ops: &[(u32, u32)]) {
+    for &(src, out) in ops {
+        let x = sub(k, g.read::<f32>(img.word(f + src)));
+        g.write::<f32>(img.word(f + out), x);
+    }
+}
+
+/// The word `v` into each global at the operands `ops` of `f`.
+fn global_words<G: Game>(g: &mut G, img: &Image, f: u32, v: u32, ops: &[u32]) {
+    for &o in ops {
+        g.write::<u32>(img.word(f + o), v);
+    }
+}
+
+/// `magic_0387`'s main task (0x1000d320, 1616 bytes; cdecl `(T)`, `N =
+/// T[4]`; an aligned frame `A`, `S = A - 0x50`: the records at `S + 0xc`,
+/// `S + 0x18`, `S + 0x28`, the centre `V` at `S + 0x3c`). The effect's
+/// node `G_FX` and its globals are the DLL's. By the state `N[0x18]`,
+/// the clock `N[0x1c]` up and the count `N[0x20]` down at every return:
+/// - 0: `G_FX` becomes a model node under the root `G0`
+///   ([`model_node_init`](crate::sa_summon::model_node_init)), `N + 0x24`
+///   the owner's model nodes ([`model_nodes`](crate::s3_summon::model_nodes)),
+///   `L = N + 0x514` joins the list `G_L`, the colour node at `G_C`
+///   ([`colour_node`](crate::s3_misc::colour_node)); then `G_FX`'s colour
+///   words (`K1 - x` and 0.5 runs, [`global_rests`]); `B = N + 0x580`
+///   under `G0` (`B[0x3c] = *G_B`, `B[0x40]` 0x70, its vectors 1 and 0),
+///   the effect node `P = N + 0x548` under `G0` (slot 719 `(K_E, 6, 0)`)
+///   and the task `Q = N + 0x5c4` (callback 0x100088d0, `Q[0x3c] =
+///   G_FX`); state 10 (run on);
+/// - 10: at clock 0x28, the shots ([`shots_setup_0387`] at `N + 0x610`
+///   with `(N + 0x24, B)`), state 11;
+/// - 11: at clock 0x34, state 30 (run on);
+/// - 30: at clock 0x66, the pulses ([`pulse_setup_0387`] at `N + 0xa4c0`
+///   with `(N + 0x24, L)`) and their weights
+///   ([`weights_task_0387`](crate::r45::weights_task_0387) at `N +
+///   0x12d20`), state 20 (run on);
+/// - 20: at clock 0x12a, the lasers ([`lasers_setup_0387`] at `N +
+///   0x12d70` with the targets' centre
+///   ([`centre`](crate::m0577::centre)), `L` and `N + 0x24`), state 21,
+///   the count 0x28;
+/// - 21: once the count is out, `G_FX`'s colour words again (`K - x` and
+///   1.0 runs, the flags word's bit 2 set and bit 0 cleared), state 10000
+///   (run on);
+/// - 10000: once `Q`'s state is 20000: `L` and `N + 0x24` leave, slot 250
+///   `(0, 0)`, the list's current node is unlinked, `G_FX`'s model is
+///   set up ([`model_setup`](crate::sa_summon::model_setup)) and `T[0]` is
+///   unlinked from its ring.
+///
+/// Returns the last value in `eax`.
+#[allow(clippy::too_many_lines)] // the states
+pub fn main_task_0387<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let tk = fr.arg(g, 0);
+    let n = g.read::<u32>(tk + 4);
+    let a = fr.esp.wrapping_sub(4) & !7;
+    let s0 = a.wrapping_sub(0x50);
+    let end = |g: &mut G, eax: u32| {
+        let c = g.read::<u32>(n + 0x1c).wrapping_add(1);
+        g.write::<u32>(n + 0x1c, c);
+        let c = g.read::<u32>(n + 0x20).wrapping_sub(1);
+        g.write::<u32>(n + 0x20, c);
+        Ret::eax(eax)
+    };
+    let clock = |g: &G| g.read::<u32>(n + 0x1c).cast_signed();
+    let k = g.read::<f32>(w(0x25));
+    loop {
+        let state = g.read::<u32>(n + 0x18);
+        match state {
+            0 => {
+                let fx = w(0x77);
+                let e = g.read::<u32>(w(0x6b));
+                let r = s0 + 0x18;
+                for (i, x) in [fx, w(0x7f), e].into_iter().enumerate() {
+                    g.write::<u32>(r + 4 * i as u32, x);
+                }
+                g.write::<u8>(r + 0xc, 0);
+                g.write::<u32>(w(0x8e), w(0x92));
+                crate::sa_summon::model_node_init(g, img, img.rel32_target(f + 0x97), r);
+                let e = g.read::<u32>(w(0x9c));
+                let r2 = s0 + 0x28;
+                let m = n + 0x24;
+                g.write::<u32>(r2, m);
+                g.write::<u32>(m, w(0xa9));
+                g.write::<u32>(r2 + 4, w(0xb5));
+                g.write::<u32>(r2 + 8, e);
+                g.write::<u32>(r2 + 0xc, 0);
+                g.write::<u8>(r2 + 0x10, 0);
+                let fr2 = Frame {
+                    at: img.rel32_target(f + 0xcb),
+                    esp: s0.wrapping_sub(4),
+                    ecx: r2,
+                    ..Frame::default()
+                };
+                crate::s3_summon::model_nodes(g, img, &fr2);
+                let l = n + 0x514;
+                let gl = w(0xea);
+                g.write::<u32>(l, w(0xd7));
+                crate::l3_common::node_init(g, l, gl);
+                crate::l3_common::attach(g, l, gl, crate::l3_common::ListAt::of(gl));
+                g.write::<u8>(l + 0x30, 0);
+                let r3 = s0 + 0xc;
+                g.write::<u32>(r3, w(0x12d));
+                g.write::<u32>(r3 + 4, w(0x135));
+                g.write::<u32>(w(0x13b), w(0x13f));
+                let fr3 = Frame {
+                    at: img.rel32_target(f + 0x144),
+                    esp: s0.wrapping_sub(4),
+                    ecx: r3,
+                    ..Frame::default()
+                };
+                crate::s3_misc::colour_node(g, img, &fr3);
+                let k1 = g.read::<f32>(w(0x14c));
+                global_rests(g, img, f, k1, &[(0x157, 0x17c)]);
+                let fl = g.read::<u32>(w(0x15d)) & !1;
+                g.write::<u32>(w(0x15d), fl);
+                let gb = g.read::<u32>(w(0x164));
+                let half = 0x3f00_0000;
+                global_words(g, img, f, half, &[0x170]);
+                global_rests(g, img, f, k1, &[(0x187, 0x1b7)]);
+                global_words(g, img, f, half, &[0x18d, 0x197, 0x1a1, 0x1ab]);
+                global_rests(g, img, f, k1, &[(0x1c2, 0x1f2)]);
+                global_words(g, img, f, half, &[0x1c8, 0x1d2]);
+                global_words(g, img, f, 0x3cf5_c28f, &[0x1dc]);
+                global_words(g, img, f, 0, &[0x1e6]);
+                global_rests(
+                    g,
+                    img,
+                    f,
+                    k1,
+                    &[(0x1fd, 0x205), (0x210, 0x218), (0x223, 0x22b)],
+                );
+                let x = sub(g.read::<f32>(w(0x233)), g.read::<f32>(w(0x23b)));
+                g.write::<f32>(w(0x243), x);
+                global_rests(g, img, f, k1, &[(0x24e, 0x256)]);
+                let b = n + 0x580;
+                root_append(g, b, w(0x269), w(0x2cf));
+                g.write::<u32>(b + 0x28, ONE);
+                g.write::<u32>(b + 0x3c, gb);
+                g.write::<u32>(b + 0x40, 0x70);
+                for off in [0x2c, 0x30, 0x34, 0x38] {
+                    g.write::<u32>(b + off, 0);
+                }
+                let p = n + 0x548;
+                root_append(g, p, w(0x2e8), w(0x359));
+                let e = g
+                    .call(slot_target(g, w(0x313), 719), 0, &[w(0x32f), 6, 0])
+                    .eax;
+                g.write::<u32>(p + 0x24, e);
+                g.write::<u32>(p + 0x1c, w(0x33b));
+                g.write::<u32>(p + 0x20, b);
+                g.write::<u32>(p + 0x34, 0x40);
+                g.write::<u32>(p + 0x28, 0x100);
+                g.write::<u32>(p + 0x2c, 1);
+                g.write::<u32>(p + 0x30, 0);
+                let q = n + 0x5c4;
+                task_link(
+                    g,
+                    img,
+                    f,
+                    q,
+                    [0x373, 0x380, 0x388, 0x392, 0x397, 0x3a0, 0x3a7],
+                );
+                g.write::<u32>(q + 0x3c, w(0x3ae));
+                g.write::<u32>(q + 0x30, 0);
+                g.write::<u32>(q + 0x18, 0);
+                g.write::<u32>(n + 0x18, 10);
+            }
+            10 => {
+                if clock(g) < 0x28 {
+                    return end(g, 0);
+                }
+                let esp = s0.wrapping_sub(0xc);
+                g.write::<u32>(esp + 4, n + 0x24);
+                g.write::<u32>(esp + 8, n + 0x580);
+                let r = shots_setup_0387(
+                    g,
+                    img,
+                    &Frame {
+                        at: img.rel32_target(f + 0x563),
+                        esp,
+                        ecx: n + 0x610,
+                        edx: w(0x55e),
+                        ..Frame::default()
+                    },
+                );
+                g.write::<u32>(n + 0x18, 11);
+                return end(g, r.eax);
+            }
+            11 => {
+                if clock(g) < 0x34 {
+                    return end(g, 0);
+                }
+                g.write::<u32>(n + 0x18, 0x1e);
+            }
+            0x1e => {
+                if clock(g) < 0x66 {
+                    return end(g, 0x1e);
+                }
+                let esp = s0.wrapping_sub(0xc);
+                g.write::<u32>(esp + 4, n + 0x24);
+                g.write::<u32>(esp + 8, n + 0x514);
+                pulse_setup_0387(
+                    g,
+                    img,
+                    &Frame {
+                        at: img.rel32_target(f + 0x3fb),
+                        esp,
+                        ecx: n + 0xa4c0,
+                        edx: w(0x3f6),
+                        ..Frame::default()
+                    },
+                );
+                crate::r45::weights_task_0387(
+                    g,
+                    img,
+                    &Frame {
+                        at: img.rel32_target(f + 0x40b),
+                        esp: s0.wrapping_sub(4),
+                        ecx: n + 0x12d20,
+                        edx: n + 0x24,
+                        ..Frame::default()
+                    },
+                );
+                g.write::<u32>(n + 0x18, 0x14);
+            }
+            0x14 => {
+                if clock(g) < 0x12a {
+                    return end(g, 0x14);
+                }
+                let v = s0 + 0x3c;
+                let fc = Frame {
+                    at: img.rel32_target(f + 0x589),
+                    esp: s0.wrapping_sub(4),
+                    ecx: v,
+                    edx: w(0x580),
+                    ..Frame::default()
+                };
+                crate::m0577::centre(g, img, &fc);
+                let esp = s0.wrapping_sub(0x10);
+                for (i, x) in [v, n + 0x514, n + 0x24].into_iter().enumerate() {
+                    g.write::<u32>(esp + 4 + 4 * i as u32, x);
+                }
+                let r = lasers_setup_0387(
+                    g,
+                    img,
+                    &Frame {
+                        at: img.rel32_target(f + 0x5a9),
+                        esp,
+                        ecx: n + 0x12d70,
+                        edx: w(0x5a4),
+                        ..Frame::default()
+                    },
+                );
+                g.write::<u32>(n + 0x18, 0x15);
+                g.write::<u32>(n + 0x20, 0x28);
+                return end(g, r.eax);
+            }
+            0x15 => {
+                if g.read::<u32>(n + 0x20).cast_signed() > 0 {
+                    return end(g, 0x15);
+                }
+                let fl = (g.read::<u32>(w(0x431)) & !1) | 4;
+                global_words(g, img, f, ONE, &[0x43d]);
+                global_rests(g, img, f, k, &[(0x42c, 0x449)]);
+                global_rests(g, img, f, k, &[(0x454, 0x484)]);
+                global_words(g, img, f, ONE, &[0x45a, 0x464, 0x46e, 0x478]);
+                global_rests(g, img, f, k, &[(0x48f, 0x4bf)]);
+                global_words(g, img, f, ONE, &[0x495, 0x49f]);
+                global_words(g, img, f, 0x3ca3_d70a, &[0x4a9]);
+                global_words(g, img, f, 0, &[0x4b3]);
+                let x = sub(k, g.read::<f32>(w(0x4ca)));
+                g.write::<u32>(w(0x4cf), fl);
+                global_words(g, img, f, ONE, &[0x4d5]);
+                g.write::<f32>(w(0x4e1), x);
+                global_rests(g, img, f, k, &[(0x4ec, 0x4f4), (0x4ff, 0x507)]);
+                let x = sub(g.read::<f32>(w(0x50f)), g.read::<f32>(w(0x517)));
+                g.write::<f32>(w(0x51f), x);
+                global_rests(g, img, f, k, &[(0x52a, 0x532)]);
+                g.write::<u32>(n + 0x18, 10000);
+            }
+            10000 => {
+                if g.read::<u32>(n + 0x5dc) != 20000 {
+                    return end(g, 10000);
+                }
+                crate::sa_misc::leave(g, n + 0x514, 0);
+                let e = g.call(slot_target(g, w(0x5db), 250), 0, &[0, 0]).eax;
+                let eax = crate::sa_misc::leave(g, n + 0x24, e);
+                crate::l3_common::list_unlink_current(g, img, img.rel32_target(f + 0x605), eax);
+                let r = s0 + 0xc;
+                g.write::<u32>(r, w(0x611));
+                crate::sa_summon::model_setup(
+                    g,
+                    img,
+                    &Frame {
+                        at: img.rel32_target(f + 0x616),
+                        esp: s0.wrapping_sub(4),
+                        ecx: r,
+                        ..Frame::default()
+                    },
+                );
+                let eax = unlink_task(g, tk);
+                return end(g, eax);
+            }
+            s if s > 0x14 => return end(g, s),
+            s => return end(g, s.wrapping_sub(11)),
+        }
+    }
+}
+
+/// [`main_task_0387`] (the `rel32`s: the model node init, the model nodes,
+/// the colour node, the pulse set-up, the weights task, the shots set-up,
+/// the centre, the lasers set-up, two node leaves, the list unlink, the
+/// model set-up, the cookie check).
+pub const MAIN_TASK_0387: Sig = Sig {
+    len: 1616,
+    hash: 0x6c69_c71a_c4de_79de,
+    calls: &[
+        (0x97, Callee::Sig(&crate::sa_summon::MODEL_NODE_INIT)),
+        (0xcb, Callee::Sig(&crate::s3_summon::MODEL_NODES)),
+        (0x144, Callee::Sig(&crate::s3_misc::COLOUR_NODE)),
+        (0x3fb, Callee::Sig(&PULSE_SETUP_0387)),
+        (0x40b, Callee::Sig(&crate::r45::WEIGHTS_TASK_0387)),
+        (0x563, Callee::Sig(&SHOTS_SETUP_0387)),
+        (0x589, Callee::Sig(&crate::m0577::CENTRE)),
+        // the lasers set-up (its own callees nest past `matches`' depth)
+        (0x5a9, Callee::Any),
+        (0x5d6, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0x600, Callee::Sig(&crate::sa_misc::LEAVE)),
+        (0x605, Callee::Sig(&crate::l3_common::LIST_UNLINK_CURRENT)),
+        (0x616, Callee::Sig(&crate::sa_summon::MODEL_SETUP)),
+        (0x648, Callee::Any),
+    ],
+    imports: &[],
+};

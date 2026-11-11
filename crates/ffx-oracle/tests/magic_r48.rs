@@ -1392,3 +1392,223 @@ fn lasers_task_0387() {
         t.check_entry(f, Call::default(), &[tk], Eax::Checked);
     }
 }
+
+/// `magic_0387` 0x10009820 (`r48::shots_setup_0387`, internal): the
+/// effect's time by slot 333 or 601, the root with and without children.
+#[test]
+fn shots_setup_0387() {
+    let Some(mut t) = sa::twin(387) else { return };
+    let f = t.at(0x9820);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    let tl = img.rel32_target(f + 0xad);
+    all_stubs(&mut t);
+    for (s, n) in [(941u32, 1), (325, 2)] {
+        rec(&mut t, s, n, move |_, a| a[0] ^ (s << 16));
+    }
+    rec(&mut t, 333, 1, |_, _| 0x333);
+    t.stub_st0(333, |_, a| f64::from(a[0] & 0xff) * 0.25);
+    rec(&mut t, 601, 2, |m, a| {
+        m.w32(a[1], 1.5f32.to_bits());
+        0x601
+    });
+    particle_globals(&mut t, f, 0x362);
+    junk_ops(&mut t, f, &[0x339]);
+    junk_ops(&mut t, tl, &[0x55, 0x66, 0x6e]);
+    for (op, x) in [(0x55u32, 30.0f32), (0x66, 2.0), (0x6e, 0.5)] {
+        setf(&mut t, img.word(tl + op), x);
+    }
+    let (n, e, last, kid) = (
+        SCRATCH + 0x1_0000,
+        SCRATCH + 0x100,
+        SCRATCH + 0x200,
+        SCRATCH + 0x300,
+    );
+    let root = w(0x66);
+    let plist = w(0x34c);
+    for k in 0..3u32 {
+        junk(&mut t, n, 0x9d00, k);
+        junk(&mut t, e, 0x100, k);
+        t.write(e + 0x90, &[k as u8 & 1]);
+        junk(&mut t, last, 0x10, k);
+        t.set_u32(w(0x28), last);
+        t.set_u32(w(0x46), 0x0f0f_0f0f + k);
+        junk(&mut t, root, 0x20, k);
+        t.set_u32(root + 0x10, if k == 1 { kid } else { root });
+        junk(&mut t, plist, 0x20, k + 1);
+        t.set_u32(plist + 0x10, if k == 2 { kid } else { plist });
+        let call = Call {
+            ecx: n,
+            edx: e,
+            ..Call::default()
+        };
+        ownb::dirty_stack(&mut t, 0x9820 + k, &[]);
+        let args = [0x0a01 + k, 0x0a02 + k];
+        t.check(
+            f,
+            call,
+            &args,
+            Eax::Checked,
+            ffx_magic::r48::shots_setup_0387,
+        );
+    }
+}
+
+/// `magic_0387` 0x1000d320 (`r48::main_task_0387`): state 0 (into 10,
+/// the clock low), 10 low and at 0x28, 11 low and at 0x34 (into 30), 30
+/// low and at 0x66 (into 20), 20 low and at 0x12a, 21 counting and out
+/// (into 10000, `Q` busy), 10000 with `Q` done, unknown states.
+#[test]
+fn main_task_0387() {
+    let Some(mut t) = sa::twin(387) else { return };
+    let f = t.at(0xd320);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    let tgt = |o: u32| img.rel32_target(f + o);
+    all_stubs(&mut t);
+    copy_325(&mut t);
+    let list = SCRATCH + 0x3_d000;
+    t.write(list, &[3, 5, 7, 9]);
+    rec(&mut t, 218, 2, move |m, a| {
+        m.w32(a[1], 2);
+        list
+    });
+    for (s, n) in [
+        (941u32, 1),
+        (676, 3),
+        (678, 1),
+        (719, 3),
+        (291, 5),
+        (250, 2),
+    ] {
+        rec(&mut t, s, n, move |_, a| {
+            a.first().copied().unwrap_or(0) ^ (s << 16)
+        });
+    }
+    rec(&mut t, 333, 1, |_, _| 0x333);
+    t.stub_st0(333, |_, a| f64::from(a[0] & 0xff) * 0.25);
+    rec(&mut t, 601, 2, |m, a| {
+        m.w32(a[1], 1.5f32.to_bits());
+        0x601
+    });
+    t.stub_st0(790, |_, _| 0.375);
+    // the colour node's four integers (written by the slot)
+    rec(&mut t, 558, 2, |m, a| {
+        for i in 0..4 {
+            m.w32(a[0] + 4 * i, 0x40 + 0x11 * i);
+        }
+        0x558
+    });
+    let row = SCRATCH + 0x3_e000;
+    rec(&mut t, 324, 0, move |m, _| {
+        let k = m.r32(row);
+        m.w32(row, k + 1);
+        0x0e01_0000_u32.wrapping_add(0x0a07 * k) ^ (k << 12)
+    });
+    // the set-ups' globals
+    let ss = tgt(0x563);
+    let ps = tgt(0x3fb);
+    let ls = tgt(0x5a9);
+    let la = img.rel32_target(ls + 0x254);
+    let gs = img.rel32_target(la + 0x280);
+    particle_globals(&mut t, ss, 0x362);
+    particle_globals(&mut t, gs, 0x2ce);
+    for (fx, ops) in [
+        (ss, &[0x339u32][..]),
+        (gs, &[0x273][..]),
+        (img.rel32_target(ss + 0xad), &[0x55, 0x66, 0x6e][..]),
+        (img.rel32_target(ps + 0xd2), &[0x55, 0x66, 0x6e][..]),
+        (img.rel32_target(ls + 0x112), &[0x55, 0x66, 0x6e][..]),
+        (ps, &[0x1af][..]),
+    ] {
+        junk_ops(&mut t, fx, ops);
+    }
+    for tl in [
+        img.rel32_target(ss + 0xad),
+        img.rel32_target(ps + 0xd2),
+        img.rel32_target(ls + 0x112),
+    ] {
+        for (op, x) in [(0x55u32, 30.0f32), (0x66, 2.0), (0x6e, 0.5)] {
+            setf(&mut t, img.word(tl + op), x);
+        }
+    }
+    let (tk, d, prev, next, n) = (
+        SCRATCH + 0x100,
+        SCRATCH + 0x140,
+        SCRATCH + 0x180,
+        SCRATCH + 0x1c0,
+        SCRATCH + 0x1_0000,
+    );
+    let fx = w(0x77);
+    // the centre's targets: two
+    let cf = tgt(0x589);
+    t.set_u32(img.word(cf + 0x48), 2);
+    t.write(img.word(cf + 0x55), &[1, 2]);
+    t.write(img.word(cf + 0x75), &[3, 4]);
+    rec(&mut t, 531, 2, |m, a| {
+        for i in 0..4 {
+            wf(m, a[1] + 4 * i, a[0] as f32 + i as f32);
+        }
+        0x531
+    });
+    // (state, clock, count, Q's state)
+    for (k, (state, clock, count, qs)) in (0u32..).zip([
+        (0u32, 0u32, 3u32, 0u32),
+        (10, 0x27, 3, 0),
+        (10, 0x28, 3, 0),
+        (11, 0x33, 3, 0),
+        (11, 0x34, 3, 0),
+        (0x1e, 0x66, 3, 0),
+        (0x14, 0x129, 3, 0),
+        (0x14, 0x12a, 3, 0),
+        (0x15, 0, 3, 0),
+        (0x15, 0, 0, 0),
+        (10000, 0, 0, 20000),
+        (5, 0, 0, 0),
+        (0x20, 0, 0, 0),
+    ]) {
+        junk(&mut t, n, 0x1_3000, k);
+        // the owner's parts (N + 0x24's model nodes, also the pulses' owner)
+        t.set_u32(n + 0x24 + 0x4dc, 2);
+        for j in 0..2u32 {
+            t.set_u32(n + 0x24 + 0x6c + 0x98 * j, 0x0a00 + j);
+        }
+        t.set_u32(n + 0x18, state);
+        t.set_u32(n + 0x1c, clock);
+        t.set_u32(n + 0x20, count);
+        t.set_u32(n + 0x5c4 + 0x18, qs);
+        for off in [0x514u32, 0x24] {
+            t.set_u32(n + off + 0x14, 0);
+        }
+        // the DLL's node globals: junk, then the lists empty
+        junk(&mut t, fx, 0x160, k);
+        for root in [
+            w(0x7f),
+            w(0xea),
+            w(0x135),
+            w(0x269),
+            img.word(ss + 0x34c),
+            img.word(gs + 0x2b5),
+        ] {
+            junk(&mut t, root, 0x20, k + 1);
+            t.set_u32(root + 0x10, root);
+        }
+        for op in [0x14c, 0x25] {
+            setf(&mut t, w(op), 1.0);
+        }
+        // (the list's junk covers the centre's count)
+        t.set_u32(img.word(cf + 0x48), 2);
+        t.set_u32(img.word(tgt(0x605) + 2), 0);
+        // the task list's last task (every set-up links after it)
+        junk(&mut t, SCRATCH + 0x200, 0x10, k);
+        t.set_u32(w(0x388), SCRATCH + 0x200);
+        t.set_u32(tk, d);
+        t.set_u32(tk + 4, n);
+        for (a, b, c) in [(d, prev, next), (prev, next, d), (next, d, prev)] {
+            t.set_u32(a + 4, b);
+            t.set_u32(a + 8, c);
+        }
+        ownb::dirty_stack(&mut t, 0xd320 + k, &[]);
+        t.check_entry(f, Call::default(), &[tk], Eax::Checked);
+    }
+}

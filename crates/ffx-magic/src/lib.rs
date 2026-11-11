@@ -3519,6 +3519,7 @@ ports! {
     "r48 pulse task 0387" => r48::PULSE_TASK_0387, r48::pulse_task_0387;
     "r48 laser task 0387" => r48::LASER_TASK_0387, r48::laser_task_0387;
     "r48 lasers task 0387" => r48::LASERS_TASK_0387, r48::lasers_task_0387;
+    "r48 main task 0387" => r48::MAIN_TASK_0387, r48::main_task_0387;
     // round 48 (magic-r48): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
@@ -5517,6 +5518,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r48 glow set-up 0387", &r48::GLOW_SETUP_0387),
     ("r48 laser set-up 0387", &r48::LASER_SETUP_0387),
     ("r48 lasers set-up 0387", &r48::LASERS_SETUP_0387),
+    ("r48 shots set-up 0387", &r48::SHOTS_SETUP_0387),
     // round 48 (magic-r48): end of INTERNAL
 ];
 
