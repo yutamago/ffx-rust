@@ -567,3 +567,121 @@ fn draw_0417() {
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
+
+/// `magic_0434` 0x100012c0 (`r47::load_0434`) running its start-up
+/// 0x10009900 (`r47::start_up_0434`): each wait of the load step (225,
+/// 5, 28, 227, the request once), the buffer block given or allocated
+/// (slot 803), the history 0..5 bytes, the free ring with 3 and 4 nodes,
+/// the task list empty and not, slot 520's answer both ways.
+#[test]
+fn start_up_0434() {
+    let Some(mut t) = twin(434) else { return };
+    all_stubs(&mut t);
+    let f = t.at(0x12c0);
+    let su = t.at(0x9900);
+    let g = |t: &Twin, op: u32| t.img.word(f + op);
+    let gs = |t: &Twin, op: u32| t.img.word(su + op);
+    rec(&mut t, 225, 1, |m, _| m.r32(SCRATCH + 0x10));
+    rec(&mut t, 5, 1, |m, _| m.r32(SCRATCH + 0x14));
+    rec(&mut t, 28, 2, |m, _| m.r32(SCRATCH + 0x18));
+    rec(&mut t, 226, 2, |_, a| 0x226 ^ a[0]);
+    rec(&mut t, 227, 1, |m, _| m.r32(SCRATCH + 0x1c));
+    rec(&mut t, 520, 0, |m, _| m.r32(SCRATCH + 0x20));
+    // the block: slot 803 hands out the same place the global may hold
+    let b = 0x6000_0000u32;
+    rec(&mut t, 803, 2, move |_, _| b);
+    // the caster placement's slots (as `magic_r22.rs`)
+    rec(&mut t, 262, 4, |m, a| {
+        for (i, v) in [1.5f32, -2.25, 0.75].into_iter().enumerate() {
+            m.w32(a[1 + i], (v + (a[0] & 0xf) as f32).to_bits());
+        }
+        0x0262
+    });
+    rec(&mut t, 333, 1, |_, a| a[0] ^ 0x333);
+    t.stub_st0(333, |_, a| f64::from(a[0] & 0xff) * 0.125 - 1.0);
+    for (s, x) in [(277u32, 0.5f64), (15, 1.25), (16, -0.75), (17, 2.5)] {
+        rec(&mut t, s, 1, move |_, a| a[0] ^ (s << 16));
+        t.stub_st0(s, move |_, a| f64::from(a[0] & 0xff) * 0.0625 + x);
+    }
+    rec(&mut t, 293, 1, |_, _| 0);
+    let list = SCRATCH + 0x760;
+    t.write(list, &[5, 0, 9, 0, 0x22, 0, 0, 0]);
+    rec(&mut t, 288, 2, move |m, a| {
+        m.w32(a[1], 3);
+        list
+    });
+    let lock = SCRATCH + 0x7f0;
+    t.set_u32(gs(&t, 0xc2), lock);
+    // slot 711 sees the game lock held
+    rec(&mut t, 711, 3, move |m, a| {
+        let l = m.r32(lock);
+        0x0711_0000 ^ a[0] ^ (l << 8)
+    });
+    magic_r11::pools(&mut t, su, 995);
+    let node = |i: u32| SCRATCH + 0x1000 + 0x40 * i;
+    // (225, 5, 28, once, 227, history n, free nodes, listed, 520, block)
+    #[allow(clippy::type_complexity)]
+    let cases: [(u32, u32, u32, u32, u32, u32, u16, bool, u32, bool); 8] = [
+        (1, 0, 0, 0, 1, 0, 4, false, 0, false),
+        (0, 1, 0, 0, 1, 0, 4, false, 0, false),
+        (0, 0, 2, 0, 1, 0, 4, false, 0, false),
+        (0, 0, 0, 0, 0, 0, 4, false, 0, false),
+        (0, 0, 0, 1, 1, 0, 4, false, 0x01ad_0001, false),
+        (0, 0, 0, 0, 3, 1, 3, true, 0, true),
+        (0, 0, 0, 1, 1, 5, 4, true, 0x01ad_0001, false),
+        (0, 0, 0, 0, 2, 2, 5, false, 0x01ad_0002, true),
+    ];
+    for (k, (w225, w5, w28, once, r227, hist, free, listed, r520, given)) in (0u32..).zip(cases) {
+        t.set_u32(SCRATCH + 0x10, w225);
+        t.set_u32(SCRATCH + 0x14, w5);
+        t.set_u32(SCRATCH + 0x18, w28);
+        t.set_u32(SCRATCH + 0x1c, r227);
+        t.set_u32(SCRATCH + 0x20, r520);
+        t.set_u32(g(&t, 0x54), once);
+        t.set_u32(gs(&t, 0x6b), hist);
+        let hb = gs(&t, 0x93) - 1;
+        junk(&mut t, hb, 8, k);
+        t.set_u32(lock, 0x5a5a_0000 + k);
+        // the effect block the load step reads (the start-up moves it
+        // into the buffer block)
+        let e0 = SCRATCH + 0x8000;
+        t.set_u32(g(&t, 0x1b), e0);
+        t.set_u32(e0 + 0x1a80, 0x0000_3014 + k);
+        let e = b + 0x22_e500;
+        junk(&mut t, e + 0xc70, 0x10, k);
+        t.set_u32(e + 0x1a68, (0.375 * k as f32).to_bits());
+        t.set_u32(gs(&t, 0x5), if given { b } else { 0 });
+        let n = u32::from(free);
+        for i in 0..n {
+            t.write(node(i), &[0x40 + i as u8; 0x1c]);
+            t.set_u32(node(i), node((i + n - 1) % n));
+            t.set_u32(node(i) + 4, node((i + 1) % n));
+        }
+        t.set_u32(gs(&t, 0x26a), node(0));
+        t.set_u16(gs(&t, 0x253), free);
+        let tail = SCRATCH + 0x1400;
+        t.write(tail, &[0x66; 0x1c]);
+        t.set_u32(gs(&t, 0x2cc), if listed { tail } else { 0 });
+        t.set_u32(gs(&t, 0x2df), tail);
+        t.set_u32(gs(&t, 0x3cc), (0.25 * k as f32).to_bits());
+        // the words the start-up clears or sets, junk first
+        junk_ops(
+            &mut t,
+            su,
+            &[
+                0x7a, 0x112, 0x11c, 0x126, 0x130, 0x169, 0x20a, 0x22e, 0x183, 0x215, 0x239,
+            ],
+            k,
+        );
+        for o in [0x21du32, 0x241] {
+            let at = gs(&t, o);
+            t.set_u32(at, 0x5a5a_5a5a ^ o);
+        }
+        let recs = b + 0x22_6930;
+        for r in 0..0x64u32 {
+            t.set_u32(recs + 0x140 * r, 0x7e7e_0000 + r);
+        }
+        magic_h6::scrub(&mut t);
+        t.check_entry(f, Call::default(), &[], Eax::Checked);
+    }
+}
