@@ -1603,3 +1603,101 @@ pub const BURST_SETUP_0387: Sig = Sig {
     calls: &[(0x272, Callee::Sig(&crate::sb_nodes::PARTICLE_NODE))],
     imports: &[],
 };
+
+/// `magic_0387`'s glow set-up (0x1000c150, 835 bytes; internal, `ecx` =
+/// the task `N`, `edx` = `X`, stack `(a0)`; the records `R` at `ebp -
+/// 0x1c` and `R2` at `ebp - 0x20`): `N` is linked as a task (callback
+/// [`glow_task_0387`]); under the root `G0` ([`root_append`]): `A = N +
+/// 0x3320` (`A[0x3c] = X`, `A[0x40]` 0; `N[0x334c..0x3354] = (100, 1,
+/// 5)`), `B = N + 0x3274` (`B[0x38]` = 1, `B[0x3c] = a0`; `N[0x32a0..]`
+/// three zeros), `C = N + 0x30fc` (`N[0x3118..]` three zeros), `D = N +
+/// 0x30d0` (`N[0x30ec..0x30f8] = (1, 1, 1, 0.4)`) and `E = N + 0x3128`
+/// (`E[0x13c..0x144] = (B, D, C)`, `E[0x128]` = `K_O`, byte `E[0x148]`
+/// 0); the particle node from `R = (N + 0x3370, K_L, E, *G_P, K_T, 1)`;
+/// slot 676 `(N + 0x20, 2, 0x80)`; the colour node from `R2 = (N +
+/// 0x32c0, K_L, A, B, N + 0x20, K_C, a0)`; bytes `N[0x32f4] |= 0x18`,
+/// `N[0x3314] |= 1`, the state `N[0x18]` 0. Returns the colour node's
+/// `eax`.
+pub fn glow_setup_0387<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let (n, x) = (fr.ecx, fr.edx);
+    let ebp = fr.esp.wrapping_sub(4);
+    let (r, r2) = (ebp.wrapping_sub(0x1c), ebp.wrapping_sub(0x20));
+    task_link(g, img, f, n, [0x13, 0x1a, 0x22, 0x2c, 0x31, 0x40, 0x47]);
+    let root = w(0x60);
+    let a = n + 0x3320;
+    root_append(g, a, root, w(0x4d));
+    g.write::<u32>(a + 0x3c, x);
+    g.write::<u32>(a + 0x40, 0);
+    for (off, v) in [(0x334c, 0x42c8_0000), (0x3350, ONE), (0x3354, 0x40a0_0000)] {
+        g.write::<u32>(n + off, v);
+    }
+    let b = n + 0x3274;
+    root_append(g, b, root, w(0x11a));
+    let a0 = fr.arg(g, 0);
+    g.write::<u32>(b + 0x38, ONE);
+    g.write::<u32>(b + 0x3c, a0);
+    for off in [0x32a0, 0x32a4, 0x32a8] {
+        g.write::<u32>(n + off, 0);
+    }
+    let c = n + 0x30fc;
+    root_append(g, c, root, w(0x144));
+    for off in [0x3118, 0x311c, 0x3120] {
+        g.write::<u32>(n + off, 0);
+    }
+    let d = n + 0x30d0;
+    root_append(g, d, root, w(0x1fa));
+    for (off, v) in [
+        (0x30ec, ONE),
+        (0x30f0, ONE),
+        (0x30f4, ONE),
+        (0x30f8, 0x3ecc_cccd),
+    ] {
+        g.write::<u32>(n + off, v);
+    }
+    let e = n + 0x3128;
+    root_append(g, e, root, w(0x22e));
+    let pp = g.read::<u32>(w(0x273));
+    g.write::<u32>(e + 0x144, c);
+    g.write::<u32>(e + 0x13c, b);
+    g.write::<u32>(e + 0x140, d);
+    g.write::<u32>(e + 0x128, w(0x29b));
+    g.write::<u8>(e + 0x148, 0);
+    g.write::<u32>(n + 0x3370, w(0x2ab));
+    for (i, v) in [n + 0x3370, w(0x2b5), e, pp, w(0x2c2), 1]
+        .into_iter()
+        .enumerate()
+    {
+        g.write::<u32>(r + 4 * i as u32, v);
+    }
+    crate::sb_nodes::particle_node(g, img, img.rel32_target(f + 0x2ce), r);
+    g.call(slot_target(g, w(0x2d3), 676), 0, &[n + 0x20, 2, 0x80]);
+    let a0 = fr.arg(g, 0);
+    g.write::<u32>(n + 0x32c0, w(0x31e));
+    for (i, v) in [n + 0x32c0, w(0x30b), a, b, n + 0x20, w(0x318), a0]
+        .into_iter()
+        .enumerate()
+    {
+        g.write::<u32>(r2 + 4 * i as u32, v);
+    }
+    let eax = crate::sa_misc::colour_node_init(g, img, img.rel32_target(f + 0x323), r2);
+    let b1 = g.read::<u8>(n + 0x32f4) | 0x18;
+    g.write::<u8>(n + 0x32f4, b1);
+    let b2 = g.read::<u8>(n + 0x3314) | 1;
+    g.write::<u8>(n + 0x3314, b2);
+    g.write::<u32>(n + 0x18, 0);
+    Ret::eax(eax)
+}
+
+/// [`glow_setup_0387`] (the `rel32`s: the particle node, the colour
+/// node).
+pub const GLOW_SETUP_0387: Sig = Sig {
+    len: 835,
+    hash: 0x7eb3_4968_07fe_0183,
+    calls: &[
+        (0x2ce, Callee::Sig(&crate::sb_nodes::PARTICLE_NODE)),
+        (0x323, Callee::Sig(&crate::sa_misc::COLOUR_NODE_INIT)),
+    ],
+    imports: &[],
+};

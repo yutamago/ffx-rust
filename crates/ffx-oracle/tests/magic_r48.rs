@@ -571,6 +571,9 @@ fn shots_task_0387() {
     t.stub_st0(307, move |m, _| f64::from(m.r32(row) as f32 * 0.0625 + 0.1));
     rec(&mut t, 229, 3, |m, a| {
         for i in 0..4 {
+            // (b5 test gap: the vector's raw words logged; tiny junk vanishes in the sum)
+            let log = SCRATCH + 0x3_e100 + 4 * i;
+            m.w32(log, m.r32(log) ^ m.r32(a[2] + 4 * i));
             let x = rf(m, a[1] + 4 * i) + rf(m, a[2] + 4 * i) * 0.5;
             wf(m, a[0] + 4 * i, x);
         }
@@ -621,14 +624,17 @@ fn shots_task_0387() {
         t.set_u32(n + 0x24, at);
         t.set_u32(n + 0x28, first);
         t.set_u32(n + 0x30, o);
-        let s = (at as i32) % 8;
-        t.set_u32(n.wrapping_add(0x58).wrapping_add((s * 0x12c0) as u32), shot);
         t.set_u32(n + 0x9dc8, gate);
         t.set_u32(n + 0x9cc8, 0x0f0f_0f0f);
         for off in [
             0x70d8u32, 0x5e18, 0x4b58, 0x3898, 0x25d8, 0x1318, 0x8398, 0x58,
         ] {
             t.set_u32(n + off, all);
+        }
+        // (the shot's state after the eight: a busy one stays busy)
+        let s = (at as i32) % 8;
+        if shot != 0x2000 {
+            t.set_u32(n.wrapping_add(0x58).wrapping_add((s * 0x12c0) as u32), shot);
         }
         junk(&mut t, o, 0x200, k);
         t.set_u32(o + 0x4dc, 2);
@@ -822,6 +828,9 @@ fn pulse_init_0387() {
     });
     rec(&mut t, 229, 3, |m, a| {
         for i in 0..4 {
+            // (b5 test gap: the vector's raw words logged; tiny junk vanishes in the sum)
+            let log = SCRATCH + 0x3_e100 + 4 * i;
+            m.w32(log, m.r32(log) ^ m.r32(a[2] + 4 * i));
             let x = rf(m, a[1] + 4 * i) + rf(m, a[2] + 4 * i) * 0.5;
             wf(m, a[0] + 4 * i, x);
         }
@@ -904,6 +913,9 @@ fn pulse_task_0387() {
     t.stub_st0(307, move |m, _| f64::from(rf(m, draw)));
     rec(&mut t, 229, 3, |m, a| {
         for i in 0..4 {
+            // (b5 test gap: the vector's raw words logged; tiny junk vanishes in the sum)
+            let log = SCRATCH + 0x3_e100 + 4 * i;
+            m.w32(log, m.r32(log) ^ m.r32(a[2] + 4 * i));
             let x = rf(m, a[1] + 4 * i) + rf(m, a[2] + 4 * i) * 0.5;
             wf(m, a[0] + 4 * i, x);
         }
@@ -1030,5 +1042,47 @@ fn burst_setup_0387() {
         };
         ownb::dirty_stack(&mut t, 0xa8e0 + k, &[]);
         t.check(f, call, &[], Eax::Checked, ffx_magic::r48::burst_setup_0387);
+    }
+}
+
+/// `magic_0387` 0x1000c150 (`r48::glow_setup_0387`, internal): the task
+/// list, the root and the lists with and without children.
+#[test]
+fn glow_setup_0387() {
+    let Some(mut t) = sa::twin(387) else { return };
+    let f = t.at(0xc150);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    all_stubs(&mut t);
+    for (s, n) in [(941u32, 1), (676, 3), (678, 1), (325, 2)] {
+        rec(&mut t, s, n, move |_, a| a[0] ^ (s << 16));
+    }
+    particle_globals(&mut t, f, 0x2ce);
+    let (n, last, kid) = (SCRATCH + 0x1_0000, SCRATCH + 0x200, SCRATCH + 0x300);
+    junk_ops(&mut t, f, &[0x273]);
+    let root = w(0x60);
+    let plist = w(0x2b5);
+    for k in 0..3u32 {
+        junk(&mut t, n, 0x3400, k);
+        junk(&mut t, last, 0x10, k);
+        t.set_u32(w(0x22), last);
+        t.set_u32(w(0x40), 0x0f0f_0f0f + k);
+        junk(&mut t, root, 0x20, k);
+        t.set_u32(root + 0x10, if k == 1 { kid } else { root });
+        junk(&mut t, plist, 0x20, k + 1);
+        t.set_u32(plist + 0x10, if k == 2 { kid } else { plist });
+        let call = Call {
+            ecx: n,
+            edx: 0x0e0e_0000 + k,
+            ..Call::default()
+        };
+        ownb::dirty_stack(&mut t, 0xc150 + k, &[]);
+        t.check(
+            f,
+            call,
+            &[0x0a0a_0000 + k],
+            Eax::Checked,
+            ffx_magic::r48::glow_setup_0387,
+        );
     }
 }
