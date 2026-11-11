@@ -65,7 +65,21 @@ tools/build-host.sh        # x86_64-pc-windows-msvc, through cargo xwin (Unicorn
   (`fwrite` on the NULL stream `fopen` gave it), as the original would.
 - `--profile FILE`: every function that ran in Unicorn, tab-separated:
   module, start, name, calls, basic blocks, clock samples (about 1 ms
-  each). Implies `--cover`.
+  each). Implies `--cover`. Since 2026-11-11 (m5-wp2-coverage,
+  `report::functions`): `FFX.exe` by `ffx.sym` (`--sym`, default
+  `FFX_HOST_SYM`, else `symbols/ffx.sym`, else `ffx.sym` beside the
+  executable: `Symbols::locate`), the C runtime DLLs by their nearest
+  export, the spell overlays (`magic_0481.dll+0x1040`) by their nearest
+  entry the game can reach (`library::function_at`, freed overlays
+  included); the blocks at a port's `int3` (a table entry, a trap, a
+  bound overlay entry) are Rust running and left out, where before every
+  port that ran counted as a Unicorn function with one block per call (the
+  report's "N of FFX.exe ... in Unicorn" line too). Each thread profiles
+  into its own entry in `Shared` (`Shared::profile` sums them, from any
+  thread), so under the harness `quit` writes the file before it ends the
+  process (`harness::profile_at_quit`; `docs/harness.md`, "Unicorn
+  coverage in ffx-rust", for `FFX_HOST_PROFILE` and
+  `tools/unicorn-report.py`).
 - `--routes FILE`: every import of `FFX.exe` and the DLLs and where it went
   (`rust`, `dll`, `missing`).
 - `--count`: counts instructions (a code hook on every instruction: about

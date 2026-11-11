@@ -38,7 +38,7 @@
 //! | `shot <path>` | the back buffer of the update the main thread stands after, as a 32-bit BMP |
 //! | `gfxcapture <dir>` | the layer's recording so far (`capture.ffxgfx`, `calls.txt`) |
 //! | `notes` | the run's notes so far (`crate::log::note`: turns, failed threads), as `events` lists |
-//! | `quit` | ends the process |
+//! | `quit` | ends the process (after writing the `--profile` file: [`profile_at_quit`]) |
 //!
 //! `audiomark` answers `ok off` (no `FFX_AUDIO_WAV` capture). Not served
 //! (answered `err`): `snapshot`, `fpucw`, the
