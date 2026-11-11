@@ -623,11 +623,14 @@ fn bone<G: Game>(g: &mut G, img: &Image, fr: &Frame, o: &BoneOps) -> Ret {
     let w = |off: u32| img.word(f + off);
     let n = g.read::<u32>(this);
     let p = g.read::<u32>(n + 0x128);
-    let (eax, moved) = walk(g, this, this, fr.eax);
+    let ebp = fr.esp.wrapping_sub(4);
+    // eax: the cookie word (`ds:__security_cookie ^ ebp`, the operand at
+    // +7); the early way out returns it with the mode byte
+    let cookie = g.read::<u32>(w(7)) ^ ebp;
+    let (eax, moved) = walk(g, this, this, cookie);
     if moved.is_none() {
         return Ret::eax(eax);
     }
-    let ebp = fr.esp.wrapping_sub(4);
     let cursor = ebp.wrapping_sub(0x1c);
     let vt = ebp.wrapping_sub(0x14);
     let mut stack = Vec::new();

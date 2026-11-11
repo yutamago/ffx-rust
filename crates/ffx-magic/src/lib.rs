@@ -98,6 +98,7 @@ pub mod r44;
 pub mod r45;
 pub mod r46;
 pub mod r47;
+pub mod r48;
 pub mod r9_load;
 pub mod r9_misc;
 pub mod r9_summon;
@@ -3528,6 +3529,25 @@ ports! {
     "r47 summon draw 0434" => r47::SUMMON_DRAW_0434, r47::summon_draw_0434;
     "r47 draw 0267" => r47::DRAW_0267, r47::draw_0267;
     // round 47 (magic-r47): end
+    // round 48 (magic-r48)
+    "r48 line place thunk 0387" => r48::JMP_LINE_PLACE_0387, r48::jmp_line_place_0387;
+    "r48 matrix move thunk 0387" => r48::JMP_MATRIX_MOVE_0387, r48::jmp_matrix_move_0387;
+    "r48 laser move call 0387" => r48::CALL_LASER_MOVE_0387, r48::call_laser_move_0387;
+    "r48 start task 0387" => r48::START_TASK_0387, r48::start_task_0387;
+    "r48 shots task 0387" => r48::SHOTS_TASK_0387, r48::shots_task_0387;
+    "r48 glow task 0387" => r48::GLOW_TASK_0387, r48::glow_task_0387;
+    "r48 pulse task 0387" => r48::PULSE_TASK_0387, r48::pulse_task_0387;
+    "r48 laser task 0387" => r48::LASER_TASK_0387, r48::laser_task_0387;
+    "r48 lasers task 0387" => r48::LASERS_TASK_0387, r48::lasers_task_0387;
+    "r48 main task 0387" => r48::MAIN_TASK_0387, r48::main_task_0387;
+    "r48 actors start 0397" => r48::ACTORS_START_0397, r48::actors_start_0397;
+    "r48 load step 0396" => r48::LOAD_0396, r48::load_0396;
+    "r48 landing 0397" => r48::LANDING_0397, r48::landing_0397;
+    "r48 orbs start 0431" => r48::ORBS_START_0431, r48::orbs_start_0431;
+    "r48 orbs set-up 0431" => r48::ORBS_SETUP_0431, r48::orbs_setup_0431;
+    "r48 orbs task 0431" => r48::ORBS_TASK_0431, r48::orbs_task_0431;
+    "r48 pulse step 0387" => r48::PULSE_STEP_0387, r48::pulse_step_0387;
+    // round 48 (magic-r48): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;
     // round 34 (magic-r34)
@@ -5529,6 +5549,23 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r47 mesh 0434", &r47::MESH_0434),
     ("r47 mesh 0267", &r47::MESH_0267),
     // round 47 (magic-r47): end of INTERNAL
+    // round 48 (magic-r48)
+    ("r48 line place 0387", &r48::LINE_PLACE_0387),
+    ("r48 matrix move 0387", &r48::MATRIX_MOVE_0387),
+    ("r48 laser move 0387", &r48::LASER_MOVE_0387),
+    ("r48 shot set-up 0387", &r48::SHOT_SETUP_0387),
+    ("r48 pulse set-up 0387", &r48::PULSE_SETUP_0387),
+    ("r48 pulse init 0387", &r48::PULSE_INIT_0387),
+    ("r48 burst set-up 0387", &r48::BURST_SETUP_0387),
+    ("r48 glow set-up 0387", &r48::GLOW_SETUP_0387),
+    ("r48 laser set-up 0387", &r48::LASER_SETUP_0387),
+    ("r48 lasers set-up 0387", &r48::LASERS_SETUP_0387),
+    ("r48 shots set-up 0387", &r48::SHOTS_SETUP_0387),
+    ("r48 model bounds 0431", &r48::MODEL_BOUNDS_0431),
+    ("r48 facing triangles 0431", &r48::FACING_TRIS_0431),
+    ("r48 triangle pick 0431", &r48::TRI_PICK_0431),
+    ("r48 orbs aim 0431", &r48::ORBS_AIM_0431),
+    // round 48 (magic-r48): end of INTERNAL
 ];
 
 /// What covers the function at `addr`: a port's name (an entry

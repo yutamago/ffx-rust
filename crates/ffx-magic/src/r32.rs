@@ -35,7 +35,7 @@ impl Shift {
 /// store `head_w` when the list was empty, the tail's store `tail_w`).
 /// Returns `eax` after it: the old tail, or `eax` as it was. (The same
 /// steps as `r31`'s private helper.)
-fn append_last<G: Game>(
+pub(crate) fn append_last<G: Game>(
     g: &mut G,
     img: &Image,
     f: u32,
