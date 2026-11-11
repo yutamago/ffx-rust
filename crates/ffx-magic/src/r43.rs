@@ -5054,7 +5054,7 @@ pub const WEAPON_FRAME_0385: Sig = Sig {
 /// it: `((((u t) u) K) p1 + ((u u) u) p0) + ((t t) u) K p2) + (t t) t p3`,
 /// each step one `f32` rounding in this order.
 #[allow(clippy::many_single_char_names)] // the curve's own terms
-fn bezier_0251(u: f32, t: f32, k: f32, p: [f32; 4]) -> f32 {
+pub(crate) fn bezier_0251(u: f32, t: f32, k: f32, p: [f32; 4]) -> f32 {
     let tt = mul(t, t);
     let a = mul(mul(mul(mul(u, t), u), k), p[1]);
     let b = mul(mul(mul(u, u), u), p[0]);

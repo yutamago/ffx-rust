@@ -3975,3 +3975,119 @@ pub const THROW_FLIGHT_0392: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `magic_0392`'s trails (0x100025e0, 832 bytes; internal, no arguments;
+/// an aligned /GS frame, `E` its aligned base: `S` kept at `E + 4`, the matrix `M` at `E + 0xc`, the point `V` at `E + 0x50`): `M` =
+/// slot 235 with its 3x3 part times `K`; then for 16 records `R = S +
+/// 0x1320 + 0x3a0 j`:
+/// - while the count `R + 0x288` is positive it drops, `t` = count /
+///   `R[0x28c]`, `V` = the cubic Bezier of the control points `R - 0xe0`,
+///   `R - 0xf0`, `R - 0x100`, `R - 0x110` ([`bezier_0251`](crate::r43::bezier_0251),
+///   `K5`), and the trail `R + 0x60` is drawn to `V`
+///   ([`trail_draw`](crate::s4_misc::trail_draw), `edx` = `M`); when the
+///   count reaches 0 the object `O = R - 0xd0` starts
+///   ([`start_object_plain`](crate::s4_misc::start_object_plain), scale
+///   `(frnd(0.5) + K2) K3`, index 1) at `R - 0xe0..` with `y` less `K4`
+///   and the yaw `S + 0xfb4`;
+/// - else while `R + 0x284` is positive it halves and the trail is drawn
+///   to `R - 0xe0`.
+///
+/// Returns the last value in `eax`.
+#[allow(clippy::too_many_lines)] // the matrix, the curve, the object
+pub fn trails_0392<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let e = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0x64);
+    let (m, v) = (e + 0xc, e + 0x50);
+    let s = g.read::<u32>(w(0x17));
+    g.write::<u32>(e + 4, s);
+    g.call(t(g, 0x23, 235), 0, &[m]);
+    let km = k(g, 0x37);
+    for i in [0u32, 1, 2, 4, 5, 6, 8, 9, 10] {
+        let x = mul(g.read::<f32>(m + 4 * i), km);
+        g.write::<f32>(m + 4 * i, x);
+    }
+    // the trail draw's frame: ebx, esi, edi, the pushed word, the call
+    let draw = |g: &mut G, r: u32, to: u32| {
+        let esp = e.wrapping_sub(0x14);
+        g.write::<u32>(esp + 4, to);
+        let fr = Frame {
+            at: img.rel32_target(f + 0x24e),
+            esp,
+            ecx: r + 0x60,
+            edx: m,
+            ..Frame::default()
+        };
+        crate::s4_misc::trail_draw(g, img, &fr)
+    };
+    let mut eax = 0;
+    let k5 = k(g, 0x49);
+    for j in 0..16u32 {
+        let r = s + 0x1320 + 0x3a0 * j;
+        let c = g.read::<u32>(r + 0x288);
+        if c.cast_signed() > 0 {
+            let n = crate::sb_sse::cvt(g.read::<u32>(r + 0x28c));
+            let c = c - 1;
+            let tt = div(crate::sb_sse::cvt(c), n);
+            g.write::<u32>(r + 0x288, c);
+            let u = sub(k(g, 0x115), tt);
+            for (d, p) in [
+                (0u32, [0xe0u32, 0xf0, 0x100, 0x110]),
+                (4, [0xdc, 0xec, 0xfc, 0x10c]),
+                (8, [0xd8, 0xe8, 0xf8, 0x108]),
+            ] {
+                let pts = p.map(|o| g.read::<f32>(r - o));
+                let x = crate::r43::bezier_0251(u, tt, k5, pts);
+                g.write::<f32>(v + d, x);
+            }
+            eax = draw(g, r, v);
+            if g.read::<u32>(r + 0x288) == 0 {
+                let rr = st0_f32(g.call(t(g, 0x263, 314), 0, &[0x3f00_0000]).st0);
+                let scale = mul(add(rr, k(g, 0x285)), k(g, 0x298));
+                let o = r - 0xd0;
+                crate::s4_misc::start_object_plain(
+                    g,
+                    img,
+                    img.rel32_target(f + 0x29d),
+                    o,
+                    scale,
+                    1,
+                );
+                let s = g.read::<u32>(e + 4);
+                let yaw = g.read::<u32>(s + 0xfb4);
+                g.write::<u32>(o + 0xc4, yaw);
+                for i in 0..4u32 {
+                    eax = g.read::<u32>(r - 0xe0 + 4 * i);
+                    g.write::<u32>(o + 0xd0 + 4 * i, eax);
+                }
+                let y = sub(g.read::<f32>(o + 0xd4), k(g, 0x2d1));
+                g.write::<f32>(o + 0xd4, y);
+            }
+        } else {
+            let d = g.read::<u32>(r + 0x284);
+            eax = d;
+            if d.cast_signed() > 0 {
+                let d = d.cast_signed() / 2;
+                g.write::<i32>(r + 0x284, d);
+                eax = draw(g, r, r - 0xe0);
+            }
+        }
+    }
+    Ret::eax(eax)
+}
+
+/// [`trails_0392`] (the `rel32`s: the trail draws, the object start, the
+/// cookie check).
+pub const TRAILS_0392: Sig = Sig {
+    len: 832,
+    hash: 0x72d0_b86f_b5b2_7826,
+    calls: &[
+        (0x24e, Callee::Sig(&crate::s4_misc::TRAIL_DRAW_0009)),
+        (0x29d, Callee::Sig(&crate::s4_misc::START_OBJECT_PLAIN)),
+        (0x30c, Callee::Sig(&crate::s4_misc::TRAIL_DRAW_0009)),
+        (0x338, Callee::Any),
+    ],
+    imports: &[],
+};

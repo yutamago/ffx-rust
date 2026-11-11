@@ -2705,6 +2705,9 @@ fn throw_flight_0392() {
         (1, -0.5, 0.25),
         (0, 3.0, 2.0),
         (14, -3.0, -2.5),
+        // (b19 test gap: the yaw past either limit)
+        (7, -4.0, -4.0),
+        (7, 4.0, 4.0),
     ]) {
         junk(&mut t, s + 0xd00, 0x300, k);
         floats(&mut t, s + 0xf90, 0x8, k);
@@ -2718,5 +2721,122 @@ fn throw_flight_0392() {
         magic_r11::pools(&mut t, mo, 167);
         ownb::dirty_stack(&mut t, 0x21d0 + k, &[]);
         t.check_entry(f, Call::default(), &[o], Eax::Checked);
+    }
+}
+
+/// `magic_0392` 0x100025e0 (`r45::trails_0392`, internal): the 16
+/// records with counts above 1, reaching 0 (the object starts), not
+/// positive with the fade count halving and run out; each trail short,
+/// drawn or not (its alpha).
+#[test]
+fn trails_0392() {
+    let Some(mut t) = sa::twin(392) else { return };
+    let f = t.at(0x25e0);
+    let img = t.img.clone();
+    let w = |o: u32| img.word(f + o);
+    all_stubs(&mut t);
+    magic_r11::object_slots(&mut t);
+    let start = t.img.rel32_target(f + 0x29d);
+    magic_r11::object_start_auto(&mut t, start);
+    let td = t.img.rel32_target(f + 0x24e);
+    let lock = SCRATCH + 0x9000;
+    t.set_u32(t.img.word(td + 0x463), lock);
+    t.set_u32(t.img.word(td + 0x520), 0x0cc0_0cc0);
+    let table = SCRATCH + 0x8000;
+    t.write(table, &[0; 0x100]);
+    t.set_u16(table + 6, 3);
+    for k in 0..3u32 {
+        let e = table + 0x10 + 8 * k;
+        t.set_u16(e, (0x80 + 0x10 * k) as u16);
+        t.set_u16(e + 2, 0x300);
+        let r = table + 0x80 + 0x10 * k;
+        t.set_u32(r + 4, 4 * k);
+        t.set_u8(r + 4 * k + 4, 0x31 + k as u8);
+    }
+    rec(&mut t, 941, 1, move |_, _| table);
+    for s in [723u32, 724, 235] {
+        rec(&mut t, s, 1, move |m, a| {
+            for i in 0..16 {
+                let v = (i as f32 + 1.0) * if s == 235 { 1.0 } else { 0.5 };
+                m.w32(a[0] + 4 * i, v.to_bits());
+            }
+            s
+        });
+    }
+    for (s, sign) in [(234u32, -1.0f32), (248, 1.0)] {
+        rec(&mut t, s, 3, move |m, a| {
+            for i in 0..3 {
+                let v = rf(m, a[1] + 4 * i) + sign * rf(m, a[2] + 4 * i);
+                wf(m, a[0] + 4 * i, v);
+            }
+            s
+        });
+    }
+    rec(&mut t, 229, 3, |m, a| {
+        let mut x = 0x229u32;
+        for i in 0..4 {
+            x = x.rotate_left(5) ^ m.r32(a[2] + 4 * i) ^ m.r32(a[1] + 4 * i);
+        }
+        m.w32(SCRATCH + 0x9400, x);
+        x
+    });
+    rec(&mut t, 772, 2, |_, a| 0x7720_0000 ^ a[1]);
+    t.stub_edx(772, |_, a| 0x0edd_0000 ^ a[1]);
+    rec(&mut t, 773, 4, |_, a| (a[3] >> 1) & 1);
+    for s in [774u32, 775, 776, 777, 778] {
+        rec(&mut t, s, 1, move |_, a| (s << 16) ^ a[0]);
+    }
+    let k314 = SCRATCH + 0x7e10;
+    rec(&mut t, 314, 1, move |m, a| {
+        let c = m.r32(k314);
+        m.w32(k314, c + 1);
+        0x0314_0000 ^ a[0] ^ c
+    });
+    t.stub_st0(314, move |m, a| {
+        f64::from(f32::from_bits(a[0])) * 0.5 * f64::from(m.r32(k314) % 5) + 0.125
+    });
+    let s = SCRATCH + 0x1_0000;
+    t.set_u32(w(0x17), s);
+    for k in 0..2u32 {
+        junk(&mut t, s + 0xfb0, 0x10, k);
+        for j in 0..16u32 {
+            let r = s + 0x1320 + 0x3a0 * j;
+            junk(&mut t, r - 0x110, 0x60, k + j);
+            floats(&mut t, r - 0x110, 0x14, k + j);
+            let (c, fade) = match (j + k) % 5 {
+                0 => (5i32, 3i32),
+                1 => (1, 3),
+                2 => (0, 9),
+                3 => (-2, 1),
+                _ => (0, 0),
+            };
+            t.set_u32(r + 0x288, c.cast_unsigned());
+            t.set_u32(r + 0x28c, 8);
+            t.set_u32(r + 0x284, fade.cast_unsigned());
+            // the trail: one or two points, its alpha on and off
+            let o = r + 0x60;
+            t.write(o, &[0x33; 0x230]);
+            t.set_u32(o, 0x0a00 + j);
+            t.set_u32(o + 4, 1);
+            t.set_u16(o + 8, (j % 3) as u16);
+            t.set_u16(o + 0xa, 0x100);
+            for p in 0..2u32 {
+                for (i, x) in (0u32..).zip([p as f32, 1.0 + j as f32 * 0.25, 2.0 * p as f32, 1.0]) {
+                    setf(&mut t, o + 0xc + 16 * p + 4 * i, x);
+                }
+            }
+            let alpha = if j % 2 == 0 { 0u8 } else { 0x40 };
+            t.write(o + 0x20c, &[10, 200, 0, alpha, 250, 3, 128, alpha / 2]);
+            setf(&mut t, o + 0x214, 1.5);
+            setf(&mut t, o + 0x218, 0.25);
+            setf(&mut t, o + 0x21c, 0.5);
+            t.set_u32(o + 0x220, 1);
+            t.set_u32(o + 0x224, 2);
+        }
+        magic_r11::pools(&mut t, f, 832);
+        ownb::dirty_stack(&mut t, 0x25e0 + k, &[]);
+        t.check(f, Call::default(), &[], Eax::Checked, |g, img, fr| {
+            ffx_magic::r45::trails_0392(g, img, fr)
+        });
     }
 }
