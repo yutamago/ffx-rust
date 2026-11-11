@@ -818,6 +818,24 @@ only the rest:
   the CRT's own words (the cookie, the attach count, the `onexit` table,
   which the ported `DllMain` keeps none of), 5 calls in Rust and none in
   Unicorn on one side, the other way round on the other.
+- `tests/overlay_bind.rs` (m5-wp1-bind, 2026-11-11) loads all 581 DLLs
+  the same way (about 25 s in release) and asserts that every entry
+  offered binds a port (`library::bindings` lists them), that `DllMain`
+  attach and detach, `InitMagicPRX` and `GetEffectOverlayTable` run as 4
+  Rust calls with none in Unicorn, and that the 7 overlay table words
+  bind. Of 74,976 entries, 60,567 bind. The 14,409 left are no entries:
+  7,437 jump-table addresses, case labels and byte index tables in the
+  code after their (ported) function, and 12 per DLL in the CRT (6,972):
+  its two `__xi` initialisers and two `atexit` callbacks (run only by the
+  original `DllMain`'s `_CRT_INIT`), `__security_check_cookie` (pushed
+  for `_except_handler4`; the ports inline the check), `_except_handler4`
+  and 6 `__try` filter and handler labels in three CRT functions (reached
+  only through an SEH frame the CRT sets up; no port sets one up). The
+  test names them by code identity, so a new unbound entry fails it. The
+  first run found 30 real entries unbound (22 stored callbacks that were
+  `INTERNAL` only, 8 tiny callbacks the work list had counted as CRT);
+  they bind now (`docs/formats/magic.md`, "The CRT").
+  `FFX_BIND_REPORT=<file>` writes a row per entry.
 
 ## Threads
 

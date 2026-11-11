@@ -173,6 +173,12 @@ pub fn actor_part<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
     eax
 }
 
+/// [`actor_part`] as an entry: the DLL pushes its address as a callback
+/// (`push 0x1000a450`), so it is called by address (cdecl `(obj)`).
+pub fn actor_part_entry<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    Ret::eax(actor_part(g, img, fr))
+}
+
 /// [`actor_part`] (225 bytes, 1 overlay).
 pub const ACTOR_PART: Sig = Sig {
     len: 225,

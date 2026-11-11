@@ -897,21 +897,30 @@ fn stubs_0165(t: &mut Twin) {
 }
 
 /// `magic_0165` 0x100025b0 (`r36::glow_0165`, an entry): the fade count
-/// positive (counted down), 0 and negative.
+/// positive (counted down), 0 and negative; each case also entered
+/// through the task-step thunk 0x10002fe0 (`jmp` to it,
+/// `wp1_tiny::tail_thunk`).
 #[test]
 fn glow_0165() {
     let Some(mut t) = twin(165) else { return };
     let f = t.at(0x25b0);
+    let thunk = t.at(0x2fe0);
+    assert_eq!(
+        ffx_magic::bind(&t.img, thunk).map(|i| ffx_magic::PORTS[i].0),
+        Some("wp1 thunk to glow 0165")
+    );
     stubs_0165(&mut t);
     let o = SCRATCH + 0x1_0000;
     t.set_u32(t.img.word(f + 0x1e), o);
     for (k, n) in [(0u32, 7i32), (1, 0), (2, -45), (3, 1), (4, 21)] {
-        floats(&mut t, o + 0x980, 16, k);
-        t.set_u32(o + 0x5f18, n.cast_unsigned());
-        t.set_u32(t.img.word(f + 0x3a), 0x0e0e_0000 + k);
-        t.set_u32(t.img.word(f + 0x2f9), 0x0cc0_0000 + k);
-        ownb::dirty_stack(&mut t, 0x25b0 + k, &[]);
-        t.check_entry(f, Call::default(), &[], Eax::Checked);
+        for at in [f, thunk] {
+            floats(&mut t, o + 0x980, 16, k);
+            t.set_u32(o + 0x5f18, n.cast_unsigned());
+            t.set_u32(t.img.word(f + 0x3a), 0x0e0e_0000 + k);
+            t.set_u32(t.img.word(f + 0x2f9), 0x0cc0_0000 + k);
+            ownb::dirty_stack(&mut t, 0x25b0 + k, &[]);
+            t.check_entry(at, Call::default(), &[], Eax::Checked);
+        }
     }
 }
 

@@ -185,6 +185,12 @@ pub fn start_tasks<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> u32 {
     n3
 }
 
+/// [`start_tasks`] as an entry: the DLL keeps its address in a `.data`
+/// table, so it is called by address (cdecl, no words).
+pub fn start_tasks_entry<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    Ret::eax(start_tasks(g, img, fr))
+}
+
 /// [`start_tasks`] (349 bytes, 1 overlay).
 pub const START_TASKS: Sig = Sig {
     len: 349,
