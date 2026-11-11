@@ -3451,6 +3451,7 @@ ports! {
     // round 44 (magic-r44): end
     // round 46 (magic-r46)
     "r46 camera task 0070" => r46::CAMERA_TASK_0070, r46::camera_task_0070;
+    "r46 main task 0152" => r46::MAIN_TASK_0152, r46::main_task_0152;
     // round 46 (magic-r46): end
     "summon objects start" => s7_misc::SUMMON_OBJECTS_START, s7_misc::summon_objects_start;
     "sprites step (globals)" => s7_misc::SPRITES_STEP_GLOBAL, s7_misc::sprites_step_global;

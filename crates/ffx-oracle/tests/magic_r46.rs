@@ -307,7 +307,7 @@ fn camera_task_0070() {
         }
         // (the slot-666 flag byte is the low byte of `+0x2ba`'s word: after
         // it)
-        t.set_u8(w(&t, 0x113), 0x5e ^ cs.flag);
+        t.set_u8(w(&t, 0x113), 0x4e ^ cs.flag);
         // slot 520's cut word, the release's handle, slot 228's byte
         t.set_u32(w(&t, 0x1b3), 0x0003_1234 + (k << 8));
         t.set_u32(w(&t, 0x2f3), 0x0f00_0000 + k);
@@ -375,6 +375,258 @@ fn camera_task_0070() {
         t.set_u32(dll_list + 0xc, dll_list);
         t.set_u16(dll_list + 0x18, 2);
         ownb::dirty_stack(&mut t, 0x9e30 + k, &junk);
+        t.check_entry(f, Call::default(), &[a], Eax::Checked);
+    }
+}
+
+/// One case of [`main_task_0152`]: the state, the count `R + 0x2918`
+/// (before the call's step), the timers `R + 0x290c`/`R + 0x2910`, the
+/// step `R + 0x2914`, and a variant `v`: bit 0 slot 689 answers, bit 1
+/// slot 20 answers, bit 2 the byte `R + 0xbb8`'s bit 2, bit 3 `R + 0x78`
+/// negative, bit 4 slot 288's list holds bytes, bit 5 slot 520 answers
+/// 0x18b0046, bit 6 the character flag's bit 0.
+#[derive(Clone, Copy)]
+struct Case0152 {
+    state: u32,
+    count: i32,
+    t1: f32,
+    t2: f32,
+    step: u32,
+    v: u32,
+}
+
+const fn c152(state: u32, count: i32, t1: f32, t2: f32, step: u32, v: u32) -> Case0152 {
+    Case0152 {
+        state,
+        count,
+        t1,
+        t2,
+        step,
+        v,
+    }
+}
+
+/// `magic_0152` 0x10009a90 (`r46::main_task_0152`, r37b's 0533 main task
+/// on 0152's layout): every state waiting and going on, the chains (0 into 0x64, 0x65 into 0x5a into 0x5b into
+/// 0x14, 0x20 into 0x28 into 0x32, 0x33 into 0x34 into 0x35 into 0x36,
+/// 0x37 into 0x38 into 0x39 into 0x3a, 0x50 into 10000), slots 689, 20,
+/// 549 (once busy) both ways, the bones' steps, slot 288's list, the
+/// states past the table, slot 520's answer, the character flag both
+/// ways.
+#[test]
+fn main_task_0152() {
+    let Some(mut t) = twin(152) else { return };
+    all_stubs(&mut t);
+    summon_stubs::float_matrix_stubs(&mut t);
+    summon_stubs::vector_stubs(&mut t);
+    summon_stubs::summon_stubs(&mut t);
+    let f = t.at(0x9a90);
+    let w = |t: &Twin, o: u32| t.img.word(f + o);
+    let answer = SCRATCH + 0x7f0;
+    // slot 689 and 20 answer by the case; 549 is busy every other call
+    rec(&mut t, 689, 0, move |m, _| m.r32(answer) & 1);
+    rec(&mut t, 20, 1, move |m, a| {
+        (m.r32(answer) >> 1 & 1) * (a[0] | 1)
+    });
+    rec(&mut t, 520, 0, move |m, _| {
+        if m.r32(answer) & 0x20 != 0 {
+            0x018b_0046
+        } else {
+            0x018b_0047
+        }
+    });
+    rec(&mut t, 549, 1, |m, _| {
+        let k = m.r32(SCRATCH + 0x7f4);
+        m.w32(SCRATCH + 0x7f4, k + 1);
+        (k + 1) & 1
+    });
+    rec(&mut t, 324, 0, |m, _| {
+        let k = m.r32(SCRATCH + 0x7f8);
+        m.w32(SCRATCH + 0x7f8, k + 0x0123_0457);
+        k ^ 0xfc00
+    });
+    let list = SCRATCH + 0x7a00;
+    rec(&mut t, 288, 2, move |m, a| {
+        let n = m.r32(SCRATCH + 0x7af0);
+        m.w32(a[1], n);
+        list
+    });
+    rec(&mut t, 325, 2, |m, a| {
+        for i in 0..4 {
+            let x = m.r32(a[1] + 4 * i);
+            m.w32(a[0] + 4 * i, x ^ 0x10);
+        }
+        0x0325_0000 ^ a[0]
+    });
+    rec(&mut t, 558, 1, |m, a| {
+        for i in 0..4 {
+            m.w32(a[0] + 4 * i, 0x40 * i + 7);
+        }
+        0x558
+    });
+    t.stub_st0(790, |_, _| 0.375);
+    for (s, x) in [(12u32, -1.5f64), (333, 0.75), (282, 2.25), (307, 0.625)] {
+        t.stub_st0(s, move |_, a| {
+            x + f64::from(a.first().copied().unwrap_or(0) & 3)
+        });
+    }
+    prime(&mut t, f, SCRATCH + 0x3_8000);
+    let (a, r) = (SCRATCH + 0x100, SCRATCH + 0x1_0000);
+    let (node, n0, n1) = (SCRATCH + 0x3600, SCRATCH + 0x3680, SCRATCH + 0x36c0);
+    let (lo, hi) = (-100.0f32, 1000.0f32);
+    let mut cases = vec![
+        c152(0, 0, 0.0, 0.0, 0, 0),
+        c152(0, 0, 0.0, 0.0, 0, 1),
+        c152(0x64, 0, 0.0, 0.0, 0, 0),
+        c152(0x65, 0x3a, 0.0, 0.0, 0, 0),
+        c152(0x65, 0x3b, lo, 0.0, 0, 0),
+        c152(0x65, 0x3b, hi, 0.0, 0, 0),
+        c152(0x1e, 0, 0.0, 0.0, 0, 0),
+        c152(0x5a, 0, lo, 0.0, 0, 0),
+        c152(0x5a, 0, hi, lo, 0, 0),
+        c152(0x5b, 0, lo, 0.0, 0, 0),
+        c152(0x5b, 0x2c, hi, hi, 0, 0),
+        c152(0x5b, 0x2c, hi, lo, 0, 0),
+        c152(0x14, 0, 0.0, lo, 0, 0),
+        c152(0x14, 0, 0.0, hi, 2, 0),
+        c152(0x14, 0x2c, 0.0, hi, 3, 0),
+        c152(0x14, 0x2c, 0.0, hi, 4, 0),
+        c152(0x1f, 5, 0.0, 0.0, 0, 0),
+        c152(0x1f, 6, 0.0, 0.0, 0, 0),
+        c152(0x20, 0, 0.0, 0.0, 0, 0),
+        c152(0x20, 0x10, 0.0, 0.0, 0, 8),
+        c152(0x20, 0x76, 0.0, 0.0, 0, 8),
+        c152(0x20, 0x76, 0.0, 0.0, 0, 0x18),
+        c152(0x20, 0x77, 0.0, lo, 0, 8),
+        c152(0x20, 0x77, 0.0, hi, 0, 0xc),
+        c152(0x20, 0x77, 0.0, hi, 0, 0x8),
+        c152(0x28, 0, 0.0, lo, 0, 0),
+        c152(0x28, 0, 0.0, hi, 0, 0),
+        c152(0x28, 0, 0.0, hi, 0, 1),
+        c152(0x28, 0, 0.0, hi, 0, 3),
+        c152(0x32, 0, 0.0, 0.0, 0, 0),
+        c152(0x32, 0, 0.0, 0.0, 0, 1),
+        c152(0x32, 0, 0.0, 0.0, 0, 2),
+        c152(0x33, 5, 0.0, 0.0, 0, 0),
+        c152(0x33, 0, 0.0, 0.0, 0, 0),
+        c152(0x33, 1, 0.0, hi, 0, 0),
+        c152(0x34, 0, 0.0, lo, 0, 0),
+        c152(0x34, 0, 0.0, hi, 0, 0),
+        c152(0x34, 0, 0.0, hi, 3, 0),
+        c152(0x34, 0x1d, 0.0, lo, 3, 0),
+        c152(0x35, 0, 0.0, hi, 0, 0),
+        c152(0x35, 0, 0.0, hi, 3, 0),
+        c152(0x35, 0x1d, 0.0, hi, 3, 0),
+        c152(0x36, 0, 0.0, 0.0, 0, 0),
+        c152(0x37, 0, 0.0, lo, 0, 0),
+        c152(0x37, 0, 0.0, lo, 0, 1),
+        c152(0x38, 0, 0.0, lo, 0, 0),
+        c152(0x38, 0, 0.0, hi, 0, 0),
+        c152(0x39, 0, 0.0, lo, 0, 0),
+        c152(0x39, 0, 0.0, 2.0, 0, 0),
+        c152(0x39, 0, 0.0, hi, 0, 0),
+        c152(0x3a, 0, 0.0, lo, 0, 0),
+        c152(0x3a, 0, 0.0, hi, 0, 0),
+        c152(0x46, 0, 0.0, 0.0, 0, 0),
+        c152(0x47, 0xb0, 0.0, 0.0, 0, 0),
+        c152(0x47, 0xb1, 0.0, 0.0, 0, 0),
+        c152(0x50, 0x7c, 0.0, 0.0, 0, 0),
+        c152(0x50, 0x7d, 0.0, 0.0, 0, 0),
+        c152(0x2710, 0, 0.0, 0.0, 0, 0),
+        c152(0x2711, 0, 0.0, 0.0, 0, 0),
+        c152(0x2712, 0, 0.0, 0.0, 0, 0),
+        c152(0x66, 0, 0.0, 0.0, 0, 0),
+        c152(5, 0, 0.0, 0.0, 0, 0),
+        c152(0xffff_fff0, 0, 0.0, 0.0, 0, 0),
+    ];
+    // slot 288's list (152 runs slot 296 on every byte)
+    let (own, skip) = (0x44u32, 0x45u8);
+    cases.push(c152(0x20, 0x76, 0.0, 0.0, 0, 0x18));
+    // slot 520's answer, the character flag both ways
+    for v in [0x20u32, 0x21, 0x23] {
+        cases.push(c152(0x28, 0, 0.0, hi, 0, v));
+    }
+    cases.push(c152(0x5a, 0, lo, 0.0, 0, 0x40));
+    cases.push(c152(0x5a, 0, hi, lo, 0, 0x40));
+    // 0x14's last bone at count 0x2c (`G_S` 10) and 0x2d
+    cases.push(c152(0x14, 0x2b, 0.0, lo, 4, 0));
+    cases.push(c152(0x14, 0x2b, 0.0, hi, 4, 0));
+    for (k, cs) in (0u32..).zip(cases) {
+        t.write(r, &vec![0u8; 0x2920]);
+        // the record's floats and words: junk-ish but finite
+        for o in (0u32..0x2900).step_by(0x40) {
+            t.set_u32(r + o + 0x1c, (0.5f32 + (o >> 6) as f32).to_bits());
+        }
+        // words the states clear (nonzero first)
+        for o in [
+            0x94cu32, 0x974, 0x99c, 0x9c4, 0xa38, 0xa40, 0xa90, 0xa64, 0xa6c, 0xabc,
+        ] {
+            t.set_u32(r + o, 0x6c6c_0000 + o);
+        }
+        for j in 0..8u32 {
+            t.set_u32(r + 0x27b4 + 0x2c * j, 0x6d6d_0000 + j);
+        }
+        // the eight bones' owned nodes: every other one alone under a
+        // parent of its own, the others without one
+        for i in 0..8u32 {
+            let n = r + 0x1a70 + 0x14c * i;
+            let p = SCRATCH + 0x6000 + 0x40 * i;
+            t.write(p, &[0; 0x40]);
+            if i % 2 == 0 {
+                t.set_u32(n + 0x14, p);
+                t.set_u32(n + 4, p);
+                t.set_u32(n + 8, p);
+                t.set_u32(p + 0x10, n);
+                t.set_u32(p + 0xc, n);
+                t.set_u16(p + 0x18, 1);
+            } else {
+                t.set_u32(n + 0x14, 0);
+            }
+        }
+        t.set_u32(r + 0x2908, cs.state);
+        t.set_u32(r + 0x2918, cs.count.cast_unsigned());
+        set_f(&mut t, r + 0x290c, cs.t1);
+        set_f(&mut t, r + 0x2910, cs.t2);
+        t.set_u32(r + 0x2914, cs.step);
+        t.set_u32(
+            r + 0x78,
+            if cs.v & 8 != 0 {
+                0xffff_ff00
+            } else {
+                0x100 + k
+            },
+        );
+        t.set_u8(r + 0xbb8, if cs.v & 4 != 0 { 4 } else { 0xfb });
+        t.set_u32(answer, cs.v & 0x23);
+        let flag = t.u32(w(&t, 0x1be)) as u8;
+        t.set_u8(w(&t, 0x1be), (flag & !1) | u8::from(cs.v & 0x40 != 0));
+        // `G_S` junk first (0x14 copies it at counts other than 0x2c)
+        t.set_u32(w(&t, 0x88c), 0x77 + k);
+        t.set_u32(SCRATCH + 0x7f4, k & 1);
+        t.set_u32(SCRATCH + 0x7af0, if cs.v & 0x10 != 0 { 7 } else { 0 });
+        t.write(
+            list,
+            &[0x21, own as u8, skip, 0x33, 0x52, own as u8, 0x7f, 0x80],
+        );
+        t.set_u32(a, node);
+        t.set_u32(a + 4, r);
+        for (x, next, prev) in [(node, n0, n1), (n0, n1, node), (n1, node, n0)] {
+            t.set_u32(x + 4, next);
+            t.set_u32(x + 8, prev);
+        }
+        // the DLL's lists empty or with a last child
+        let kid = SCRATCH + 0x5e00;
+        t.write(kid, &[0x21; 0x40]);
+        for op in [
+            0x1f4u32, 0x241, 0x3f6, 0x400, 0x484, 0x5fd, 0x635, 0x693, 0x7d2, 0xecb, 0xfb1, 0x1082,
+            0x10f8, 0x1379, 0x141c, 0x149d,
+        ] {
+            let l = w(&t, op);
+            t.set_u32(l + 0x10, if k % 3 == 1 { kid } else { l });
+            t.set_u32(l + 0xc, l);
+            t.set_u16(l + 0x18, 2);
+        }
+        ownb::dirty_stack(&mut t, 0x9a90 + k, &[]);
         t.check_entry(f, Call::default(), &[a], Eax::Checked);
     }
 }
