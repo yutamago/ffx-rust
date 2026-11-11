@@ -19,7 +19,7 @@
 use std::collections::HashMap;
 use std::ffi::CString;
 
-use ffx_gfx::StateKind;
+use ffx_gfx::{StateKind, Subresource};
 use windows::Win32::Foundation::{HMODULE, HWND, RECT};
 use windows::Win32::Graphics::Direct3D::{
     D3D_DRIVER_TYPE_HARDWARE, D3D_FEATURE_LEVEL, D3D_FEATURE_LEVEL_11_0, D3D_PRIMITIVE_TOPOLOGY,
@@ -802,6 +802,66 @@ impl Backend for D3d11 {
             unsafe { c.Flush() };
         }
         S_OK
+    }
+
+    fn read_texture(&mut self, id: u32, desc: &[u32; 11]) -> Option<Vec<Subresource>> {
+        let (d, c) = (self.device.clone()?, self.context.clone()?);
+        let texture = self.get::<ID3D11Texture2D>(id)?;
+        // multisampled: the hook's read-back fails (hash 0)
+        if desc[5] != 1 {
+            return Some(Vec::new());
+        }
+        // the hook's staging description: usage STAGING, no binds, CPU
+        // read, only TEXTURECUBE of the misc flags
+        let mut sd = *desc;
+        sd[7] = 3;
+        sd[8] = 0;
+        sd[9] = 0x2_0000;
+        sd[10] &= 0x4;
+        let td: D3D11_TEXTURE2D_DESC = read(&words_bytes(&sd))?;
+        let (mips, slices) = (desc[2].max(1), desc[3].max(1));
+        let compressed = matches!(desc[4], 70..=84 | 94..=99);
+        let mut out = Vec::new();
+        // SAFETY: a copy into a staging texture of the hook's description,
+        // each subresource mapped for reading; at most its `DepthPitch`
+        // bytes (`RowPitch` x rows) are read before the `Unmap`.
+        unsafe {
+            let mut staging: Option<ID3D11Texture2D> = None;
+            if d.CreateTexture2D(&raw const td, None, Some(&raw mut staging))
+                .is_err()
+            {
+                return Some(out);
+            }
+            let staging = staging?;
+            c.CopyResource(&staging, &texture);
+            for slice in 0..slices {
+                for mip in 0..mips {
+                    let sub = mip + slice * mips;
+                    let mut m = D3D11_MAPPED_SUBRESOURCE::default();
+                    if c.Map(&staging, sub, D3D11_MAP_READ, 0, Some(&raw mut m))
+                        .is_err()
+                        || m.pData.is_null()
+                    {
+                        // a short read-back: the hook's error (hash 0)
+                        return Some(out);
+                    }
+                    let h = (desc[1] >> mip).max(1);
+                    let rows = if compressed { h.div_ceil(4) } else { h };
+                    let mut n = m.RowPitch as usize * rows as usize;
+                    if m.DepthPitch != 0 {
+                        n = n.min(m.DepthPitch as usize);
+                    }
+                    let data =
+                        std::slice::from_raw_parts(m.pData.cast::<u8>().cast_const(), n).to_vec();
+                    c.Unmap(&staging, sub);
+                    out.push(Subresource {
+                        row_pitch: m.RowPitch,
+                        data,
+                    });
+                }
+            }
+        }
+        Some(out)
     }
 
     fn back_buffer_image(&mut self) -> Option<(u32, u32, Vec<u8>)> {

@@ -15,14 +15,18 @@
 //! A capture armed in lockstep at boundary `f` holds the presents that
 //! show updates `f + 1` .. `f + N` (the harness's flip labels), as the
 //! hook's (armed after the present of update `f`); a present that shows a
-//! later update than the next one wanted fails the capture. Each object a
-//! captured frame uses (draws, clears, copies; views pull in their
-//! resources) is declared once, at its first use, as the hook declares it
-//! in hash mode:
+//! later update than the next one wanted fails the capture. The frames
+//! keep the copies the hook records (`CopyResource` between two textures
+//! the game made; not region copies, resolves or the back buffer's). Each
+//! object a captured frame uses (draws, clears, copies; views pull in
+//! their resources) is declared once, with its state at the window's end,
+//! as the hook declares it in hash mode:
 //!
 //! - a texture: its description and one subresource holding the 8-byte
 //!   content hash (FNV-1a of each subresource's texel rows, folded per
 //!   subresource, in the hook's order), 0 for render and depth targets;
+//!   the GPU's contents read back as the hook reads them (the D3D11 back
+//!   end's `read_texture`), the uploaded ones on the null device;
 //! - a static index buffer: its bytes; another static buffer: the FNV-1a
 //!   hash of its bytes; a dynamic buffer: its bytes at the window's start
 //!   (the hook declares none and adds each draw's bytes before it; the
@@ -125,10 +129,10 @@ struct Window {
     /// The first update a captured frame shows.
     first: u32,
     frames: Vec<(u32, Frame)>,
-    /// Objects declared so far, and their messages (views last).
+    /// Objects the frames use, in order of first use (a view's resource
+    /// before it).
     declared: BTreeSet<Id>,
-    msgs: Vec<Msg>,
-    views: Vec<Msg>,
+    used: Vec<Id>,
     /// Dynamic buffers' bytes as the frame before the window left them.
     rings: HashMap<Id, Vec<u8>>,
     world: Option<Msg>,
@@ -148,6 +152,11 @@ pub struct Store {
 pub struct Live<'a> {
     /// A buffer's description and its bytes now (the arena copy).
     pub buffer: &'a dyn Fn(Id) -> Option<(BufferDesc, Vec<u8>)>,
+    /// A 2D texture's contents on the GPU, as the hook's capture reads
+    /// them back (`read_texture_all`: for each slice, `max(desc mips, 1)`
+    /// subresources at their row pitch); `None` without a device (the
+    /// uploaded contents then).
+    pub texture: &'a mut dyn FnMut(Id, &TextureDesc) -> Option<Vec<Subresource>>,
     /// The scene and camera (`World`).
     pub world: &'a dyn Fn() -> Msg,
 }
@@ -227,8 +236,7 @@ impl Store {
             first,
             frames: Vec::new(),
             declared: BTreeSet::new(),
-            msgs: Vec::new(),
-            views: Vec::new(),
+            used: Vec::new(),
             rings: HashMap::new(),
             world: None,
             reply: Some(reply),
@@ -260,7 +268,7 @@ impl Store {
     /// one wanted; the capture is written after its last frame. Returns
     /// whether the frame before the window has just been presented (the
     /// layer snapshots the rings then).
-    pub fn present(&mut self, label: Option<u32>, frame: &Frame, live: &Live<'_>) -> bool {
+    pub fn present(&mut self, label: Option<u32>, frame: &Frame, live: &mut Live<'_>) -> bool {
         let Some(want) = self.wants() else {
             return false;
         };
@@ -282,13 +290,23 @@ impl Store {
         if w.world.is_none() {
             w.world = Some((live.world)());
         }
-        for id in frame_objects(frame) {
-            self.declare(&mut w, id, live);
+        // the copies the hook records: between two textures the game made
+        // (`CreateTexture2D`), not the back buffer's
+        let mut frame = frame.clone();
+        frame.cmds.retain(|c| match c {
+            Cmd::CopyTexture { dst, src } => {
+                self.textures.contains_key(dst) && self.textures.contains_key(src)
+            }
+            _ => true,
+        });
+        for id in frame_objects(&frame) {
+            self.use_object(&mut w, id);
         }
-        w.frames.push((label, frame.clone()));
+        w.frames.push((label, frame));
         if w.frames.len() >= w.opts.frames as usize {
             let reply = w.reply.take();
-            let r = write(&w);
+            let msgs = self.declarations(&w, live);
+            let r = write(&w, &msgs);
             if let Some(tx) = reply {
                 let _ = tx.send(r);
             }
@@ -304,68 +322,125 @@ impl Store {
         }
     }
 
-    /// Declares object `id` (a view's resource first) once.
-    fn declare(&self, w: &mut Window, id: Id, live: &Live<'_>) {
+    /// Notes object `id` (a view's resource first) once.
+    fn use_object(&self, w: &mut Window, id: Id) {
         if id == 0 || !w.declared.insert(id) {
             return;
         }
-        if let Some(m @ Msg::View { resource, .. }) = self.others.get(&id) {
-            let resource = *resource;
-            self.declare(w, resource, live);
-            w.views.push(m.clone());
-            return;
+        if let Some(Msg::View { resource, .. }) = self.others.get(&id) {
+            self.use_object(w, *resource);
         }
-        if let Some(t) = self.textures.get(&id) {
-            w.msgs.push(if w.opts.hash {
-                let target = t.desc[8] & (BIND_RENDER_TARGET | BIND_DEPTH_STENCIL) != 0;
-                let h = if target { 0 } else { texture_hash(t) };
-                Msg::Texture {
-                    id,
-                    desc: t.desc,
-                    subresources: vec![Subresource {
-                        row_pitch: 0,
-                        data: h.to_le_bytes().to_vec(),
-                    }],
+        w.used.push(id);
+    }
+
+    /// The objects' messages at the window's end, as the hook's `snapshot`
+    /// makes them then (views after the rest).
+    fn declarations(&self, w: &Window, live: &mut Live<'_>) -> Vec<Msg> {
+        let mut msgs = Vec::new();
+        let mut views = Vec::new();
+        for &id in &w.used {
+            match self.others.get(&id) {
+                Some(m @ Msg::View { .. }) => {
+                    views.push(m.clone());
+                    continue;
                 }
-            } else {
-                Msg::Texture {
-                    id,
-                    desc: t.desc,
-                    subresources: t
-                        .subs
-                        .iter()
-                        .map(|((row, _, _), data)| Subresource {
-                            row_pitch: *row,
-                            data: data.clone(),
-                        })
-                        .collect(),
+                Some(m) => {
+                    msgs.push(m.clone());
+                    continue;
                 }
-            });
-            return;
+                None => {}
+            }
+            if let Some(t) = self.textures.get(&id) {
+                msgs.push(texture_msg(id, t, w.opts.hash, live));
+            } else if let Some((desc, bytes)) = (live.buffer)(id) {
+                let data = if desc[1] == USAGE_DYNAMIC {
+                    w.rings.get(&id).cloned().unwrap_or_default()
+                } else if !w.opts.hash || desc[2] & BIND_INDEX != 0 {
+                    bytes
+                } else {
+                    fnv(&bytes).to_le_bytes().to_vec()
+                };
+                msgs.push(Msg::Buffer { id, desc, data });
+            }
         }
-        if let Some((desc, bytes)) = (live.buffer)(id) {
-            let data = if desc[1] == USAGE_DYNAMIC {
-                w.rings.get(&id).cloned().unwrap_or_default()
-            } else if !w.opts.hash || desc[2] & BIND_INDEX != 0 {
-                bytes
-            } else {
-                fnv(&bytes).to_le_bytes().to_vec()
-            };
-            w.msgs.push(Msg::Buffer { id, desc, data });
-            return;
-        }
-        if let Some(m) = self.others.get(&id) {
-            w.msgs.push(m.clone());
+        msgs.extend(views);
+        msgs
+    }
+}
+
+/// A texture's message: in hash mode one subresource holding its content
+/// hash (0 for targets); else its contents. The GPU's when the device
+/// reads them back, else the uploaded ones.
+fn texture_msg(id: Id, t: &Texture, hash: bool, live: &mut Live<'_>) -> Msg {
+    let target = t.desc[8] & (BIND_RENDER_TARGET | BIND_DEPTH_STENCIL) != 0;
+    if hash && target {
+        return light(id, t.desc, 0);
+    }
+    let gpu = (live.texture)(id, &t.desc);
+    if hash {
+        let h = match &gpu {
+            Some(subs) => texture_hash(
+                &t.desc,
+                &subs
+                    .iter()
+                    .map(|s| (s.row_pitch, s.data.as_slice()))
+                    .collect::<Vec<_>>(),
+            ),
+            None => texture_hash(&t.desc, &uploaded(t)),
+        };
+        return light(id, t.desc, h);
+    }
+    let subresources = gpu.unwrap_or_else(|| {
+        t.subs
+            .iter()
+            .map(|((row, _, _), data)| Subresource {
+                row_pitch: *row,
+                data: data.clone(),
+            })
+            .collect()
+    });
+    Msg::Texture {
+        id,
+        desc: t.desc,
+        subresources,
+    }
+}
+
+/// The hash-mode texture message.
+fn light(id: Id, desc: TextureDesc, h: u64) -> Msg {
+    Msg::Texture {
+        id,
+        desc,
+        subresources: vec![Subresource {
+            row_pitch: 0,
+            data: h.to_le_bytes().to_vec(),
+        }],
+    }
+}
+
+/// The uploaded contents in the hook's read-back order: for each slice,
+/// `max(desc mips, 1)` subresources, `mip + slice x mips` of the layout
+/// (the hook's index, also when the description asks for the full chain).
+fn uploaded(t: &Texture) -> Vec<(u32, &[u8])> {
+    let (mips, slices) = (t.desc[2].max(1), t.desc[3].max(1));
+    let mut out = Vec::new();
+    for slice in 0..slices {
+        for mip in 0..mips {
+            match t.subs.get((mip + slice * mips) as usize) {
+                Some(((row, _, _), data)) => out.push((*row, data.as_slice())),
+                None => return out,
+            }
         }
     }
+    out
 }
 
 /// The capture files: `capture.ffxgfx` (objects, views after their
 /// resources, the `World`, the frames) and `frames.txt` (the update each
 /// frame shows); the harness reply.
-fn write(w: &Window) -> String {
+fn write(w: &Window, msgs: &[Msg]) -> String {
     let mut out = ffx_gfx::CAPTURE_MAGIC.to_vec();
-    for m in w.msgs.iter().chain(&w.views) {
+    for m in msgs {
         m.write(&mut out);
     }
     if let Some(m) = &w.world {
@@ -454,36 +529,33 @@ fn row_bytes(format: u32, width: u32) -> Option<u32> {
     })
 }
 
-/// The hook's texture content hash (`texture_hash` over
-/// `read_texture_all`): for each slice and each of `max(desc mips, 1)`
-/// mips, subresource `mip + slice x mips`, its texel rows (`rows` from
-/// the mip's height, in blocks for compressed formats) FNV-1a hashed and
-/// folded in.
-fn texture_hash(t: &Texture) -> u64 {
-    let d = &t.desc;
+/// The hook's texture content hash (`texture_hash`): over `subs` in its
+/// read-back order (for each slice, `max(desc mips, 1)` subresources, each
+/// `(row pitch, bytes)`), each subresource's texel rows (`rows` from the
+/// mip's height, in blocks for compressed formats, `row_bytes` of each
+/// row) FNV-1a hashed and folded in. 0 when the read-back is short (the
+/// hook's read-back error).
+fn texture_hash(d: &TextureDesc, subs: &[(u32, &[u8])]) -> u64 {
     let (mips, slices) = (d[2].max(1), d[3].max(1));
+    if subs.len() < (mips * slices) as usize {
+        return 0;
+    }
     let compressed = matches!(d[4], 70..=84 | 94..=99);
     let mut h = 0xcbf2_9ce4_8422_2325_u64;
-    for slice in 0..slices {
-        for mip in 0..mips {
-            let sub = (mip + slice * mips) as usize;
-            let (w, ht) = ((d[0] >> mip).max(1), (d[1] >> mip).max(1));
-            let rows = if compressed { ht.div_ceil(4) } else { ht };
-            let Some(((pitch, _, _), data)) = t.subs.get(sub) else {
-                // the read-back ends there in the hook (an error: hash 0)
-                return 0;
-            };
-            let used = row_bytes(d[4], w).unwrap_or(*pitch).min(*pitch) as usize;
-            let mut part = 0xcbf2_9ce4_8422_2325_u64;
-            for r in 0..rows as usize {
-                let at = r * *pitch as usize;
-                for &b in data.get(at..at + used).unwrap_or(&[]) {
-                    part ^= u64::from(b);
-                    part = part.wrapping_mul(0x0100_0000_01b3);
-                }
+    for (i, &(pitch, data)) in subs.iter().enumerate() {
+        let mip = u32::try_from(i).unwrap_or(0) % mips;
+        let (w, ht) = ((d[0] >> mip).max(1), (d[1] >> mip).max(1));
+        let rows = if compressed { ht.div_ceil(4) } else { ht };
+        let used = row_bytes(d[4], w).unwrap_or(pitch).min(pitch) as usize;
+        let mut part = 0xcbf2_9ce4_8422_2325_u64;
+        for r in 0..rows as usize {
+            let at = r * pitch as usize;
+            for &b in data.get(at..at + used).unwrap_or(&[]) {
+                part ^= u64::from(b);
+                part = part.wrapping_mul(0x0100_0000_01b3);
             }
-            h = (h ^ part).wrapping_mul(0x0100_0000_01b3);
         }
+        h = (h ^ part).wrapping_mul(0x0100_0000_01b3);
     }
     h
 }
@@ -521,6 +593,27 @@ mod tests {
 
     fn layout(desc: &TextureDesc) -> Vec<(u32, u32, u32)> {
         super::super::texture_subs(2, desc)
+    }
+
+    /// The hash of the uploaded contents.
+    fn th(t: &Texture) -> u64 {
+        texture_hash(&t.desc, &uploaded(t))
+    }
+
+    #[test]
+    fn the_gpu_contents_hash_at_their_pitch() {
+        // the same texels at a 32-byte pitch (padding 0xee) as packed
+        let mut s = Store::default();
+        s.object(&tex4(1, 8, 7), layout);
+        let gpu: Vec<u8> = (0..128)
+            .map(|i| if i % 32 < 16 { 7 } else { 0xee })
+            .collect();
+        assert_eq!(
+            texture_hash(&s.textures[&1].desc, &[(32, gpu.as_slice())]),
+            th(&s.textures[&1])
+        );
+        // short: the hook's read-back error
+        assert_eq!(texture_hash(&s.textures[&1].desc, &[]), 0);
     }
 
     /// A 4 x 4 RGBA texture with one mip.
@@ -563,13 +656,13 @@ mod tests {
             part = part.wrapping_mul(0x0100_0000_01b3);
         }
         let want = (0xcbf2_9ce4_8422_2325_u64 ^ part).wrapping_mul(0x0100_0000_01b3);
-        assert_eq!(texture_hash(t), want);
+        assert_eq!(th(t), want);
         // an update of row 2, bytes 4..12 changes it; the same bytes again
         // give it back
         s.texture_rows(1, 0, 4, 2, &[9; 8], 8, 8, 1);
-        assert_ne!(texture_hash(&s.textures[&1]), want);
+        assert_ne!(th(&s.textures[&1]), want);
         s.texture_rows(1, 0, 4, 2, &[7; 8], 8, 8, 1);
-        assert_eq!(texture_hash(&s.textures[&1]), want);
+        assert_eq!(th(&s.textures[&1]), want);
     }
 
     #[test]
@@ -608,8 +701,10 @@ mod tests {
             scene: "kami0100".into(),
             camera: None,
         };
-        let live = Live {
+        let mut no_gpu = |_: Id, _: &TextureDesc| None;
+        let mut live = Live {
             buffer: &buffers,
+            texture: &mut no_gpu,
             world: &world,
         };
         let dir = std::env::temp_dir().join(format!("ffx-host-gate-{}", std::process::id()));
@@ -669,13 +764,13 @@ mod tests {
             ],
         };
         // update 4: not yet; update 5: the frame before (the rings now)
-        assert!(!s.present(Some(4), &frame(1), &live));
-        assert!(s.present(Some(5), &frame(2), &live));
+        assert!(!s.present(Some(4), &frame(1), &mut live));
+        assert!(s.present(Some(5), &frame(2), &mut live));
         s.snapshot_rings([(22, vec![3u8; 8])].into_iter());
         assert_eq!(s.wants(), Some(6));
-        s.present(Some(6), &frame(3), &live);
+        s.present(Some(6), &frame(3), &mut live);
         assert_eq!(s.wants(), Some(7));
-        s.present(Some(7), &frame(4), &live);
+        s.present(Some(7), &frame(4), &mut live);
         assert_eq!(s.wants(), None);
         let r = rx.try_recv().unwrap();
         assert_eq!(r, "ok 2 draws, 2 frames (updates 6..7)");
@@ -694,7 +789,7 @@ mod tests {
                 _ => "?".into(),
             })
             .collect();
-        let t1 = texture_hash(&s.textures[&1]).to_le_bytes();
+        let t1 = th(&s.textures[&1]).to_le_bytes();
         assert_eq!(
             kinds,
             vec![
@@ -728,8 +823,10 @@ mod tests {
             scene: String::new(),
             camera: None,
         };
-        let live = Live {
+        let mut no_gpu = |_: Id, _: &TextureDesc| None;
+        let mut live = Live {
             buffer: &none,
+            texture: &mut no_gpu,
             world: &world,
         };
         let f = Frame {
@@ -738,12 +835,81 @@ mod tests {
             height: 1,
             cmds: Vec::new(),
         };
-        s.present(Some(7), &f, &live);
+        s.present(Some(7), &f, &mut live);
         assert_eq!(
             rx.try_recv().unwrap(),
             "err the present of update 6 was missed (this one shows update 7)"
         );
         assert_eq!(s.wants(), None);
+    }
+
+    /// Copies from the back buffer (no texture the game made) are left
+    /// out, as the hook's capture leaves them out; the GPU's contents are
+    /// hashed when the device reads them back.
+    #[test]
+    fn copies_and_read_backs_as_the_hook() {
+        let mut s = Store::default();
+        s.object(&tex4(1, 8, 7), layout);
+        s.object(&tex4(2, 8, 5), layout);
+        let dir = std::env::temp_dir().join(format!("ffx-host-gate-c-{}", std::process::id()));
+        let (tx, rx) = std::sync::mpsc::channel();
+        let opts = Options::parse(&[dir.to_str().unwrap(), "hash"]).unwrap();
+        s.arm(opts, 1, tx).unwrap();
+        let none = |_: Id| None;
+        let world = || Msg::World {
+            scene: String::new(),
+            camera: None,
+        };
+        // texture 2 on the GPU: other bytes than uploaded (a copy target)
+        let gpu = vec![9u8; 64];
+        let mut read = |id: Id, _: &TextureDesc| {
+            (id == 2).then(|| {
+                vec![Subresource {
+                    row_pitch: 16,
+                    data: gpu.clone(),
+                }]
+            })
+        };
+        let mut live = Live {
+            buffer: &none,
+            texture: &mut read,
+            world: &world,
+        };
+        let f = Frame {
+            number: 0,
+            width: 1,
+            height: 1,
+            cmds: vec![
+                Cmd::CopyTexture { dst: 2, src: 1 },
+                Cmd::CopyTexture { dst: 2, src: 99 }, // the back buffer
+            ],
+        };
+        s.present(Some(1), &f, &mut live);
+        assert!(rx.try_recv().unwrap().starts_with("ok 0 draws, 1 frames"));
+        let bytes = std::fs::read(dir.join("capture.ffxgfx")).unwrap();
+        let msgs = ffx_gfx::read_all(&bytes[8..]).unwrap();
+        let Some(Msg::Frame(frame)) = msgs.last() else {
+            panic!("no frame")
+        };
+        assert_eq!(frame.cmds, vec![Cmd::CopyTexture { dst: 2, src: 1 }]);
+        let hashes: Vec<(Id, Vec<u8>)> = msgs
+            .iter()
+            .filter_map(|m| match m {
+                Msg::Texture {
+                    id, subresources, ..
+                } => Some((*id, subresources[0].data.clone())),
+                _ => None,
+            })
+            .collect();
+        let gpu_hash = texture_hash(&s.textures[&2].desc, &[(16, gpu.as_slice())]);
+        assert_eq!(
+            hashes,
+            vec![
+                (2, gpu_hash.to_le_bytes().to_vec()),
+                (1, th(&s.textures[&1]).to_le_bytes().to_vec()),
+            ]
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     fn hex(b: &[u8]) -> String {

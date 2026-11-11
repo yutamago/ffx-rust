@@ -2505,9 +2505,11 @@ records).
   texture's uploaded contents (no frames). Armed at boundary `f`, the
   capture takes the presents that show updates `f + 1` .. `f + N` and
   writes `capture.ffxgfx` with the objects those frames use declared as
-  the hook's hash mode declares them (texture content hashes, static
+  the hook's hash mode declares them (texture content hashes of the GPU's
+  contents, read back through a staging copy as the hook does, static
   buffers' hashes, index buffers' bytes, the dynamic buffers' bytes at the
-  window's start), the `World` message (the last `.ebp` opened, the
+  window's start; region copies and resolves left out of the frames, as
+  the hook's capture has only `CopyResource`), the `World` message (the last `.ebp` opened, the
   camera) and the frames, plus `frames.txt`. No `hashes.txt` (target
   contents need GPU read-backs): `tools/scene-gate.sh` runs drawdiff alone
   for such a run. The present of the update the capture waits for is not

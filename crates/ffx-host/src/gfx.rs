@@ -301,6 +301,13 @@ pub trait Backend: Send {
     fn back_buffer_image(&mut self) -> Option<(u32, u32, Vec<u8>)> {
         None
     }
+    /// A 2D texture's contents as the hook's gate capture reads them back
+    /// (`read_texture_all`: a staging copy of `desc`, then for each slice
+    /// `max(desc[2], 1)` subresources `mip + slice x mips` at their row
+    /// pitch, `pitch x rows` bytes each); `None` without a real device.
+    fn read_texture(&mut self, _id: u32, _desc: &[u32; 11]) -> Option<Vec<Subresource>> {
+        None
+    }
 }
 
 /// The recording null device: no GPU, every object a stand-in.
@@ -494,6 +501,10 @@ pub struct Gfx {
     composite: composite::Objects,
     /// What gate captures need ([`Config::gate`]).
     gate: Option<gate::Store>,
+    /// This frame's `CopyTexture`s that came from region copies and
+    /// resolves (indices into `cmds`): the hook's capture records only
+    /// `CopyResource`, so gate captures leave these out.
+    region_copies: Vec<usize>,
 }
 
 impl std::fmt::Debug for Gfx {
@@ -691,6 +702,7 @@ impl Gfx {
             frame_sizes: vec![(0, 0, 0)],
             composite: composite::Objects::default(),
             gate,
+            region_copies: Vec::new(),
         };
         let bb = desc.back_buffer();
         g.resources.insert(
@@ -1405,6 +1417,7 @@ impl Gfx {
         self.gate_present(e, &f);
         self.emit(&Msg::Frame(f));
         self.cmds.clear();
+        self.region_copies.clear();
         self.presents += 1;
         self.frame_sizes.push((0, 0, 0));
         if self
@@ -1429,13 +1442,30 @@ impl Gfx {
         }
         let mem = e.mem();
         let resources = &self.resources;
+        let backend = &mut self.backend;
         let buffer = |id: u32| buffer_now(&mem, resources, id);
+        let mut texture = |id: u32, desc: &ffx_gfx::TextureDesc| backend.read_texture(id, desc);
         let world = || world(e);
-        let live = gate::Live {
+        let mut live = gate::Live {
             buffer: &buffer,
+            texture: &mut texture,
             world: &world,
         };
-        if g.present(crate::harness::present_label(), f, &live) {
+        // as the hook's capture: no region copies or resolves
+        let filtered;
+        let f = if self.region_copies.is_empty() {
+            f
+        } else {
+            let mut cmds = Vec::with_capacity(f.cmds.len());
+            for (i, c) in f.cmds.iter().enumerate() {
+                if !self.region_copies.contains(&i) {
+                    cmds.push(c.clone());
+                }
+            }
+            filtered = ffx_gfx::Frame { cmds, ..f.clone() };
+            &filtered
+        };
+        if g.present(crate::harness::present_label(), f, &mut live) {
             g.snapshot_rings(rings(&mem, resources));
         }
     }
@@ -2008,7 +2038,7 @@ impl Gfx {
             }
             "CopySubresourceRegion" | "CopySubresourceRegion1" => {
                 let bx = read_box(&mem, a[8]);
-                self.texture_copied(a[1], a[6]);
+                self.region_copied(a[1], a[6]);
                 self.backend.op(&Op::CopyRegion(
                     [a[1], a[2], a[3], a[4], a[5], a[6], a[7]],
                     bx,
@@ -2030,7 +2060,7 @@ impl Gfx {
             }
             "GenerateMips" => self.backend.op(&Op::GenerateMips(a[1])),
             "ResolveSubresource" => {
-                self.texture_copied(a[1], a[3]);
+                self.region_copied(a[1], a[3]);
                 self.backend
                     .op(&Op::Resolve([a[1], a[2], a[3], a[4], a[5]]));
             }
@@ -2090,6 +2120,16 @@ impl Gfx {
     }
 
     /// A copy between textures goes into the stream (`CopyTexture`).
+    /// [`Gfx::texture_copied`] for a region copy or a resolve (noted for
+    /// gate captures: [`Gfx::region_copies`]).
+    fn region_copied(&mut self, dst: u32, src: u32) {
+        let before = self.cmds.len();
+        self.texture_copied(dst, src);
+        if self.cmds.len() > before {
+            self.region_copies.push(before);
+        }
+    }
+
     fn texture_copied(&mut self, dst: u32, src: u32) {
         let tex = |id| self.resources.get(&id).is_some_and(|r| r.dims != 0);
         if tex(dst) && tex(src) {
