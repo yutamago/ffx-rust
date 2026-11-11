@@ -2782,15 +2782,42 @@ fn throw_flight(n: u16, rva: u32, len: u32, (steps, from, fade): (u32, u32, i32)
 /// drawn or not (its alpha).
 #[test]
 fn trails_0392() {
-    let Some(mut t) = sa::twin(392) else { return };
-    let f = t.at(0x25e0);
+    trails(
+        392,
+        0x25e0,
+        832,
+        (0x1320, 0x3a0, 0x284, 0x110),
+        (0x24e, 0x29d),
+    );
+}
+
+/// `magic_0449` 0x10006110 (`r45::trails_0449`, internal): the same
+/// cases on its records (the fade `R + 0x290`, the control points from
+/// `R - 0x130`).
+#[test]
+fn trails_0449() {
+    trails(
+        449,
+        0x6110,
+        1373,
+        (0x1370, 0x3d0, 0x290, 0x130),
+        (0x249, 0x298),
+    );
+}
+
+/// `rec`: the records' base, stride, fade count and lowest control
+/// point; `rel`: the trail draw's and the object start's `rel32`.
+fn trails(n: u16, rva: u32, len: u32, rec_: (u32, u32, u32, u32), rel: (u32, u32)) {
+    let (base, stride, fade_at, low) = rec_;
+    let Some(mut t) = sa::twin(n) else { return };
+    let f = t.at(rva);
     let img = t.img.clone();
     let w = |o: u32| img.word(f + o);
     all_stubs(&mut t);
     magic_r11::object_slots(&mut t);
-    let start = t.img.rel32_target(f + 0x29d);
+    let start = t.img.rel32_target(f + rel.1);
     magic_r11::object_start_auto(&mut t, start);
-    let td = t.img.rel32_target(f + 0x24e);
+    let td = t.img.rel32_target(f + rel.0);
     let lock = SCRATCH + 0x9000;
     t.set_u32(t.img.word(td + 0x463), lock);
     t.set_u32(t.img.word(td + 0x520), 0x0cc0_0cc0);
@@ -2852,9 +2879,9 @@ fn trails_0392() {
     for k in 0..2u32 {
         junk(&mut t, s + 0xfb0, 0x10, k);
         for j in 0..16u32 {
-            let r = s + 0x1320 + 0x3a0 * j;
-            junk(&mut t, r - 0x110, 0x60, k + j);
-            floats(&mut t, r - 0x110, 0x14, k + j);
+            let r = s + base + stride * j;
+            junk(&mut t, r - low, low - 0xb0, k + j);
+            floats(&mut t, r - low, (low - 0xc0) / 4, k + j);
             let (c, fade) = match (j + k) % 5 {
                 0 => (5i32, 3i32),
                 1 => (1, 3),
@@ -2885,12 +2912,16 @@ fn trails_0392() {
             // 0x284`)
             t.set_u32(r + 0x288, c.cast_unsigned());
             t.set_u32(r + 0x28c, 8);
-            t.set_u32(r + 0x284, fade.cast_unsigned());
+            t.set_u32(r + fade_at, fade.cast_unsigned());
         }
-        magic_r11::pools(&mut t, f, 832);
-        ownb::dirty_stack(&mut t, 0x25e0 + k, &[]);
-        t.check(f, Call::default(), &[], Eax::Checked, |g, img, fr| {
-            ffx_magic::r45::trails_0392(g, img, fr)
+        magic_r11::pools(&mut t, f, len);
+        ownb::dirty_stack(&mut t, rva + k, &[]);
+        t.check(f, Call::default(), &[], Eax::Checked, move |g, img, fr| {
+            if n == 392 {
+                ffx_magic::r45::trails_0392(g, img, fr)
+            } else {
+                ffx_magic::r45::trails_0449(g, img, fr)
+            }
         });
     }
 }

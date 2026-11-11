@@ -5068,3 +5068,144 @@ pub const THROW_TARGET_0449: Sig = Sig {
     ],
     imports: &[],
 };
+
+/// `magic_0449`'s trails (0x10006110, 1373 bytes; internal, no
+/// arguments; [`trails_0392`]'s frame): `M` = slot 235 with its 3x3 part
+/// times `K`; then for 16 records `R = S + 0x1370 + 0x3d0 j`:
+/// - while the count `R + 0x288` is positive it drops, `t` = count /
+///   `R[0x28c]`, `V` = the cubic Bezier of the control points `R - 0x100`,
+///   `R - 0x110`, `R - 0x120`, `R - 0x130` ([`bezier_0251`](crate::r43::bezier_0251),
+///   `K5`), and the trail `R + 0x60` is drawn to `V`
+///   ([`trail_draw`](crate::s4_misc::trail_draw), `edx` = `M`); when the
+///   count reaches 0 the object `O = R - 0xd0` starts
+///   ([`start_object_plain`](crate::s4_misc::start_object_plain), scale
+///   `(frnd(0.5) + K2) K3`, index 2) with the yaw `S + 0xfb4`, `O + 0xd0..`
+///   and `R - 0xf0..` = the end `R - 0x100..`, the step `D = R - 0xe0..` =
+///   the end less the curve at `t = 1 / R[0x28c]` (`w` the end's) and
+///   the fade `R + 0x290` = 16;
+/// - else while the fade is positive it drops, the trail's alpha byte
+///   `R + 0x26f` = fade 128 / 16, `R - 0xf0.. += D` and the trail is drawn to
+///   `R - 0xf0`.
+///
+/// Returns the last value in `eax`.
+#[allow(clippy::too_many_lines)] // the matrix, the curves, the object
+pub fn trails_0449<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let k = |g: &G, o: u32| g.read::<f32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let e = (fr.esp.wrapping_sub(4) & !7).wrapping_sub(0x64);
+    let (m, v) = (e + 0xc, e + 0x50);
+    let s = g.read::<u32>(w(0x17));
+    g.write::<u32>(e + 4, s);
+    g.call(t(g, 0x23, 235), 0, &[m]);
+    let km = k(g, 0x37);
+    for i in [0u32, 1, 2, 4, 5, 6, 8, 9, 10] {
+        let x = mul(g.read::<f32>(m + 4 * i), km);
+        g.write::<f32>(m + 4 * i, x);
+    }
+    // the trail draw's frame: ebx, esi, edi, the pushed word, the call
+    let draw = |g: &mut G, r: u32, to: u32, at: u32| {
+        let esp = e.wrapping_sub(0x14);
+        g.write::<u32>(esp + 4, to);
+        let fr = Frame {
+            at: img.rel32_target(f + at),
+            esp,
+            ecx: r + 0x60,
+            edx: m,
+            ..Frame::default()
+        };
+        crate::s4_misc::trail_draw(g, img, &fr)
+    };
+    // the curve at `t` (`u = K - t`) into `out..`
+    let curve = |g: &mut G, r: u32, tt: f32, u: f32, k5: f32, out: [u32; 3]| {
+        for (d, o) in [0u32, 4, 8].into_iter().zip(out) {
+            let pts = [0x100u32, 0x110, 0x120, 0x130].map(|p| g.read::<f32>(r - p + d));
+            let x = crate::r43::bezier_0251(u, tt, k5, pts);
+            g.write::<f32>(o, x);
+        }
+    };
+    let mut eax = 0;
+    let (k6, k5) = (k(g, 0x49), k(g, 0x51));
+    for j in 0..16u32 {
+        let r = s + 0x1370 + 0x3d0 * j;
+        let c = g.read::<u32>(r + 0x288);
+        if c.cast_signed() > 0 {
+            let n = crate::sb_sse::cvt(g.read::<u32>(r + 0x28c));
+            let c = c - 1;
+            let tt = div(crate::sb_sse::cvt(c), n);
+            g.write::<u32>(r + 0x288, c);
+            let u = sub(k6, tt);
+            curve(g, r, tt, u, k5, [v, v + 4, v + 8]);
+            eax = draw(g, r, v, 0x249);
+            if g.read::<u32>(r + 0x288) == 0 {
+                let rr = st0_f32(g.call(t(g, 0x25e, 314), 0, &[0x3f00_0000]).st0);
+                let scale = mul(add(rr, k(g, 0x280)), k(g, 0x293));
+                let o = r - 0xd0;
+                crate::s4_misc::start_object_plain(
+                    g,
+                    img,
+                    img.rel32_target(f + 0x298),
+                    o,
+                    scale,
+                    2,
+                );
+                let s = g.read::<u32>(e + 4);
+                let yaw = g.read::<u32>(s + 0xfb4);
+                g.write::<u32>(o + 0xc4, yaw);
+                for i in 0..4u32 {
+                    let x = g.read::<u32>(r - 0x100 + 4 * i);
+                    g.write::<u32>(r + 4 * i, x);
+                }
+                for i in 0..4u32 {
+                    let x = g.read::<u32>(r - 0x100 + 4 * i);
+                    g.write::<u32>(r - 0xf0 + 4 * i, x);
+                }
+                let k6 = k(g, 0x2a4);
+                let t1 = div(k6, crate::sb_sse::cvt(g.read::<u32>(r + 0x28c)));
+                let u1 = sub(k6, t1);
+                curve(g, r, t1, u1, k(g, 0x31a), [r - 0xe0, r - 0xdc, r - 0xd8]);
+                for d in [0u32, 4, 8] {
+                    let x = sub(g.read::<f32>(r - 0x100 + d), g.read::<f32>(r - 0xe0 + d));
+                    g.write::<f32>(r - 0xe0 + d, x);
+                }
+                eax = g.read::<u32>(r - 0xf4);
+                g.write::<u32>(r - 0xd4, eax);
+                g.write::<u32>(r + 0x290, 0x10);
+            }
+        } else {
+            let d = g.read::<u32>(r + 0x290);
+            eax = d;
+            if d.cast_signed() > 0 {
+                let d = d - 1;
+                g.write::<u32>(r + 0x290, d);
+                // shl 7; cdq; and 0xf; add; sar 4: a signed / 16
+                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                g.write::<u8>(r + 0x26f, ((d << 7).cast_signed() / 16) as u8);
+                for i in 0..3u32 {
+                    let x = add(
+                        g.read::<f32>(r - 0xe0 + 4 * i),
+                        g.read::<f32>(r - 0xf0 + 4 * i),
+                    );
+                    g.write::<f32>(r - 0xf0 + 4 * i, x);
+                }
+                eax = draw(g, r, r - 0xf0, 0x521);
+            }
+        }
+    }
+    Ret::eax(eax)
+}
+
+/// [`trails_0449`] (the `rel32`s: the trail draws, the object start, the
+/// cookie check).
+pub const TRAILS_0449: Sig = Sig {
+    len: 1373,
+    hash: 0xfc72_ca46_5419_a1c2,
+    calls: &[
+        (0x249, Callee::Sig(&crate::s4_misc::TRAIL_DRAW_0009)),
+        (0x298, Callee::Sig(&crate::s4_misc::START_OBJECT_PLAIN)),
+        (0x521, Callee::Sig(&crate::s4_misc::TRAIL_DRAW_0009)),
+        (0x555, Callee::Any),
+    ],
+    imports: &[],
+};
