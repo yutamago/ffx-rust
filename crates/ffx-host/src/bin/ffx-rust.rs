@@ -11,6 +11,8 @@
 //! Under the test harness (`FFX_HARNESS=<port>`, docs/harness.md "Two
 //! processes") it serves the harness protocol, takes its Documents folder
 //! from `FFX_HARNESS_HOME` and runs until the test quits it.
+//! `--audio-wav` (else `FFX_AUDIO_WAV`) writes the mix to a WAV file and
+//! the harness's `audiomark`s to `<file>.marks` beside it.
 //!
 //! `--documents` is the folder the game sees as its documents folder
 //! (`GameSetting.ini`, the saves; written to). `--profile` writes every
@@ -131,8 +133,18 @@ fn main() -> ExitCode {
         exec.stop_at(s);
     }
     exec.set_budget(budget);
-    if let Ok(mut w) = exec.shared().audio.wav.lock() {
-        w.clone_from(&audio_wav);
+    // the audio capture: `--audio-wav`, or the harness's `FFX_AUDIO_WAV`
+    // (a Windows path, as `tools/run-game.sh` passes it), with its marks
+    // file beside it (docs/harness.md, "Audio capture")
+    let audio_wav = audio_wav.or_else(|| {
+        std::env::var_os("FFX_AUDIO_WAV")
+            .filter(|v| !v.is_empty())
+            .map(PathBuf::from)
+    });
+    if let Some(w) = &audio_wav
+        && let Err(e) = exec.shared().audio.capture(w)
+    {
+        eprintln!("audio capture {}: {e}", w.display());
     }
     if let Some(p) = &replay {
         match std::fs::read_to_string(p) {

@@ -1434,6 +1434,7 @@ The gate (M4 "done when" item 4):
 tools/replays/run-all.sh --audio                  # Rust against the references
 tools/replays/run-all.sh --audio battle-attack    # one replay
 tools/replays/run-all.sh --audio --record [replay...]   # (re-)record the references
+FFX_HARNESS_EXE=rust FFX_REPLAY_SERIAL=1 tools/replays/run-all.sh --audio   # ffx-rust.exe ("Two processes")
 ```
 
 The audio list is event-besaid (music, Wakka's voice, footsteps),
@@ -2411,7 +2412,7 @@ records).
   `FFX_HOST_SYM` through `WSLENV` with `/p`); `running` marks a thread in
   emulated code, read from its last host entry; `crate::stacks`,
   2026-11-01, host-b9), `audiomark`
-  (`ok off`: no capture), `quit` (and `calllog off`, the replay player's
+  (the marks file of the `FFX_AUDIO_WAV` capture, below), `quit` (and `calllog off`, the replay player's
   closing line). Every other command (`snapshot`, `fpucw`,
   the overlay and editor commands, `cursor`, `threads`)
   answers `err ... not served by ffx-rust yet`.
@@ -2463,6 +2464,23 @@ records).
   FMOD's sound on its own mixer; its device output (WASAPI) stays off in
   harness games unless `FFX_RUST_AUDIO_OUT=1` (`docs/host.md`, "FMOD"), so
   nothing reaches the speakers.
+- **Audio capture** (2026-11-11, wp4-audio). `FFX_AUDIO_WAV=<file>` (as
+  for `FFX.exe`; `tools/run-game.sh` passes it with `/p`, else
+  `--audio-wav`) writes the mixer's blocks to the WAV in FMOD's writer
+  format (48 kHz stereo float, one 1,600-frame block per
+  `EventSystem::update`, unbuffered, so `quit` loses nothing) and makes
+  `<file>.marks` beside it with the hook's header and format line.
+  `audiomark <name>` writes the hook's `mark <name> frame <n> sample <s>
+  updates <u> free 0 late <l> turns <t>` line there (the sample clock is
+  the blocks mixed x 1,600, what FMOD's `getDSPClock` gives after as many
+  updates) and answers as the hook. FMOD's turns are the clock's (always
+  on from the first boundary, `docs/host.md` "The clock"); a turn the
+  boundary gives up on after 120 s counts as `late` and writes a `late
+  frame <n>` line, which `tools/wav-compare.py` prints. So
+  `FFX_HARNESS_EXE=rust tools/replays/run-all.sh --audio` compares
+  ffx-rust's captures with the original's references as the hooked run
+  does. An in-process `--replay` script's `audiomark` writes the same
+  line (`--audio-wav`).
 - **Screenshots.** `shot` reads the back buffer (a staging copy of the
   swap chain's buffer 0) of the update the main thread stands after, or a
   later one, into a 32-bit BMP; the reply says `update <n>`, as the hook's.

@@ -40,7 +40,9 @@
 //! | `notes` | the run's notes so far (`crate::log::note`: turns, failed threads), as `events` lists |
 //! | `quit` | ends the process (after writing the `--profile` file: [`profile_at_quit`]) |
 //!
-//! `audiomark` answers `ok off` (no `FFX_AUDIO_WAV` capture). Not served
+//! `audiomark <name>` notes the frame and the mixer's sample clock in the
+//! marks file of the `FFX_AUDIO_WAV` capture (`crate::audio::Audio::mark`;
+//! docs/harness.md, "Audio capture"), as the hook's. Not served
 //! (answered `err`): `snapshot`, `fpucw`, the
 //! overlay and live-editor commands, `cursor`, `threads`, `stacks`.
 
@@ -1379,9 +1381,12 @@ fn run(shared: &Arc<Shared>, line: &str) -> Result<String, String> {
         }
         // the replay player's closing line: no call log here
         "calllog" if words.get(1) == Some(&"off") => Ok("ok".into()),
-        // no FFX_AUDIO_WAV capture here (`--audio-wav` writes the whole
-        // mix): the hook's answer without one
-        "audiomark" => Ok("ok off".into()),
+        // where the mix stands (docs/harness.md, "Audio capture"): the
+        // marks file beside the `FFX_AUDIO_WAV` capture gets the line
+        "audiomark" => {
+            let (turns, late) = shared.clock.fmod_turn_state();
+            Ok(shared.audio.mark(arg(1)?, now(), turns, late))
+        }
         other => Err(format!("{other}: not served by ffx-rust yet")),
     }
 }

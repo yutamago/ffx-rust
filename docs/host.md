@@ -606,8 +606,11 @@ hook's `rust_audio.rs` is its other driver), with the same calls:
 - `EventSystem::update` mixes one 1,600-frame block (one FMOD tick: the
   clock is virtual) and calls the game's event callback where FMOD does
   (`SOUNDDEF_END`, `EVENTFINISHED`).
-- Output: `--audio-wav FILE`, the mix in FMOD's WAV writer format as the
-  audio gate records it, or else the default output device (WASAPI,
+- Output: `--audio-wav FILE` (or `FFX_AUDIO_WAV`, as the harness passes
+  it), the mix in FMOD's WAV writer format as the audio gate records it,
+  with `<FILE>.marks` beside it for the harness's `audiomark`s
+  (`Audio::capture`, `Audio::mark`: the blocks mixed x 1,600 as the
+  sample clock; docs/harness.md, "Two processes"), or else the default output device (WASAPI,
   shared mode): the hook's `rust_audio_out.rs`, the same file compiled
   into `ffx-host` (`audio::device`, host-iggy 2026-11-01). The game's clock
   drives the mix and the device only takes what is queued (underruns are

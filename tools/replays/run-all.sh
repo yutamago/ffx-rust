@@ -68,6 +68,8 @@
 # check), stores them in ~/ffx-work/replay-audio (FFX_REPLAY_AUDIO; never
 # in git); without it the Rust replacements run and are compared with both
 # references. Traces and screenshots are not compared in this mode.
+# FFX_HARNESS_EXE=rust: ffx-rust.exe's own mixer writes the capture and the
+# marks (crates/ffx-host/src/audio.rs), compared with the same references.
 # Unicorn profile (docs/harness.md, "Unicorn coverage in ffx-rust"):
 #   FFX_HARNESS_EXE=rust FFX_HOST_PROFILE=1 tools/replays/run-all.sh [--extra|--audio] [replay...]
 # has each ffx-rust.exe write every function that ran in Unicorn

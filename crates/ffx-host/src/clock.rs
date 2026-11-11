@@ -148,6 +148,8 @@ pub struct Clock {
     fmod_on: AtomicBool,
     fmod_asked: AtomicU64,
     fmod_done: AtomicU64,
+    /// FMOD turns the boundary gave up waiting for (the marks' `late`).
+    fmod_late: AtomicU32,
     /// PS2 buttons the script holds.
     pub buttons: AtomicU32,
     /// Flips run, and the update each shows (the main thread's frame when
@@ -247,6 +249,17 @@ impl Clock {
     #[must_use]
     pub fn fmod_turns(&self) -> u64 {
         self.fmod_done.load(Ordering::Acquire)
+    }
+
+    /// FMOD's tick runs in turns (from the first boundary on), and the
+    /// turns the boundary gave up waiting for: the audio marks' `turns`
+    /// and `late` (`crate::audio::Audio::mark`).
+    #[must_use]
+    pub fn fmod_turn_state(&self) -> (bool, u32) {
+        (
+            self.fmod_on.load(Ordering::Acquire),
+            self.fmod_late.load(Ordering::Acquire),
+        )
     }
 
     fn vsync_ticks_now(&self) -> u64 {
@@ -708,6 +721,8 @@ fn fmod_turn(e: &Exec) {
     let ev = e.mem().read::<u32>(manager + 0x18);
     e.shared().sync.set_event(ev, true);
     if !c.wait_until(e, PATIENCE, || c.fmod_done.load(Ordering::Acquire) >= asked) {
+        c.fmod_late.fetch_add(1, Ordering::AcqRel);
+        e.shared().audio.note_late(c.frame());
         crate::log::note(&format!("the FMOD turn of frame {} did not end", c.frame()));
     }
 }
