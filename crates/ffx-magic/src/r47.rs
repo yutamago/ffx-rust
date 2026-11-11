@@ -3529,3 +3529,99 @@ pub const SPIN_THUNK_0267: Sig = Sig {
     calls: &[(1, Callee::Sig(&SPIN_0267))],
     imports: &[],
 };
+
+/// `magic_0267`'s mesh registration (0x100013f0, 434 bytes; internal:
+/// `ecx` = the model `M`, cdecl `(lo, hi)` the 64-bit handle `H`; a /GS
+/// `ebp` frame of 0x1f74 bytes behind `_chkstk`). Three count arrays of
+/// 30 words in the frame (`A` at `ebp - 0x1ef8`, `B` at `ebp - 0x1e80`
+/// cleared, `C` at `ebp - 0x1f70` with `C[0]` 1) and 0x100-byte buffers
+/// from `ebp - 0x1e08`. `M + [M + 4]` holds the groups, `i16 M + 0x10`
+/// the faces in all: per group `A[i]` = `B[i]` = 3 `n` (`n` its `i16
+/// +2`), `C[i]` 1, its buffer's first 12 bytes the constants `K`; a
+/// group of kind 1 (byte `+1`) is followed by its `n` faces of 0x1c
+/// bytes, others by nothing. Then slot 881 `(H, slot 776 (0x44) | 8)`,
+/// slot 882 `(H, groups, A, B, buffers, C)`, slot 883 `(H)` (non-zero:
+/// returned) and slot 779 `(H)` with the lock held. Returns the lock's
+/// global word.
+pub fn mesh_register_0267<G: Game>(g: &mut G, img: &Image, fr: &Frame) -> Ret {
+    let f = fr.at;
+    let w = |o: u32| img.word(f + o);
+    let gw = |g: &G, o: u32| g.read::<u32>(w(o));
+    let t = |g: &G, o: u32, n: u32| slot_target(g, w(o), n);
+    let ebp = fr.esp.wrapping_sub(4);
+    let lf = |o: u32| ebp.wrapping_sub(o);
+    let cookie = gw(g, 0xe) ^ ebp;
+    g.write::<u32>(lf(4), cookie);
+    let (ca, cb, cc, bufs) = (lf(0x1ef8), lf(0x1e80), lf(0x1f70), lf(0x1e08));
+    // the three arrays: their first words, then `memset` of the rest
+    for (arr, first) in [(ca, 0u32), (cb, 0), (cc, 1)] {
+        g.write::<u32>(arr, first);
+        for i in 1..30u32 {
+            g.write::<u32>(arr + 4 * i, 0);
+        }
+    }
+    let m = fr.ecx;
+    let mut left = i32::from(g.read::<i16>(m + 0x10));
+    let mut grp = g.read::<u32>(m + 4).wrapping_add(m);
+    let mut groups = 0u32;
+    if left > 0 {
+        let pair = [gw(g, 0x8c), g.read::<u32>(w(0x8c) + 4)];
+        let mut buf = bufs;
+        loop {
+            let n = i32::from(g.read::<i16>(grp + 2));
+            let mut next = grp + 0x10;
+            if g.read::<i8>(grp + 1) == 1 {
+                next = next.wrapping_add(n.wrapping_mul(0x1c).cast_unsigned());
+            }
+            let n3 = n.wrapping_mul(3).cast_unsigned();
+            g.write::<u32>(ca + 4 * groups, n3);
+            g.write::<u32>(buf, pair[0]);
+            g.write::<u32>(buf + 4, pair[1]);
+            g.write::<u32>(cb + 4 * groups, n3);
+            g.write::<u32>(cc + 4 * groups, 1);
+            g.write::<u32>(buf + 8, gw(g, 0xd9));
+            left = left.wrapping_sub(i32::from(g.read::<i16>(grp + 2)));
+            buf += 0x100;
+            groups += 1;
+            grp = next;
+            if left <= 0 {
+                break;
+            }
+        }
+    }
+    // call width: 1
+    let e = g.call(t(g, 0x104, 776), 0, &[0x44]).eax;
+    let (lo, hi) = (fr.arg(g, 0), fr.arg(g, 1));
+    // call width: 3
+    g.call(t(g, 0x120, 881), 0, &[lo, hi, e | 8]);
+    // call width: 7
+    g.call(t(g, 0x154, 882), 0, &[lo, hi, groups, ca, cb, bufs, cc]);
+    // call width: 2
+    let r = g.call(t(g, 0x163, 883), 0, &[lo, hi]).eax;
+    if r != 0 {
+        return Ret::eax(r);
+    }
+    let lock = gw(g, 0x17c);
+    let saved = g.read::<u32>(lock);
+    g.write::<u32>(lock, 1);
+    // call width: 2
+    g.call(t(g, 0x18a, 779), 0, &[lo, hi]);
+    let lock = gw(g, 0x198);
+    g.write::<u32>(lock, saved);
+    Ret::eax(lock)
+}
+
+/// [`mesh_register_0267`] (the `rel32`s: `_chkstk`, `memset` three times,
+/// the cookie check).
+pub const MESH_REGISTER_0267: Sig = Sig {
+    len: 434,
+    hash: 0xed11_bdf0_e389_ad45,
+    calls: &[
+        (0x9, Callee::Any),
+        (0x32, Callee::Import("memset")),
+        (0x4f, Callee::Import("memset")),
+        (0x6c, Callee::Import("memset")),
+        (0x1aa, Callee::Any),
+    ],
+    imports: &[],
+};

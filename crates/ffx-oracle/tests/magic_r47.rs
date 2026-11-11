@@ -1831,3 +1831,75 @@ fn spin_0267() {
         t.check_entry(f, Call::default(), &[], Eax::Checked);
     }
 }
+
+/// `magic_0267` 0x100013f0 (`r47::mesh_register_0267`, internal: `ecx` =
+/// the model, cdecl `(lo, hi)`): one group, three groups of kind 1 and
+/// others, no faces, slot 883 answering non-zero.
+#[test]
+fn mesh_register_0267() {
+    let Some(mut t) = twin(267) else { return };
+    all_stubs(&mut t);
+    let f = t.at(0x13f0);
+    rec(&mut t, 776, 1, |_, a| 0x0776_0000 ^ a[0]);
+    // 882 copies the three arrays and the buffers' first words
+    rec(&mut t, 882, 7, |m, a| {
+        for i in 0..8 {
+            for (j, p) in [a[3], a[4], a[6]].into_iter().enumerate() {
+                let x = m.r32(p + 4 * i);
+                m.w32(SCRATCH + 0x7a00 + 0x20 * j as u32 + 4 * i, x);
+            }
+            for q in 0..3 {
+                let x = m.r32(a[5] + 0x100 * i + 4 * q);
+                m.w32(SCRATCH + 0x7b00 + 0x10 * i + 4 * q, x);
+            }
+        }
+        0x882
+    });
+    rec(&mut t, 883, 2, |m, _| m.r32(SCRATCH + 0x7f44));
+    let lock = SCRATCH + 0x4100;
+    for o in [0x17cu32, 0x198] {
+        let at = t.img.word(f + o);
+        t.set_u32(at, lock);
+    }
+    rec(&mut t, 779, 2, move |m, a| {
+        m.w32(SCRATCH + 0x7f48, m.r32(lock));
+        0x0779_0000 ^ a[0]
+    });
+    let m = SCRATCH + 0x2_8000;
+    #[allow(clippy::type_complexity)]
+    let cases: [(&[(u8, u16)], u32); 5] = [
+        (&[(1, 3)], 0),
+        (&[(1, 2), (2, 3), (1, 1)], 0),
+        (&[(0, 2), (1, 4)], 0),
+        (&[], 0),
+        (&[(1, 4)], 7),
+    ];
+    for (k, (groups, r883)) in (0u32..).zip(cases) {
+        // the model: the groups after the header (kind 1 followed by
+        // its faces)
+        t.write(m, &[0x6b; 0x20]);
+        t.set_u32(m + 4, 0x20);
+        let mut g = m + 0x20;
+        let mut total = 0u16;
+        for &(kind, n) in groups {
+            t.write(g, &[0x3c; 0x10]);
+            t.set_u8(g + 1, kind);
+            t.set_u16(g + 2, n);
+            g += 0x10;
+            if kind == 1 {
+                t.write(g, &vec![0x2d; 0x1c * usize::from(n)]);
+                g += 0x1c * u32::from(n);
+            }
+            total += n;
+        }
+        t.set_u16(m + 0x10, total);
+        t.set_u32(lock, 0x40 + k);
+        t.set_u32(SCRATCH + 0x7f44, r883);
+        magic_h6::scrub(&mut t);
+        let call = Call::this(m);
+        let (lo, hi) = (0x0012_3400 + k, 0x00ab_0000 + k);
+        t.check(f, call, &[lo, hi], Eax::Checked, |g, img, fr| {
+            ffx_magic::r47::mesh_register_0267(g, img, fr)
+        });
+    }
+}

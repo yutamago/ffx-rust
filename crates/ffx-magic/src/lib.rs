@@ -5521,6 +5521,7 @@ pub const INTERNAL: &[(&str, &Sig)] = &[
     ("r47 visit 0297", &r47::VISIT_0297),
     ("r47 image visit 0297", &r47::IMAGE_VISIT_0297),
     ("r47 start-up 0267", &r47::START_UP_0267),
+    ("r47 mesh register 0267", &r47::MESH_REGISTER_0267),
     // round 47 (magic-r47): end of INTERNAL
 ];
 
