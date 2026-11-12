@@ -366,6 +366,12 @@ pub fn woke(e: &Exec) {
     }
 }
 
+/// The limiter's `Sleep(ms)` from `Game_Main`'s Rust side
+/// (`crate::crt_start`), which calls it where the original calls `Sleep`.
+pub(crate) fn limiter(e: &Exec, ms: u32) {
+    limiter_sleep(e, ms);
+}
+
 /// The limiter's `Sleep(ms)` (`Game_Main` `0x0062f2a0`..`0x0062f3bb`): the
 /// clock moves to the frame's time (start + last frame + vsyncs x
 /// 1/59.94 s) and a little past it (the limiter compares in 80 bits), as

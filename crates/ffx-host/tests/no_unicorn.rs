@@ -43,9 +43,10 @@ fn documents(name: &str) -> PathBuf {
 
 /// `MsCheckRange`, a port (cdecl `(x, lo, hi)`: `x` clamped).
 const MS_CHECK_RANGE: u32 = 0x0079_a0c0;
-/// `Game_Main` (`WinMain`): no port yet (the main loop and its frame
-/// limiter stay original until the clock's limiter moves with them).
-const ENTRY: u32 = 0x0062_ee50;
+/// An address with no Rust side: `GDraw`'s callback trampoline `0x00a34b00`
+/// (Iggy's, left to the Ruffle work; the entry point and `Game_Main` that
+/// this test used are ported now).
+const ENTRY: u32 = 0x00a3_4b00;
 
 #[test]
 fn a_port_called_from_rust_runs_without_the_emulator() {
@@ -150,9 +151,14 @@ fn boots_until_the_first_unported_address() {
     let report = ffx_host::report::text(&exec, &syms, &format!("{stop}"));
     eprintln!("{report}");
     assert!(exec.shared().dlls.is_empty());
-    // the run ends at an unported address (or, once the table reaches
-    // that far, at the presents' milestone)
+    // the run ends at an unported address, at a C runtime import without
+    // a Rust side (the boot got past the code: wp5b), or, once the table
+    // reaches that far, at the presents' milestone
     let first = match &stop {
+        Stop::Failed(why, _) if why.starts_with("unstubbed import ") => {
+            eprintln!("the boot's first missing import: {why}");
+            None
+        }
         Stop::Failed(why, addr) => {
             assert!(why.starts_with("unported address "), "{why}");
             assert_eq!(exec.stats.unported.first().map(|u| u.0), Some(*addr));
