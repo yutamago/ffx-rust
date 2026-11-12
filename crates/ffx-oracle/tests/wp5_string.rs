@@ -2305,3 +2305,50 @@ fn wp5b_capsule_bullet_dtor() {
         }
     }
 }
+
+/// `PPhysicsModel`'s destructor (`0x005e23f0`), `removeModel` a logging
+/// stub: with and without a world, 0 to 3 bodies, the world's body list
+/// holding them in another order with strangers (or missing one);
+/// `eax` and memory.
+#[test]
+fn wp5b_model_dtor() {
+    use ffx_prender::wp5_small as sm;
+    for (label, mut t) in Twins::all() {
+        let log = t.alloc(&[0; 4 + 8 * 64]);
+        let c = log_stub(&mut t, log, 4, 0x5151);
+        jmp_stub(&mut t, sm::WORLD_REMOVE_MODEL, &c);
+        let model = t.alloc(&[0x6b; 0x10]);
+        let world = t.alloc(&[0x6b; 0x60]);
+        let bodies: Vec<u32> = (0..5).map(|_| t.alloc(&[0x6b; 0xc0])).collect();
+        for case in 0..16u32 {
+            let n = (case % 4) as usize;
+            let with_world = case & 4 == 0;
+            t.w32(model + 8, if with_world { world } else { 0 });
+            // the model's list: bodies 0..n through +0
+            for i in 0..n {
+                let next = if i + 1 < n { bodies[i + 1] } else { 0 };
+                t.w32(bodies[i], next);
+                t.w32(bodies[i] + 0xb0, model);
+            }
+            t.w32(model + 4, if n == 0 { 0 } else { bodies[0] });
+            // the world's: stranger 3, the bodies reversed, stranger 4
+            // (body 0 left out when case & 8)
+            let mut order = vec![bodies[3]];
+            for i in (0..n).rev() {
+                if !(i == 0 && case & 8 != 0) {
+                    order.push(bodies[i]);
+                }
+            }
+            order.push(bodies[4]);
+            for (k, &b) in order.iter().enumerate() {
+                let next = order.get(k + 1).copied().unwrap_or(0);
+                t.w32(b + 0xb8, next);
+            }
+            t.w32(world + 0x50, order[0]);
+            let w = format!("{label} model dtor case {case}");
+            t.run(&w, 0x005e_23f0, model, &[], false, |g| {
+                sm::model_dtor(g, model)
+            });
+        }
+    }
+}

@@ -998,3 +998,50 @@ pub fn capsule_bullet_dtor(h: &mut impl Host, this: u32) -> u32 {
     h.write(this, vt);
     eax
 }
+
+/// `Phyre_PPhysics_PPhysicsWorld_removeModel_006018b0` (thiscall `(world;
+/// model)`).
+pub const WORLD_REMOVE_MODEL: u32 = 0x0060_18b0;
+
+/// The link at `head` that points at `item` (links `next` bytes into each
+/// item) replaced by `item`'s own; `item`'s link 0. Nothing when `item`
+/// is not on the list.
+fn unlink(h: &mut impl Host, head: u32, item: u32, next: u32) {
+    let mut slot = head;
+    let mut cur: u32 = h.read(slot);
+    while cur != 0 {
+        if cur == item {
+            let after: u32 = h.read(cur + next);
+            h.write(slot, after);
+            h.write(cur + next, 0u32);
+            return;
+        }
+        slot = cur + next;
+        cur = h.read(slot);
+    }
+}
+
+/// `PPhysicsModel::~PPhysicsModel` (`0x005e23f0`, thiscall) -> `this +
+/// 4`: with a world (`+8`, read once) the model removed from it
+/// (`removeModel`); then each body of the model's list (`+4`, linked
+/// through `+0`; the next read first) gets `+0xb0` 0, is unlinked from
+/// the model's list and, with a world, from the world's body list
+/// (`world + 0x50`, linked through `+0xb8`).
+pub fn model_dtor(h: &mut impl Host, this: u32) -> u32 {
+    let world: u32 = h.read(this + 8);
+    if world != 0 {
+        h.call_sym(WORLD_REMOVE_MODEL, Conv::Thiscall(world), &[this]);
+    }
+    let head = this + 4;
+    let mut body: u32 = h.read(head);
+    while body != 0 {
+        let next: u32 = h.read(body);
+        h.write(body + 0xb0, 0u32);
+        unlink(h, head, body, 0);
+        if world != 0 {
+            unlink(h, world + 0x50, body, 0xb8);
+        }
+        body = next;
+    }
+    head
+}

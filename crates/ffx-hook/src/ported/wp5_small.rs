@@ -183,4 +183,8 @@ ported! {
     Phyre_PPhysics_PPhysicsCapsuleBullet_dtor_005e2030 @ 0x005e_2030 => extern "thiscall" fn sm_005e2030(this: u32) -> u32 {
         s::capsule_bullet_dtor(&mut mem(), this)
     }
+    /// `Phyre_PPhysics_PPhysicsModel_dtor_005e23f0`: the model taken out of its world, its bodies out of both lists; `this + 4`.
+    Phyre_PPhysics_PPhysicsModel_dtor_005e23f0 @ 0x005e_23f0 => extern "thiscall" fn sm_005e23f0(this: u32) -> u32 {
+        s::model_dtor(&mut mem(), this)
+    }
 }
