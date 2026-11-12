@@ -637,3 +637,18 @@ pub fn physics_defaults_ctor(h: &mut impl Host, this: u32, frame: u32) -> u32 {
     h.call_sym(BASE_REF_CTOR, Conv::Thiscall(this + 0x100), &[]);
     this
 }
+
+/// `PPhysicsDefaults_ctor_005e0050` (thiscall).
+pub const PHYSICS_DEFAULTS_CTOR: u32 = 0x005e_0050;
+
+/// `0x005e01c0(this)` (thiscall; `Phyre_PPhysics_DestroyCall_005f7c80`'s
+/// callee) -> `this`: [`PHYSICS_DEFAULTS_CTOR`], then `+0x10c..+0x118` 0
+/// and an identity matrix copied into `+0x11c` (`PMatrix4_Copy` from the
+/// 16-word `frame`, the original's `ebp - 0x40`).
+pub fn physics_defaults_ctor_b(h: &mut impl Host, this: u32, frame: u32) -> u32 {
+    h.call_sym(PHYSICS_DEFAULTS_CTOR, Conv::Thiscall(this), &[]);
+    h.write_bytes(this + 0x10c, &[0; 0x10]);
+    h.write_bytes(frame, &identity_words());
+    h.call_sym(MATRIX_COPY, Conv::Thiscall(this + 0x11c), &[frame]);
+    this
+}

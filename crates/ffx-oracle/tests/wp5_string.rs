@@ -1984,3 +1984,29 @@ fn wp5b_physics_defaults_ctor() {
         t.same(&w);
     }
 }
+
+/// `PPhysicsDefaults_ctor_005e01c0` on junk, its callees as for
+/// [`wp5b_physics_defaults_ctor`] (the frames' words cleared before the
+/// diff).
+#[test]
+fn wp5b_physics_defaults_ctor_b() {
+    use ffx_prender::wp5_small as sm;
+    for (label, mut t) in Twins::all() {
+        let log = t.alloc(&[0; 4 + 8 * 64]);
+        let c = log_stub(&mut t, log, 4, 0x5151);
+        jmp_stub(&mut t, sm::MATRIX_COPY, &c);
+        let c = log_stub(&mut t, log, 0, 0x6161);
+        jmp_stub(&mut t, sm::BASE_REF_CTOR, &c);
+        let obj = t.alloc(&[0x6b; 0x160]);
+        let frame = t.b.stack_range().start + 0x1000;
+        let w = format!("{label} physics defaults ctor b");
+        let at = t.a.rebase(0x005e_01c0);
+        let r = t.a.call(at, Conv::Thiscall(obj), &[]).unwrap();
+        let p = sm::physics_defaults_ctor_b(&mut G(&mut t.b), obj, frame);
+        assert_eq!(r.eax, p, "{w}: eax");
+        for i in [0, 1, 3] {
+            t.w32(log + 8 + 8 * i, 0);
+        }
+        t.same(&w);
+    }
+}

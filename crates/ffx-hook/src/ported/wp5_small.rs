@@ -132,4 +132,9 @@ ported! {
         let mut f = StackFrame::<16>::new();
         s::physics_defaults_ctor(&mut mem(), this, f.at())
     }
+    /// `PPhysicsDefaults_ctor_005e01c0`: 0x005e0050's defaults, four zero words and an identity matrix at `+0x11c` (frame `ebp - 0x40`); `this`.
+    PPhysicsDefaults_ctor_005e01c0 @ 0x005e_01c0 => extern "thiscall" fn sm_005e01c0(this: u32) -> u32 {
+        let mut f = StackFrame::<16>::new();
+        s::physics_defaults_ctor_b(&mut mem(), this, f.at())
+    }
 }
