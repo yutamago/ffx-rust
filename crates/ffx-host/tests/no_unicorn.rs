@@ -43,8 +43,9 @@ fn documents(name: &str) -> PathBuf {
 
 /// `MsCheckRange`, a port (cdecl `(x, lo, hi)`: `x` clamped).
 const MS_CHECK_RANGE: u32 = 0x0079_a0c0;
-/// `FFX.exe`'s entry point (the CRT start-up's wrapper): no port.
-const ENTRY: u32 = 0x0094_93c1;
+/// `Game_Main` (`WinMain`): no port yet (the main loop and its frame
+/// limiter stay original until the clock's limiter moves with them).
+const ENTRY: u32 = 0x0062_ee50;
 
 #[test]
 fn a_port_called_from_rust_runs_without_the_emulator() {

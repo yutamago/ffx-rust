@@ -166,5 +166,6 @@ pub fn table() -> Table {
     }
     crate::clock::register(&mut t);
     crate::crt::register(&mut t);
+    crate::crt_start::register(&mut t);
     t
 }
