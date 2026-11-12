@@ -1854,3 +1854,13 @@ pub fn string_vector_reserve(h: &mut impl Host, this: u32, n: u32) -> u32 {
     }
     h.call_sym(0x0065_5b20, Conv::Thiscall(this), &[grown])
 }
+
+/// `OverlayMenu_create_006f3130` (cdecl `(path)`, void).
+pub const OVERLAY_MENU_CREATE: u32 = 0x006f_3130;
+
+/// The jump thunk `0x006f3310` (`PhyreScene_initScene`'s call):
+/// `OverlayMenu_create(path)` with the caller's stack. Void, as its
+/// target (whose `eax` is junk on one path; the caller doesn't read it).
+pub fn overlay_menu_create_thunk(h: &mut impl Host, path: u32) {
+    h.call_sym(OVERLAY_MENU_CREATE, Conv::Cdecl, &[path]);
+}

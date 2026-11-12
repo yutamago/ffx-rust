@@ -1792,3 +1792,24 @@ fn wp5d_string_vector_reserve() {
         }
     }
 }
+
+/// The overlay menu's jump thunk (`0x006f3310`): its target a logging
+/// stub. Memory (the log: the path word passed on).
+#[test]
+fn wp5d_overlay_menu_thunk() {
+    use ffx_prender::wp5d as d;
+    for (label, mut t) in Twins::all() {
+        let log = t.alloc(&[0; 4 + 32 * 32]);
+        let s = wide_stub_plain(log, 1, 1, 0, 0x99);
+        jmp_stub(&mut t, d::OVERLAY_MENU_CREATE, &s);
+        for round in 0..3u32 {
+            let path = 0x00b4_0000 + round;
+            let w = format!("{label} overlay thunk {round}");
+            let at = t.a.rebase(0x006f_3310);
+            t.a.call(at, Conv::Cdecl, &[path])
+                .unwrap_or_else(|e| panic!("{w}: {e}"));
+            d::overlay_menu_create_thunk(&mut G(&mut t.b), path);
+            t.same(&w);
+        }
+    }
+}

@@ -291,6 +291,10 @@ ported! {
     StdVectorString_reserve_00655de0 @ 0x0065_5de0 => extern "thiscall" fn d_00655de0(this: u32, n: u32) -> u32 {
         d::string_vector_reserve(&mut mem(), this, n)
     }
+    /// `OverlayMenu_create_thunk_006f3310`: `jmp OverlayMenu_create_006f3130`.
+    OverlayMenu_create_thunk_006f3310 @ 0x006f_3310 => extern "C" fn d_006f3310(path: u32) {
+        d::overlay_menu_create_thunk(&mut mem(), path);
+    }
 }
 
 /// `ffx-host` only: `Rng_ClockSeed` (`0x00798950`) as a table entry. In
