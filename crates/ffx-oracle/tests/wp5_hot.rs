@@ -42,7 +42,7 @@ fn junk(a: &mut Oracle, b: &mut Oracle, len: usize, seed: u8) -> u32 {
     let bytes: Vec<u8> = (0..len)
         .map(|i| {
             seed.wrapping_mul(31)
-                .wrapping_add((i as u8).wrapping_mul(7))
+                .wrapping_add(u8::try_from(i % 256).unwrap_or(0).wrapping_mul(7))
                 | 1
         })
         .collect();

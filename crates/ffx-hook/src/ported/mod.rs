@@ -158,6 +158,7 @@ mod vfx_hi;
 mod vfx_ppp;
 mod vfx_shape;
 mod wp5_hot;
+mod wp5_sort;
 mod wrapped_ports;
 
 pub(crate) use battle::ms_screen_process;
@@ -318,6 +319,7 @@ pub fn hooks() -> Vec<Hook> {
     all.extend(vfx_ppp::hooks());
     all.extend(vfx_shape::hooks());
     all.extend(wp5_hot::hooks());
+    all.extend(wp5_sort::hooks());
     all.extend(wrapped_ports::hooks());
     all
 }
