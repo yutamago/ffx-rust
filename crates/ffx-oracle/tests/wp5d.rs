@@ -611,3 +611,206 @@ fn wp5d_memory_report() {
         }
     }
 }
+
+/// `Sys::Thread`'s creation (`0x00679cb0`): `CreateThread` a logging
+/// stub that writes an id through its last word, `RaiseException` a stub
+/// that returns; the flag byte and handle combinations, `run` 0, 1, 2
+/// and junk above the byte. Memory only (the original's `eax` is junk:
+/// a frame address, or what the exception's dispatch left).
+#[test]
+fn wp5d_sys_thread_create() {
+    use ffx_prender::wp5d as d;
+    const RAISE_EXCEPTION_IAT: u32 = 0x00b0_c0e0;
+    for (label, mut t) in Twins::all() {
+        let log = t.alloc(&[0; 4 + 32 * 32]);
+        let cells = t.alloc(&[0; 8]);
+        let create = import_stub(&mut t, log, 0xc7, 6, Some(5), cells, 0x18);
+        let raise = t.code(&[0xc2, 0x10, 0x00]);
+        set_import(&mut t, d::CREATE_THREAD_IAT, create);
+        set_import(&mut t, RAISE_EXCEPTION_IAT, raise);
+        for case in 0..24u32 {
+            let run = [0u32, 1, 2, 0x101, 0xff00][case as usize % 5];
+            t.w32(cells, 0x900 + case);
+            t.w32(cells + 4, 0x30 + case);
+            let this = t.alloc(&[0x5a; 0x10]);
+            t.write(this + 0xc, &[u8::from(case & 8 != 0)]);
+            t.w32(this + 4, if case & 16 != 0 { 0 } else { 0x77 });
+            t.w32(log, 0);
+            let w = format!("{label} sys thread create case {case}");
+            let at = t.a.rebase(0x0067_9cb0);
+            t.a.call(
+                at,
+                Conv::Thiscall(this),
+                &[0x4000, run, 0x1111, 0x00b4_0000],
+            )
+            .unwrap_or_else(|e| panic!("{w}: the original: {e}"));
+            d::sys_thread_create(&mut G(&mut t.b), this, 0x4000, run);
+            t.same(&w);
+        }
+    }
+}
+
+/// `ClusterManager`'s constructor (`0x00699ab0`): the head node maker a
+/// logging stub, `CreateMutexW` a logging stub, `operator new` the stub
+/// allocator or NULL. `eax` and memory.
+#[test]
+fn wp5d_cluster_manager_ctor() {
+    use ffx_prender::wp5d as d;
+    for (label, mut t) in Twins::all() {
+        let log = t.alloc(&[0; 4 + 32 * 32]);
+        let s = wide_stub(log, 1, 0, 0, 0x4e4e);
+        jmp_stub(&mut t, d::MAP_NEW_HEAD, &s);
+        let c = wide_stub_plain(log, 2, 3, 0xc, 0x6d6d);
+        let c = t.code(&c);
+        set_import(&mut t, d::CREATE_MUTEX_W_IAT, c);
+        for round in 0..3u8 {
+            if round == 2 {
+                let s = log_stub_plain(&mut t, log, 0, 0, true);
+                jmp_stub(&mut t, ws::OPERATOR_NEW, &s);
+            }
+            let obj = t.alloc(&vec![0x21 + round; 0x6420]);
+            t.w32(log, 0);
+            let w = format!("{label} cluster manager ctor {round}");
+            t.run(&w, 0x0069_9ab0, obj, &[], false, |g| {
+                d::cluster_manager_ctor(g, obj)
+            });
+        }
+    }
+}
+
+/// The pair constructors `0x006c7ca0` and `0x006c7cb0` on junk: `eax`
+/// and memory.
+#[test]
+fn wp5d_zero_pair() {
+    use ffx_prender::wp5d as d;
+    for (label, mut t) in Twins::all() {
+        for at in [0x006c_7ca0, 0x006c_7cb0] {
+            let obj = t.alloc(&[0x9d; 0x10]);
+            t.run(&format!("{label} pair {at:#x}"), at, obj, &[], false, |g| {
+                d::zero_pair(g, obj)
+            });
+        }
+    }
+}
+
+/// `std::vector<T *>::_Insert_n` (`0x00655460`): random vectors (empty,
+/// NULL, spare capacity or full), every insertion point, counts 0..12
+/// (into the spare room, past the end, through a reallocation), the
+/// value inside the vector itself now and then. `eax`, `[out]` and
+/// memory (`operator new`/`delete` the stubs).
+#[test]
+fn wp5d_vector_insert_n() {
+    use ffx_prender::wp5d as d;
+    for (label, mut t) in Twins::all() {
+        for round in 0..400u32 {
+            let size = t.rng.below(9);
+            let spare = t.rng.below(6);
+            let v = t.alloc(&[0; 12]);
+            let (first, cap) = if size + spare == 0 && t.rng.below(2) == 0 {
+                (0, 0)
+            } else {
+                let cap = size + spare;
+                (t.new_block((cap * 4).max(4)), cap)
+            };
+            if first != 0 {
+                let words: Vec<u8> = (0..cap * 4).map(|i| (i * 13 + round) as u8).collect();
+                t.write(first, &words);
+            }
+            t.w32(v, first);
+            t.w32(v + 4, first + size * 4);
+            t.w32(v + 8, first + cap * 4);
+            let at = first + t.rng.below(size + 1) * 4;
+            let count = t.rng.below(13);
+            let value = if size > 0 && t.rng.below(4) == 0 {
+                first + t.rng.below(size) * 4
+            } else {
+                t.alloc(&(0xab00_0000 | round).to_le_bytes())
+            };
+            let out = t.alloc(&[0xee; 4]);
+            let w = format!("{label} insert_n {round} (size {size}, spare {spare}, count {count})");
+            t.run(&w, 0x0065_5460, v, &[out, at, count, value], false, |g| {
+                d::vector_insert_n(g, v, out, at, count, value)
+            });
+        }
+    }
+}
+
+/// A `std::string` at `s` holding `n` random characters: inline below 16
+/// (or on the heap now and then), junk in the unused bytes.
+fn put_string(t: &mut Twins, s: u32, n: u32) {
+    t.write(s, &[0x5a; 0x18]);
+    let text = t.text(n);
+    let heap = n >= 16 || t.rng.below(4) == 0;
+    let (at, cap) = if heap {
+        let cap = (n | 0xf).max(16) + t.rng.below(3) * 16;
+        let p = t.new_block(cap + 1);
+        t.write(p, &vec![0x77; (cap + 1) as usize]);
+        t.w32(s, p);
+        (p, cap)
+    } else {
+        (s, 15)
+    };
+    t.write(at, &text);
+    t.write(at + n, &[0]);
+    t.w32(s + 0x10, n);
+    t.w32(s + 0x14, cap);
+}
+
+/// `std::_Destroy_range` over strings (`0x00635c40`, empty and longer
+/// ranges, inline and heap strings) and the string tree's `_Erase`
+/// (`0x00635c80`, random trees of 0..12 nodes under a nil head): memory
+/// (the freed pointers' order included).
+#[test]
+fn wp5d_string_range_and_tree_erase() {
+    use ffx_prender::wp5d as d;
+    for (label, mut t) in Twins::all() {
+        for round in 0..40u32 {
+            let n = t.rng.below(6);
+            let first = t.alloc(&vec![0; (0x18 * n.max(1)) as usize]);
+            for i in 0..n {
+                let len = t.rng.below(30);
+                put_string(&mut t, first + 0x18 * i, len);
+            }
+            let last = first + 0x18 * n;
+            let w = format!("{label} destroy strings {round} ({n})");
+            let at = t.a.rebase(0x0063_5c40);
+            t.a.call(at, Conv::Stdcall, &[first, last])
+                .unwrap_or_else(|e| panic!("{w}: {e}"));
+            d::destroy_strings(&mut G(&mut t.b), first, last);
+            t.same(&w);
+        }
+        for round in 0..40u32 {
+            let nil = t.alloc(&[0; 0x28]);
+            t.write(nil + 0xd, &[1]);
+            let n = t.rng.below(13);
+            let nodes: Vec<u32> = (0..n).map(|_| t.new_block(0x28)).collect();
+            for &node in &nodes {
+                t.write(node, &[0x3c; 0x28]);
+                t.w32(node, nil);
+                t.w32(node + 8, nil);
+                t.write(node + 0xd, &[0]);
+                let len = t.rng.below(30);
+                put_string(&mut t, node + 0x10, len);
+            }
+            // a random binary tree: each node hangs under an earlier one
+            let mut free: Vec<(u32, u32)> = Vec::new();
+            let root = nodes.first().copied().unwrap_or(nil);
+            if let Some(&r) = nodes.first() {
+                free.push((r, 0));
+                free.push((r, 8));
+            }
+            for &node in nodes.iter().skip(1) {
+                let k = t.rng.below(free.len() as u32) as usize;
+                let (parent, side) = free.swap_remove(k);
+                t.w32(parent + side, node);
+                free.push((node, 0));
+                free.push((node, 8));
+            }
+            let head = t.alloc(&[0; 8]);
+            let w = format!("{label} tree erase {round} ({n})");
+            t.run_any_this1(&w, 0x0063_5c80, head, root, |g| {
+                d::tree_erase_strings(g, head, root);
+            });
+        }
+    }
+}

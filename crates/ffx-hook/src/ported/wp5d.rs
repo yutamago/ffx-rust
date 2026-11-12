@@ -94,4 +94,33 @@ ported! {
     MemoryReport_CreateInstance_006dc800 @ 0x006d_c800 => extern "C" fn d_006dc800() -> u32 {
         d::memory_report_create(&mut mem())
     }
+    /// `SysThread_create_00679cb0`: `CreateThread` (suspended unless `run` is 1); 0 (the debugger's thread name left out).
+    SysThread_create_00679cb0 @ 0x0067_9cb0 => extern "thiscall" fn d_00679cb0(this: u32, stack: u32, run: u32, unused: u32, name: u32) -> u32 {
+        let _ = (unused, name);
+        d::sys_thread_create(&mut mem(), this, stack, run)
+    }
+    /// `ClusterManager_ctor_00699ab0`: the cluster manager's constructor; `this`.
+    ClusterManager_ctor_00699ab0 @ 0x0069_9ab0 => extern "thiscall" fn d_00699ab0(this: u32) -> u32 {
+        d::cluster_manager_ctor(&mut mem(), this)
+    }
+    /// `ZeroPair_ctor_006c7ca0`: two words 0; `this`.
+    ZeroPair_ctor_006c7ca0 @ 0x006c_7ca0 => extern "thiscall" fn d_006c7ca0(this: u32) -> u32 {
+        d::zero_pair(&mut mem(), this)
+    }
+    /// `ZeroPair_ctor_006c7cb0`: the same code; `this`.
+    ZeroPair_ctor_006c7cb0 @ 0x006c_7cb0 => extern "thiscall" fn d_006c7cb0(this: u32) -> u32 {
+        d::zero_pair(&mut mem(), this)
+    }
+    /// `StdVector_insertN_00655460`: `count` copies of a word inserted; `out`.
+    StdVector_insertN_00655460 @ 0x0065_5460 => extern "thiscall" fn d_00655460(this: u32, out: u32, at: u32, count: u32, value: u32) -> u32 {
+        d::vector_insert_n(&mut mem(), this, out, at, count, value)
+    }
+    /// `StdString_destroyRange_00635c40`: the strings of `[first, last)` emptied.
+    StdString_destroyRange_00635c40 @ 0x0063_5c40 => extern "stdcall" fn d_00635c40(first: u32, last: u32) {
+        d::destroy_strings(&mut mem(), first, last);
+    }
+    /// `StdTree_eraseStrings_00635c80`: a string map's subtree freed.
+    StdTree_eraseStrings_00635c80 @ 0x0063_5c80 => extern "thiscall" fn d_00635c80(this: u32, node: u32) {
+        d::tree_erase_strings(&mut mem(), this, node);
+    }
 }

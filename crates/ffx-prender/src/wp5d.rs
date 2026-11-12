@@ -372,3 +372,260 @@ pub fn memory_report_create(h: &mut impl Host) -> u32 {
     h.write(h.rebase(MEMORY_REPORT_MADE), 1u32);
     r
 }
+
+/// `Thread_Start_00679db0`: the routine `SysThread_create` starts.
+pub const SYS_THREAD_START: u32 = 0x0067_9db0;
+
+/// `Sys::Thread`'s creation (`0x00679cb0`, thiscall `(this; stack,
+/// run, unused, name)`, `ret 0x10`) -> 0. With a thread already there
+/// (the byte `+0xc` 0 and a handle at `+4`) nothing. Else `+0xc` is 0
+/// and `[this+4] = CreateThread(0, stack, Thread_Start_00679db0, this,
+/// flags, this + 8)`, `flags` 0 (run at once) when the byte `run` is 1,
+/// else `CREATE_SUSPENDED` (4). Left out as in
+/// `Phyre_PThreadWin32_start_004300b0`: the debugger's thread name
+/// (`RaiseException(0x406d1388, ...)` with `name` and the id at `+8`,
+/// swallowed by its `__except`). `eax`: the original's is a frame
+/// address on the first path and whatever the exception's dispatch
+/// left on the other; its callers (`JobWorker_start_00703a50` and two
+/// more) don't read it.
+pub fn sys_thread_create(h: &mut impl Host, this: u32, stack: u32, run: u32) -> u32 {
+    if h.read::<u8>(this + 0xc) == 0 && h.read::<u32>(this + 4) != 0 {
+        return 0;
+    }
+    h.write(this + 0xc, 0u8);
+    let flags = if run & 0xff == 1 { 0 } else { 4 };
+    let start = h.rebase(SYS_THREAD_START);
+    let f: u32 = h.read(h.rebase(CREATE_THREAD_IAT));
+    let handle = h.call(f, Conv::Stdcall, &[0, stack, start, this, flags, this + 8]);
+    h.write(this + 4, handle);
+    0
+}
+
+/// `StdMap_NewHead_0069a1b0` (thiscall on the map, no stack words): a
+/// new head node.
+pub const MAP_NEW_HEAD: u32 = 0x0069_a1b0;
+
+/// `ClusterManager`'s constructor (`0x00699ab0`, thiscall; from
+/// `ClusterManager_CreateInstance_0069a060`) -> `this`: `+0` 2, `+4`
+/// 0.0, `+8..+0x14` 0, the map at `+0x10` gets its head node
+/// (`StdMap_NewHead`), `+0x641c` 0; a 4-byte block (`operator new`)
+/// holding `CreateMutexW(0, 0, 0)` goes to `+0x18` (0 when the
+/// allocation fails); the 0x400 bytes at `+0x601c` cleared.
+pub fn cluster_manager_ctor(h: &mut impl Host, this: u32) -> u32 {
+    h.write(this, 2u32);
+    h.write(this + 4, 0u32);
+    for off in [8, 0xc, 0x10, 0x14] {
+        h.write(this + off, 0u32);
+    }
+    let head = h.call_sym(MAP_NEW_HEAD, Conv::Thiscall(this + 0x10), &[]);
+    h.write(this + 0x10, head);
+    h.write(this + 0x641c, 0u32);
+    let p = h.call_sym(OPERATOR_NEW, Conv::Cdecl, &[4]);
+    if p != 0 {
+        let m = import(h, CREATE_MUTEX_W_IAT, &[0, 0, 0]);
+        h.write(p, m);
+    }
+    h.write(this + 0x18, p);
+    h.call_sym(MEMSET, Conv::Cdecl, &[this + 0x601c, 0, 0x400]);
+    this
+}
+
+/// A pair's constructor (`0x006c7ca0`, and its copy `0x006c7cb0`;
+/// thiscall, the element constructor of `ShadowManager_ctor_006c7d80`'s
+/// arrays): `+0`, `+4` 0. `this`.
+pub fn zero_pair(h: &mut impl Host, this: u32) -> u32 {
+    h.write(this, 0u32);
+    h.write(this + 4, 0u32);
+    this
+}
+
+/// `operator delete` (`0x00630390`, cdecl).
+pub const OPERATOR_DELETE: u32 = 0x0063_0390;
+
+/// The fill helper `0x0064a970` (cdecl `(dst, n, &value, ..)`): `n`
+/// words from `dst` get `*value` (read again for each word); a NULL
+/// `dst` writes nothing but still counts.
+fn fill_words(h: &mut impl Host, dst: u32, n: u32, value: u32) {
+    let mut at = dst;
+    for _ in 0..n {
+        if at != 0 {
+            let v: u32 = h.read(value);
+            h.write(at, v);
+        }
+        at = at.wrapping_add(4);
+    }
+}
+
+/// The copy helper `0x0064a9e0` (cdecl `(first, last, dst, ..)`): the
+/// words of `[first, last)` to `dst` in order (none written to a NULL
+/// `dst`); the end of the destination.
+fn copy_words(h: &mut impl Host, first: u32, last: u32, dst: u32) -> u32 {
+    let (mut p, mut d) = (first, dst);
+    while p != last {
+        if d != 0 {
+            let v: u32 = h.read(p);
+            h.write(d, v);
+        }
+        p = p.wrapping_add(4);
+        d = d.wrapping_add(4);
+    }
+    d
+}
+
+/// Signed word distance `(b - a) / 4` as the original's `sub; sar 2`.
+fn words(a: u32, b: u32) -> u32 {
+    (b.wrapping_sub(a).cast_signed() >> 2).cast_unsigned()
+}
+
+/// `std::vector<T *>::_Insert_n(this; &out, where, count, &value)`
+/// (`0x00655460`, thiscall, `ret 0x10`; from `ObjectList_ctor_0064cec0`
+/// and five more) -> `out`: `count` copies of `*value` inserted before
+/// `where`, `[out]` the iterator at the insertion point (the new
+/// buffer's when it grew). Without room: a new buffer of `max(size +
+/// count, capacity * 1.5)` words (the growth 0 when `capacity / 2`
+/// overflows `0x3fffffff`), the copies, the words before and after
+/// moved in, the old buffer deleted. With room: the words after `where`
+/// moved back by `count` (forward through the free space past the end,
+/// backward over the overlap), and the gap filled with the value read
+/// once. Not ported: the `_Xlength_error`/`_Xbad_alloc` throws (a size
+/// past `0x3fffffff` words, `operator new` returning NULL); the port
+/// leaves the vector as it is then and still writes `[out]`.
+pub fn vector_insert_n(
+    h: &mut impl Host,
+    this: u32,
+    out: u32,
+    at: u32,
+    count: u32,
+    value: u32,
+) -> u32 {
+    let first: u32 = h.read(this);
+    let off = words(first, at);
+    if count != 0 {
+        let last: u32 = h.read(this + 4);
+        let end: u32 = h.read(this + 8);
+        if words(last, end) < count {
+            let size = words(first, last);
+            if 0x3fff_ffffu32.wrapping_sub(size) < count {
+                return out;
+            }
+            let need = size.wrapping_add(count);
+            let cap = words(first, end);
+            let mut grown = if 0x3fff_ffff - (cap >> 1) < cap {
+                0
+            } else {
+                cap + (cap >> 1)
+            };
+            if grown < need {
+                grown = need;
+            }
+            let mut buf = 0;
+            if grown != 0 {
+                if grown > 0x3fff_ffff {
+                    return out;
+                }
+                buf = h.call_sym(OPERATOR_NEW, Conv::Cdecl, &[grown * 4]);
+                if buf == 0 {
+                    return out;
+                }
+            }
+            let off = words(first, at);
+            fill_words(h, buf.wrapping_add(off.wrapping_mul(4)), count, value);
+            copy_words(h, first, at, buf);
+            copy_words(
+                h,
+                at,
+                last,
+                buf.wrapping_add(off.wrapping_add(count).wrapping_mul(4)),
+            );
+            let first: u32 = h.read(this);
+            let last: u32 = h.read(this + 4);
+            let total = count.wrapping_add(words(first, last));
+            if first != 0 {
+                h.call_sym(OPERATOR_DELETE, Conv::Cdecl, &[first]);
+            }
+            h.write(this, buf);
+            h.write(this + 8, buf.wrapping_add(grown * 4));
+            h.write(this + 4, buf.wrapping_add(total.wrapping_mul(4)));
+        } else {
+            let v: u32 = h.read(value);
+            let bytes = count.wrapping_mul(4);
+            if words(at, last) < count {
+                copy_words(h, at, last, at.wrapping_add(bytes));
+                let mut p = last;
+                for _ in 0..count - words(at, last) {
+                    h.write(p, v);
+                    p = p.wrapping_add(4);
+                }
+                let new_last = h.read::<u32>(this + 4).wrapping_add(bytes);
+                h.write(this + 4, new_last);
+                let mut p = at;
+                while p != new_last.wrapping_sub(bytes) {
+                    h.write(p, v);
+                    p = p.wrapping_add(4);
+                }
+            } else {
+                let tail = last.wrapping_sub(bytes);
+                let e = copy_words(h, tail, last, last);
+                h.write(this + 4, e);
+                let mut src = tail;
+                while src != at {
+                    src = src.wrapping_sub(4);
+                    let w: u32 = h.read(src);
+                    h.write(src.wrapping_add(bytes), w);
+                }
+                let mut p = at;
+                while p != at.wrapping_add(bytes) {
+                    h.write(p, v);
+                    p = p.wrapping_add(4);
+                }
+            }
+        }
+    }
+    let first: u32 = h.read(this);
+    h.write(out, first.wrapping_add(off.wrapping_mul(4)));
+    out
+}
+
+/// A `std::string` (MSVC 2012: 16 inline bytes or a heap pointer at
+/// `+0`, size `+0x10`, capacity `+0x14`) emptied as its destructor
+/// leaves it: the heap buffer deleted (capacity 16 or more), capacity
+/// 15, size 0, the first byte 0.
+fn string_tidy(h: &mut impl Host, s: u32) {
+    if h.read::<u32>(s + 0x14) >= 0x10 {
+        let p: u32 = h.read(s);
+        h.call_sym(OPERATOR_DELETE, Conv::Cdecl, &[p]);
+    }
+    h.write(s + 0x14, 0xfu32);
+    h.write(s + 0x10, 0u32);
+    h.write(s, 0u8);
+}
+
+/// `std::_Destroy_range` for `std::string` (`0x00635c40`, `(first,
+/// last)`, callee pops 8, `ecx` unused; `AssetListReader_clear` and nine
+/// more): each string of `[first, last)` (0x18 bytes apart) emptied.
+/// `eax` is junk (the last delete's, or the caller's); no caller reads
+/// it.
+pub fn destroy_strings(h: &mut impl Host, first: u32, last: u32) {
+    let mut s = first;
+    while s != last {
+        string_tidy(h, s);
+        s = s.wrapping_add(0x18);
+    }
+}
+
+/// `std::_Tree<.., std::string>::_Erase(this; node)` (`0x00635c80`,
+/// thiscall, `ret 4`): the subtree under `node` freed (until a nil
+/// node, byte `+0xd`): the right subtree first (recursively; the
+/// original calls itself), then the node's string (`+0x10`) emptied and the node
+/// deleted, then on to its left child (`+0`, read before). `eax` junk.
+pub fn tree_erase_strings(h: &mut impl Host, this: u32, node: u32) {
+    let mut n = node;
+    while h.read::<u8>(n + 0xd) == 0 {
+        let right: u32 = h.read(n + 8);
+        tree_erase_strings(h, this, right);
+        let left: u32 = h.read(n);
+        string_tidy(h, n + 0x10);
+        h.call_sym(OPERATOR_DELETE, Conv::Cdecl, &[n]);
+        n = left;
+    }
+}
