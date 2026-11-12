@@ -50,6 +50,13 @@ fn fnv(data: &[u8]) -> u64 {
 
 #[allow(clippy::too_many_lines)]
 fn main() -> Result<()> {
+    if std::env::var_os("FFX_SWF_TRACE").is_some() {
+        // Ruffle's warnings and the movies' uncaught AS3 errors, on stderr
+        tracing_subscriber::fmt()
+            .with_writer(std::io::stderr)
+            .with_ansi(false)
+            .init();
+    }
     let mut args = std::env::args().skip(1);
     let log_path = PathBuf::from(
         args.next()

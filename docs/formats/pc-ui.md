@@ -683,6 +683,25 @@ Mismatches found (round 2, 2026-10-27, measured: `tools/swf-pilot/measure.sh`):
   Ruffle one tick later.
 - Ruffle needs `ExternalInterface` available (a provider set), or the
   movies' `addCallback` calls do nothing.
+- **Argument counts** (WP12, 2026-11-12). Iggy runs an AS3 function the
+  game calls with whatever it passes; Ruffle, like Flash Player, throws
+  `ArgumentError` #1063 when a required argument is missing or one too
+  many arrives. `FFEscMenu` calls `addChangeParaPageItem` with 4
+  arguments (index, kind `spinnerButton`, label, button text) and
+  `escmenu.swf`'s `EscPage.addChangeParaPageItem(int, String, String,
+  String, initData:Array)` declares 5 without defaults: under Ruffle every
+  call threw, and the Change parameters page drew no rows (iggy-menus shot
+  9). `ffx_swf::abc` reads each movie's `DoABC` with Ruffle's `swf` crate
+  and finds the method each `ExternalInterface.addCallback("name", f)`
+  hands over (the class whose method makes the call, `f`'s name; two
+  classes have a `confirmSelect`, the offered one is `EscPage`'s with no
+  parameters); `Stage::call_values` fills missing required arguments with
+  `undefined` (the parameter type coerces it: `null` for the `Array`) and
+  drops extra ones. Shot 9 offline: 38,712 -> 1,151 pixels off by more than
+  24 levels, the three rows and their Get buttons drawn. No other call in
+  the iggy-menus, boot and menu-save logs needs fitting.
+- **The movies' interfaces** (`swf-abc`, an example of `ffx-swf`, lists
+  them from the player's archive; "The 19 movies" below).
 
 `ffx-swf` depends on the user's Ruffle fork (github.com/yutamago/ruffle,
 branch `ffx`, user decision 2026-10-28): upstream rev `07d3e430` plus one

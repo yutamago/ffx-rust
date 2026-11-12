@@ -1887,8 +1887,14 @@ skills", "MAX gil" with their Get buttons): the game makes the same
 `addChangeParaPageItem` calls and the page works (the help text is row
 0's), but Ruffle draws no `spinnerButton` row there; the pilot's offline
 replay (`iggy-replay`, `ruffle-iggy-menus/iggy-menus-9-ruffle.png`) shows
-the same, so it is Ruffle's (or the movie on Ruffle), not the host's. Open
-for `ffx-swf`.
+the same, so it is Ruffle's (or the movie on Ruffle), not the host's.
+Found and fixed in WP12 (2026-11-12): the game passes 4 arguments, the
+movie's `addChangeParaPageItem` declares 5, and Ruffle throws where Iggy
+calls anyway; `ffx_swf::stage::Stage` now fits each call to the AS3
+method's count (docs/formats/pc-ui.md, "Ruffle", "Argument counts").
+Offline, shot 9 went from 38,712 to 1,151 pixels off by more than 24
+levels; the in-game run is the coordinator's (`run-all.sh --extra
+iggy-menus` with `FFX_HARNESS_EXE=rust`).
 
 What it took, besides the composite ("Iggy" above): no menu had ever
 ticked or drawn in `ffx-rust` (the null `IggyGDrawMallocAnnotated` left

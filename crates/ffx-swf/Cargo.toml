@@ -21,5 +21,9 @@ image = { version = "0.25", default-features = false, features = ["png", "bmp"] 
 ruffle_core = { git = "https://github.com/yutamago/ruffle", rev = "23dc65800b90050f059cda78b2d6b64dd79976fc" }
 ruffle_render_wgpu = { git = "https://github.com/yutamago/ruffle", rev = "23dc65800b90050f059cda78b2d6b64dd79976fc" }
 
+[dev-dependencies]
+# Ruffle's warnings and AS3 errors in the examples (`FFX_SWF_TRACE=1`)
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "std"] }
+
 [lints]
 workspace = true
