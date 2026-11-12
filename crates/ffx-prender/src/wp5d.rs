@@ -954,3 +954,136 @@ pub fn loader_startup_task(h: &mut impl Host) -> u32 {
     h.write(scene + 0x10de0, icon);
     scene
 }
+
+/// The `_Insert_at` copies of the string-keyed maps: the node count past
+/// which they throw (`0x5d1745c`, 0x2c-byte nodes), `_Xlength_error`'s
+/// slot and its message (`"map/set<T> too long"`).
+pub const STRING_MAP_MAX: u32 = 0x05d1_745c;
+pub const XLENGTH_ERROR_IAT: u32 = 0x00b0_c29c;
+pub const MAP_TOO_LONG: u32 = 0x00b4_12ac;
+
+/// The overflow path of a string map's `_Insert_at` (`0x006e8a50`,
+/// `0x006d5dc0`, `0x0069c6b0`, `0x0064a130`; the count `[this+4]` at
+/// [`STRING_MAP_MAX`] or more): the node's key string (at `node +
+/// key`) emptied, the node deleted, `_Xlength_error` (it throws). The
+/// rest of these copies is `StdTree_insertAt_006993d0`'s code.
+pub fn string_node_overflow(h: &mut impl Host, node: u32, key: u32) {
+    string_tidy(h, node.wrapping_add(key));
+    h.call_sym(OPERATOR_DELETE, Conv::Cdecl, &[node]);
+    let f: u32 = h.read(h.rebase(XLENGTH_ERROR_IAT));
+    let msg = h.rebase(MAP_TOO_LONG);
+    h.call(f, Conv::Cdecl, &[msg]);
+}
+
+/// The sign of `memcmp(a, b, n)` (unsigned bytes).
+fn memcmp_sign(h: &impl Host, a: u32, b: u32, n: u32) -> i32 {
+    for i in 0..n {
+        let x: u8 = h.read(a.wrapping_add(i));
+        let y: u8 = h.read(b.wrapping_add(i));
+        if x != y {
+            return if x < y { -1 } else { 1 };
+        }
+    }
+    0
+}
+
+/// The characters and size of the `std::string` at `s`.
+fn string_parts(h: &impl Host, s: u32) -> (u32, u32) {
+    let cap: u32 = h.read(s.wrapping_add(0x14));
+    let at = if cap >= 16 { h.read(s) } else { s };
+    (at, h.read(s.wrapping_add(0x10)))
+}
+
+/// `std::string` comparison as the inlined code does it: `memcmp` of
+/// the shorter size, then the sizes.
+fn string_order(h: &impl Host, a: u32, b: u32) -> i32 {
+    let (pa, na) = string_parts(h, a);
+    let (pb, nb) = string_parts(h, b);
+    match memcmp_sign(h, pa, pb, na.min(nb)) {
+        0 if na < nb => -1,
+        0 => i32::from(na != nb),
+        r => r,
+    }
+}
+
+/// `std::string::compare(pos, n, p, len)` (`0x006590d0`, thiscall,
+/// `ret 0x10`).
+pub const STRING_COMPARE: u32 = 0x0065_90d0;
+
+/// The string maps' `_Insert_nohint` copies: address, their
+/// `_Insert_at` and their iterator `--`.
+pub const STRING_INSERT_NOHINT: [(u32, u32, u32); 3] = [
+    (0x006e_8c80, 0x006e_8a50, 0x006e_91f0),
+    (0x0064_a360, 0x0064_a130, 0x0064_f360),
+    (0x0069_cd40, 0x0069_c6b0, 0x0069_eca0),
+];
+
+/// `std::map<std::string, ..>::_Insert_nohint(this; &out, leftish,
+/// &value, node)` (`0x006e8c80`, `0x0064a360`, `0x0069cd40`; thiscall,
+/// `ret 0x10`): down from the root, left while the value's key (the
+/// string at `value`) orders before the node's (`+0x10`; at most it with
+/// `leftish`); the predecessor of the place (the iterator `dec` one
+/// back, unless the walk ended left of the leftmost) compared with the
+/// value (`std::string::compare`); when it is smaller (or the place is
+/// the leftmost), `node` is hung there (`insert_at(&it, left, place,
+/// value, node)`) and `out` = (it, 1); else `node`'s key emptied, the
+/// node deleted, `out` = (the predecessor, 0). `frame`: one word of game
+/// memory (the original's argument slot `ebp + 0xc`). Returns `out`.
+#[allow(clippy::too_many_arguments)]
+pub fn string_insert_nohint<H: Host>(
+    h: &mut H,
+    this: u32,
+    out: u32,
+    leftish: u32,
+    value: u32,
+    node: u32,
+    frame: u32,
+    insert_at: u32,
+    iter_dec: u32,
+) -> u32 {
+    let head: u32 = h.read(this);
+    let mut add_left = true;
+    let mut place = head;
+    let mut at: u32 = h.read(head.wrapping_add(4));
+    while h.read::<u8>(at.wrapping_add(0xd)) == 0 {
+        place = at;
+        let k = at.wrapping_add(0x10);
+        add_left = if leftish & 0xff != 0 {
+            string_order(h, k, value) >= 0
+        } else {
+            string_order(h, value, k) < 0
+        };
+        at = h.read(at.wrapping_add(if add_left { 0 } else { 8 }));
+    }
+    h.write(frame, place);
+    let hang = |h: &mut H, left: bool| {
+        let it = h.call_sym(
+            insert_at,
+            Conv::Thiscall(this),
+            &[frame, u32::from(left), place, value, node],
+        );
+        let it: u32 = h.read(it);
+        h.write(out, it);
+        h.write(out.wrapping_add(4), 1u8);
+        out
+    };
+    if add_left {
+        if place == h.read::<u32>(head) {
+            return hang(h, true);
+        }
+        h.call_sym(iter_dec, Conv::Thiscall(frame), &[]);
+    }
+    let before: u32 = h.read(frame);
+    let k = before.wrapping_add(0x10);
+    let (p, n) = string_parts(h, value);
+    let klen: u32 = h.read(k.wrapping_add(0x10));
+    let r = h.call_sym(STRING_COMPARE, Conv::Thiscall(k), &[0, klen, p, n]);
+    if r.cast_signed() < 0 {
+        return hang(h, add_left);
+    }
+    string_tidy(h, node.wrapping_add(0x10));
+    h.call_sym(OPERATOR_DELETE, Conv::Cdecl, &[node]);
+    h.write(out, before);
+    h.write(out.wrapping_add(4), 0u8);
+    out
+}

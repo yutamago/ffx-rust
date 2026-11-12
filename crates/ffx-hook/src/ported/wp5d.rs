@@ -8,6 +8,18 @@ use ffx_prender::wp5d as d;
 
 use super::{StackFrame, mem, ported};
 
+/// A string map's `_Insert_at`: the overflow path, else
+/// `StdTree_insertAt_006993d0`'s port (whose own limit is above this one).
+fn string_insert_at(this: u32, out: u32, add_left: u32, at: u32, node: u32, key: u32) -> u32 {
+    let mut m = mem();
+    let size: u32 = ffx_bridge::Mem::read(&m, this.wrapping_add(4));
+    if size >= d::STRING_MAP_MAX {
+        d::string_node_overflow(&mut m, node, key);
+        return out;
+    }
+    ffx_system::m5b_stl::bridge::tree_insert_at(&mut m, this, out, add_left, at, node)
+}
+
 ported! {
     /// `PPhysicsCharacterCamera_ctor_005dff30`: the camera's defaults; `this`.
     PPhysicsCharacterCamera_ctor_005dff30 @ 0x005d_ff30 => extern "thiscall" fn d_005dff30(this: u32) -> u32 {
@@ -159,5 +171,43 @@ ported! {
     /// `AsyncLoad_startupTask_00636430`: the loader's start-up loads; `g_PhyreScene`.
     AsyncLoad_startupTask_00636430 @ 0x0063_6430 => extern "C" fn d_00636430() -> u32 {
         d::loader_startup_task(&mut mem())
+    }
+    /// `StdMapString_insertAt_006e8a50`: `StdTree_insertAt_006993d0`'s code but the overflow (the key at `+0x10`).
+    StdMapString_insertAt_006e8a50 @ 0x006e_8a50 => extern "thiscall" fn d_006e8a50(this: u32, out: u32, add_left: u32, at: u32, value: u32, node: u32) -> u32 {
+        let _ = value;
+        string_insert_at(this, out, add_left, at, node, 0x10)
+    }
+    /// `VideoIndexMap_insertAt_006d5dc0`: the same (the key at `+0x14`).
+    VideoIndexMap_insertAt_006d5dc0 @ 0x006d_5dc0 => extern "thiscall" fn d_006d5dc0(this: u32, out: u32, add_left: u32, at: u32, value: u32, node: u32) -> u32 {
+        let _ = value;
+        string_insert_at(this, out, add_left, at, node, 0x14)
+    }
+    /// `StdMapString_insertAt_0069c6b0`: the same (the key at `+0x10`).
+    StdMapString_insertAt_0069c6b0 @ 0x0069_c6b0 => extern "thiscall" fn d_0069c6b0(this: u32, out: u32, add_left: u32, at: u32, value: u32, node: u32) -> u32 {
+        let _ = value;
+        string_insert_at(this, out, add_left, at, node, 0x10)
+    }
+    /// `StdMapString_insertAt_0064a130`: the same (the key at `+0x10`).
+    StdMapString_insertAt_0064a130 @ 0x0064_a130 => extern "thiscall" fn d_0064a130(this: u32, out: u32, add_left: u32, at: u32, value: u32, node: u32) -> u32 {
+        let _ = value;
+        string_insert_at(this, out, add_left, at, node, 0x10)
+    }
+    /// `StdMapString_insertNohint_006e8c80`: a string-keyed insert without a hint; `out`.
+    StdMapString_insertNohint_006e8c80 @ 0x006e_8c80 => extern "thiscall" fn d_006e8c80(this: u32, out: u32, leftish: u32, value: u32, node: u32) -> u32 {
+        let mut frame = StackFrame::<1>::new();
+        let (_, ins, dec) = d::STRING_INSERT_NOHINT[0];
+        d::string_insert_nohint(&mut mem(), this, out, leftish, value, node, frame.at(), ins, dec)
+    }
+    /// `StdMapString_insertNohint_0064a360`: the same with its own `_Insert_at`/`--`.
+    StdMapString_insertNohint_0064a360 @ 0x0064_a360 => extern "thiscall" fn d_0064a360(this: u32, out: u32, leftish: u32, value: u32, node: u32) -> u32 {
+        let mut frame = StackFrame::<1>::new();
+        let (_, ins, dec) = d::STRING_INSERT_NOHINT[1];
+        d::string_insert_nohint(&mut mem(), this, out, leftish, value, node, frame.at(), ins, dec)
+    }
+    /// `StdMapString_insertNohint_0069cd40`: the same with its own `_Insert_at`/`--`.
+    StdMapString_insertNohint_0069cd40 @ 0x0069_cd40 => extern "thiscall" fn d_0069cd40(this: u32, out: u32, leftish: u32, value: u32, node: u32) -> u32 {
+        let mut frame = StackFrame::<1>::new();
+        let (_, ins, dec) = d::STRING_INSERT_NOHINT[2];
+        d::string_insert_nohint(&mut mem(), this, out, leftish, value, node, frame.at(), ins, dec)
     }
 }

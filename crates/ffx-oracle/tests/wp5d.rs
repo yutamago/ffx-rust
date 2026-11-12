@@ -1103,3 +1103,99 @@ fn wp5d_loader_startup_task() {
         }
     }
 }
+
+/// An empty `std::map` (MSVC 2012): a 0x2c-byte head node (its links
+/// itself, black and nil) and the map's two words (head, size).
+fn empty_map(t: &mut Twins) -> (u32, u32) {
+    let head = t.new_block(0x2c);
+    t.write(head, &[0x4d; 0x2c]);
+    for off in [0, 4, 8] {
+        t.w32(head + off, head);
+    }
+    t.write(head + 0xc, &[1, 1]);
+    let map = t.alloc(&[0; 8]);
+    t.w32(map, head);
+    (map, head)
+}
+
+/// A fresh 0x2c-byte node: junk links, red, not nil, a key string of
+/// `n` random characters at `key`.
+fn string_node(t: &mut Twins, key: u32, n: u32) -> u32 {
+    let node = t.new_block(0x30);
+    t.write(node, &[0x3a; 0x30]);
+    t.write(node + 0xc, &[0, 0]);
+    put_string(t, node + key, n);
+    node
+}
+
+/// The string maps' `_Insert_at` copies (`0x006e8a50`, `0x006d5dc0`,
+/// `0x0069c6b0`, `0x0064a130`) growing trees of 40 nodes at random leaf
+/// places (left or right of a node with a free child, or the root):
+/// every rotation and recolouring, the head's extremes; and the three
+/// `_Insert_nohint` copies (`0x006e8c80`, `0x0064a360`, `0x0069cd40`)
+/// growing string maps from empty with random keys from a small
+/// alphabet (equal keys freed), `leftish` 0 and 1, each through its own
+/// `_Insert_at` and `--`, which run as the original on both sides here.
+/// `eax`, `out` and memory after every call.
+#[test]
+fn wp5d_string_map_insert() {
+    use ffx_prender::wp5d as d;
+    for (label, mut t) in Twins::all() {
+        for (at, key) in [
+            (0x006e_8a50u32, 0x10u32),
+            (0x006d_5dc0, 0x14),
+            (0x0069_c6b0, 0x10),
+            (0x0064_a130, 0x10),
+        ] {
+            let (map, head) = empty_map(&mut t);
+            let out = t.alloc(&[0; 8]);
+            let mut nodes: Vec<u32> = Vec::new();
+            for i in 0..40u32 {
+                let node = string_node(&mut t, key, 3);
+                let (place, left) = if nodes.is_empty() {
+                    (head, 1)
+                } else {
+                    loop {
+                        let p = nodes[t.rng.below(nodes.len() as u32) as usize];
+                        let side = t.rng.below(2);
+                        let child: u32 = Mem::read(&t.b, p + if side == 1 { 0 } else { 8 });
+                        if child == head {
+                            break (p, side);
+                        }
+                    }
+                };
+                // the node's links as _Insert_at expects them (the
+                // callers' _Buynode): head, head, head
+                for off in [0, 4, 8] {
+                    t.w32(node + off, head);
+                }
+                let w = format!("{label} insert_at {at:#x} {i}");
+                let size: u32 = Mem::read(&t.b, map + 4);
+                t.run(&w, at, map, &[out, left, place, 0x7a7a, node], false, |g| {
+                    let _ = size;
+                    ffx_system::m5b_stl::bridge::tree_insert_at(g, map, out, left, place, node)
+                });
+                nodes.push(node);
+            }
+        }
+        for &(at, ins, dec) in &d::STRING_INSERT_NOHINT {
+            for leftish in [0u32, 1] {
+                let (map, head) = empty_map(&mut t);
+                let out = t.alloc(&[0; 8]);
+                let frame = t.b.stack_range().start + 0x1000;
+                for i in 0..40u32 {
+                    let n = t.rng.below(4);
+                    let node = string_node(&mut t, 0x10, n);
+                    for off in [0, 4, 8] {
+                        t.w32(node + off, head);
+                    }
+                    let value = node + 0x10;
+                    let w = format!("{label} insert_nohint {at:#x} leftish {leftish} {i}");
+                    t.run(&w, at, map, &[out, leftish, value, node], false, |g| {
+                        d::string_insert_nohint(g, map, out, leftish, value, node, frame, ins, dec)
+                    });
+                }
+            }
+        }
+    }
+}
