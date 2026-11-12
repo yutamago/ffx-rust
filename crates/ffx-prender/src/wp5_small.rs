@@ -237,3 +237,53 @@ pub fn spend_slv(h: &mut impl Host, who: u32, n: u32) -> u32 {
     h.write(gauge_at, r as u8);
     0
 }
+
+/// `PHeap_alloc_0042fb80(size, kind)` (cdecl) and the CRT `memcpy` thunk
+/// (cdecl).
+pub const PHYRE_ALLOC: u32 = 0x0042_fb80;
+pub const MEMCPY: u32 = 0x0094_9256;
+
+/// `NamedPair_copy_00699b70(this; &src)` (thiscall, `ret 4`): the word
+/// copied; the name (`+4`, its low bit a flag that is dropped) copied into
+/// a new Phyre block of its length plus the 0 (`PHYRE_ALLOC(n, 2)`, the
+/// bytes by the `memcpy` thunk when the block is not NULL), else NULL.
+/// `this`.
+pub fn named_pair_copy(h: &mut impl Host, this: u32, src: u32) -> u32 {
+    let w: u32 = h.read(src);
+    h.write(this, w);
+    let name: u32 = h.read(src + 4);
+    let p = name.wrapping_sub(name & 1);
+    if p == 0 {
+        h.write(this + 4, 0u32);
+        return this;
+    }
+    let mut n = 0u32;
+    while h.read::<u8>(p.wrapping_add(n)) != 0 {
+        n += 1;
+    }
+    let len = n + 1;
+    let buf = h.call_sym(PHYRE_ALLOC, Conv::Cdecl, &[len, 2]);
+    if buf != 0 {
+        h.call_sym(MEMCPY, Conv::Cdecl, &[buf, p, len]);
+    }
+    h.write(this + 4, buf);
+    this
+}
+
+/// The debug report `0x006dd5a0(this; name, tag, buffer, size)`
+/// (thiscall, `ret 0x10`) and its `"MapLoad"` tag.
+pub const REPORT: u32 = 0x006d_d5a0;
+pub const MAP_LOAD_TAG: u32 = 0x00b4_a5e4;
+
+/// `Instance_006dc800_reportMapLoad_006dcd50(this; name)` (thiscall, `ret
+/// 4`): when the bytes `+0` and `+1` are set, a zeroed 0x100-byte buffer
+/// (`frame`, game memory) and the report `(name, "MapLoad", buffer,
+/// 0x100)`.
+pub fn report_map_load(h: &mut impl Host, this: u32, name: u32, frame: u32) {
+    if h.read::<u8>(this) == 0 || h.read::<u8>(this + 1) == 0 {
+        return;
+    }
+    h.write_bytes(frame, &[0; 0x100]);
+    let tag = h.rebase(MAP_LOAD_TAG);
+    h.call_sym(REPORT, Conv::Thiscall(this), &[name, tag, frame, 0x100]);
+}

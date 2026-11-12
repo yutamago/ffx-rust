@@ -251,6 +251,23 @@ impl Twins {
         self.same(what);
     }
 
+    /// [`Twins::run_any_this`] with one stack word.
+    fn run_any_this1(
+        &mut self,
+        what: &str,
+        sym: u32,
+        this: u32,
+        arg: u32,
+        port: impl FnOnce(&mut G),
+    ) {
+        let at = self.a.rebase(sym);
+        self.a
+            .call(at, Conv::Thiscall(this), &[arg])
+            .unwrap_or_else(|e| panic!("{what}: the original: {e}"));
+        port(&mut G(&mut self.b));
+        self.same(what);
+    }
+
     /// The original at `sym` (thiscall on `this`, no stack words) against
     /// a void `port`: memory only.
     fn run_any_this(&mut self, what: &str, sym: u32, this: u32, port: impl FnOnce(&mut G)) {
@@ -1380,6 +1397,77 @@ fn wp5b_small_originals_2() {
             t.w32(log, 0);
             let w = format!("{label} spendSlv {who} {lv} {g0} {n}");
             t.run_cdecl(&w, 0x0078_6ef0, &[who, n], |g| sm::spend_slv(g, who, n));
+        }
+    }
+}
+
+/// `NamedPair_copy` (names NULL, flagged, empty, long; the Phyre
+/// allocator a bump stub that fails once) and the map-load report (on,
+/// off; the report a stub that records the buffer's first word and the
+/// tag's).
+#[test]
+fn wp5b_small_originals_3() {
+    use ffx_prender::wp5_small as sm;
+    for (label, mut t) in Twins::all() {
+        let log = t.alloc(&[0; 4 + 8 * 64]);
+        let heap = t.alloc(&[0x66; 0x2000]);
+        let next = t.alloc(&heap.to_le_bytes());
+        // mov eax,[next]; mov ecx,[esp+4]; add ecx,eax; mov [next],ecx; ret
+        let mut c = vec![0xa1];
+        c.extend(next.to_le_bytes());
+        c.extend([0x8b, 0x4c, 0x24, 0x04, 0x01, 0xc1, 0x89, 0x0d]);
+        c.extend(next.to_le_bytes());
+        c.push(0xc3);
+        jmp_stub(&mut t, sm::PHYRE_ALLOC, &c);
+        for (k, name) in [
+            None,
+            Some(&b"abc"[..]),
+            Some(b""),
+            Some(b"a longer name, over sixteen"),
+            Some(b"x"),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let p = name.map_or(0, |n| {
+                let mut v = n.to_vec();
+                v.extend([0, 0x77, 0x77]);
+                t.alloc(&v)
+            });
+            let flagged = if k % 2 == 1 { p | 1 } else { p };
+            let src = t.alloc(&[0; 8]);
+            t.w32(src, 0x1234_0000 + k as u32);
+            t.w32(src + 4, flagged);
+            let this = t.alloc(&[0x5a; 8]);
+            if k == 4 {
+                t.w32(next, 0); // the allocator fails: NULL
+            }
+            let w = format!("{label} named pair copy {k}");
+            t.run(&w, 0x0069_9b70, this, &[src], false, |g| {
+                sm::named_pair_copy(g, this, src)
+            });
+        }
+        // the report: logs its first word and the tag's first word
+        // mov eax,[esp+8]; mov eax,[eax]; mov [log+4],eax; mov eax,[esp+0xc];
+        // mov eax,[eax]; mov [log+8],eax; mov eax,[esp+4]; mov [log+0xc],eax;
+        // inc dword [log]; ret 0x10
+        let mut c = vec![0x8b, 0x44, 0x24, 0x08, 0x8b, 0x00, 0xa3];
+        c.extend((log + 4).to_le_bytes());
+        c.extend([0x8b, 0x44, 0x24, 0x0c, 0x8b, 0x00, 0xa3]);
+        c.extend((log + 8).to_le_bytes());
+        c.extend([0x8b, 0x44, 0x24, 0x04, 0xa3]);
+        c.extend((log + 0xc).to_le_bytes());
+        c.extend([0xff, 0x05]);
+        c.extend(log.to_le_bytes());
+        c.extend([0xc2, 0x10, 0x00]);
+        jmp_stub(&mut t, sm::REPORT, &c);
+        let frame = t.b.stack_range().start + 0x1000;
+        for (a, b) in [(1u8, 1u8), (0, 1), (1, 0), (2, 0xff)] {
+            let this = t.alloc(&[a, b, 0, 0]);
+            let w = format!("{label} report map load {a} {b}");
+            t.run_any_this1(&w, 0x006d_cd50, this, 0x4242, |g| {
+                sm::report_map_load(g, this, 0x4242, frame);
+            });
         }
     }
 }

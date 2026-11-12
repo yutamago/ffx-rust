@@ -74,4 +74,13 @@ ported! {
     spendSlv @ 0x0078_6ef0 => extern "C" fn sm_00786ef0(who: u32, n: u32) -> u32 {
         s::spend_slv(&mut mem(), who, n)
     }
+    /// `NamedPair_copy_00699b70(&src)`: the word and a copy of the name; `this`.
+    NamedPair_copy_00699b70 @ 0x0069_9b70 => extern "thiscall" fn sm_00699b70(this: u32, src: u32) -> u32 {
+        s::named_pair_copy(&mut mem(), this, src)
+    }
+    /// `Instance_006dc800_reportMapLoad_006dcd50(name)`: the "MapLoad" report when on.
+    Instance_006dc800_reportMapLoad_006dcd50 @ 0x006d_cd50 => extern "thiscall" fn sm_006dcd50(this: u32, name: u32) {
+        let mut frame = super::StackFrame::<0x40>::new();
+        s::report_map_load(&mut mem(), this, name, frame.at());
+    }
 }
