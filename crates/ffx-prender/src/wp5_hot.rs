@@ -298,3 +298,33 @@ pub fn can_use_auto_battle(h: &mut impl ffx_graphic::host::Host) -> u32 {
     let off = flag == 0xf || flag == 0xd20 || NO_AUTO_BATTLE.contains(&(flag, battle));
     u32::from(!off)
 }
+
+/// `g_CurrentMapNo` (`u32`).
+pub const CURRENT_MAP_NO: u32 = 0x012f_bc40;
+
+/// `IsCharacterCancleLoad(id)` (`0x00635a70`, cdecl; `al`): the character
+/// loads to skip: id `0x4067` always; at story flag `0x2e` the ids 5, 6,
+/// `0x109b`, `0x5001` and `0x5002`; on map `0x17e` (other flags) every id
+/// whose `id & 0xfffff000` is below `0x4000` (signed). `getScenerioFlag`
+/// is called first. `eax` above `al` is the original's: the id's bytes
+/// (masked to `0xfffff000` on the map test's path).
+pub fn is_character_cancel_load(h: &mut impl ffx_graphic::host::Host, id: u32) -> u32 {
+    use ffx_graphic::host::Conv;
+    #[allow(clippy::cast_possible_truncation)] // movzx of ax
+    let flag = h.call_sym(GET_SCENARIO_FLAG, Conv::Cdecl, &[]) as u16;
+    let high = id & !0xff;
+    if id == 0x4067 {
+        return high | 1;
+    }
+    if flag == 0x2e {
+        return high | u32::from([5, 6, 0x109b, 0x5001, 0x5002].contains(&id));
+    }
+    let map: u32 = h.read(h.rebase(CURRENT_MAP_NO));
+    if map != 0x17e {
+        return high;
+    }
+    let e = id & 0xffff_f000;
+    #[allow(clippy::cast_possible_wrap)] // the original's jl
+    let below = (e as i32) < 0x4000;
+    e | u32::from(below)
+}

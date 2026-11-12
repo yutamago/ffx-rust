@@ -730,3 +730,58 @@ fn wp5b_tree_lower_bound_string() {
         }
     }
 }
+
+/// `IsCharacterCancleLoad` (`0x00635a70`): every id it names and their
+/// neighbours, ids around the `0x4000` limit and negative ones (junk in
+/// the high bytes), story flag `0x2e` or not (junk above its 16 bits),
+/// map `0x17e` or not; full `eax`.
+#[test]
+fn wp5b_is_character_cancel_load() {
+    use ffx_prender::wp5_hot as hot;
+    for (label, mut t) in Twins::all() {
+        let cell = t.alloc(&[0; 4]);
+        let mut c = vec![0xa1];
+        c.extend(cell.to_le_bytes()); // mov eax, [cell]
+        c.push(0xc3);
+        let to = t.code(&c);
+        let at = t.a.rebase(hot::GET_SCENARIO_FLAG);
+        let mut j = vec![0xe9];
+        j.extend(to.wrapping_sub(at + 5).to_le_bytes());
+        t.write(at, &j);
+        let map = t.a.rebase(hot::CURRENT_MAP_NO);
+        let ids = [
+            0x4067u32,
+            0x4066,
+            5,
+            6,
+            7,
+            4,
+            0x109b,
+            0x109c,
+            0x5001,
+            0x5002,
+            0x5003,
+            0x3fff,
+            0x3000,
+            0x4000,
+            0x4fff,
+            0x8000_0005,
+            0xffff_f067,
+            0x1234_5006,
+            0,
+            0xab00_0002,
+        ];
+        for flag in [0x2eu32, 0x5a5a_002e, 0x2f, 0] {
+            for m in [0x17eu32, 0x17f, 0] {
+                for &id in &ids {
+                    t.w32(cell, flag);
+                    t.w32(map, m);
+                    let w = format!("{label} cancel load flag {flag:#x} map {m:#x} id {id:#x}");
+                    t.run_cdecl(&w, 0x0063_5a70, &[id], |g| {
+                        hot::is_character_cancel_load(g, id)
+                    });
+                }
+            }
+        }
+    }
+}

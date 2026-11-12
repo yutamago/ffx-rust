@@ -30,4 +30,8 @@ ported! {
     canUseAutoBattle @ 0x0078_6f50 => extern "C" fn w_00786f50() -> u32 {
         hot::can_use_auto_battle(&mut mem())
     }
+    /// `IsCharacterCancleLoad(id)`: whether a character load is skipped (`al`).
+    IsCharacterCancleLoad @ 0x0063_5a70 => extern "C" fn w_00635a70(id: u32) -> u32 {
+        hot::is_character_cancel_load(&mut mem(), id)
+    }
 }
