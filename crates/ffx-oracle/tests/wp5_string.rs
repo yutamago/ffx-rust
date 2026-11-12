@@ -1959,3 +1959,28 @@ fn wp5b_animation_channel_ctor_dtor() {
         }
     }
 }
+
+/// `PPhysicsDefaults_ctor_005e0050` on junk with `PMatrix4_Copy` and
+/// `PBaseRef`'s constructor logging stubs (the copy's source word, each
+/// run's own frame, cleared before the diff).
+#[test]
+fn wp5b_physics_defaults_ctor() {
+    use ffx_prender::wp5_small as sm;
+    for (label, mut t) in Twins::all() {
+        let log = t.alloc(&[0; 4 + 8 * 64]);
+        let c = log_stub(&mut t, log, 4, 0x5151);
+        jmp_stub(&mut t, sm::MATRIX_COPY, &c);
+        let c = log_stub(&mut t, log, 0, 0x6161);
+        jmp_stub(&mut t, sm::BASE_REF_CTOR, &c);
+        let obj = t.alloc(&[0x6b; 0x110]);
+        let frame = t.b.stack_range().start + 0x1000;
+        let w = format!("{label} physics defaults ctor");
+        let at = t.a.rebase(0x005e_0050);
+        let r = t.a.call(at, Conv::Thiscall(obj), &[]).unwrap();
+        let p = sm::physics_defaults_ctor(&mut G(&mut t.b), obj, frame);
+        assert_eq!(r.eax, p, "{w}: eax");
+        t.w32(log + 8, 0);
+        t.w32(log + 16, 0);
+        t.same(&w);
+    }
+}

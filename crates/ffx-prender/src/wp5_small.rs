@@ -573,3 +573,67 @@ pub fn channel_dtor(h: &mut impl Host, this: u32) -> u32 {
         u32::from(!(name as u8))
     }
 }
+
+/// `PMatrix4_Copy_004c9430` (thiscall `(out; m)`, `ret 4`).
+pub const MATRIX_COPY: u32 = 0x004c_9430;
+/// `Phyre_PBaseRef_ctor_005d3860` (thiscall).
+pub const BASE_REF_CTOR: u32 = 0x005d_3860;
+/// The image floats `PPhysicsWorld`'s defaults load (`fld` from memory):
+/// `+0x28` (-19.6), then `+0xdc` to `+0xf0` (10, 60, 1.5, 0.8, 0.6, 5).
+pub const PHYSICS_DEFAULTS: [(u32, u32); 7] = [
+    (0x28, 0x00b3_ebbc),
+    (0xdc, 0x00b9_2318),
+    (0xe0, 0x00b3_eb9c),
+    (0xe4, 0x00b3_eb58),
+    (0xe8, 0x00b3_4254),
+    (0xec, 0x00b3_eb48),
+    (0xf0, 0x00b3_eb98),
+];
+
+/// The 16 words of an identity matrix.
+fn identity_words() -> [u8; 64] {
+    let mut m = [0u8; 64];
+    for i in 0..4 {
+        m[i * 20..i * 20 + 4].copy_from_slice(&1.0f32.to_bits().to_le_bytes());
+    }
+    m
+}
+
+/// `0x005e0050(this)` (thiscall; `Phyre_PPhysics_DestroyCall_005f7c30`
+/// and the derived constructors call it; its defaults: gravity -19.6 on
+/// `+0x28`) -> `this`: `+0` = 0, the floats `+4..+0x0c` 0, `+0x14..+0x1c`
+/// 1, `+0x24` 0, `+0x28` -19.6, `+0x2c` and `+0x34..+0x3c` 0 (`+0x10`,
+/// `+0x20`, `+0x30`, `+0x40` untouched); identity matrices copied into
+/// `+0x44` and `+0x84` (`PMatrix4_Copy` from the 16-word `frame`, the
+/// original's `ebp - 0x40`); `+0xc4..+0xd8` 0, the word `+0xf4` 0, the
+/// floats `+0xdc..+0xf0` ([`PHYSICS_DEFAULTS`]), the byte `+0xf6` and
+/// `+0xf8`, `+0xfc` 0; `PBaseRef`'s constructor on `+0x100`.
+pub fn physics_defaults_ctor(h: &mut impl Host, this: u32, frame: u32) -> u32 {
+    let one = 1.0f32.to_bits();
+    h.write(this, 0u32);
+    for off in [4, 8, 0xc, 0x24, 0x2c, 0x34, 0x38, 0x3c] {
+        h.write(this + off, 0u32);
+    }
+    for off in [0x14, 0x18, 0x1c] {
+        h.write(this + off, one);
+    }
+    let gravity = h.rebase(PHYSICS_DEFAULTS[0].1);
+    let gravity: u32 = h.read(gravity);
+    h.write(this + 0x28, gravity);
+    for out in [0x44, 0x84] {
+        h.write_bytes(frame, &identity_words());
+        h.call_sym(MATRIX_COPY, Conv::Thiscall(this + out), &[frame]);
+    }
+    h.write_bytes(this + 0xc4, &[0; 0x18]);
+    h.write(this + 0xf4, 0u16);
+    for &(off, at) in &PHYSICS_DEFAULTS[1..] {
+        let at = h.rebase(at);
+        let v: u32 = h.read(at);
+        h.write(this + off, v);
+    }
+    h.write(this + 0xf6, 0u8);
+    h.write(this + 0xf8, 0u32);
+    h.write(this + 0xfc, 0u32);
+    h.call_sym(BASE_REF_CTOR, Conv::Thiscall(this + 0x100), &[]);
+    this
+}

@@ -6,7 +6,7 @@
 
 use ffx_prender::wp5_small as s;
 
-use super::{mem, ported};
+use super::{StackFrame, mem, ported};
 
 ported! {
     /// `Phyre_PArray_count_004320c0`: the count without bit 31.
@@ -126,5 +126,10 @@ ported! {
     /// `Phyre_PAnimation_PAnimationChannel_dtor_0050d1d0`: `+0x1c` cleared, the owned `+0x14` freed; `al` as the original's.
     Phyre_PAnimation_PAnimationChannel_dtor_0050d1d0 @ 0x0050_d1d0 => extern "thiscall" fn sm_0050d1d0(this: u32) -> u32 {
         s::channel_dtor(&mut mem(), this)
+    }
+    /// `PPhysicsDefaults_ctor_005e0050`: the physics defaults and two identity matrices (frame `ebp - 0x40`); `this`.
+    PPhysicsDefaults_ctor_005e0050 @ 0x005e_0050 => extern "thiscall" fn sm_005e0050(this: u32) -> u32 {
+        let mut f = StackFrame::<16>::new();
+        s::physics_defaults_ctor(&mut mem(), this, f.at())
     }
 }
