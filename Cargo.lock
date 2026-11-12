@@ -969,6 +969,7 @@ version = "0.1.0"
 dependencies = [
  "ffx-battle",
  "ffx-kernel",
+ "ffx-menu",
  "ffx-monster",
  "ffx-motion",
  "ffx-phyre",

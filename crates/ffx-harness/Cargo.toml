@@ -12,6 +12,7 @@ thiserror.workspace = true
 
 [dev-dependencies]
 ffx-battle.workspace = true
+ffx-menu.workspace = true
 ffx-kernel.workspace = true
 ffx-monster.workspace = true
 ffx-motion.workspace = true
