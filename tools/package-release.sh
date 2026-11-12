@@ -19,10 +19,12 @@
 #
 # FFX_RELEASE_FEATURES: ffx-host's features for the package (default "swf":
 # Iggy's screens on Ruffle), built with --no-default-features. dev-unicorn in
-# it is refused unless --dev; --dev adds it. Today (2026-11-12) ffx-host
-# refuses to build without dev-unicorn (a compile_error!: its executor still
-# needs Unicorn for code without a port; finish plan WP9 removes it), so the
-# only package that builds is the --dev one.
+# it is refused unless --dev; --dev adds it. Since WP9 (2026-11-12) ffx-host
+# builds without dev-unicorn: the release's executor has no emulator, and a
+# call to an address with no Rust side stops the run naming it (docs/host.md,
+# "Without Unicorn"). Such a package builds and passes the checks, but it
+# boots only as far as the Rust side reaches (today the CRT entry point is
+# unported: it stops at once); stage 4's gate run on it says when it plays.
 # STEAMWORKS_SDK: the Steamworks SDK's sdk folder (default
 # ~/tools/steamworks_sdk_165/sdk), for redistributable_bin/win64/steam_api64.dll.
 # Its licence (the Steamworks SDK Access Agreement) is the user's to accept;
@@ -93,9 +95,6 @@ elif [[ $dry == 0 ]]; then
     echo "building ffx-rust.exe (features: ${features:-none})"
     if ! FFX_HOST_FEATURES="$features" FFX_HOST_RUSTFLAGS="$remap" FFX_HOST_CFLAGS="$cmap" \
             nice tools/build-host.sh build --no-default-features; then
-        if ! has_unicorn; then
-            echo "package-release.sh: ffx-rust.exe does not build without dev-unicorn yet (the executor's compile_error!, finish plan WP9). Only a --dev package can be made today." >&2
-        fi
         exit 1
     fi
 fi
