@@ -26,6 +26,7 @@
 //! an [`Ext`] and the caller's store rounds once (`call_x87`'s `Float`).
 
 #![allow(clippy::many_single_char_names)] // the formulas' x, y, k, r
+#![allow(clippy::float_cmp)] // the DLL's own exact comparisons (comisd, cmpeqsd)
 
 use std::path::Path;
 
@@ -1069,10 +1070,6 @@ const AC_HALF: u32 = 0xb8;
 const AC_MID: u64 = 0x0000_2000_0000_0000;
 const SIGN: u64 = 1 << 63;
 
-fn with_sign_of(v: f64, x: f64) -> f64 {
-    f64::from_bits(v.to_bits() ^ (x.to_bits() & SIGN))
-}
-
 /// The odd series `C3·w³ + (C7·w² + C5)·w⁵` of the bands with a table,
 /// in the DLL's order: (the w⁵ part, the w³ part).
 fn ac_series(d: &CrtData, c: AcosK, w: f64) -> (f64, f64) {
@@ -1200,7 +1197,7 @@ fn sse2_acos(d: &CrtData, c: AcosK, x: f64) -> Option<f64> {
         let pi_2 = kp(AC_PI_2);
         return Some(pi_2.0 + pi_2.1);
     }
-    if x.abs() == 1.0 {
+    if x.abs().to_bits() == 1.0f64.to_bits() {
         let pi = kp(AC_PI);
         return Some(if x < 0.0 { pi.0 + pi.1 } else { 0.0 + 0.0 });
     }
@@ -1372,7 +1369,7 @@ fn sse2_asin(d: &CrtData, c: AcosK, x: f64) -> Option<f64> {
         // below 2^-60: x
         return Some(x);
     }
-    if x.abs() == 1.0 {
+    if x.abs().to_bits() == 1.0f64.to_bits() {
         let pi_2 = kp(AS_PI_2);
         let v = pi_2.1 + pi_2.0;
         return Some(f64::from_bits(v.to_bits() | (bits & SIGN)));
@@ -1460,7 +1457,7 @@ fn sse2_log(d: &CrtData, x: f64) -> Option<f64> {
                 bias = -52;
                 continue;
             }
-            if ecx == 0x7fe && m.0 == d.f(LOG_K + LOG_ONE) {
+            if ecx == 0x7fe && m.0.to_bits() == d.q(LOG_K + LOG_ONE) {
                 return Some(f64::INFINITY);
             }
             return None; // a NaN or a negative value

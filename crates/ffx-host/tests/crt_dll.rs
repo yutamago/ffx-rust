@@ -236,7 +236,7 @@ fn positive_operand(n: usize, seed: u32) -> Vec<Vec<f64>> {
         f64::NEG_INFINITY,
         1.0 + 1e-15,
         0.999_999_9,
-        1.0078125,
+        1.007_812_5,
     ]);
     for i in 0..n {
         let u = s.unit();
