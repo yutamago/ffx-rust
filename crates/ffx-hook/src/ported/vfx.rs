@@ -2737,7 +2737,7 @@ ported! {
     /// `opus_map_rgba_free()`.
     opus_map_rgba_free @ 0x0080_ac00 => extern "C" fn opus_map_rgba_free() {
         // the original's local vector, 16-byte aligned as in its frame
-        let mut locals = super::AlignedFrame::<4>::new();
+        let mut locals = super::AlignedFrame::<16>::new();
         let at = locals.at();
         opus::bridge::opus_map_rgba_free(&mut mem(), at, &mut |_, f, a| call_ptr(f, a));
     }
@@ -2923,7 +2923,7 @@ ported! {
         // the original's locals (the frame number, then the GS environment
         // at a 16-byte boundary, as its aligned frame has them): with an
         // unaligned environment the game crashed in the replays
-        let mut locals = super::AlignedFrame::<128>::new();
+        let mut locals = super::AlignedFrame::<512>::new();
         let at = locals.at() + 0xc;
         op::bridge::op_loop_ffx_after(&mut mem(), at, &mut |_, f, a| call_ptr(f, a));
     }
