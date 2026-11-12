@@ -249,4 +249,27 @@ ported! {
     RemapButtonIcon_setLayout_006e8140 @ 0x006e_8140 => extern "thiscall" fn d_006e8140(this: u32, a0: u32, a1: u32, a2: u32, a3: u32, b0: u32, b1: u32, b2: u32, b3: u32) -> u32 {
         d::remap_set_layout(&mut mem(), this, [a0, a1, a2, a3], [b0, b1, b2, b3])
     }
+    /// `MemoryReport_mapUnload_006dcdc0`: the map-unload line into a frame buffer.
+    MemoryReport_mapUnload_006dcdc0 @ 0x006d_cdc0 => extern "thiscall" fn d_006dcdc0(this: u32) -> u32 {
+        let mut frame = StackFrame::<0x40>::new();
+        d::report_map_unload(&mut mem(), this, frame.at())
+    }
+}
+
+/// `ffx-host` only: `Rng_ClockSeed` (`0x00798950`) as a table entry. In
+/// the hooked game its address holds the harness's wrapper
+/// (`harness::clock_seed`), which runs the same port
+/// (`m5_battle::clock_seed`); in `ffx-host` the harness registers its
+/// fixed seed there only with `FFX_HARNESS_SEED`, and without an entry a
+/// boot without Unicorn stopped at `MsRandMize`'s call.
+#[cfg(ffx_host)]
+pub mod host {
+    use super::ported;
+
+    ported! {
+        /// `Rng_ClockSeed`: the XOR of the system time's bytes, plus 1.
+        Rng_ClockSeed @ 0x0079_8950 => extern "C" fn d_00798950() -> u32 {
+            super::super::clock_seed_port()
+        }
+    }
 }

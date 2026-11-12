@@ -1569,3 +1569,37 @@ fn wp5d_remap_set_layout() {
         }
     }
 }
+
+/// The memory report's map-unload line (`0x006dcdc0`): the report off
+/// (either byte 0; memory only, the original's `eax` is its cookie word
+/// then), on with an empty and a set map name. `eax` (when on) and
+/// memory (the buffer is the frame's: the stack, which the diff leaves
+/// out; the real `sprintf_s` on both sides).
+#[test]
+fn wp5d_report_map_unload() {
+    use ffx_prender::wp5d as d;
+    for (label, mut t) in Twins::all() {
+        let frame = t.b.stack_range().start + 0x1000;
+        for case in 0..5u32 {
+            let this = t.alloc(&[0; 0x110]);
+            let (a, b) = [(0u8, 1u8), (1, 0), (1, 1), (1, 1), (1, 1)][case as usize];
+            t.write(this, &[a, b]);
+            if case >= 3 {
+                t.write(this + 0xc, b"bsil0300\0");
+            }
+            if case == 4 {
+                t.write(this + 0xc + 0xff, &[7]);
+            }
+            let w = format!("{label} map unload {case}");
+            let at = t.a.rebase(0x006d_cdc0);
+            let r =
+                t.a.call(at, Conv::Thiscall(this), &[])
+                    .unwrap_or_else(|e| panic!("{w}: {e}"));
+            let p = d::report_map_unload(&mut G(&mut t.b), this, frame);
+            if a != 0 && b != 0 {
+                assert_eq!(r.eax, p, "{w}: eax");
+            }
+            t.same(&w);
+        }
+    }
+}

@@ -1572,3 +1572,32 @@ pub fn remap_set_layout(h: &mut impl Host, this: u32, a: [u32; 4], b: [u32; 4]) 
     }
     r
 }
+
+/// `"MapUnload"`, `"%s_MapUnload"` (`.rdata`).
+pub const TXT_MAP_UNLOAD: u32 = 0x00b4_a5ec;
+pub const FMT_MAP_UNLOAD: u32 = 0x00b4_a5f8;
+
+/// The memory report's map-unload line (`0x006dcdc0`, thiscall on the
+/// report; `PhyreScene_fieldMapUnload`): when the bytes `+0` and `+1`
+/// are set, a zeroed 0x100-byte buffer (`frame`, game memory, the
+/// original's `ebp - 0x104`) gets `"MapUnload"` when the 0x100 bytes at
+/// `+0xc` (the map's name) are all 0, else `"%s_MapUnload"` with that
+/// name (`sprintf_s`); the buffer is not used further (the report line
+/// was left out of the release). `eax`: `sprintf_s`'s; 0 when the report
+/// is off (the original's is its cookie word there; no caller reads it).
+pub fn report_map_unload(h: &mut impl Host, this: u32, frame: u32) -> u32 {
+    if h.read::<u8>(this) == 0 || h.read::<u8>(this + 1) == 0 {
+        return 0;
+    }
+    h.call_sym(MEMSET, Conv::Cdecl, &[frame, 0, 0x100]);
+    let mut name = [0u8; 0x100];
+    h.read_bytes(this + 0xc, &mut name);
+    let f: u32 = h.read(h.rebase(SPRINTF_S_IAT));
+    if name.iter().all(|&b| b == 0) {
+        let t = h.rebase(TXT_MAP_UNLOAD);
+        h.call(f, Conv::Cdecl, &[frame, 0x100, t, this + 0xc])
+    } else {
+        let t = h.rebase(FMT_MAP_UNLOAD);
+        h.call(f, Conv::Cdecl, &[frame, 0x100, t, this + 0xc])
+    }
+}
