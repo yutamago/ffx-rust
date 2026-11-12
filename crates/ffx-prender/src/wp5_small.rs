@@ -965,3 +965,36 @@ pub fn mesh_bullet_dtor(h: &mut impl Host, this: u32) -> u32 {
     h.write(this, vt);
     eax
 }
+
+/// `Phyre_PPhysics_PPhysicsCapsuleBullet_vftable`.
+pub const CAPSULE_BULLET_VTABLE: u32 = 0x00b3_a4e0;
+/// `Phyre_PPhysics_PPhysicsCylinderBullet_vftable`.
+pub const CYLINDER_BULLET_VTABLE: u32 = 0x00b3_a1e0;
+
+/// `PPhysicsCapsuleBullet::~PPhysicsCapsuleBullet` (`0x005e2030`,
+/// thiscall), the cylinder's destructor inlined: the capsule's vtable,
+/// `+0x6c` deleted when set (virtual 0, argument 1), `+0x6c` and `+0x58`
+/// 0; the cylinder's vtable, `+0x68` the same way, `+0x68` and `+0x58` 0;
+/// `PPhysicsShapeBase`'s vtable. `eax`: the last deletion's; with none a
+/// stack address in the original, 0 in the port (the callers, the scalar
+/// deleting destructors 0x005e6800 and 0x005e68c0, return `this`; the
+/// thunk 0x005e1fb0 has no reference).
+pub fn capsule_bullet_dtor(h: &mut impl Host, this: u32) -> u32 {
+    let mut eax = 0;
+    for (vtable, off) in [
+        (CAPSULE_BULLET_VTABLE, 0x6c),
+        (CYLINDER_BULLET_VTABLE, 0x68),
+    ] {
+        let vt = h.rebase(vtable);
+        h.write(this, vt);
+        let obj: u32 = h.read(this + off);
+        if obj != 0 {
+            eax = h.call_virtual(obj, 0, &[1]);
+        }
+        h.write(this + off, 0u32);
+        h.write(this + 0x58, 0u32);
+    }
+    let vt = h.rebase(SHAPE_BASE_VTABLE);
+    h.write(this, vt);
+    eax
+}

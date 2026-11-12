@@ -2275,3 +2275,33 @@ fn wp5b_mesh_bullet_dtor() {
         }
     }
 }
+
+/// `PPhysicsCapsuleBullet`'s destructor (`0x005e2030`): each of the two
+/// owned objects present or null, their vtable's slot 0 a logging stub;
+/// `eax` (when one was deleted) and memory.
+#[test]
+fn wp5b_capsule_bullet_dtor() {
+    use ffx_prender::wp5_small as sm;
+    for (label, mut t) in Twins::all() {
+        let log = t.alloc(&[0; 4 + 8 * 64]);
+        let virt = log_stub(&mut t, log, 4, 0x7171);
+        let virt = t.code(&virt);
+        let vtable = t.alloc(&virt.to_le_bytes());
+        let a = t.alloc(&vtable.to_le_bytes());
+        let b = t.alloc(&vtable.to_le_bytes());
+        let shape = t.alloc(&[0x6b; 0x70]);
+        for case in 0..4u32 {
+            t.w32(shape + 0x68, if case & 1 != 0 { a } else { 0 });
+            t.w32(shape + 0x6c, if case & 2 != 0 { b } else { 0 });
+            t.w32(shape + 0x58, 0x5a5a_5a5a);
+            let w = format!("{label} capsule bullet dtor case {case}");
+            let at = t.a.rebase(0x005e_2030);
+            let r = t.a.call(at, Conv::Thiscall(shape), &[]).unwrap();
+            let p = sm::capsule_bullet_dtor(&mut G(&mut t.b), shape);
+            if case != 0 {
+                assert_eq!(r.eax, p, "{w}: eax");
+            }
+            t.same(&w);
+        }
+    }
+}

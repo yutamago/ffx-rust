@@ -179,4 +179,8 @@ ported! {
     Phyre_PPhysics_PPhysicsMeshBullet_dtor_005e2360 @ 0x005e_2360 => extern "thiscall" fn sm_005e2360(this: u32) -> u32 {
         s::mesh_bullet_dtor(&mut mem(), this)
     }
+    /// `Phyre_PPhysics_PPhysicsCapsuleBullet_dtor_005e2030`: the capsule's and the cylinder's owned objects deleted, the base vtable restored; the last deletion's `eax` (0 for none; see the bridge).
+    Phyre_PPhysics_PPhysicsCapsuleBullet_dtor_005e2030 @ 0x005e_2030 => extern "thiscall" fn sm_005e2030(this: u32) -> u32 {
+        s::capsule_bullet_dtor(&mut mem(), this)
+    }
 }
