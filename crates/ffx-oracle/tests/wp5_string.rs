@@ -1154,6 +1154,8 @@ fn wp5b_small_originals() {
             let at = t.a.rebase(a);
             t.w32(at, 0x7777_7777);
         }
+        let at = t.a.rebase(sm::CD_BYTE);
+        t.write(at, &[0x77]);
         t.w32(log, 0);
         let w = format!("{label} cd reset channels");
         t.run_cdecl(&w, 0x0076_dcb0, &[], |g| sm::cd_reset_channels(g));
@@ -1507,5 +1509,52 @@ fn wp5b_char_switch_tweak_util() {
             &[],
             |g| sm::char_switch_create(g),
         );
+    }
+}
+
+/// `VideoIndexMap_insertNode_006d5ff0`: the video map grown from empty
+/// with nodes made by `VideoIndexMap_buyNode` (ids from a small range with
+/// negative ones, so equal ids free their node and path), `leftish` 0
+/// and 1; the map's `_Insert_at` and iterator run as the original on
+/// both sides.
+#[test]
+fn wp5b_video_insert_node() {
+    use ffx_system::wp5_tree::bridge as tb;
+    for (label, mut t) in Twins::all() {
+        for round in 0..6u32 {
+            let head = t.alloc(&[0; 0x30]);
+            let mut h = Vec::new();
+            for _ in 0..3 {
+                h.extend(head.to_le_bytes());
+            }
+            h.extend([1, 1, 0, 0]);
+            t.write(head, &h);
+            let tree = t.alloc(&[0; 8]);
+            t.w32(tree, head);
+            let out = t.alloc(&[0x33; 8]);
+            let frame = t.b.stack_range().start + 0x1000;
+            for i in 0..30u32 {
+                let id = (t.rng.below(if round % 2 == 0 { 8 } else { 1000 })).wrapping_sub(3);
+                let l = t.rng.len();
+                let mut path = t.text(l);
+                path.push(0);
+                let p = t.alloc(&path);
+                let mut v = id.to_le_bytes().to_vec();
+                v.extend(p.to_le_bytes());
+                let value = t.alloc(&v);
+                let node = tb::video_buy_node(&mut G(&mut t.a), tree, value);
+                assert_eq!(tb::video_buy_node(&mut G(&mut t.b), tree, value), node);
+                let leftish = [0u32, 1, 0x100][t.rng.below(3) as usize];
+                let w = format!("{label} video insert {round}.{i} (id {id:#x})");
+                t.run(
+                    &w,
+                    0x006d_5ff0,
+                    tree,
+                    &[out, leftish, node + 0x10, node],
+                    false,
+                    |g| tb::video_insert_node(g, tree, out, leftish, node + 0x10, node, frame),
+                );
+            }
+        }
     }
 }

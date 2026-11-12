@@ -82,4 +82,9 @@ ported! {
     std_Tree_Rrotate_0069a4f0 @ 0x0069_a4f0 => extern "thiscall" fn wtr_0069a4f0(this: u32, node: u32) {
         stl::tree_rotate_right(&mut mem(), this, node);
     }
+    /// `VideoIndexMap_insertNode_006d5ff0`: a node hung in by its `i32` id, or freed with its path for an equal one; `out`.
+    VideoIndexMap_insertNode_006d5ff0 @ 0x006d_5ff0 => extern "thiscall" fn wtr_006d5ff0(this: u32, out: u32, leftish: u32, value: u32, node: u32) -> u32 {
+        let mut frame = StackFrame::<1>::new();
+        b::video_insert_node(&mut mem(), this, out, leftish, value, node, frame.at())
+    }
 }

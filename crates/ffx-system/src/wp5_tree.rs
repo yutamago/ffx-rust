@@ -27,6 +27,12 @@ pub const BUY_NODE_VIDEO: u32 = 0x006d_7930;
 /// 8`): the prototype's move into a node.
 pub const PROTOTYPE_COPY: u32 = 0x0069_c200;
 
+/// The video index map's `_Insert_at(this; &out, addLeft, where, value,
+/// node)` (thiscall, `ret 0x14`) and iterator `--` (thiscall on the
+/// iterator).
+pub const VIDEO_INSERT_AT: u32 = 0x006d_5dc0;
+pub const VIDEO_ITERATOR_DEC: u32 = 0x006d_7060;
+
 pub mod bridge {
     //! The ports over game memory.
 
@@ -270,5 +276,75 @@ pub mod bridge {
             }
             n = l;
         }
+    }
+
+    /// `VideoIndexMap_insertNode_006d5ff0(this; &out, leftish, &value,
+    /// node)` (thiscall, `ret 0x10`): [`insert_nohint`] over signed `i32`
+    /// keys, with the video map's own `_Insert_at` (`0x006d5dc0`, thiscall
+    /// `(&out, addLeft, where, value, node)`, `ret 0x14`) and iterator `--`
+    /// (`0x006d7060`); an equal key frees the node's path string (`+0x14`:
+    /// its heap buffer when the capacity `+0x28` is 16 or more, then made
+    /// empty) and the node. Returns `out`.
+    #[allow(clippy::cast_possible_wrap, clippy::too_many_arguments)]
+    pub fn video_insert_node(
+        h: &mut impl Host,
+        this: u32,
+        out: u32,
+        leftish: u32,
+        value: u32,
+        node: u32,
+        frame: u32,
+    ) -> u32 {
+        let head: u32 = h.read(this);
+        let want = h.read::<u32>(value) as i32;
+        let mut add_left = true;
+        let mut place = head;
+        let mut at: u32 = h.read(head.wrapping_add(4));
+        while !nil(h, at) {
+            place = at;
+            let k = key(h, at) as i32;
+            add_left = if leftish & 0xff != 0 {
+                k >= want
+            } else {
+                want < k
+            };
+            at = h.read(at.wrapping_add(if add_left { 0 } else { 8 }));
+        }
+        h.write(frame, place);
+        let hang = |h: &mut _, left: bool| -> u32 {
+            ffx_graphic::host::Host::call_sym(
+                h,
+                super::VIDEO_INSERT_AT,
+                Conv::Thiscall(this),
+                &[frame, u32::from(left), place, value, node],
+            );
+            let it: u32 = ffx_bridge::Mem::read(h, frame);
+            ffx_bridge::Mem::write(h, out, it);
+            ffx_bridge::Mem::write(h, out.wrapping_add(4), 1u8);
+            out
+        };
+        if add_left {
+            let leftmost: u32 = h.read(head);
+            if place == leftmost {
+                return hang(h, true);
+            }
+            h.call_sym(super::VIDEO_ITERATOR_DEC, Conv::Thiscall(frame), &[]);
+        }
+        let before: u32 = h.read(frame);
+        if (key(h, before) as i32) < h.read::<u32>(value) as i32 {
+            return hang(h, add_left);
+        }
+        let s = node.wrapping_add(0x14);
+        if h.read::<u32>(s + 0x14) >= 16 {
+            let p: u32 = h.read(s);
+            h.call_sym(OPERATOR_DELETE, Conv::Cdecl, &[p]);
+        }
+        h.write(s + 0x14, 0xfu32);
+        h.write(s + 0x10, 0u32);
+        h.write(s, 0u8);
+        h.call_sym(OPERATOR_DELETE, Conv::Cdecl, &[node]);
+        h.write(out, before);
+        h.write(out.wrapping_add(4), 0u8);
+        out
     }
 }
