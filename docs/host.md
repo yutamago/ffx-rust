@@ -440,6 +440,74 @@ convention, stack words and Rust side.
   `EXCEPTION_CONTINUE_EXECUTION`, so without a debugger that is what
   happens.
 
+### The missing imports (2026-11-12, wp78)
+
+The user's own play run of `ffx-rust.exe` outside the harness (2026-11-11)
+ended at 43 s of game time on `OLEAUT32.dll!ORDINAL 6` (`SysFreeString`),
+called from the executor's sentinel, that is from a Rust port: two
+threads at once, a loader thread (`Thread_Start_00679db0`) and
+`PVideoPlaybackWin32__ReadingThread` (movies are read from the VBF too),
+each in `BigFileStream_fileTaskUncompress`'s error path, whose first call
+is `SysFreeString(0)` before the "error" box (string 0x7836) and
+`ResetToLauncher`. The stack the report printed (`fseek` under
+`Settings_Load`) is stale words of the stack scan. So the missing import
+hid a failed read or inflate; with the BSTRs in place the next such run
+shows the original's message box (a note now, `message box "error": ...`,
+also under the harness) and goes on to `ResetToLauncher`. Why the blocks
+failed is open: `zlib_uncompress`'s Rust side keeps no shared state,
+the slot claim is `InterlockedCompareExchange` (a host atomic) and every
+read goes through MSVCR110's `_fseeki64` + `fread` on the slot's `FILE`
+(`+0x44`), so the lead is a stream two threads seek and read at the same
+time outside the harness's lockstep.
+
+Every import without a Rust side, 116 on Windows before this round
+(`ffx-rust --routes FILE`), and what became of it. Now 96: 15 of
+`FFX.exe`, 81 of the DLLs (74 names), all unreachable:
+
+| Imports | Now | Who calls them |
+|---|---|---|
+| `OLEAUT32` #2, #4, #6 (`SysAllocString`, `SysAllocStringLen`, `SysFreeString`) | `BSTR`s on the arena heap (`stand_ins.rs`) | the error boxes (`BigFileStream_fileTaskUncompress`, `Game_Main`), `ComBstr_loadString_0061b330` (the window's Alt+F4 question), `Input_IsXInputDevice` |
+| `FindResourceW`, `FindResourceExW`, `LoadResource`, `LockResource`, `SizeofResource` | the image's resource directory (`rsrc.rs`; language: neutral, en-US, else the first) | `AtlFindStringResource_0061b270`, `AtlFindStringResourceInstance_0064f970`, `CStringW_LoadString_00652310`: every error box's text (`RT_STRING` blocks 0x784, 0x78b) |
+| `TerminateThread` | the caller itself as `ExitThread`; another thread's waits end at once and its emulator stops at the watchdog's next look (only inside `emu_start`); a suspended one never starts | `VsyncThreadImpl_run` ends itself; the `Sys::Thread` destructors (`FmodManager_Destroy` at exit, `SysThread_dtor_00703990`, `SysThread_deletingDtor_00679bb0`, `Ps2Thread_dtor_006f29a0`, `DeleteThread_ps2_006f2f00`) |
+| `ShellExecuteW` | noted, not run, 42 | the window's `WM_CLOSE`: `<game folder>\FFX&X-2_LAUNCHER.exe` (the Steam launcher would start `FFX.exe` again) |
+| `ChangeDisplaySettingsA` | noted, `DISP_CHANGE_SUCCESSFUL`, the mode not changed | Full Screen Mode (`createWindow`, `applyScreenMode`, `setFocus`, `restoreDisplay`); the harness's games run beside the user's desktop |
+| `SetParent` | Windows: forwarded; else 0 | the embedded mode only (`PApplication_InitWindowAndApp_00629ab0` with a parent window, `PWindowWin32_AttachToHost`) |
+| `DestroyWindow`, `PostQuitMessage` | Windows: forwarded already; Linux: stand-ins | the window's `WM_CLOSE` / `WM_DESTROY` |
+| `UnhookWindowsHookEx` 1, `CallNextHookEx` 0 | stand-ins | `SetWindowsHookExA` is a stand-in, so Windows never calls `PWindowWin32_MouseHookProc` |
+| `CoCreateInstance` (`REGDB_E_CLASSNOTREG`), `CoSetProxyBlanket`, `CoUninitialize` | no WMI | `Input_IsXInputDevice`, only for game controllers (types 0x14/0x15/0x18); the host's `EnumDevices` offers the mouse and keyboard only |
+| `IggyGDrawSendWarning` | a note | `GDraw`'s warnings on a failed `D3D11` call or a full pool |
+| MSVCR110's `LoadLibraryExW` (0), `OutputDebugStringW` (a note) | stand-ins | `__crtMessageBoxW` under `_wassert`: a failed assert ends as `abort` with its text in the notes, not on a missing import |
+| `MiniDumpWriteDump`, `GetProcessId`, `ReadProcessMemory`, `GetThreadContext`, VERSION's three | unreachable | `CrashDump_UnhandledExceptionFilter` and its `StackWalker`: the host's `SetUnhandledExceptionFilter` keeps no filter (an unhandled exception ends the run through `UnhandledExceptionFilter`) |
+| `SteamUserStats`, `SteamUtils`, `SteamUser` | unreachable (WP10) | `Steam_Init` after `SteamAPI_Init` succeeds, and `StatsAndAchievements_ctor` under `g_SteamReady`: `SteamAPI_Init` returns false |
+| `AllocConsole`, `GetConsoleScreenBufferInfo`, `SetConsoleScreenBufferSize` | unreachable | `FUN_0042f340`, 0 refs |
+| `CreateThreadpoolWait`, `SetThreadpoolWait` | unreachable | `FileSys_SubmitRead`, 0 refs |
+| the DLLs' console calls (`ReadConsoleW`, `WriteConsoleW`, `ReadConsoleInputA/W`, `PeekConsoleInputA`, `GetNumberOfConsoleInputEvents`, `SetConsoleMode`, `SetConsoleCtrlHandler`, `Beep`) | unreachable | MSVCR110's `_write`/`_read` take the console path only when `GetConsoleMode` succeeds, and its stand-in answers 0; `signal` and `_beep` are no import of `FFX.exe` |
+| `SetStdHandle` | unreachable | MSVCR110 sets the standard handles only for a console application (`_set_osfhnd`, `_free_osfhnd`); `FFX.exe` is a GUI one (`__set_app_type(2)`) |
+| processes, pipes, temporary files, the environment (`CreateProcessA/W`, `GetExitCodeProcess`, `CreatePipe`, `PeekNamedPipe`, `SetEnvironmentVariableA/W`, `GetTempPathA/W`) | unreachable | `FFX.exe`'s calls of `system`, `_popen`, `_pclose`, `tmpfile`, `tmpnam` and some of `getenv`'s are Lua's `os`/`io` libraries (registration tables in `.rdata`, `0x0095xxxx`), and the game never creates a Lua state (`docs/formats/lua.md`); `getenv` itself sets nothing (`SetEnvironmentVariableA/W` are `_putenv`'s; the path `crt-reach.py` finds from `getenv` is its over-approximation) |
+| files (`FindFirstFileExA/W`, `FindNextFileA/W`, `FindClose`, `GetFileAttributesExW`, `SetFileAttributesW`, `GetFullPathNameA/W`, `GetCurrentDirectoryW`, `SetCurrentDirectoryW`, `GetDriveTypeW`, `GetLogicalDrives`, `GetDiskFreeSpaceA`, `GetDiskFreeSpaceExW`, `MoveFileExW`, `DeleteFileW`, `RemoveDirectoryW`, `CopyFileW`, `CreateHardLinkW`, `SetFileTime`, `FileTimeToLocalFileTime`, `LocalFileTimeToFileTime`, `GetFileInformationByHandle`, `LockFileEx`, `UnlockFileEx`) | unreachable | `remove`, `rename` (Lua's `os`), `_putenv_s` (its one caller unreachable); the rest no import of `FFX.exe` reaches (`crt-reach.py`) |
+| time and locale (`GetLocalTime`, `SetLocalTime`, `SystemTimeToFileTime`, `GetDateFormatW`, `GetTimeFormatW`, `GetLocaleInfoW`, `EnumSystemLocalesW`) | not called | `strftime`, `_localtime64`, `_mktime64`: Lua's `os.date`/`os.time`; `GetDateFormatW`/`GetTimeFormatW` also through the iostream constructors' locale facets (a static over-approximation: the descent follows the facets' vtables); the last two no import reaches |
+| ConcRT (`CreateTimerQueue`, `CreateTimerQueueTimer`, `ChangeTimerQueueTimer`, `DeleteTimerQueueTimer`, `RegisterWaitForSingleObject`, `UnregisterWait(Ex)`, `SignalObjectAndWait`, `InterlockedPush/Pop/FlushEntrySList`, `QueryDepthSList`, `GetNumaHighestNodeNumber`, `Get/SetProcessAffinityMask`, `SetThreadAffinityMask`, `GetThreadPriority`, `DuplicateHandle`, `VirtualProtect`, `FreeLibraryAndExitThread`) | not called | statically reachable through MSVCP110's `_ReentrantPPLLock` (the iostream constructors), which brings up ConcRT's scheduler only when it blocks; no run called one (every `ffx-rust` log and replay output under `~/ffx-work` on the main machine, 2026-11-12, and the free play: the only missing imports ever called were the BSTR one and, once, an older `FMOD_Memory_Initialize`). They go with the DLLs (WP5, WP9) |
+| `HeapCompact`, `HeapWalk` | unreachable | `_heapmin`, `_heapwalk`: no caller |
+
+`tools/crt-reach.py` gives the static half for the DLLs: from every
+MSVCR110/MSVCP110 import of `FFX.exe` routed to a DLL (and each DLL's
+entry), a recursive descent over the DLLs' code (direct branches, every
+IAT slot an instruction names, address constants and the pointer runs
+they start) lists which of the DLLs' imports are reachable and from which
+of `FFX.exe`'s imports (`--why NAME`); `tools/refs.py` on each import's
+IAT slot (and its `jmp [slot]` thunk) gave `FFX.exe`'s callers, and
+`reach.py`'s `nodes.tsv` whether they run.
+
+```bash
+ffx-rust --game-dir ~/steam-games/FFX-X2-HD --routes routes.tsv --budget 5
+FFX_GAME_DIR=~/steam-games/FFX-X2-HD python3 -I tools/crt-reach.py --routes routes.tsv
+FFX_GAME_DIR=~/steam-games/FFX-X2-HD python3 -I tools/crt-reach.py --why CreateTimerQueue
+```
+
+`tests/free_play.rs` checks the string resources and BSTRs on the image
+and `TerminateThread` on game threads (waiting, spinning, suspended, the
+caller itself).
+
 ## D3D11 and DXGI
 
 `D3D11CreateDeviceAndSwapChain` (`PRendererD3D11_createDeviceAndSwapChain_00595800`)
@@ -1887,6 +1955,34 @@ runs past the third frame (the Unicorn abort).
    they write Iggy's 24-byte paths there), and
    lock-prefixed instructions, which are atomic only within one Unicorn
    instance.
+   Re-read 2026-11-12 (wp78): the 8 boots were of the libraries round
+   (`7bc74eb9b`), when the page's original ran in Unicorn. Since the
+   `ported!` lists went into the table the same day, the page is its port
+   (`ffx_glue_other::h4x_video`, a 0xac8-byte `StackFrame`; neither it nor
+   `IggyStringArray_ctor_006fcbc0` was ever in `HELD`): the original's
+   `security_check_cookie` at `0x006fed0f` no longer runs, so its failure
+   can't show, and a corruption of that frame would now be silent. The
+   null value-path imports alone don't explain it: a callee that writes
+   nothing can't overwrite a cookie, and they were deterministic where
+   the failure was 4 of 8; the free loads beside the page remain the
+   suspect. No boot since mentions it. The check (the coordinator, PC2):
+   8 boots with the port and 8 with the original's cookie check back,
+   each to the title:
+
+   ```bash
+   export FFX_HARNESS_EXE=rust FFX_HOST_NOTES=1
+   for i in 1 2 3 4 5 6 7 8; do tools/replays/run-all.sh boot; export FFX_NO_BUILD=1; done
+   for i in 1 2 3 4 5 6 7 8; do
+       FFX_HOST_DISABLE=FFEscMenu_initializeVideoSettingPage tools/replays/run-all.sh boot
+   done
+   # each run prints "replays took N s (<run>)"; per run:
+   grep -h '^outcome' <run>/rust/boot.ffx-rust.log    # none when it ended at quit
+   grep -c 'c0000409\|0x006fed0f' <run>/rust/boot.ffx-rust.log <run>/rust/boot.out
+   ```
+
+   Closed when the 8 boots with `FFX_HOST_DISABLE` reach the title
+   (`boot-4.bmp` written, no `0xc0000409` outcome); a failure there means
+   the corruption is still there and the port hides it.
 3. Done (host-iggy, 2026-11-01): **Iggy's image.** The players tick
    and draw (`GDraw`'s memory imports), the image is composited through
    the D3D11 layer, the AS3 calls get the game's answers, the value refs
