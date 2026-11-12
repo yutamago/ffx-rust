@@ -330,8 +330,6 @@ pub fn hooks() -> Vec<Hook> {
     all.extend(wp5_string::hooks());
     all.extend(wp5_tree::hooks());
     all.extend(wp5d::hooks());
-    #[cfg(ffx_host)]
-    all.extend(wp5d::host::hooks());
     all.extend(wrapped_ports::hooks());
     all
 }

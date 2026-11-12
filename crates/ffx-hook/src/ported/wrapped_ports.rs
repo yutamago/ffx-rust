@@ -85,4 +85,13 @@ wrapper_owned! {
         let _ = arg;
         ffx_system::m5b_async::bridge::thread_main(&mut super::mem())
     }
+    // `Rng_ClockSeed` (m5-wp5d, 2026-11-12): in the 32-bit game the
+    // harness's wrapper (`harness::clock_seed`) holds the address and runs
+    // the same port; without this entry a boot without Unicorn stopped at
+    // `MsRandMize`'s call (the harness registers its fixed seed there only
+    // with `FFX_HARNESS_SEED`). Parity: `m5_battle::clock_seed`'s tests.
+    /// `Rng_ClockSeed()` -> `eax`: the XOR of the system time's bytes, plus 1.
+    Rng_ClockSeed @ 0x0079_8950 => extern "C" fn rng_clock_seed() -> u32 {
+        super::clock_seed_port()
+    }
 }

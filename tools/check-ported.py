@@ -77,19 +77,26 @@ def rets(a, size):
     without an operand pops 0)."""
     found = set()
     prev = ""
-    for _, insn in sorted(DIS.get(a, size).items()):
+    for pc, insn in sorted(DIS.get(a, size).items()):
         m = RET.match(insn)
         # a catch funclet's `mov eax, <continuation>; ret` hands the address
         # to resume at back to the C++ runtime: not the function's own return
         # (std_string_Copy 0x00404740, wp5b 2026-11-12)
         cont = FUNCLET.match(prev)
-        if m and not (cont and a <= int(cont.group(1), 16) < a + size):
+        if m and pc not in SEH_FILTER_RETS and not (cont and a <= int(cont.group(1), 16) < a + size):
             found.add(int(m.group(1) or "0", 16))
         prev = insn
     return found
 
 
 FUNCLET = re.compile(r"\s*mov\s+eax,\s*0x([0-9a-f]+)\s*$")
+
+# SEH filter funclets inside a function's body: `or eax, -1; ret` /
+# `mov eax, 1; ret` answer the C runtime's `__except` filter call, not the
+# function's own return (the real exits pop what the shim pops). Measured in
+# FFX.exe by wp5d (2026-11-12): thread start 0x004300b0 (filter at
+# 0x0043015f), SysThread_create 0x00679cb0 (filter at 0x00679d57).
+SEH_FILTER_RETS = {0x0043015f, 0x00679d57}
 
 
 DIS = None
