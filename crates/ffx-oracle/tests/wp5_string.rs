@@ -1867,3 +1867,63 @@ fn wp5b_pass_assign_indices() {
         }
     }
 }
+
+/// `PArray<PAnimationConstantChannel>::~PArray` (`0x00513240`) and
+/// `PAnimationClip::~PAnimationClip` (`0x005133f0`) with the channel
+/// destructor and `Phyre_PhyreFree` logging stubs: owned, borrowed and
+/// null storage of 0 to 3 elements, the clip's name word with bit 0 clear
+/// and set, its `+4` array owned and borrowed; `eax` and memory.
+#[test]
+fn wp5b_animation_clip_dtors() {
+    use ffx_prender::wp5_small as sm;
+    for (label, mut t) in Twins::all() {
+        let log = t.alloc(&[0; 4 + 8 * 64]);
+        let c = log_stub(&mut t, log, 0, 0x5151);
+        jmp_stub(&mut t, sm::CHANNEL_DTOR, &c);
+        let c = log_stub_plain(&mut t, log, 0, 0x6161_0000, true);
+        jmp_stub(&mut t, sm::PHYRE_FREE, &c);
+        let els = t.alloc(&[0x6b; 3 * 0x34]);
+        let obj = t.alloc(&[0x6b; 0x20]);
+        for case in 0..48u32 {
+            let n = case % 4;
+            let count = if (case / 4) % 3 == 1 {
+                n | 0x8000_0000
+            } else {
+                n
+            };
+            let data = if (case / 4) % 3 == 2 { 0 } else { els };
+            t.w32(obj, count);
+            t.w32(obj + 4, data);
+            let w = format!("{label} constant channel array dtor case {case}");
+            t.run(&w, 0x0051_3240, obj, &[], false, |g| {
+                sm::constant_channel_array_dtor(g, obj)
+            });
+        }
+        for case in 0..48u32 {
+            t.w32(obj, 0x1234_5678);
+            t.w32(obj + 4, if case & 1 != 0 { 0x8000_0002 } else { 2 });
+            t.w32(obj + 8, 0x0077_0000 + case);
+            t.w32(obj + 0xc, [1, 0x8000_0001, 0][((case >> 1) % 3) as usize]);
+            t.w32(
+                obj + 0x10,
+                if (case >> 1) % 3 == 2 && case & 8 != 0 {
+                    0
+                } else {
+                    els
+                },
+            );
+            t.w32(
+                obj + 0x1c,
+                if case & 16 != 0 {
+                    0x0099_0001
+                } else {
+                    0x0099_0000
+                },
+            );
+            let w = format!("{label} animation clip dtor case {case}");
+            t.run(&w, 0x0051_33f0, obj, &[], false, |g| {
+                sm::animation_clip_dtor(g, obj)
+            });
+        }
+    }
+}

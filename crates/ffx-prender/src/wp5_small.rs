@@ -484,3 +484,64 @@ pub fn pass_assign_indices(h: &mut impl Host) -> u32 {
     );
     0
 }
+
+/// `Phyre_PhyreFree` (cdecl).
+pub const PHYRE_FREE: u32 = 0x0042_fb20;
+/// `PAnimationChannel`'s destructor (thiscall), 0x34-byte elements.
+pub const CHANNEL_DTOR: u32 = 0x0050_d1d0;
+
+/// The `eax` an owned-storage test leaves when the storage is borrowed:
+/// `shr eax, 31` (1), then `not al`.
+const BORROWED_EAX: u32 = 0xfe;
+
+/// `PArray<PAnimationConstantChannel>::~PArray` (`0x00513240`, thiscall)
+/// -> its `eax`: storage owned (count bit 31 clear) and not null has each
+/// of its count elements destroyed (`PAnimationChannel`'s destructor,
+/// 0x34 bytes apart) and is freed (`Phyre_PhyreFree`'s `eax`); then data
+/// and count are 0. Borrowed storage leaves 0xfe, null storage 0.
+pub fn constant_channel_array_dtor(h: &mut impl Host, this: u32) -> u32 {
+    let count: u32 = h.read(this);
+    let eax = if count & 0x8000_0000 != 0 {
+        BORROWED_EAX
+    } else {
+        let data: u32 = h.read(this + 4);
+        if data == 0 {
+            0
+        } else {
+            let mut el = data;
+            for _ in 0..count {
+                h.call_sym(CHANNEL_DTOR, Conv::Thiscall(el), &[]);
+                el = el.wrapping_add(0x34);
+            }
+            h.call_sym(PHYRE_FREE, Conv::Cdecl, &[data])
+        }
+    };
+    h.write(this + 4, 0u32);
+    h.write(this, 0u32);
+    eax
+}
+
+/// `PAnimationClip::~PAnimationClip` (`0x005133f0`, thiscall) -> its
+/// `eax`: `+0` = 0; the word at `+0x1c` freed when its bit 0 is clear;
+/// the constant channels at `+0xc` destroyed
+/// ([`constant_channel_array_dtor`]); the array at `+4` (count, data)
+/// freed when owned (bit 31 clear), then both words 0. `eax` =
+/// the last free's, or 0xfe when the `+4` array is borrowed.
+pub fn animation_clip_dtor(h: &mut impl Host, this: u32) -> u32 {
+    h.write(this, 0u32);
+    let name: u32 = h.read(this + 0x1c);
+    if name & 1 == 0 {
+        h.call_sym(PHYRE_FREE, Conv::Cdecl, &[name]);
+    }
+    constant_channel_array_dtor(h, this + 0xc);
+    let count: u32 = h.read(this + 4);
+    let eax = if count & 0x8000_0000 == 0 {
+        let data: u32 = h.read(this + 8);
+        h.call_sym(PHYRE_FREE, Conv::Cdecl, &[data])
+    } else {
+        BORROWED_EAX
+    };
+    h.write(this + 4, 0u32);
+    h.write(this + 8, 0u32);
+    eax
+}

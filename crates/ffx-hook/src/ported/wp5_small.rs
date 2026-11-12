@@ -111,4 +111,12 @@ ported! {
     PSceneRenderPassType_assignIndices_004e62c0 @ 0x004e_62c0 => extern "C" fn sm_004e62c0() -> u32 {
         s::pass_assign_indices(&mut mem())
     }
+    /// `Phyre_PArray_PAnimationConstantChannel_dtor_00513240`: owned elements destroyed and freed, the array cleared; its `eax`.
+    Phyre_PArray_PAnimationConstantChannel_dtor_00513240 @ 0x0051_3240 => extern "thiscall" fn sm_00513240(this: u32) -> u32 {
+        s::constant_channel_array_dtor(&mut mem(), this)
+    }
+    /// `Phyre_PAnimation_PAnimationClip_dtor_005133f0`: the clip's name and arrays released; its `eax`.
+    Phyre_PAnimation_PAnimationClip_dtor_005133f0 @ 0x0051_33f0 => extern "thiscall" fn sm_005133f0(this: u32) -> u32 {
+        s::animation_clip_dtor(&mut mem(), this)
+    }
 }
