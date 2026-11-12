@@ -2278,13 +2278,9 @@ ported! {
     /// `Sg_SaveVramResource()`.
     Sg_SaveVramResource @ 0x0083_fd60 => extern "C" fn save_vram_resource() -> u32 {
         // laid out and aligned as the original's frame (`ebp - 0x60` on 16)
-        #[repr(C, align(16))]
-        struct Work([u8; i1::SAVE_VRAM_FRAME as usize]);
-        let mut work = Work([0; i1::SAVE_VRAM_FRAME as usize]);
-        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
-        let r = i1::save_vram_resource(&mut mem(), w);
-        std::hint::black_box(&mut work);
-        r
+        let mut work = super::AlignedFrame::<{ i1::SAVE_VRAM_FRAME as usize }>::new();
+        let w = work.at();
+        i1::save_vram_resource(&mut mem(), w)
     }
     /// `ReadDebug_loadFile_00a42ab0(path, size_out)`.
     ReadDebug_loadFile_00a42ab0 @ 0x00a4_2ab0 => extern "C" fn read_debug_file(path: u32, size_out: u32) -> u32 {
@@ -2382,34 +2378,23 @@ ported! {
     /// `op_gs1_transfer()`.
     op_gs1_transfer @ 0x007e_b580 => extern "C" fn gs1_transfer() -> u32 {
         // laid out and aligned as the original's frame (`ebp - 0xc0` on 16)
-        #[repr(C, align(16))]
-        struct Work([u8; i4::GS1_FRAME as usize]);
-        let mut work = Work([0; i4::GS1_FRAME as usize]);
-        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
-        let r = i4::gs1_transfer(&mut mem(), w);
-        std::hint::black_box(&mut work);
-        r
+        let mut work = super::AlignedFrame::<{ i4::GS1_FRAME as usize }>::new();
+        let w = work.at();
+        i4::gs1_transfer(&mut mem(), w)
     }
     /// `op_oef2_texture_load(texture, flush)`.
     op_oef2_texture_load @ 0x007e_5030 => extern "C" fn oef2_texture_load(texture: u32, flush: u32) {
         // laid out and aligned as the original's frame (`ebp - 0x60` on 16)
-        #[repr(C, align(16))]
-        struct Work([u8; i4::LOAD_FRAME as usize]);
-        let mut work = Work([0; i4::LOAD_FRAME as usize]);
-        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        let mut work = super::AlignedFrame::<{ i4::LOAD_FRAME as usize }>::new();
+        let w = work.at();
         i4::oef2_texture_load(&mut mem(), w, texture, flush);
-        std::hint::black_box(&mut work);
     }
     /// `SaMenu_loadSbinTextures_00775ed0(sbin)`.
     SaMenu_loadSbinTextures_00775ed0 @ 0x0077_5ed0 => extern "C" fn sa_load_sbin_textures(sbin: u32) -> u32 {
         // laid out and aligned as the original's frame (`ebp - 0x60` on 16)
-        #[repr(C, align(16))]
-        struct Work([u8; i4::LOAD_FRAME as usize]);
-        let mut work = Work([0; i4::LOAD_FRAME as usize]);
-        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
-        let r = i4::sa_load_sbin_textures(&mut mem(), w, sbin);
-        std::hint::black_box(&mut work);
-        r
+        let mut work = super::AlignedFrame::<{ i4::LOAD_FRAME as usize }>::new();
+        let w = work.at();
+        i4::sa_load_sbin_textures(&mut mem(), w, sbin)
     }
     // ---- continuation round 7, batch 5 (ffx_glue_other::h4_i5)
     /// `pppMdl_projectPositions_007161f0(part, job)`.

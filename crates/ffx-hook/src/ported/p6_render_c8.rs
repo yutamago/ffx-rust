@@ -51,21 +51,18 @@ ported! {
     }
     /// The layout records' packing `(records; start)` -> 0: the sorted
     /// pointer array (the original's `_alloca`) in this frame up to 64
-    /// records, else on the heap.
+    /// records, else an `AllocaFrame`.
     ParameterLayout_pack_005a0cf0 @ 0x005a_0cf0 => extern "thiscall" fn x_005a0cf0(records: u32, start: u32) -> u32 {
         let mut frame = StackFrame::<64>::new();
-        let mut heap: Vec<u32> = Vec::new();
+        let mut heap = super::AllocaFrame::new();
         let small = frame.at();
-        let r = tl::layout::pack(&mut mem(), records, start, |n| {
+        tl::layout::pack(&mut mem(), records, start, |n| {
             if n <= 64 {
                 small
             } else {
-                heap = vec![0u32; n as usize];
-                u32::try_from(heap.as_mut_ptr().expose_provenance()).unwrap_or(0)
+                heap.alloc(n.wrapping_mul(4))
             }
-        });
-        std::hint::black_box(&mut heap);
-        r
+        })
     }
     /// `PInputDeviceMouse::update(mouse)` (vtable slot 5) -> `eax`.
     Phyre_PFramework_PInputDeviceMouse_update @ 0x0062_d6f0 => extern "thiscall" fn x_0062d6f0(mouse: u32) -> u32 {
@@ -92,16 +89,11 @@ ported! {
         ffx_prender::p6_mesh::bridge::render_mesh_instance(&mut mem(), renderer, frame.at(), [instance, contexts, x, y], &mut alloca)
     }
     /// `PWindowWin32Base::createWindow(window; suffix)` -> 0: the title's
-    /// concatenation (the original's `_alloca`) on the heap.
+    /// concatenation (the original's `_alloca`) in an `AllocaFrame`.
     Phyre_PFramework_PWindowWin32Base_createWindow @ 0x0062_6cb0 => extern "thiscall" fn x_00626cb0(window: u32, suffix: u32) -> u32 {
         let mut frame = StackFrame::<{ tl::window::FRAME as usize / 4 }>::new();
-        let mut title: Vec<u8> = Vec::new();
-        let r = tl::window::create(&mut mem(), window, frame.at(), suffix, &mut |n| {
-            title = vec![0u8; n as usize];
-            u32::try_from(title.as_mut_ptr().expose_provenance()).unwrap_or(0)
-        });
-        std::hint::black_box(&mut title);
-        r
+        let mut title = super::AllocaFrame::new();
+        tl::window::create(&mut mem(), window, frame.at(), suffix, &mut |n| title.alloc(n))
     }
     /// The window procedure `(hwnd, msg, wparam, lparam)`.
     Phyre_PFramework_PWindowWin32Base_WndProc @ 0x0062_5130 => extern "stdcall" fn x_00625130(hwnd: u32, msg: u32, wparam: u32, lparam: u32) -> u32 {

@@ -15,18 +15,18 @@ fn call_ptr_f64(f: u32, args: &[u32]) -> f64 {
 }
 
 /// The locals (`N` bytes) of a draw whose original aligns its frame to
-/// 16 bytes, on this shim's stack.
-#[repr(C, align(16))]
-struct Locals<const N: usize>([u8; N]);
+/// 16 bytes, in a [`super::AlignedFrame`].
+struct Locals<const N: usize>(super::AlignedFrame<N>);
 
 impl<const N: usize> Locals<N> {
-    const fn new() -> Self {
-        Self([0; N])
+    fn new() -> Self {
+        Self(super::AlignedFrame::new())
     }
 
     /// The original's frame pointer: the end of the block.
+    #[allow(clippy::cast_possible_truncation)] // frames are small
     fn ebp(&mut self) -> u32 {
-        u32::try_from(self.0.as_mut_ptr() as usize + N).unwrap_or(0)
+        self.0.at().wrapping_add(N as u32)
     }
 }
 
@@ -45,7 +45,6 @@ fn shp_tail(v: &tail::bridge::Tail, obj: u32, key: u32, ctrl: u32) {
         &mut |_, f, a| call_ptr(f, a),
         &mut |_, f, a| call_ptr_f64(f, a),
     );
-    std::hint::black_box(&mut locals.0);
 }
 
 /// `pppKeShpTail3*Draw`: the request, vectors and matrices in a 16-aligned
@@ -65,7 +64,6 @@ fn shp_tail3(v: &tail::bridge::Tail3, obj: u32, key: u32, ctrl: u32) {
         &mut |_, f, a| call_ptr(f, a),
         &mut |_, f, a| call_ptr_f64(f, a),
     );
-    std::hint::black_box(&mut locals.0);
 }
 
 ported! {
@@ -91,8 +89,7 @@ ported! {
             &mut |_, f, a| call_ptr(f, a),
             &mut |_, f, a| call_ptr_f64(f, a),
         );
-        std::hint::black_box(&mut locals.0);
-    }
+        }
     /// `pppKeShpTailDraw(obj, key, ctrl)`.
     pppKeShpTailDraw @ 0x0074_c570 => extern "C" fn ppp_ke_shp_tail_draw(obj: u32, key: u32, ctrl: u32) {
         shp_tail(&tail::bridge::TAIL, obj, key, ctrl);
@@ -123,8 +120,7 @@ ported! {
             &mut |_, f, a| call_ptr(f, a),
             &mut |_, f, a| call_ptr_f64(f, a),
         );
-        std::hint::black_box(&mut locals.0);
-    }
+        }
     /// `pppDrawMdlCameraLoopDraw(obj, key, prog)`: the request and matrices
     /// in a 16-aligned block, as the original aligns its frame.
     pppDrawMdlCameraLoopDraw @ 0x0073_fa50 => extern "C" fn ppp_draw_mdl_camera_loop_draw(obj: u32, key: u32, prog: u32) {
@@ -138,8 +134,7 @@ ported! {
             ebp,
             &mut |_, f, a| call_ptr(f, a),
         );
-        std::hint::black_box(&mut locals.0);
-    }
+        }
     /// `pppKeMdlBmpDraw(obj, key, ctrl)`: the matrices, vectors and the
     /// body's argument block in a 16-aligned block, as the original aligns
     /// its frame.
@@ -147,8 +142,7 @@ ported! {
         let mut locals = Locals::<0x110>::new();
         let ebp = locals.ebp();
         mdl_cam::bridge::ppp_ke_mdl_bmp_draw(&mut mem(), obj, key, ctrl, ebp, &mut |_, f, a| call_ptr(f, a));
-        std::hint::black_box(&mut locals.0);
-    }
+        }
     /// `pppDrawMdlInfDraw(obj, key, ctrl)`: the request, matrices and
     /// vectors in a 16-aligned block, as the original aligns its frame.
     pppDrawMdlInfDraw @ 0x0073_b9b0 => extern "C" fn ppp_draw_mdl_inf_draw(obj: u32, key: u32, ctrl: u32) {
@@ -163,14 +157,12 @@ ported! {
             &mut |_, f, a| call_ptr(f, a),
             &mut |_, f, a| call_ptr_f64(f, a),
         );
-        std::hint::black_box(&mut locals.0);
-    }
+        }
     /// `pppDrawMdlSeaDraw(obj, key, prog)`: the request, the texture name
     /// and record in a 16-aligned block, as the original aligns its frame.
     pppDrawMdlSeaDraw @ 0x0073_abe0 => extern "C" fn ppp_draw_mdl_sea_draw(obj: u32, key: u32, prog: u32) {
         let mut locals = Locals::<0x2f0>::new();
         let ebp = locals.ebp();
         mdl_cam::bridge::ppp_draw_mdl_sea_draw(&mut mem(), obj, key, prog, ebp, &mut |_, f, a| call_ptr(f, a));
-        std::hint::black_box(&mut locals.0);
-    }
+        }
 }

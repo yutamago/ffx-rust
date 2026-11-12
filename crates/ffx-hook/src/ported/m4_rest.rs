@@ -87,15 +87,8 @@ ported! {
         // the modifiers' context (the original's ebp - 0x58, two words)
         let mut frame = StackFrame::<2>::new();
         let ctx = frame.at();
-        let mut heap: Vec<Vec<u32>> = Vec::new();
-        let r = modnet::bridge::run(&mut mem(), packet, ctx, &mut |bytes| {
-            let v = vec![0_u32; (bytes as usize).div_ceil(4) + 4];
-            let at = u32::try_from(v.as_ptr().expose_provenance()).unwrap_or(0);
-            heap.push(v);
-            at
-        });
-        std::hint::black_box(&mut heap);
-        r
+        let mut heap = super::AllocaFrame::new();
+        modnet::bridge::run(&mut mem(), packet, ctx, &mut |bytes| heap.alloc(bytes.wrapping_add(16)))
     }
     /// `PRenderThread::processRenderCommands(thread; first, end)` -> 0.
     Phyre_PRendering_PRenderThread_processRenderCommands @ 0x0061_5550 => extern "thiscall" fn process_render_commands(thread: u32, first: u32, end: u32) -> u32 {

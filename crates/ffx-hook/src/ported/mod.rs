@@ -157,8 +157,8 @@ mod vfx;
 mod vfx_hi;
 mod vfx_ppp;
 mod vfx_shape;
+mod wrapped_ports;
 
-#[cfg(not(ffx_host))]
 pub(crate) use battle::ms_screen_process;
 pub(crate) use m5_battle::{clock_seed as clock_seed_port, clock_seed_on};
 pub(crate) use m5_main::{
@@ -175,10 +175,10 @@ pub(crate) use m5p_framework_input_df::{get_time, get_time_on, open_file, open_f
 pub(crate) use m5p_render_b_df::{
     FLIP_NAME, PRESENT_FLIP_NAME, flip, flip_on, present_flip, present_flip_on,
 };
-#[cfg(not(ffx_host))]
 pub(crate) use map::rcbg_guide_update_ex;
+pub(crate) use phyre_render::culled_sorted;
 #[cfg(not(ffx_host))]
-pub(crate) use phyre_render::{culled_sorted, culled_sorted_on};
+pub(crate) use phyre_render::culled_sorted_on;
 
 /// Every replacement, for the hook table.
 #[must_use]
@@ -316,6 +316,7 @@ pub fn hooks() -> Vec<Hook> {
     all.extend(vfx_hi::hooks());
     all.extend(vfx_ppp::hooks());
     all.extend(vfx_shape::hooks());
+    all.extend(wrapped_ports::hooks());
     all
 }
 
@@ -378,6 +379,138 @@ impl<const W: usize> Drop for StackFrame<W> {
         let at = self.0;
         let _ = route::with(|r| r.frame_free(at));
     }
+}
+
+/// `N` zeroed bytes, 16-byte aligned, for a port whose original aligns its
+/// frame (`and esp, -16`, SSE locals) or whose locals are sized in bytes
+/// (a work block, a `[u8; N]` image): a [`StackFrame`] otherwise. On this
+/// stack in the hook; in `ffx-host` on the game thread's stack in the arena
+/// (`Router::frame_alloc`, 16-byte aligned), released when dropped.
+#[cfg(not(ffx_host))]
+#[repr(C, align(16))]
+pub(crate) struct AlignedFrame<const N: usize>([u8; N]);
+
+#[cfg(not(ffx_host))]
+impl<const N: usize> AlignedFrame<N> {
+    pub(crate) const fn new() -> Self {
+        Self([0; N])
+    }
+
+    /// The frame's address (32-bit process).
+    pub(crate) fn at(&mut self) -> u32 {
+        u32::try_from(self.0.as_mut_ptr() as usize).unwrap_or(0)
+    }
+}
+
+#[cfg(not(ffx_host))]
+impl<const N: usize> Drop for AlignedFrame<N> {
+    fn drop(&mut self) {
+        // the bridge and the originals wrote it through its address
+        std::hint::black_box(&mut self.0);
+    }
+}
+
+/// In `ffx-host`: `N` zeroed bytes on the game thread's stack in the arena.
+#[cfg(ffx_host)]
+pub(crate) struct AlignedFrame<const N: usize>(u32);
+
+#[cfg(ffx_host)]
+impl<const N: usize> AlignedFrame<N> {
+    pub(crate) fn new() -> Self {
+        #[allow(clippy::cast_possible_truncation)] // frames are small
+        let bytes = N as u32;
+        Self(route::with(|r| r.frame_alloc(bytes)).unwrap_or(0))
+    }
+
+    /// The frame's game address.
+    pub(crate) fn at(&mut self) -> u32 {
+        self.0
+    }
+}
+
+#[cfg(ffx_host)]
+impl<const N: usize> Drop for AlignedFrame<N> {
+    fn drop(&mut self) {
+        let at = self.0;
+        let _ = route::with(|r| r.frame_free(at));
+    }
+}
+
+/// The `alloca`s an original makes part-way through, after calls whose
+/// results size them (`Settings_Save`'s formatted length, a modifier
+/// network's per-modifier blocks): each [`Self::alloc`] gives `bytes`
+/// zeroed bytes (16-byte aligned), which all live until this is dropped,
+/// as the original's until its `ret`. In the hook they are heap blocks (no
+/// panic on failure: 0, as the original's `alloca` fails at its stack
+/// guard); in `ffx-host` the router's frames on the game thread's stack in
+/// the arena, below which the port's later calls run, as the original's
+/// calls run below its `alloca`.
+#[derive(Default)]
+pub(crate) struct AllocaFrame {
+    #[cfg(not(ffx_host))]
+    blocks: Vec<Vec<u128>>,
+    /// The first frame (freeing it frees every later one).
+    #[cfg(ffx_host)]
+    first: u32,
+}
+
+impl AllocaFrame {
+    pub(crate) fn new() -> Self {
+        Self::default()
+    }
+
+    /// `bytes` zeroed bytes; their address, or 0.
+    #[cfg(not(ffx_host))]
+    pub(crate) fn alloc(&mut self, bytes: u32) -> u32 {
+        let n = usize::try_from(bytes).unwrap_or(usize::MAX).div_ceil(16);
+        let mut block = Vec::new();
+        if block.try_reserve_exact(n).is_err() {
+            return 0;
+        }
+        block.resize(n, 0u128);
+        let at = u32::try_from(block.as_mut_ptr() as usize).unwrap_or(0);
+        self.blocks.push(block);
+        at
+    }
+
+    /// `bytes` zeroed bytes; their address, or 0.
+    #[cfg(ffx_host)]
+    pub(crate) fn alloc(&mut self, bytes: u32) -> u32 {
+        let at = route::with(|r| r.frame_alloc(bytes)).unwrap_or(0);
+        if self.first == 0 {
+            self.first = at;
+        }
+        at
+    }
+}
+
+#[cfg(ffx_host)]
+impl Drop for AllocaFrame {
+    fn drop(&mut self) {
+        let at = self.first;
+        if at != 0 {
+            let _ = route::with(|r| r.frame_free(at));
+        }
+    }
+}
+
+/// Two zeroed words per thread that outlive the shim's call, for a shim
+/// whose original returns a pointer into its own frame or argument slots
+/// (`TOGetChangeMacroAddress`): a `thread_local!` in the hook, the
+/// router's per-thread [`route::Scratch::Shim`] block in `ffx-host`.
+#[cfg(not(ffx_host))]
+pub(crate) fn shim_scratch() -> u32 {
+    thread_local! {
+        static SCRATCH: [std::sync::atomic::AtomicU32; 2] =
+            const { [std::sync::atomic::AtomicU32::new(0), std::sync::atomic::AtomicU32::new(0)] };
+    }
+    SCRATCH.with(|s| u32::try_from(s.as_ptr() as usize).unwrap_or(0))
+}
+
+/// In `ffx-host`: the router's per-thread block in the arena.
+#[cfg(ffx_host)]
+pub(crate) fn shim_scratch() -> u32 {
+    route::scratch(route::Scratch::Shim).unwrap_or(0)
 }
 
 /// A frame sized at run time, for an original that carves its own with
@@ -982,6 +1115,39 @@ macro_rules! host_only {
     };
 }
 use host_only;
+
+/// [`ported!`] for wrapper-owned addresses (docs/hooking.md,
+/// "Wrapper-owned addresses"): a hand-written hook in `crates/ffx-hook/src`
+/// (a live-editing, mod or capture wrapper) holds the address in the 32-bit
+/// game and calls the port itself, so the game gets no hook from these
+/// lines (`hooks()` is empty there), while `ffx-host`, which has no such
+/// wrappers, makes the same table entries as [`ported!`]: the port alone.
+/// `tools/progress.py` accepts a `wrapper_owned!` line only at an address
+/// hooked by hand, and only there.
+#[cfg(not(ffx_host))]
+macro_rules! wrapper_owned {
+    ($( $(#[$doc:meta])* $name:ident @ $addr:literal => extern $abi:tt fn $shim:ident($($arg:ident: $ty:ty),* $(; $slots:ident: $sty:ty)?) $(-> $ret:ty)? $body:block )*) => {
+        $(
+            $crate::ported::shim_fn! {
+                $abi, [#[allow(dead_code)] $(#[$doc])*], $shim, ($($arg: $ty,)* $($slots: $sty)?), ($($ret)?), $body
+            }
+        )*
+
+        /// This module's replacements in the 32-bit game: none (the
+        /// wrappers hold these addresses and call the ports).
+        #[must_use]
+        pub fn hooks() -> Vec<crate::Hook> {
+            Vec::new()
+        }
+    };
+}
+#[cfg(ffx_host)]
+macro_rules! wrapper_owned {
+    ($($t:tt)*) => {
+        $crate::ported::ported! { $($t)* }
+    };
+}
+use wrapper_owned;
 
 /// What `ffx-host`'s [`ported!`] expands to: the convention, the argument
 /// decoding and the result.

@@ -2169,7 +2169,7 @@ ported! {
     // the list's last ones (p3-other-a continuation d)
     /// `0x00498d20(mesh, ctx, _, &result, &info, segment, a, streams, b)` -> 0 or
     /// the stream check's result (`PDynamicMesh` slot 2): the stream pointer array
-    /// (the original's `_alloca`) in this frame up to 64 streams, else on the heap.
+    /// (the original's `_alloca`) in this frame up to 64 streams, else an `AllocaFrame`.
     Phyre_PGeometry_PDynamicMesh_bindStreams_00498d20 @ 0x0049_8d20 => extern "thiscall" fn h1_00498d20(this: u32, ctx: u32, _unused: u32, result: u32, info: u32, segment: u32, a: u32, streams: u32, b: u32) -> u32 {
         let mut m = mem();
         let n = h1_small5::bridge::stream_count(&m, streams) as usize;
@@ -2177,11 +2177,10 @@ ported! {
             let mut f = StackFrame::<64>::new();
             h1_small5::bridge::bind_streams(&mut m, this, ctx, result, info, segment, a, streams, b, f.at())
         } else {
-            let mut v = vec![0u32; n];
-            let at = u32::try_from(v.as_mut_ptr().expose_provenance()).unwrap_or(0);
-            let r = h1_small5::bridge::bind_streams(&mut m, this, ctx, result, info, segment, a, streams, b, at);
-            std::hint::black_box(&mut v);
-            r
+            let mut v = super::AllocaFrame::new();
+            #[allow(clippy::cast_possible_truncation)] // n is a u32's
+            let at = v.alloc((4 * n) as u32);
+            h1_small5::bridge::bind_streams(&mut m, this, ctx, result, info, segment, a, streams, b, at)
         }
     }
     /// `0x00498a30(mesh, finder, segment, views, out)` -> the number of runs.

@@ -1837,20 +1837,18 @@ ported! {
         h8::init_window(&mut mem(), this, info, fr.at())
     }
     /// `PEffect_findContextVariant`: the key buffer (the original's
-    /// `alloca` of the switch count in words) per call on the heap.
+    /// `alloca` of the switch count in words) in an `AllocaFrame`.
     PEffect_findContextVariant @ 0x004e_f440 => extern "thiscall" fn s_004ef440(this: u32, a0: u32, a1: u32, a2: u32, a3: u32, a4: u32) -> u32 {
         let mut m = mem();
         let words = h8::variant_key_words(&mut m) as usize;
-        let mut key: Vec<u32> = Vec::new();
-        if key.try_reserve_exact(words + 1).is_err() {
+        let mut key = super::AllocaFrame::new();
+        #[allow(clippy::cast_possible_truncation)] // a u32's count
+        let buf = key.alloc((4 * (words + 1)) as u32);
+        if buf == 0 {
             return u32::MAX;
         }
-        key.resize(words + 1, 0);
-        let buf = u32::try_from(key.as_mut_ptr() as usize).unwrap_or(0);
         let mut fr = super::StackFrame::<4>::new();
-        let r = h8::find_context_variant(&mut m, this, [a0, a1, a2, a3, a4], buf, fr.at());
-        std::hint::black_box(&mut key);
-        r
+        h8::find_context_variant(&mut m, this, [a0, a1, a2, a3, a4], buf, fr.at())
     }
     /// `PRendererD3D11_initA_00594f70`.
     PRendererD3D11_initA_00594f70 @ 0x0059_4f70 => extern "thiscall" fn s_00594f70(this: u32, renderer: u32) -> u32 {

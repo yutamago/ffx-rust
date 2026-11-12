@@ -176,6 +176,11 @@ file, re-exported from `ported/mod.rs` with an `_on()` that reads its
 trampoline, and keeps the trampoline for when it is off. Its `ffx.sym`
 line says which wrapper calls it; it has a parity test like any port.
 `progress.py` and `reach.py` still count these addresses as wrapped.
+`ffx-host` has no wrappers, so a port it should run from its table also
+gets a `wrapper_owned!` line (`ported/wrapped_ports.rs`): `ported!`'s
+syntax, no hook in the 32-bit game, a table entry in `ffx-host`.
+`progress.duplicate_hooks` accepts such a line only at an address a
+hand-written hook holds.
 
 Only functions whose callers can be satisfied through their signature are
 safe to replace. A function that the game expects to touch global state

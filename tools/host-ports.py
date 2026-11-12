@@ -170,6 +170,10 @@ def render(held):
         '/// Their addresses, sorted.',
         'pub const HELD: &[u32] = &[',
     ]
+    if not held:
+        # none: rustfmt's form of the empty list
+        lines[-1] = 'pub const HELD: &[u32] = &[];'
+        return '\n'.join(lines) + '\n'
     for addr, name, _ in sorted(held):
         lines.append(f'    0x{addr >> 16:04x}_{addr & 0xffff:04x}, // {name}')
     lines.append('];')

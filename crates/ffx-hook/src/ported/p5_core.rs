@@ -475,16 +475,14 @@ ported! {
         ffx_pcore::small::bridge::init_a34b10(&mut mem(), n)
     }
     // ---- round 4 (p5_lights) ----
-    /// `Phyre_packInstanceLights_004d4140` `(masks, segments, instance, &words, out, _, mode)` -> 0; the pairs (the original's `_alloca`, 8 bytes a light) in a heap block, the bit writer's word in this frame.
+    /// `Phyre_packInstanceLights_004d4140` `(masks, segments, instance, &words, out, _, mode)` -> 0; the pairs (the original's `_alloca`, 8 bytes a light) in an `AllocaFrame`, the bit writer's word in this frame.
     Phyre_packInstanceLights_004d4140 @ 0x004d_4140 => extern "stdcall" fn p5_004d4140(masks: u32, segments: u32, instance: u32, words: u32, out: u32, unused: u32, mode: u32) -> u32 {
         use ffx_pcore::p5_lights::bridge as lights;
         let mut m = mem();
         let len = lights::pairs_len(&mut m, instance);
-        let mut pairs = vec![0u32; (len / 4) as usize + 2];
-        let at = u32::try_from(pairs.as_mut_ptr() as usize).unwrap_or(0);
+        let mut pairs = super::AllocaFrame::new();
+        let at = pairs.alloc((len & !3).wrapping_add(8));
         let mut cursor = StackFrame::<1>::new();
-        let r = lights::pack_lights(&mut m, [masks, segments, instance, words, out, unused, mode], at, cursor.at());
-        std::hint::black_box(&mut pairs);
-        r
+        lights::pack_lights(&mut m, [masks, segments, instance, words, out, unused, mode], at, cursor.at())
     }
 }

@@ -1200,11 +1200,8 @@ ported! {
     /// `opp_draw_part_a74d30(obj, cmd)`: its stack locals in a 16-aligned
     /// buffer on this shim's stack (the frame pointer at its end).
     opp_draw_part_a74d30 @ 0x00a7_4d30 => extern "C" fn opp_draw_part_a74d30(obj: u32, cmd: u32) -> u32 {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0xa0]);
-        let mut locals = Locals([0; 0xa0]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0xa0;
+        let mut locals = super::AlignedFrame::<160>::new();
+        let frame = locals.at() + 0xa0;
         slots::bridge::opp_draw_part(&mut mem(), obj, cmd, frame, &mut |_, f, a| call_ptr(f, a))
     }
     /// `TOBtlLibraGetRects()`.
@@ -1226,51 +1223,36 @@ ported! {
     /// `opus_wave_cmd_7f5f70(obj, cmd)`: its stack locals in a buffer on
     /// this shim's stack (the frame pointer at its end).
     opus_wave_cmd_7f5f70 @ 0x007f_5f70 => extern "C" fn opus_wave_cmd_7f5f70(obj: u32, cmd: u32) -> u32 {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0x40]);
-        let mut locals = Locals([0; 0x40]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0x40;
+        let mut locals = super::AlignedFrame::<64>::new();
+        let frame = locals.at() + 0x40;
         slots::bridge::opus_wave_cmd_7f5f70(&mut mem(), obj, cmd, frame, &mut |_, f, a| call_ptr(f, a))
     }
     /// `opp_chr_center_a756e0(obj, cmd)`: its stack locals in a buffer on
     /// this shim's stack (the frame pointer at its end).
     opp_chr_center_a756e0 @ 0x00a7_56e0 => extern "C" fn opp_chr_center_a756e0(obj: u32, cmd: u32) -> u32 {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0x60]);
-        let mut locals = Locals([0; 0x60]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0x60;
+        let mut locals = super::AlignedFrame::<96>::new();
+        let frame = locals.at() + 0x60;
         slots::bridge::opp_chr_center_a756e0(&mut mem(), obj, cmd, frame, &mut |_, f, a| call_ptr(f, a))
     }
     /// `opp_chr_fade_center_a76b60(obj, cmd)`: its stack locals in a
     /// buffer on this shim's stack (the frame pointer at its end).
     opp_chr_fade_center_a76b60 @ 0x00a7_6b60 => extern "C" fn opp_chr_fade_center_a76b60(obj: u32, cmd: u32) -> u32 {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0x1f0]);
-        let mut locals = Locals([0; 0x1f0]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0x1f0;
+        let mut locals = super::AlignedFrame::<496>::new();
+        let frame = locals.at() + 0x1f0;
         slots::bridge::opp_chr_fade_center_a76b60(&mut mem(), obj, cmd, frame, &mut |_, f, a| call_ptr(f, a))
     }
     /// `opp2_optic_laser(obj, list)`: its stack locals in a buffer on
     /// this shim's stack (the frame pointer at its end).
     opp2_optic_laser @ 0x00a7_3810 => extern "C" fn opp2_optic_laser(obj: u32, list: u32) -> u32 {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0x30]);
-        let mut locals = Locals([0; 0x30]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0x30;
+        let mut locals = super::AlignedFrame::<48>::new();
+        let frame = locals.at() + 0x30;
         slots::bridge::opp2_optic_laser(&mut mem(), obj, list, frame, &mut |_, f, a| call_ptr(f, a))
     }
     /// `opp2_md_break(obj, list)`: its stack locals in a buffer on this
     /// shim's stack (the frame pointer at its end).
     opp2_md_break @ 0x00a7_3d90 => extern "C" fn opp2_md_break(obj: u32, list: u32) -> u32 {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0x90]);
-        let mut locals = Locals([0; 0x90]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0x90;
+        let mut locals = super::AlignedFrame::<144>::new();
+        let frame = locals.at() + 0x90;
         slots::bridge::opp2_md_break(&mut mem(), obj, list, frame, &mut |_, f, a| call_ptr(f, a))
     }
     /// `opp_0582_cmd_a70910(obj, cmd)`.
@@ -1280,31 +1262,22 @@ ported! {
     /// `opp_0437_cmd_a6dbe0(obj, cmd)`: its stack locals in a buffer on
     /// this shim's stack (the frame pointer at its end).
     opp_0437_cmd_a6dbe0 @ 0x00a6_dbe0 => extern "C" fn opp_0437_cmd_a6dbe0(obj: u32, cmd: u32) -> u32 {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0xf0]);
-        let mut locals = Locals([0; 0xf0]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0xf0;
+        let mut locals = super::AlignedFrame::<240>::new();
+        let frame = locals.at() + 0xf0;
         slots::bridge::opp_0437_cmd_a6dbe0(&mut mem(), obj, cmd, frame, &mut |_, f, a| call_ptr(f, a))
     }
     /// `opp_mdc_draw_a6f4d0(obj, cmd)`: its stack locals in a buffer on
     /// this shim's stack (the frame pointer at its end).
     opp_mdc_draw_a6f4d0 @ 0x00a6_f4d0 => extern "C" fn opp_mdc_draw_a6f4d0(obj: u32, cmd: u32) -> u32 {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0x3b0]);
-        let mut locals = Locals([0; 0x3b0]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0x3b0;
+        let mut locals = super::AlignedFrame::<944>::new();
+        let frame = locals.at() + 0x3b0;
         slots::bridge::opp_mdc_draw_a6f4d0(&mut mem(), obj, cmd, frame, &mut |_, f, a| call_ptr(f, a))
     }
     /// `opus_0582_dot_draw(b, rec, m, hold)`: its stack locals in a
     /// buffer on this shim's stack (the frame pointer at its end).
     opus_0582_dot_draw @ 0x00a7_2b80 => extern "C" fn opus_0582_dot_draw(b: u32, rec: u32, m: u32, hold: u32) {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0x3a0]);
-        let mut locals = Locals([0; 0x3a0]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0x3a0;
+        let mut locals = super::AlignedFrame::<928>::new();
+        let frame = locals.at() + 0x3a0;
         slots::bridge::opus_0582_dot_draw(&mut mem(), b, rec, m, hold, frame, &mut |_, f, a| call_ptr(f, a));
     }
     /// `opus_no_get(list, unit, no)`.
@@ -1472,11 +1445,8 @@ ported! {
     /// `pppKeLnsClmDraw(obj, key, prog)`: its stack locals in a buffer on
     /// this shim's stack (the frame pointer at its end).
     pppKeLnsClmDraw @ 0x0075_a3a0 => extern "C" fn ppp_ke_lns_clm_draw(obj: u32, key: u32, prog: u32) -> u32 {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0x30]);
-        let mut locals = Locals([0; 0x30]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0x30;
+        let mut locals = super::AlignedFrame::<48>::new();
+        let frame = locals.at() + 0x30;
         lns::bridge::ppp_ke_lns_clm_draw(&mut mem(), obj, key, prog, frame, &mut |_, f, a| call_ptr(f, a))
     }
     /// `opu_end_all(host)`.
@@ -1696,11 +1666,8 @@ ported! {
     /// `pppKeLnsClmTOtDraw(area)`: its stack locals in a buffer on this shim's
     /// stack (the frame pointer at its end).
     pppKeLnsClmTOtDraw @ 0x0075_a610 => extern "C" fn ppp_ke_lns_clm_t_ot_draw(area: u32) -> u32 {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0x30]);
-        let mut locals = Locals([0; 0x30]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0x30;
+        let mut locals = super::AlignedFrame::<48>::new();
+        let frame = locals.at() + 0x30;
         lns::bridge::ppp_ke_lns_clm_t_ot_draw(&mut mem(), area, frame, &mut |_, f, a| call_ptr(f, a))
     }
     /// `op_part_fp_init(part)`.
@@ -1805,11 +1772,8 @@ ported! {
     pppKeLnsLpTDraw @ 0x0075_b160 => extern "C" fn ppp_ke_lns_lp_t_draw(obj: u32, key: u32, prog: u32) -> u32 {
         // its vector at frame - 0x14, pppKeLnsLpDraw's 0x30 bytes below
         // (frame - 0x40) & !0xf
-        #[repr(C, align(16))]
-        struct Locals([u8; 0x80]);
-        let mut locals = Locals([0; 0x80]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0x80;
+        let mut locals = super::AlignedFrame::<128>::new();
+        let frame = locals.at() + 0x80;
         lns::bridge::ppp_ke_lns_lp_t_draw(&mut mem(), obj, key, prog, frame, &mut |_, f, a| call_ptr(f, a))
     }
     /// `create0706NoiseRenderDataBuffer(lo, hi)`.
@@ -1957,21 +1921,15 @@ ported! {
     /// `op_vector_m(dst, t, v)`: its stack locals in a buffer on this
     /// shim's stack (the frame pointer at its end).
     op_vector_m @ 0x007e_a760 => extern "C" fn op_vector_m(dst: u32, t: u32, v: u32) -> u32 {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0x60]);
-        let mut locals = Locals([0; 0x60]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0x60;
+        let mut locals = super::AlignedFrame::<96>::new();
+        let frame = locals.at() + 0x60;
         op::bridge::op_vector_m(&mut mem(), dst, t, v, frame, &mut |_, f, a| call_ptr(f, a))
     }
     /// `op_matrix_light4_vector(dst, m, colours)`: its stack locals in a
     /// buffer on this shim's stack (the frame pointer at its end).
     op_matrix_light4_vector @ 0x00a6_cd80 => extern "C" fn op_matrix_light4_vector(dst: u32, m: u32, colours: u32) -> u32 {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0x90]);
-        let mut locals = Locals([0; 0x90]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0x90;
+        let mut locals = super::AlignedFrame::<144>::new();
+        let frame = locals.at() + 0x90;
         op::bridge::op_matrix_light4_vector(&mut mem(), dst, m, colours, frame, &mut |_, f, a| call_ptr(f, a))
     }
     /// `op_oef2_tex_clut_ovl_add_007e56d0(rec, mask, flag)`.
@@ -2024,11 +1982,8 @@ ported! {
     }
     /// `op_fog_param_set()`: its local in a buffer on this shim's stack.
     op_fog_param_set @ 0x007f_f100 => extern "C" fn op_fog_param_set() {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0x20]);
-        let mut locals = Locals([0; 0x20]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0x20;
+        let mut locals = super::AlignedFrame::<32>::new();
+        let frame = locals.at() + 0x20;
         op::bridge::op_fog_param_set(&mut mem(), frame, &mut |_, f, a| call_ptr(f, a));
     }
     /// `op_oef2_sep_wave_load(cue, mask)`.
@@ -2038,11 +1993,8 @@ ported! {
     /// `op_ffxlight_to_omdlight(colours, dirs)`: its local in a buffer on
     /// this shim's stack.
     op_ffxlight_to_omdlight @ 0x00a6_90c0 => extern "C" fn op_ffxlight_to_omdlight(colours: u32, dirs: u32) -> u32 {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0x20]);
-        let mut locals = Locals([0; 0x20]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0x20;
+        let mut locals = super::AlignedFrame::<32>::new();
+        let frame = locals.at() + 0x20;
         op::bridge::op_ffxlight_to_omdlight(&mut mem(), colours, dirs, frame, &mut |_, f, a| call_ptr(f, a))
     }
     /// `op_md_vn_index_sub(tri, table)`.
@@ -2084,11 +2036,8 @@ ported! {
     /// `op1_md_draw_eiabm_sphe(obj, part, n, e)`: its stack locals in a
     /// buffer on this shim's stack (the frame pointer at its end).
     op1_md_draw_eiabm_sphe @ 0x00a6_8140 => extern "C" fn op1_md_draw_eiabm_sphe(obj: u32, part: u32, n: u32, e: u32) -> u32 {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0xb0]);
-        let mut locals = Locals([0; 0xb0]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0xb0;
+        let mut locals = super::AlignedFrame::<176>::new();
+        let frame = locals.at() + 0xb0;
         md::bridge::op1_md_draw_eiabm_sphe(&mut mem(), obj, part, n, e, frame, &mut |_, f, a| call_ptr(f, a))
     }
     /// `op_rot_point_007ea9d0(x0, y0, ang, x1, y1, ox, oy)`.
@@ -2102,11 +2051,8 @@ ported! {
     /// `op1_md_draw_eiabm(obj, part, slot)`: its stack locals in a buffer
     /// on this shim's stack (the frame pointer at its end).
     op1_md_draw_eiabm @ 0x00a6_57c0 => extern "C" fn op1_md_draw_eiabm(obj: u32, part: u32, slot: u32) -> u32 {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0x450]);
-        let mut locals = Locals([0; 0x450]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0x450;
+        let mut locals = super::AlignedFrame::<1104>::new();
+        let frame = locals.at() + 0x450;
         md::bridge::op1_md_draw_eiabm(&mut mem(), obj, part, slot, frame, &mut |_, f, a| call_ptr(f, a))
     }
     /// `op_md_spr_init_x64(obj, init, work)`.
@@ -2791,13 +2737,9 @@ ported! {
     /// `opus_map_rgba_free()`.
     opus_map_rgba_free @ 0x0080_ac00 => extern "C" fn opus_map_rgba_free() {
         // the original's local vector, 16-byte aligned as in its frame
-        #[repr(C, align(16))]
-        struct Locals([u32; 4]);
-        let mut locals = Locals([0; 4]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let at = locals.0.as_mut_ptr() as u32;
+        let mut locals = super::AlignedFrame::<4>::new();
+        let at = locals.at();
         opus::bridge::opus_map_rgba_free(&mut mem(), at, &mut |_, f, a| call_ptr(f, a));
-        std::hint::black_box(&mut locals);
     }
     /// `op_vec3_max_007ecd00(out, v, a)`, `a` by value.
     op_vec3_max_007ecd00 @ 0x007e_cd00 => extern "C" fn op_vec3_max(out: u32, v: u32, a0: u32, a1: u32, a2: u32, a3: u32) {
@@ -2981,13 +2923,9 @@ ported! {
         // the original's locals (the frame number, then the GS environment
         // at a 16-byte boundary, as its aligned frame has them): with an
         // unaligned environment the game crashed in the replays
-        #[repr(C, align(16))]
-        struct Locals([u32; 0x80]);
-        let mut locals = Locals([0; 0x80]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let at = locals.0.as_mut_ptr() as u32 + 0xc;
+        let mut locals = super::AlignedFrame::<128>::new();
+        let at = locals.at() + 0xc;
         op::bridge::op_loop_ffx_after(&mut mem(), at, &mut |_, f, a| call_ptr(f, a));
-        std::hint::black_box(&mut locals);
     }
     /// `opf_normal(host, ptr)`.
     opf_normal @ 0x0081_5050 => extern "C" fn opf_normal(host: u32, ptr: u32) -> u32 {
@@ -3041,22 +2979,16 @@ ported! {
     /// locals in a buffer on this shim's stack (the frame pointer at its
     /// end).
     opus_wave_omd_make @ 0x007f_94e0 => extern "C" fn opus_wave_omd_make(obj: u32, wv: u32, uv: u32, omd: u32, view: u32, light: u32) -> u32 {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0x90]);
-        let mut locals = Locals([0; 0x90]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0x90;
+        let mut locals = super::AlignedFrame::<144>::new();
+        let frame = locals.at() + 0x90;
         wave::bridge::opus_wave_omd_make(&mut mem(), obj, wv, uv, omd, view, light, frame, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a))
     }
     /// `opus_0154_wave_omd_make(obj, wave, uv, omd, view, proj)`: its
     /// stack locals in a buffer on this shim's stack (the frame pointer at
     /// its end).
     opus_0154_wave_omd_make @ 0x007f_67c0 => extern "C" fn opus_0154_wave_omd_make(obj: u32, wv: u32, uv: u32, omd: u32, view: u32, proj: u32) -> u32 {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0xf0]);
-        let mut locals = Locals([0; 0xf0]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0xf0;
+        let mut locals = super::AlignedFrame::<240>::new();
+        let frame = locals.at() + 0xf0;
         wave::bridge::opus_0154_wave_omd_make(&mut mem(), obj, wv, uv, omd, view, proj, frame, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a), &mut |_, x| crt_tan(x))
     }
     /// `pppDrawShapeFieldCon(obj, prog)`.
@@ -3195,204 +3127,140 @@ ported! {
     /// `pppDrawShape0(obj, key, entry)`: its render request in a buffer on
     /// this shim's stack (the frame pointer at its end).
     pppDrawShape0 @ 0x0074_0a70 => extern "C" fn ppp_draw_shape0(obj: u32, key: u32, entry: u32) {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0x80]);
-        let mut locals = Locals([0; 0x80]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0x80;
+        let mut locals = super::AlignedFrame::<128>::new();
+        let frame = locals.at() + 0x80;
         part::bridge::ppp_draw_shape0(&mut mem(), obj, key, entry, frame, &mut |_, f, a| call_ptr(f, a));
-        std::hint::black_box(&mut locals);
     }
     /// `pppDrawShapeRevDraw(obj, key, prog)`: its render request in a
     /// buffer on this shim's stack, as `pppDrawShapeX0`.
     pppDrawShapeRevDraw @ 0x0074_15a0 => extern "C" fn ppp_draw_shape_rev_draw(obj: u32, key: u32, prog: u32) {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0x80]);
-        let mut locals = Locals([0; 0x80]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0x80;
+        let mut locals = super::AlignedFrame::<128>::new();
+        let frame = locals.at() + 0x80;
         part::bridge::ppp_draw_shape_rev(&mut mem(), obj, key, prog, frame, &mut |_, f, a| call_ptr(f, a));
-        std::hint::black_box(&mut locals);
     }
     /// `pppNeiDrawShapePointLightDraw(obj, key, prog)`: its light local in
     /// a buffer on this shim's stack.
     pppNeiDrawShapePointLightDraw @ 0x0074_b6a0 => extern "C" fn ppp_nei_draw_shape_point_light_draw(obj: u32, key: u32, prog: u32) {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0x80]);
-        let mut locals = Locals([0; 0x80]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0x80;
+        let mut locals = super::AlignedFrame::<128>::new();
+        let frame = locals.at() + 0x80;
         part::bridge::ppp_nei_draw_shape_point_light(&mut mem(), obj, key, prog, frame, &mut |_, f, a| call_ptr(f, a));
-        std::hint::black_box(&mut locals);
     }
     /// `pppDrawShapeX0(obj, key, entry)`: as `pppDrawShape0`.
     pppDrawShapeX0 @ 0x0074_0f60 => extern "C" fn ppp_draw_shape_x0(obj: u32, key: u32, entry: u32) {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0x80]);
-        let mut locals = Locals([0; 0x80]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0x80;
+        let mut locals = super::AlignedFrame::<128>::new();
+        let frame = locals.at() + 0x80;
         part::bridge::ppp_draw_shape_x0(&mut mem(), obj, key, entry, frame, &mut |_, f, a| call_ptr(f, a));
-        std::hint::black_box(&mut locals);
     }
     /// `pppDrawMdlDraw(obj, key, prog)`: its stack locals in a buffer on
     /// this shim's stack (the frame pointer at its end).
     pppDrawMdlDraw @ 0x0073_7770 => extern "C" fn ppp_draw_mdl_draw(obj: u32, key: u32, prog: u32) -> u32 {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0xa0]);
-        let mut locals = Locals([0; 0xa0]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0xa0;
+        let mut locals = super::AlignedFrame::<160>::new();
+        let frame = locals.at() + 0xa0;
         mdl::bridge::ppp_draw_mdl_draw(&mut mem(), obj, key, prog, frame, &mut |_, f, a| call_ptr(f, a))
     }
     /// `pppDrawMdlSemiDraw(obj, key, prog)`: its stack locals in a buffer on this
     /// shim's stack (the frame pointer at its end).
     pppDrawMdlSemiDraw @ 0x0073_7b20 => extern "C" fn ppp_draw_mdl_semi_draw(obj: u32, key: u32, prog: u32) -> u32 {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0xa0]);
-        let mut locals = Locals([0; 0xa0]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0xa0;
+        let mut locals = super::AlignedFrame::<160>::new();
+        let frame = locals.at() + 0xa0;
         mdl::bridge::ppp_draw_mdl_semi_draw(&mut mem(), obj, key, prog, frame, &mut |_, f, a| call_ptr(f, a))
     }
     /// `pppDrawMdlTsDraw(obj, key, prog)`: its stack locals in a buffer on this
     /// shim's stack (the frame pointer at its end).
     pppDrawMdlTsDraw @ 0x0073_7f40 => extern "C" fn ppp_draw_mdl_ts_draw(obj: u32, key: u32, prog: u32) -> u32 {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0xa0]);
-        let mut locals = Locals([0; 0xa0]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0xa0;
+        let mut locals = super::AlignedFrame::<160>::new();
+        let frame = locals.at() + 0xa0;
         mdl::bridge::ppp_draw_mdl_ts_draw(&mut mem(), obj, key, prog, frame, &mut |_, f, a| call_ptr(f, a))
     }
     /// `pppNeiDrawMdlPointLightDraw(obj, key, prog)`: its stack locals in a buffer on this
     /// shim's stack (the frame pointer at its end).
     pppNeiDrawMdlPointLightDraw @ 0x0074_a1e0 => extern "C" fn ppp_nei_draw_mdl_point_light_draw(obj: u32, key: u32, prog: u32) -> u32 {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0xa0]);
-        let mut locals = Locals([0; 0xa0]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0xa0;
+        let mut locals = super::AlignedFrame::<160>::new();
+        let frame = locals.at() + 0xa0;
         mdl::bridge::ppp_nei_draw_mdl_point_light_draw(&mut mem(), obj, key, prog, frame, &mut |_, f, a| call_ptr(f, a))
     }
     /// `pppNeiDrawMdlSemiPointLightDraw(obj, key, prog)`: its stack locals in a buffer on this
     /// shim's stack (the frame pointer at its end).
     pppNeiDrawMdlSemiPointLightDraw @ 0x0074_a850 => extern "C" fn ppp_nei_draw_mdl_semi_point_light_draw(obj: u32, key: u32, prog: u32) -> u32 {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0xa0]);
-        let mut locals = Locals([0; 0xa0]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0xa0;
+        let mut locals = super::AlignedFrame::<160>::new();
+        let frame = locals.at() + 0xa0;
         mdl::bridge::ppp_nei_draw_mdl_semi_point_light_draw(&mut mem(), obj, key, prog, frame, &mut |_, f, a| call_ptr(f, a))
     }
     /// `pppNeiDrawMdlTsPointLightDraw(obj, key, prog)`: its stack locals in a buffer on this
     /// shim's stack (the frame pointer at its end).
     pppNeiDrawMdlTsPointLightDraw @ 0x0074_ae70 => extern "C" fn ppp_nei_draw_mdl_ts_point_light_draw(obj: u32, key: u32, prog: u32) -> u32 {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0xa0]);
-        let mut locals = Locals([0; 0xa0]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0xa0;
+        let mut locals = super::AlignedFrame::<160>::new();
+        let frame = locals.at() + 0xa0;
         mdl::bridge::ppp_nei_draw_mdl_ts_point_light_draw(&mut mem(), obj, key, prog, frame, &mut |_, f, a| call_ptr(f, a))
     }
     /// `pppDrawMdl2Draw(obj, key, prog)`: its stack locals in a buffer on this
     /// shim's stack (the frame pointer at its end).
     pppDrawMdl2Draw @ 0x0073_8530 => extern "C" fn ppp_draw_mdl_2_draw(obj: u32, key: u32, prog: u32) -> u32 {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0xa0]);
-        let mut locals = Locals([0; 0xa0]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0xa0;
+        let mut locals = super::AlignedFrame::<160>::new();
+        let frame = locals.at() + 0xa0;
         mdl::bridge::ppp_draw_mdl_2_draw(&mut mem(), obj, key, prog, frame, &mut |_, f, a| call_ptr(f, a))
     }
     /// `pppDrawMdlSemi2Draw(obj, key, prog)`: its stack locals in a buffer on this
     /// shim's stack (the frame pointer at its end).
     pppDrawMdlSemi2Draw @ 0x0073_8a40 => extern "C" fn ppp_draw_mdl_semi2_draw(obj: u32, key: u32, prog: u32) -> u32 {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0xa0]);
-        let mut locals = Locals([0; 0xa0]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0xa0;
+        let mut locals = super::AlignedFrame::<160>::new();
+        let frame = locals.at() + 0xa0;
         mdl::bridge::ppp_draw_mdl_semi2_draw(&mut mem(), obj, key, prog, frame, &mut |_, f, a| call_ptr(f, a))
     }
     /// `pppDrawMdlTs2Draw(obj, key, prog)`: its stack locals in a buffer on this
     /// shim's stack (the frame pointer at its end).
     pppDrawMdlTs2Draw @ 0x0073_8ec0 => extern "C" fn ppp_draw_mdl_ts2_draw(obj: u32, key: u32, prog: u32) -> u32 {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0xa0]);
-        let mut locals = Locals([0; 0xa0]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0xa0;
+        let mut locals = super::AlignedFrame::<160>::new();
+        let frame = locals.at() + 0xa0;
         mdl::bridge::ppp_draw_mdl_ts2_draw(&mut mem(), obj, key, prog, frame, &mut |_, f, a| call_ptr(f, a))
     }
     /// `pppDrawMdl3Draw(obj, key, prog)`: its stack locals in a buffer on this
     /// shim's stack (the frame pointer at its end).
     pppDrawMdl3Draw @ 0x0073_94c0 => extern "C" fn ppp_draw_mdl_3_draw(obj: u32, key: u32, prog: u32) -> u32 {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0x120]);
-        let mut locals = Locals([0; 0x120]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0x120;
+        let mut locals = super::AlignedFrame::<288>::new();
+        let frame = locals.at() + 0x120;
         mdl::bridge::ppp_draw_mdl_3_draw(&mut mem(), obj, key, prog, frame, &mut |_, f, a| call_ptr(f, a))
     }
     /// `pppDrawMdlSemi3Draw(obj, key, prog)`: its stack locals in a buffer on this
     /// shim's stack (the frame pointer at its end).
     pppDrawMdlSemi3Draw @ 0x0073_9d30 => extern "C" fn ppp_draw_mdl_semi3_draw(obj: u32, key: u32, prog: u32) -> u32 {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0x120]);
-        let mut locals = Locals([0; 0x120]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0x120;
+        let mut locals = super::AlignedFrame::<288>::new();
+        let frame = locals.at() + 0x120;
         mdl::bridge::ppp_draw_mdl_semi3_draw(&mut mem(), obj, key, prog, frame, &mut |_, f, a| call_ptr(f, a))
     }
     /// `pppDrawMdlTs3Draw(obj, key, prog)`: its stack locals in a buffer on this
     /// shim's stack (the frame pointer at its end).
     pppDrawMdlTs3Draw @ 0x0073_a370 => extern "C" fn ppp_draw_mdl_ts3_draw(obj: u32, key: u32, prog: u32) -> u32 {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0xe0]);
-        let mut locals = Locals([0; 0xe0]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0xe0;
+        let mut locals = super::AlignedFrame::<224>::new();
+        let frame = locals.at() + 0xe0;
         mdl::bridge::ppp_draw_mdl_ts3_draw(&mut mem(), obj, key, prog, frame, &mut |_, f, a| call_ptr(f, a))
     }
     /// `pppDrawMdlLoopDraw(obj, key, prog)`: its stack locals in a buffer on this
     /// shim's stack (the frame pointer at its end).
     pppDrawMdlLoopDraw @ 0x0073_e2b0 => extern "C" fn ppp_draw_mdl_loop_draw(obj: u32, key: u32, prog: u32) -> u32 {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0xe0]);
-        let mut locals = Locals([0; 0xe0]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0xe0;
+        let mut locals = super::AlignedFrame::<224>::new();
+        let frame = locals.at() + 0xe0;
         mdl::bridge::ppp_draw_mdl_loop_draw(&mut mem(), obj, key, prog, frame, &mut |_, f, a| call_ptr(f, a))
     }
     /// `pppDrawMdlLoopZDraw(obj, key, prog)`: its stack locals in a buffer on this
     /// shim's stack (the frame pointer at its end).
     pppDrawMdlLoopZDraw @ 0x0073_ea40 => extern "C" fn ppp_draw_mdl_loop_z_draw(obj: u32, key: u32, prog: u32) -> u32 {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0xe0]);
-        let mut locals = Locals([0; 0xe0]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0xe0;
+        let mut locals = super::AlignedFrame::<224>::new();
+        let frame = locals.at() + 0xe0;
         mdl::bridge::ppp_draw_mdl_loop_z_draw(&mut mem(), obj, key, prog, frame, &mut |_, f, a| call_ptr(f, a))
     }
     /// `pppDrawMdlLoopDisPosDraw(obj, key, prog)`: its stack locals in a buffer on this
     /// shim's stack (the frame pointer at its end).
     pppDrawMdlLoopDisPosDraw @ 0x0073_f230 => extern "C" fn ppp_draw_mdl_loop_dis_pos_draw(obj: u32, key: u32, prog: u32) -> u32 {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0x1a0]);
-        let mut locals = Locals([0; 0x1a0]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0x1a0;
+        let mut locals = super::AlignedFrame::<416>::new();
+        let frame = locals.at() + 0x1a0;
         mdl::bridge::ppp_draw_mdl_loop_dis_pos_draw(&mut mem(), obj, key, prog, frame, &mut |_, f, a| call_ptr(f, a))
     }
     /// `pppKeLnsArndDraw(obj, key, prog)`: its stack locals in a buffer on this shim's
     /// stack (the frame pointer at its end).
     pppKeLnsArndDraw @ 0x0075_9ff0 => extern "C" fn ppp_ke_lns_arnd_draw(obj: u32, key: u32, prog: u32) -> u32 {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0x30]);
-        let mut locals = Locals([0; 0x30]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0x30;
+        let mut locals = super::AlignedFrame::<48>::new();
+        let frame = locals.at() + 0x30;
         lns::bridge::ppp_ke_lns_draw(&mut mem(), lns::bridge::Lns::Arnd, obj, key, prog, frame, &mut |_, f, a| call_ptr(f, a))
     }
     /// `pppKeLnsArndTDraw(obj, key, prog)`.
@@ -3402,21 +3270,15 @@ ported! {
     /// `pppKeLnsArndTOtDraw(area)`: its stack locals in a buffer on this shim's
     /// stack (the frame pointer at its end).
     pppKeLnsArndTOtDraw @ 0x0075_a250 => extern "C" fn ppp_ke_lns_arnd_t_ot_draw(area: u32) -> u32 {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0x30]);
-        let mut locals = Locals([0; 0x30]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0x30;
+        let mut locals = super::AlignedFrame::<48>::new();
+        let frame = locals.at() + 0x30;
         lns::bridge::ppp_ke_lns_t_ot_draw(&mut mem(), lns::bridge::Lns::Arnd, area, frame, &mut |_, f, a| call_ptr(f, a))
     }
     /// `pppKeLnsCrnDraw(obj, key, prog)`: its stack locals in a buffer on this shim's
     /// stack (the frame pointer at its end).
     pppKeLnsCrnDraw @ 0x0075_a760 => extern "C" fn ppp_ke_lns_crn_draw(obj: u32, key: u32, prog: u32) -> u32 {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0x30]);
-        let mut locals = Locals([0; 0x30]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0x30;
+        let mut locals = super::AlignedFrame::<48>::new();
+        let frame = locals.at() + 0x30;
         lns::bridge::ppp_ke_lns_draw(&mut mem(), lns::bridge::Lns::Crn, obj, key, prog, frame, &mut |_, f, a| call_ptr(f, a))
     }
     /// `pppKeLnsCrnTDraw(obj, key, prog)`.
@@ -3426,21 +3288,15 @@ ported! {
     /// `pppKeLnsCrnTOtDraw(area)`: its stack locals in a buffer on this shim's
     /// stack (the frame pointer at its end).
     pppKeLnsCrnTOtDraw @ 0x0075_a9e0 => extern "C" fn ppp_ke_lns_crn_t_ot_draw(area: u32) -> u32 {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0x30]);
-        let mut locals = Locals([0; 0x30]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0x30;
+        let mut locals = super::AlignedFrame::<48>::new();
+        let frame = locals.at() + 0x30;
         lns::bridge::ppp_ke_lns_t_ot_draw(&mut mem(), lns::bridge::Lns::Crn, area, frame, &mut |_, f, a| call_ptr(f, a))
     }
     /// `pppKeLnsFlsDraw(obj, key, prog)`: its stack locals in a buffer on this shim's
     /// stack (the frame pointer at its end).
     pppKeLnsFlsDraw @ 0x0075_ab50 => extern "C" fn ppp_ke_lns_fls_draw(obj: u32, key: u32, prog: u32) -> u32 {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0x30]);
-        let mut locals = Locals([0; 0x30]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0x30;
+        let mut locals = super::AlignedFrame::<48>::new();
+        let frame = locals.at() + 0x30;
         lns::bridge::ppp_ke_lns_draw(&mut mem(), lns::bridge::Lns::Fls, obj, key, prog, frame, &mut |_, f, a| call_ptr(f, a))
     }
     /// `pppKeLnsFlsTDraw(obj, key, prog)`.
@@ -3450,21 +3306,15 @@ ported! {
     /// `pppKeLnsFlsTOtDraw(area)`: its stack locals in a buffer on this shim's
     /// stack (the frame pointer at its end).
     pppKeLnsFlsTOtDraw @ 0x0075_ade0 => extern "C" fn ppp_ke_lns_fls_t_ot_draw(area: u32) -> u32 {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0x30]);
-        let mut locals = Locals([0; 0x30]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0x30;
+        let mut locals = super::AlignedFrame::<48>::new();
+        let frame = locals.at() + 0x30;
         lns::bridge::ppp_ke_lns_t_ot_draw(&mut mem(), lns::bridge::Lns::Fls, area, frame, &mut |_, f, a| call_ptr(f, a))
     }
     /// `pppKeLnsLpDraw(obj, key, prog)`: its stack locals in a buffer on this shim's
     /// stack (the frame pointer at its end).
     pppKeLnsLpDraw @ 0x0075_af80 => extern "C" fn ppp_ke_lns_lp_draw(obj: u32, key: u32, prog: u32) -> u32 {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0x30]);
-        let mut locals = Locals([0; 0x30]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0x30;
+        let mut locals = super::AlignedFrame::<48>::new();
+        let frame = locals.at() + 0x30;
         lns::bridge::ppp_ke_lns_lp_draw(&mut mem(), obj, key, prog, frame, &mut |_, f, a| call_ptr(f, a))
     }
     /// `pppKeMdlTfdDraw(obj, key, prog)`.
@@ -3498,21 +3348,15 @@ ported! {
     /// `pppDrawMatrixWoodSta()`: its three vectors in a buffer on this
     /// shim's stack (the frame pointer at its end).
     pppDrawMatrixWoodSta @ 0x0073_4d90 => extern "C" fn ppp_draw_matrix_wood_sta() -> u32 {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0x40]);
-        let mut locals = Locals([0; 0x40]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0x40;
+        let mut locals = super::AlignedFrame::<64>::new();
+        let frame = locals.at() + 0x40;
         mat::bridge::ppp_draw_matrix_wood_sta(&mut mem(), frame)
     }
     /// `pppKeTkFadeDraw(obj, key, prog)`: its stack locals in a buffer on
     /// this shim's stack (the frame pointer at its end).
     pppKeTkFadeDraw @ 0x0072_ee50 => extern "C" fn ppp_ke_tk_fade_draw(obj: u32, key: u32, prog: u32) -> u32 {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0xc0]);
-        let mut locals = Locals([0; 0xc0]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0xc0;
+        let mut locals = super::AlignedFrame::<192>::new();
+        let frame = locals.at() + 0xc0;
         draw::bridge::ppp_ke_tk_fade_draw(&mut mem(), obj, key, prog, frame, &mut |_, f, a| call_ptr(f, a))
     }
     // pppKeLnsLpTOtDraw (0x0075b230): hooked in m5_vfx.rs (M5 left8),
@@ -3796,11 +3640,8 @@ ported! {
     /// `opus_get_bone_matrix(out, chr, bone)`.
     opus_get_bone_matrix @ 0x0080_5430 => extern "C" fn opus_get_bone_matrix(out: u32, chr: u32, bone: u32) -> u32 {
         // the original's 16-byte local for Ch_OptposGetElement
-        #[repr(C, align(16))]
-        struct Locals([u8; 0x10]);
-        let mut locals = Locals([0; 0x10]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32;
+        let mut locals = super::AlignedFrame::<16>::new();
+        let frame = locals.at();
         opus::bridge::opus_get_bone_matrix(&mut mem(), out, chr, bone, frame, &mut |_, f, a| call_ptr(f, a))
     }
     /// `opus_mimic_check(chr)`.
@@ -3814,11 +3655,8 @@ ported! {
     /// `opus_rt_m_chara(m, chr, k, angles, trans, battle)`.
     opus_rt_m_chara @ 0x0080_62c0 => extern "C" fn opus_rt_m_chara(m: u32, chr: u32, k: u32, angles: u32, trans: u32, battle: u32) {
         // the original's 16-byte scale local, at [ebp - 0x20]
-        #[repr(C, align(16))]
-        struct Locals([u8; 0x10]);
-        let mut locals = Locals([0; 0x10]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = (locals.0.as_mut_ptr() as u32).wrapping_add(0x20);
+        let mut locals = super::AlignedFrame::<16>::new();
+        let frame = (locals.at()).wrapping_add(0x20);
         opus::bridge::opus_rt_m_chara(&mut mem(), m, chr, f32::from_bits(k), angles, trans, battle, frame, &mut |_, f, a| call_ptr(f, a), &mut |_, f, a| call_ptr_f64(f, a));
     }
     /// `opus_mdc_packet_set_0080e160(pk, mats, obj, unit, tex)`.
@@ -4682,33 +4520,24 @@ ported! {
     /// buffer index in a 16-aligned block on this shim's stack, as the
     /// original aligns its frame.
     pppKeShpDttDraw @ 0x0075_5040 => extern "C" fn ppp_ke_shp_dtt_draw(obj: u32, key: u32, ctrl: u32) {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0xa0]);
-        let mut locals = Locals([0; 0xa0]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let ebp = locals.0.as_mut_ptr() as u32 + 0xa0;
+        let mut locals = super::AlignedFrame::<160>::new();
+        let ebp = locals.at() + 0xa0;
         draw::bridge::ppp_ke_shp_dtt_draw(&mut mem(), obj, key, ctrl, ebp, &mut |_, f, a| call_ptr(f, a));
     }
     /// `pppKeMdlDttDraw(obj, key, ctrl)`: the model record (and the
     /// original's spills inside it) in a 16-aligned block on this shim's
     /// stack, as the original aligns its frame.
     pppKeMdlDttDraw @ 0x0072_e790 => extern "C" fn ppp_ke_mdl_dtt_draw(obj: u32, key: u32, ctrl: u32) {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0xa0]);
-        let mut locals = Locals([0; 0xa0]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let ebp = locals.0.as_mut_ptr() as u32 + 0xa0;
+        let mut locals = super::AlignedFrame::<160>::new();
+        let ebp = locals.at() + 0xa0;
         draw::bridge::ppp_ke_mdl_dtt_draw(&mut mem(), obj, key, ctrl, ebp, &mut |_, f, a| call_ptr(f, a));
     }
     /// `pppKeZCrctShpDraw(obj, key, ctrl)`: its stack matrix in a buffer
     /// on this shim's stack (the frame pointer at its end; a mode the
     /// original does not know leaves row 3 zero here, stale stack there).
     pppKeZCrctShpDraw @ 0x0073_54c0 => extern "C" fn ppp_ke_z_crct_shp_draw(obj: u32, key: u32, ctrl: u32) {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0x50]);
-        let mut locals = Locals([0; 0x50]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0x50;
+        let mut locals = super::AlignedFrame::<80>::new();
+        let frame = locals.at() + 0x50;
         mat::bridge::ppp_ke_z_crct_shp_draw(&mut mem(), obj, key, ctrl, frame, &mut |_, f, a| call_ptr(f, a));
     }
     /// `pppKeDMatDraw(obj, key, ctrl)`.
@@ -4988,13 +4817,9 @@ ported! {
     /// `pppSetPmcom2Texture_007629e0(tex)`: the sceGs uploads through
     /// `call_cdecl`, their requests in a frame like the original's.
     pppSetPmcom2Texture_007629e0 @ 0x0076_29e0 => extern "C" fn ppp_set_pmcom2_texture(tex: u32) {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0xc0]);
-        let mut locals = Locals([0; 0xc0]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0xc0;
+        let mut locals = super::AlignedFrame::<192>::new();
+        let frame = locals.at() + 0xc0;
         small::bridge::ppp_set_pmcom2_texture(&mut mem(), tex, frame, &mut |_, f, a| super::call_cdecl(f, a));
-        std::hint::black_box(&mut locals);
     }
     // ---- VU0 macro helpers ----
     /// `pppVu0MaddaY(_, v, _, s)`: returns `v`.
@@ -5686,68 +5511,44 @@ ported! {
     /// `pppDrawShapeFieldRender_00741b90(obj, key, prog, area)`: its render request and matrices in a
     /// buffer on this shim's stack (the frame pointer at its end).
     pppDrawShapeFieldRender_00741b90 @ 0x0074_1b90 => extern "C" fn ppp_draw_shape_field_render(obj: u32, key: u32, prog: u32, area: u32) {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0x2c0]);
-        let mut locals = Locals([0; 0x2c0]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0x2c0;
+        let mut locals = super::AlignedFrame::<704>::new();
+        let frame = locals.at() + 0x2c0;
         draw::bridge::ppp_draw_shape_field_render(&mut mem(), obj, key, prog, area, frame, &mut |_, f, a| call_ptr(f, a));
-        std::hint::black_box(&mut locals);
     }
     /// `pppDrawShapeFieldRevRender_00743280(obj, key, prog, area)`: its render request and matrices in a
     /// buffer on this shim's stack (the frame pointer at its end).
     pppDrawShapeFieldRevRender_00743280 @ 0x0074_3280 => extern "C" fn ppp_draw_shape_field_rev_render(obj: u32, key: u32, prog: u32, area: u32) {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0x280]);
-        let mut locals = Locals([0; 0x280]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0x280;
+        let mut locals = super::AlignedFrame::<640>::new();
+        let frame = locals.at() + 0x280;
         draw::bridge::ppp_draw_shape_render(&mut mem(), &draw::bridge::FIELD_REV_RENDER, obj, key, prog, area, frame, &mut |_, f, a| call_ptr(f, a));
-        std::hint::black_box(&mut locals);
     }
     /// `pppDrawShapeFieldSpdRender_007444a0(obj, key, prog, area)`: its render request and matrices in a
     /// buffer on this shim's stack (the frame pointer at its end).
     pppDrawShapeFieldSpdRender_007444a0 @ 0x0074_44a0 => extern "C" fn ppp_draw_shape_field_spd_render(obj: u32, key: u32, prog: u32, area: u32) {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0x280]);
-        let mut locals = Locals([0; 0x280]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0x280;
+        let mut locals = super::AlignedFrame::<640>::new();
+        let frame = locals.at() + 0x280;
         draw::bridge::ppp_draw_shape_render(&mut mem(), &draw::bridge::FIELD_SPD_RENDER, obj, key, prog, area, frame, &mut |_, f, a| call_ptr(f, a));
-        std::hint::black_box(&mut locals);
     }
     /// `pppDrawShapeFieldGlobalRender_00745740(obj, key, prog, area)`: its render request and matrices in a
     /// buffer on this shim's stack (the frame pointer at its end).
     pppDrawShapeFieldGlobalRender_00745740 @ 0x0074_5740 => extern "C" fn ppp_draw_shape_field_global_render(obj: u32, key: u32, prog: u32, area: u32) {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0x240]);
-        let mut locals = Locals([0; 0x240]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0x240;
+        let mut locals = super::AlignedFrame::<576>::new();
+        let frame = locals.at() + 0x240;
         draw::bridge::ppp_draw_shape_render(&mut mem(), &draw::bridge::FIELD_GLOBAL_RENDER, obj, key, prog, area, frame, &mut |_, f, a| call_ptr(f, a));
-        std::hint::black_box(&mut locals);
     }
     /// `pppDrawShapeCameraRender_007467b0(obj, key, prog, area)`: its render request and matrices in a
     /// buffer on this shim's stack (the frame pointer at its end).
     pppDrawShapeCameraRender_007467b0 @ 0x0074_67b0 => extern "C" fn ppp_draw_shape_camera_render(obj: u32, key: u32, prog: u32, area: u32) {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0x280]);
-        let mut locals = Locals([0; 0x280]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0x280;
+        let mut locals = super::AlignedFrame::<640>::new();
+        let frame = locals.at() + 0x280;
         draw::bridge::ppp_draw_shape_render(&mut mem(), &draw::bridge::CAMERA_RENDER, obj, key, prog, area, frame, &mut |_, f, a| call_ptr(f, a));
-        std::hint::black_box(&mut locals);
     }
     /// `pppDrawShapeCameraDisPosRender_007479d0(obj, key, prog, area)`: its render request and matrices in a
     /// buffer on this shim's stack (the frame pointer at its end).
     pppDrawShapeCameraDisPosRender_007479d0 @ 0x0074_79d0 => extern "C" fn ppp_draw_shape_camera_dis_pos_render(obj: u32, key: u32, prog: u32, area: u32) {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0x280]);
-        let mut locals = Locals([0; 0x280]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0x280;
+        let mut locals = super::AlignedFrame::<640>::new();
+        let frame = locals.at() + 0x280;
         draw::bridge::ppp_draw_shape_render(&mut mem(), &draw::bridge::CAMERA_DIS_POS_RENDER, obj, key, prog, area, frame, &mut |_, f, a| call_ptr(f, a));
-        std::hint::black_box(&mut locals);
     }
     /// `pppDrawRainDraw(obj, def, ctrl)`: the work area also into the
     /// caller's `ctrl` slot, as the original leaves it; the lines' `eax`.
@@ -5795,13 +5596,9 @@ ported! {
     /// texture sizes in a buffer on this shim's stack (the frame pointer at
     /// its end).
     pppDrawFilterPacket_00756740 @ 0x0075_6740 => extern "C" fn ppp_draw_filter_packet(obj: u32, tex: u32, prog: u32) {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0x70]);
-        let mut locals = Locals([0; 0x70]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0x70;
+        let mut locals = super::AlignedFrame::<112>::new();
+        let frame = locals.at() + 0x70;
         draw::bridge::ppp_draw_filter_packet(&mut mem(), obj, tex, prog, frame, &mut |_, f, a| call_ptr(f, a));
-        std::hint::black_box(&mut locals);
     }
     /// `pppDrawFilterRender_00756d20(pk)`: its locals (the data buffer's
     /// counts, format and name) on this shim's stack, the frame pointer at
@@ -5820,25 +5617,16 @@ ported! {
     /// `pppDataRcv()`: its matrix in a buffer on this shim's stack (the
     /// frame pointer at its end).
     pppDataRcv @ 0x0076_14a0 => extern "C" fn ppp_data_rcv() {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0x48]);
-        let mut locals = Locals([0; 0x48]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0x48;
+        let mut locals = super::AlignedFrame::<72>::new();
+        let frame = locals.at() + 0x48;
         ppp::bridge::ppp_data_rcv(&mut mem(), frame, &mut |_, f, a| call_ptr(f, a));
-        std::hint::black_box(&mut locals);
     }
     /// `pppPmcomDataInit_00760080(data)`: its two matrices in a buffer on
     /// this shim's stack (the frame pointer at its end).
     pppPmcomDataInit_00760080 @ 0x0076_0080 => extern "C" fn ppp_pmcom_data_init(data: u32) -> u32 {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0x84]);
-        let mut locals = Locals([0; 0x84]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0x84;
-        let r = ppp::bridge::ppp_pmcom_data_init(&mut mem(), data, frame, &mut |_, f, a| call_ptr(f, a));
-        std::hint::black_box(&mut locals);
-        r
+        let mut locals = super::AlignedFrame::<132>::new();
+        let frame = locals.at() + 0x84;
+        ppp::bridge::ppp_pmcom_data_init(&mut mem(), data, frame, &mut |_, f, a| call_ptr(f, a))
     }
     /// `pppKeMdlBmpDraw_Body_00748b00(obj)`: returns `op_spr_free`'s `eax`.
     pppKeMdlBmpDraw_Body_00748b00 @ 0x0074_8b00 => extern "C" fn ppp_ke_mdl_bmp_draw_body(obj: u32) -> u32 {
@@ -6298,11 +6086,8 @@ ported! {
     /// `pppDrawMdlRevDraw(obj, key, prog)` (`0x00740410`): the request and
     /// the view-space matrix in this shim's 16-aligned frame.
     pppDrawMdlRevDraw @ 0x0074_0410 => extern "C" fn ppp_draw_mdl_rev_draw(obj: u32, key: u32, prog: u32) -> u32 {
-        #[repr(C, align(16))]
-        struct Locals([u8; 0xe0]);
-        let mut locals = Locals([0; 0xe0]);
-        #[allow(clippy::cast_possible_truncation)] // a 32-bit process
-        let frame = locals.0.as_mut_ptr() as u32 + 0xe0;
+        let mut locals = super::AlignedFrame::<224>::new();
+        let frame = locals.at() + 0xe0;
         mdl::bridge::ppp_draw_mdl_rev_draw(&mut mem(), obj, key, prog, frame, &mut |_, f, a| call_ptr(f, a))
     }
 }

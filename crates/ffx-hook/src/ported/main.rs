@@ -1278,19 +1278,15 @@ ported! {
     /// `AbmapDrawNodeHalos()`.
     AbmapDrawNodeHalos @ 0x00a5_0290 => extern "C" fn abmap_draw_node_halos() {
         // laid out and aligned as the original's frame
-        #[repr(C, align(16))]
-        struct Work([u8; abmap::bridge::NODE_WORK as usize]);
-        let mut work = Work([0; abmap::bridge::NODE_WORK as usize]);
-        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        let mut work = super::AlignedFrame::<{ abmap::bridge::NODE_WORK as usize }>::new();
+        let w = work.at();
         abmap::bridge::abmap_draw_node_halos(&mut mem(), w, &mut |_, f, a| super::call_cdecl(f, a));
     }
     /// `AbmapDrawNodeSpheres()`.
     AbmapDrawNodeSpheres @ 0x00a5_05e0 => extern "C" fn abmap_draw_node_spheres() {
         // laid out and aligned as the original's frame
-        #[repr(C, align(16))]
-        struct Work([u8; abmap::bridge::NODE_WORK as usize]);
-        let mut work = Work([0; abmap::bridge::NODE_WORK as usize]);
-        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        let mut work = super::AlignedFrame::<{ abmap::bridge::NODE_WORK as usize }>::new();
+        let w = work.at();
         abmap::bridge::abmap_draw_node_spheres(&mut mem(), w, &mut |_, f, a| super::call_cdecl(f, a));
     }
     /// `AbmapDrawLinkStrip(p, points, n)`.
@@ -2364,12 +2360,9 @@ ported! {
     /// `AbmapDrawNodesEamap_00a51340()`: void.
     AbmapDrawNodesEamap_00a51340 @ 0x00a5_1340 => extern "C" fn abmap_draw_nodes_eamap() {
         // laid out and aligned as the original's frame (`ebp - 0x100` on 16)
-        #[repr(C, align(16))]
-        struct Work([u8; abmap::bridge::EAMAP_WORK as usize]);
-        let mut work = Work([0; abmap::bridge::EAMAP_WORK as usize]);
-        let w = u32::try_from((&raw mut work).expose_provenance()).unwrap_or(0);
+        let mut work = super::AlignedFrame::<{ abmap::bridge::EAMAP_WORK as usize }>::new();
+        let w = work.at();
         abmap::bridge::abmap_draw_nodes_eamap(&mut mem(), w, &mut |_, f, a| super::call_cdecl(f, a));
-        std::hint::black_box(&mut work);
     }
     /// `MovieCdReadTaskLoop_0076e660()`: void (its caller ignores `eax`).
     MovieCdReadTaskLoop_0076e660 @ 0x0076_e660 => extern "C" fn movie_cd_read_task_loop() {

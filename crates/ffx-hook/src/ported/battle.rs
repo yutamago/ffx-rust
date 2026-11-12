@@ -78,18 +78,16 @@ fn call_ptr<M>(_: &mut M, f: u32, args: &[u32]) -> u32 {
     super::call_cdecl(f, args)
 }
 
-/// `op_3d_vol_pan_get(pos, vol, &out)` with `out` on this thread's stack
+/// `op_3d_vol_pan_get(pos, vol, &out)` with `out` in a frame
 /// (`MsSEP3Dprocess`'s frame local): the pan and the volume.
 fn sep_vol_pan<M>(_: &mut M, pos: u32, vol: u32) -> (u32, u32) {
-    let mut out = 0u32;
-    #[allow(clippy::cast_possible_truncation)] // 32-bit process
-    let (at, f) = (
-        std::ptr::addr_of_mut!(out) as u32,
-        crate::rebase(afterdmg::OP_3D_VOL_PAN_GET) as u32,
-    );
+    use ffx_bridge::Mem;
+    let mut out = super::StackFrame::<1>::new();
+    let at = out.at();
+    #[allow(clippy::cast_possible_truncation)] // a game address
+    let f = crate::rebase(afterdmg::OP_3D_VOL_PAN_GET) as u32;
     let pan = super::call_cdecl(f, &[pos, vol, at]);
-    // SAFETY: `out` is this frame's local, written through `at` above.
-    (pan, unsafe { std::ptr::read_volatile(&raw const out) })
+    (pan, mem().read(at))
 }
 
 /// The calls `MsCheckRikkuLimit` makes: the CD library's read queue gets

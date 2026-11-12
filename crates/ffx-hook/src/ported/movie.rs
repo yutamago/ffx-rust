@@ -219,9 +219,8 @@ ported! {
             nearz: f(nearz),
             farz: f(farz),
         };
-        let mut tmp = [0u32; 16];
-        #[allow(clippy::cast_possible_truncation)] // 32-bit process
-        let at = tmp.as_mut_ptr() as usize as u32;
+        let mut tmp = super::StackFrame::<16>::new();
+        let at = tmp.at();
         mv::samp0_view_screen_matrix(&mut mem(), m, at, &v);
     }
     /// `MovieCameraFrame_0076edc0()`: the camera record goes into this

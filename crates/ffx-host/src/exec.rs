@@ -739,7 +739,7 @@ pub struct Exec {
     seh: seh::State,
     /// The thread's scratch blocks in the arena (`ffx_bridge::route::Scratch`),
     /// allocated on first use.
-    scratch: [u32; 3],
+    scratch: [u32; 4],
     /// The ports' stack frames (`StackFrame`) on the game stack: each
     /// frame's address and the `esp` below which it was carved.
     frames: Vec<(u32, u32)>,
@@ -849,7 +849,7 @@ impl Exec {
             recent: Vec::new(),
             crt: ThreadCrt::default(),
             seh: seh::State::default(),
-            scratch: [0; 3],
+            scratch: [0; 4],
             frames: Vec::new(),
             x87_depth: 0,
             trap_exit: None,
