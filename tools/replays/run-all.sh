@@ -213,6 +213,8 @@ run() { # replay, tag, [original]
         if [[ -n "$profile" && -n "$slot" ]]; then
             cp "${FFX_INSTANCES_DIR:-$HOME/ffx-work/instances}/$slot/ffx-rust.profile.tsv" "$dir/$1.profile.tsv" 2>/dev/null ||
                 echo "$1: no Unicorn profile (ended before the harness's quit?)"
+            # the calls from Rust into Unicorn by target, beside it
+            cp "${FFX_INSTANCES_DIR:-$HOME/ffx-work/instances}/$slot/ffx-rust.entries.tsv" "$dir/$1.entries.tsv" 2>/dev/null || true
         fi
     fi
 }

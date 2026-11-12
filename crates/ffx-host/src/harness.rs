@@ -1496,7 +1496,13 @@ fn write_profile(shared: &Shared) {
         return;
     };
     let syms = crate::report::Symbols::read(sym);
-    let functions = crate::report::functions(shared, &shared.profile(), &syms);
+    let profile = shared.profile();
+    let functions = crate::report::functions(shared, &profile, &syms);
+    let entries = crate::report::entries_path(path);
+    let _ = std::fs::write(
+        &entries,
+        crate::report::entries_tsv(shared, &profile, &syms),
+    );
     let tmp = path.with_extension("part");
     let r = std::fs::write(&tmp, crate::report::functions_tsv(&functions))
         .and_then(|()| std::fs::rename(&tmp, path));

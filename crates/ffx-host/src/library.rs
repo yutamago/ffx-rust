@@ -532,6 +532,8 @@ impl Mem for HostGame<'_> {
 
 impl ffx_magic::Game for HostGame<'_> {
     fn call(&mut self, target: u32, ecx: u32, args: &[u32]) -> ffx_magic::Out {
+        // g_MagicImports holds import thunks too (crt_memset_thunk, rand)
+        let target = self.e.shared().thunk(target).unwrap_or(target);
         let emulated = self.e.table().get(target).is_none()
             && self.e.shared().trap(target).is_none()
             && !self.e.is_import_stub(target);

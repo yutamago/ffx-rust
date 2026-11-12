@@ -173,6 +173,24 @@ Everything that calls code goes through the table:
   Rust side for an import stub, else Unicorn;
 - later, a mod replaces an entry by address.
 
+**Import thunks** (2026-11-12, m5-wp5). `FFX.exe` calls many imports
+through 6-byte thunks, `jmp [IAT slot]` (`crt_memcpy_thunk` `0x00949256`,
+`crt_memset_thunk` `0x0094964c`, 493 found): the ports name them as
+their callees (`MEMCPY`, `MEMSET`). Until then every such call from a port
+went into Unicorn for the one `jmp`, stopped at the import's `int3` stub,
+ran the Rust side, and resumed for the return: two emulator starts per
+`memcpy`, 95 M calls in gate run 1. Now `Shared::find_thunks` finds them
+in `.text` (`ff 25` + an IAT slot of the image, after an `int3` pad, at
+a 16-byte boundary or right after another thunk) and patches each to
+`int3`; `Exec::call` (and the router and the overlays' calls) goes
+straight to what the slot holds (the import's Rust side, or a DLL export
+in Unicorn), and Unicorn code reaching one enters the import as from its
+stub. A `jmp [slot]` the scan leaves alone (a run after a `jmp`, as
+`alloca_probe_8`'s neighbours at `0x009498bc`) still resolves for a call
+from Rust (`Shared::thunk` reads its bytes). On the boot to 4,000
+presents: emulator starts 492,843 → 196,676, Rust → Unicorn calls 227,716
+→ 79,736.
+
 ### One source of truth
 
 The ports are the hook's `ported!` lists (`crates/ffx-hook/src/ported/*.rs`,

@@ -307,3 +307,62 @@ fn a_varargs_import_called_from_rust_reads_its_words() {
         .collect();
     assert_eq!(String::from_utf16_lossy(&text), "C:\\saves\\ffx_007");
 }
+
+/// `FFX.exe`'s import thunks (`jmp [IAT slot]`): a port calling
+/// `crt_memcpy_thunk` (95 M calls in gate run 1) or `crt_memset_thunk`
+/// runs the import's Rust side with no emulator start, and Unicorn code
+/// calling one (patched to `int3`) gets the same result. Thunks the scan
+/// leaves alone (`0x009498c2`, after `alloca_probe_8`'s `jmp`) still
+/// resolve for a call from Rust.
+#[test]
+fn import_thunks_run_their_import_without_unicorn() {
+    use ffx_bridge::Mem as _;
+    const MEMCPY_THUNK: u32 = 0x0094_9256;
+    const MEMSET_THUNK: u32 = 0x0094_964c;
+    let Some(exe) = exe() else { return };
+    let mut exec = ffx_host::boot(&exe).unwrap();
+    let memcpy_stub: u32 = exec.mem().read(slot(&exec, "MSVCR110.dll", "memcpy"));
+    assert_eq!(exec.shared().thunk(MEMCPY_THUNK), Some(memcpy_stub));
+    assert!(exec.shared().is_patched_thunk(MEMCPY_THUNK));
+    let memset_stub: u32 = exec.mem().read(slot(&exec, "MSVCR110.dll", "memset"));
+    assert_eq!(exec.shared().thunk(MEMSET_THUNK), Some(memset_stub));
+    // 0x009498c2: jmp [0x00b0c3b4], right after alloca_probe_8's jmp
+    let late: u32 = exec.mem().read(0x00b0_c3b4);
+    assert!(!exec.shared().is_patched_thunk(0x0094_98c2));
+    assert_eq!(exec.shared().thunk(0x0094_98c2), Some(late));
+    // a thunk's neighbour, an ordinary function, is none
+    assert_eq!(exec.shared().thunk(0x0094_9620), None);
+    let src = exec.alloc(64);
+    let dst = exec.alloc(64);
+    let bytes: Vec<u8> = (0u8..64).collect();
+    exec.mem().write_bytes(src, &bytes);
+    // from Rust: the Rust side, no Unicorn
+    let before = (exec.stats.unicorn_calls, exec.stats.starts);
+    let r = exec.call_cdecl(MEMCPY_THUNK, &[dst, src, 40]).unwrap();
+    assert_eq!(r, dst);
+    assert_eq!((exec.stats.unicorn_calls, exec.stats.starts), before);
+    let mut got = vec![0u8; 64];
+    exec.mem().read_bytes(dst, &mut got);
+    assert_eq!(&got[..40], &bytes[..40]);
+    assert_eq!(&got[40..], &[0u8; 24]);
+    exec.call_cdecl(MEMSET_THUNK, &[dst, 0xab, 8]).unwrap();
+    exec.mem().read_bytes(dst, &mut got);
+    assert_eq!(&got[..8], &[0xab; 8]);
+    assert_eq!(&got[8..40], &bytes[8..40]);
+    // from Unicorn: push 16; push src; push dst; call thunk; add esp, 12; ret
+    let at = exec.alloc_code(&[0; 32]).unwrap();
+    let mut code = vec![0x6a, 16, 0x68];
+    code.extend_from_slice(&src.to_le_bytes());
+    code.push(0x68);
+    code.extend_from_slice(&(dst + 48).to_le_bytes());
+    code.push(0xe8);
+    let next = at + u32::try_from(code.len()).unwrap() + 4;
+    code.extend_from_slice(&MEMCPY_THUNK.wrapping_sub(next).to_le_bytes());
+    code.extend_from_slice(&[0x83, 0xc4, 0x0c, 0xc3]);
+    exec.write_code(at, &code);
+    let r = exec.call_cdecl(at, &[]).unwrap();
+    assert_eq!(r, dst + 48);
+    exec.mem().read_bytes(dst, &mut got);
+    assert_eq!(&got[48..], &bytes[..16]);
+    assert_eq!(exec.stats.imports["MSVCR110.dll!memcpy"], 2);
+}

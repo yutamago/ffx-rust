@@ -154,9 +154,10 @@ pub fn functions(shared: &Shared, profile: &Profile, syms: &Symbols) -> Vec<Func
     for (&block, &n) in &profile.blocks {
         if shared.table().get(block).is_some()
             || shared.trap(block).is_some()
+            || shared.is_patched_thunk(block)
             || bound.contains(&block)
         {
-            continue; // a port's int3
+            continue; // a port's (or an import thunk's) int3
         }
         let samples = profile.samples.get(&block).copied().unwrap_or(0);
         let (module, start, name) = if text.is_some_and(|(lo, hi)| block >= lo && block < hi) {
@@ -240,6 +241,49 @@ pub fn functions_tsv(functions: &[Function]) -> String {
         );
     }
     out
+}
+
+/// The Rust → Unicorn calls by target ([`Profile::entries`]) as
+/// tab-separated lines (module, target, name, calls), most first: the
+/// originals ports and imports still call, named as [`functions`] names
+/// its rows, `FFX.exe`'s by the `ffx.sym` function starting there (else
+/// `<containing>+0x<offset>`, code no symbol starts). Written beside the
+/// profile (`entries_path`).
+#[must_use]
+pub fn entries_tsv(shared: &Shared, profile: &Profile, syms: &Symbols) -> String {
+    let text = shared.image().text().map(|t| (t.start, t.start + t.size));
+    let mut rows: Vec<(u32, u64)> = profile.entries.iter().map(|(&a, &n)| (a, n)).collect();
+    rows.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+    let mut out = String::from("module\ttarget\tname\tcalls\n");
+    for (a, n) in rows {
+        let (module, name) = if text.is_some_and(|(lo, hi)| a >= lo && a < hi) {
+            let name = match syms.containing(a) {
+                Some((s, name)) if s == a => name.to_string(),
+                Some((s, name)) => format!("{name}+{:#x}", a - s),
+                None => format!("{a:#010x}"),
+            };
+            ("FFX.exe".to_string(), name)
+        } else if let Some(d) = shared.dlls.iter().find(|d| d.contains(a)) {
+            (d.name.clone(), d.describe(a))
+        } else if let Some((file, base, start)) = crate::library::function_at(a) {
+            (file, format!("{:#x}", start - base))
+        } else {
+            ("other".to_string(), format!("{a:#010x}"))
+        };
+        let _ = writeln!(out, "{module}\t{a:#010x}\t{name}\t{n}");
+    }
+    out
+}
+
+/// Where [`entries_tsv`] goes beside the profile at `profile`:
+/// `x.profile.tsv` → `x.entries.tsv`, else `<profile>.entries.tsv`.
+#[must_use]
+pub fn entries_path(profile: &std::path::Path) -> std::path::PathBuf {
+    let s = profile.to_string_lossy();
+    match s.strip_suffix(".profile.tsv") {
+        Some(stem) => std::path::PathBuf::from(format!("{stem}.entries.tsv")),
+        None => std::path::PathBuf::from(format!("{s}.entries.tsv")),
+    }
 }
 
 /// The report as text.
