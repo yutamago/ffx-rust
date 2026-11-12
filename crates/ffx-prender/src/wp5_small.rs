@@ -144,3 +144,96 @@ pub fn cd_reset_channels(h: &mut impl Host) -> u32 {
     }
     h.call_sym(HDD_STATE_CLEAR, Conv::Cdecl, &[])
 }
+
+/// `updateFFX`'s step `0x00822490(a, b)` (cdecl).
+pub const ASYNC_INIT_STEP: u32 = 0x0082_2490;
+
+/// `asyncFFXInitialize(out, &a, &b)` (`0x00636410`, cdecl): `*out =
+/// 0x00822490(*a, *b)`. Its `eax`.
+pub fn async_ffx_initialize(h: &mut impl Host, out: u32, a: u32, b: u32) -> u32 {
+    let x: u32 = h.read(a);
+    let y: u32 = h.read(b);
+    let r = h.call_sym(ASYNC_INIT_STEP, Conv::Cdecl, &[x, y]);
+    h.write(out, r);
+    r
+}
+
+/// `PhyreScene`'s mesh instance cluster (`+0x11e4`).
+pub const SCENE_MESH_CLUSTER: u32 = 0x11e4;
+
+/// `ClassCharacterInstance_destroyMeshes(this)` (`0x006a15e0`, thiscall;
+/// a `PArray` of mesh instances: `+0` the count with bit 31, `+4` the
+/// items): each deleted from the scene's cluster
+/// (`PhyreScene_deletePMeshInstanceInCluster`, the scene re-read each
+/// time) and its slot cleared.
+pub fn character_destroy_meshes(h: &mut impl Host, this: u32) {
+    let mut i = 0u32;
+    while i < h.read::<u32>(this) & 0x7fff_ffff {
+        let scene: u32 = h.read(h.rebase(PHYRE_SCENE));
+        let items: u32 = h.read(this + 4);
+        let mesh: u32 = h.read(items.wrapping_add(4 * i));
+        h.call_sym(
+            SCENE_DELETE_MESH_INSTANCE,
+            Conv::Thiscall(scene),
+            &[mesh, scene.wrapping_add(SCENE_MESH_CLUSTER)],
+        );
+        let items: u32 = h.read(this + 4);
+        h.write(items.wrapping_add(4 * i), 0u32);
+        i += 1;
+    }
+}
+
+/// The cloth instance's teardown with its mesh (thiscall `(cloth;
+/// mesh)`, `ret 4`).
+pub const CLOTH_RELEASE: u32 = 0x006e_2e40;
+
+/// `ClassCharacterInstance_destroyClothInstances(this)` (`0x006a1590`,
+/// thiscall; the cloths `PArray` at `+8`/`+0xc`, the meshes' items at
+/// `+4`): each cloth that is set released with its mesh, freed and its
+/// slot cleared.
+pub fn character_destroy_cloths(h: &mut impl Host, this: u32) {
+    let mut i = 0u32;
+    while i < h.read::<u32>(this + 8) & 0x7fff_ffff {
+        let cloths: u32 = h.read(this + 0xc);
+        let cloth: u32 = h.read(cloths.wrapping_add(4 * i));
+        if cloth != 0 {
+            let items: u32 = h.read(this + 4);
+            let mesh: u32 = h.read(items.wrapping_add(4 * i));
+            h.call_sym(CLOTH_RELEASE, Conv::Thiscall(cloth), &[mesh]);
+            let cloths: u32 = h.read(this + 0xc);
+            let p: u32 = h.read(cloths.wrapping_add(4 * i));
+            h.call_sym(OPERATOR_DELETE, Conv::Cdecl, &[p]);
+            let cloths: u32 = h.read(this + 0xc);
+            h.write(cloths.wrapping_add(4 * i), 0u32);
+        }
+        i += 1;
+    }
+}
+
+/// The party's limit records (0x94 bytes each from `0x01132000`; the
+/// level byte `+0x97`, the gauge byte `+0x98`) and the clamp
+/// `0x0079a0c0(value, low, high)` (cdecl, `al`).
+pub const SLV_LEVEL: u32 = 0x0113_2097;
+pub const SLV_GAUGE: u32 = 0x0113_2098;
+pub const CLAMP: u32 = 0x0079_a0c0;
+
+/// `spendSlv(who, n)` (`0x00786ef0`, cdecl): -1 when `who`'s (low byte)
+/// level byte is below `n` (signed); else the level lowered by `n`, the
+/// gauge raised by it and clamped to 0..=0x65; 0.
+pub fn spend_slv(h: &mut impl Host, who: u32, n: u32) -> u32 {
+    let e = (who & 0xff) * 0x94;
+    let level_at = h.rebase(SLV_LEVEL) + e;
+    let level: u8 = h.read(level_at);
+    #[allow(clippy::cast_possible_wrap)] // the original's js
+    if (u32::from(level).wrapping_sub(n) as i32) < 0 {
+        return u32::MAX;
+    }
+    let gauge_at = h.rebase(SLV_GAUGE) + e;
+    let gauge = u32::from(h.read::<u8>(gauge_at)).wrapping_add(n);
+    #[allow(clippy::cast_possible_truncation)] // the original's byte maths
+    h.write(level_at, level.wrapping_sub(n as u8));
+    let r = h.call_sym(CLAMP, Conv::Cdecl, &[gauge, 0, 0x65]);
+    #[allow(clippy::cast_possible_truncation)] // al
+    h.write(gauge_at, r as u8);
+    0
+}

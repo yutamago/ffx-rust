@@ -210,3 +210,19 @@ fn capture(h: &mut impl Host, cam: u32, frame: u32) {
     let input = cdecl(h, at::INPUT, &[]);
     this(h, at::INPUT_SET_MOUSE, input, &[mx as u32, my as u32]);
 }
+
+/// `FreeCamera_setType(this; t)` (`0x00680410`, thiscall, `ret 4`): the
+/// capture counter set to `t`; 0 frees the cursor (`ClipCursor(NULL)`) and
+/// shows it once. `eax`: `t`, else the last import's result.
+pub fn set_type(h: &mut impl Host, cam: u32, t: u32) -> u32 {
+    h.write(cam, t);
+    if t != 0 {
+        return t;
+    }
+    let mut r = import(h, at::CLIP_CURSOR_IAT, &[0]);
+    if h.read::<u8>(cam + 0x33a) == 0 {
+        r = import(h, at::SHOW_CURSOR_IAT, &[1]);
+        h.write(cam + 0x33a, 1u8);
+    }
+    r
+}

@@ -251,6 +251,17 @@ impl Twins {
         self.same(what);
     }
 
+    /// The original at `sym` (thiscall on `this`, no stack words) against
+    /// a void `port`: memory only.
+    fn run_any_this(&mut self, what: &str, sym: u32, this: u32, port: impl FnOnce(&mut G)) {
+        let at = self.a.rebase(sym);
+        self.a
+            .call(at, Conv::Thiscall(this), &[])
+            .unwrap_or_else(|e| panic!("{what}: the original: {e}"));
+        port(&mut G(&mut self.b));
+        self.same(what);
+    }
+
     /// The original at `sym` (thiscall on `this`) against `port`: `eax`
     /// (unless `al` only) and memory.
     fn run(
@@ -1259,6 +1270,116 @@ fn wp5b_free_camera_handle_input() {
                 .unwrap_or_else(|e| panic!("{w}: the original: {e}"));
             fc::handle_input(&mut G(&mut t.b), cam, dt, x, frame);
             t.same(&w);
+        }
+    }
+}
+
+/// `FreeCamera_setType`, `asyncFFXInitialize`, the character instance's
+/// mesh and cloth teardowns, `spendSlv`: callees logging stubs.
+#[test]
+#[allow(clippy::too_many_lines)]
+fn wp5b_small_originals_2() {
+    use ffx_prender::wp5_camera::{self as fc, at};
+    use ffx_prender::wp5_small as sm;
+    for (label, mut t) in Twins::all() {
+        let log = t.alloc(&[0; 4 + 8 * 64]);
+        let show = log_stub_plain(&mut t, log, 4, 0x10, true);
+        let show = t.code(&show);
+        let clip = log_stub_plain(&mut t, log, 4, 0x12, true);
+        let clip = t.code(&clip);
+        for (slot, f) in [(at::SHOW_CURSOR_IAT, show), (at::CLIP_CURSOR_IAT, clip)] {
+            let s = t.a.rebase(slot);
+            t.w32(s, f);
+        }
+        for (k, ty) in [0u32, 1, 2, 0, 0].into_iter().enumerate() {
+            let cam = t.alloc(&[0x5c; 0x340]);
+            t.write(cam + 0x33a, &[u8::from(k % 2 == 1)]);
+            t.w32(log, 0);
+            let w = format!("{label} free camera type {ty} ({k})");
+            t.run(&w, 0x0068_0410, cam, &[ty], false, |g| {
+                fc::set_type(g, cam, ty)
+            });
+        }
+        // the callees: logging stubs
+        for (sym, pops, ret, arg, this) in [
+            (sm::ASYNC_INIT_STEP, 0u16, 0x5150u32, true, false),
+            (sm::SCENE_DELETE_MESH_INSTANCE, 8, 0x42, true, true),
+            (sm::CLOTH_RELEASE, 4, 0x43, true, true),
+            (sm::OPERATOR_DELETE, 0, 0x44, true, false),
+        ] {
+            let s = if this {
+                log_stub_arg(&mut t, log, pops, ret, arg)
+            } else {
+                log_stub_plain(&mut t, log, pops, ret, arg)
+            };
+            jmp_stub(&mut t, sym, &s);
+        }
+        // the clamp: min(max(v, lo), hi) as the original's (logged too)
+        let s = log_stub_plain(&mut t, log, 0, 0, true);
+        let mut c = s[..s.len() - 6].to_vec();
+        // mov eax,[esp+4]; cmp eax,[esp+0xc]; jle +4; mov eax,[esp+0xc]; ret
+        c.extend([
+            0x8b, 0x44, 0x24, 0x04, 0x3b, 0x44, 0x24, 0x0c, 0x7e, 0x04, 0x8b, 0x44, 0x24, 0x0c,
+            0xc3,
+        ]);
+        jmp_stub(&mut t, sm::CLAMP, &c);
+        let scene = t.a.rebase(sm::PHYRE_SCENE);
+        t.w32(scene, 0x5ce0_0000);
+        for round in 0..6u32 {
+            let (out, a, b) = (
+                t.alloc(&[0x11; 4]),
+                t.alloc(&[0x22; 4]),
+                t.alloc(&[0x33; 4]),
+            );
+            t.w32(log, 0);
+            let w = format!("{label} async init {round}");
+            t.run_cdecl(&w, 0x0063_6410, &[out, a, b], |g| {
+                sm::async_ffx_initialize(g, out, a, b)
+            });
+            let n = round;
+            let items = t.alloc(
+                &(0..8u32)
+                    .flat_map(|i| (0x7000 + i).to_le_bytes())
+                    .collect::<Vec<u8>>(),
+            );
+            let cloths: Vec<u8> = (0..8u32)
+                .flat_map(|i| (if i % 2 == 0 { 0x9000 + i } else { 0 }).to_le_bytes())
+                .collect();
+            let cloths = t.alloc(&cloths);
+            let obj = t.alloc(&[0; 0x10]);
+            let flag = if round % 2 == 0 { 0 } else { 0x8000_0000 };
+            t.w32(obj, n | flag);
+            t.w32(obj + 4, items);
+            t.w32(obj + 8, n | flag);
+            t.w32(obj + 0xc, cloths);
+            t.w32(log, 0);
+            let w = format!("{label} destroy meshes {n}");
+            t.run_any_this(&w, 0x006a_15e0, obj, |g| {
+                sm::character_destroy_meshes(g, obj);
+            });
+            t.w32(log, 0);
+            let w = format!("{label} destroy cloths {n}");
+            t.run_any_this(&w, 0x006a_1590, obj, |g| {
+                sm::character_destroy_cloths(g, obj);
+            });
+        }
+        let level = t.a.rebase(sm::SLV_LEVEL);
+        let gauge = t.a.rebase(sm::SLV_GAUGE);
+        for (who, lv, g0, n) in [
+            (0u32, 5u8, 10u8, 3u32),
+            (1, 2, 0x60, 3),
+            (0x102, 7, 0x64, 7),
+            (3, 0, 0, 0),
+            (4, 0x80, 1, 2),
+            (5, 0xff, 0x65, 0xff),
+            (6, 1, 1, 0xffff_ffff),
+        ] {
+            let e = (who & 0xff) * 0x94;
+            t.write(level + e, &[lv, g0]);
+            let _ = gauge;
+            t.w32(log, 0);
+            let w = format!("{label} spendSlv {who} {lv} {g0} {n}");
+            t.run_cdecl(&w, 0x0078_6ef0, &[who, n], |g| sm::spend_slv(g, who, n));
         }
     }
 }

@@ -54,4 +54,24 @@ ported! {
         let mut frame = super::StackFrame::<{ ffx_prender::wp5_camera::FRAME_WORDS }>::new();
         ffx_prender::wp5_camera::handle_input(&mut mem(), this, dt, x, frame.at());
     }
+    /// `FreeCamera_setType(t)`: the capture counter set; 0 frees the cursor.
+    FreeCamera_setType @ 0x0068_0410 => extern "thiscall" fn sm_00680410(this: u32, t: u32) -> u32 {
+        ffx_prender::wp5_camera::set_type(&mut mem(), this, t)
+    }
+    /// `asyncFFXInitialize(out, &a, &b)`: `*out = 0x00822490(*a, *b)`.
+    asyncFFXInitialize @ 0x0063_6410 => extern "C" fn sm_00636410(out: u32, a: u32, b: u32) -> u32 {
+        s::async_ffx_initialize(&mut mem(), out, a, b)
+    }
+    /// `ClassCharacterInstance_destroyMeshes`: the mesh instances deleted from the scene.
+    ClassCharacterInstance_destroyMeshes @ 0x006a_15e0 => extern "thiscall" fn sm_006a15e0(this: u32) {
+        s::character_destroy_meshes(&mut mem(), this);
+    }
+    /// `ClassCharacterInstance_destroyClothInstances`: the cloths released and freed.
+    ClassCharacterInstance_destroyClothInstances @ 0x006a_1590 => extern "thiscall" fn sm_006a1590(this: u32) {
+        s::character_destroy_cloths(&mut mem(), this);
+    }
+    /// `spendSlv(who, n)`: -1, or 0 with the level spent into the gauge.
+    spendSlv @ 0x0078_6ef0 => extern "C" fn sm_00786ef0(who: u32, n: u32) -> u32 {
+        s::spend_slv(&mut mem(), who, n)
+    }
 }
