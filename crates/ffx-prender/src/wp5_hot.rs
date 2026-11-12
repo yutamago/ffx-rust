@@ -216,3 +216,176 @@ pub mod cloth {
         h.call_sym(SET_RANGE, Conv::Thiscall(target), &[vertices, bytes, s]);
     }
 }
+
+/// The word `SetGlobal013301f0_00887e80` sets: the vsync callbacks run
+/// while it is not 0.
+pub const SYNCV_ON: u32 = 0x0133_01f0;
+/// `g_TkSyncVDisableCount`: callbacks 1 and 2 are skipped while it is not
+/// 0.
+pub const SYNCV_DISABLE: u32 = 0x0133_01e0;
+/// `g_TkSyncVCallbackPtrs` (3 words).
+pub const SYNCV_CALLBACKS: u32 = 0x0133_026c;
+
+/// `VsyncHandler` (`0x00887d60`, cdecl, no arguments; the handler
+/// `TkSetVsyncHandler` gives the vsync emulation thread, which calls it
+/// every vsync): while [`SYNCV_ON`] is set, callback 0, then (unless
+/// [`SYNCV_DISABLE`] is set) callbacks 1 and 2, each when not NULL
+/// (`TkGetSyncVCallbackPtr` inlined). `eax`: the last word the original
+/// left there (the flag, the last callback pointer read, or the last
+/// callback's result).
+pub fn vsync_handler(h: &mut impl ffx_graphic::host::Host) -> u32 {
+    let on: u32 = h.read(h.rebase(SYNCV_ON));
+    if on == 0 {
+        return on;
+    }
+    let mut eax = run(h, 0);
+    if h.read::<u32>(h.rebase(SYNCV_DISABLE)) == 0 {
+        for i in 1..3 {
+            eax = run(h, i);
+        }
+    }
+    eax
+}
+
+/// Callback `i` of [`SYNCV_CALLBACKS`] called when not NULL; the pointer
+/// or its result.
+fn run(h: &mut impl ffx_graphic::host::Host, i: u32) -> u32 {
+    let f: u32 = h.read(h.rebase(SYNCV_CALLBACKS) + 4 * i);
+    if f == 0 {
+        f
+    } else {
+        h.call(f, ffx_graphic::host::Conv::Cdecl, &[])
+    }
+}
+
+/// `getScenerioFlag` and `MsBattleGetNum` (cdecl, no arguments).
+pub const GET_SCENARIO_FLAG: u32 = 0x0078_7360;
+pub const MS_BATTLE_GET_NUM: u32 = 0x0078_16b0;
+
+/// The battles where auto battle is off, by the story flag:
+/// (flag, battle number) pairs; the flags 15 and 0xd20 rule it out for
+/// every battle.
+pub const NO_AUTO_BATTLE: [(u16, u32); 19] = [
+    (0x37, 0x0022_0000),
+    (0x37, 0x0022_0001),
+    (0x4c, 0x0039_0000),
+    (0xd2, 0x0048_0032),
+    (0xd2, 0x0048_0033),
+    (0xd8, 0x0046_0032),
+    (0xd9, 0x0046_0033),
+    (0x104, 0x0061_0000),
+    (0x138, 0x0083_0032),
+    (0x359, 0x00de_0000),
+    (0x424, 0x00fe_0000),
+    (0x43d, 0x0105_0032),
+    (0x5cd, 0x014c_0000),
+    (0x604, 0x0159_0000),
+    (0x7f8, 0x018b_0000),
+    (0x8e8, 0x0196_000a),
+    (0x9e2, 0x01e7_0000),
+    (0xc85, 0x0247_0000),
+    (0xce4, 0x024a_0000),
+];
+
+/// `canUseAutoBattle()` (`0x00786f50`, cdecl): 0 for the story flag 15
+/// or 0xd20 and for the pairs of [`NO_AUTO_BATTLE`]; else 1. Both callees
+/// are called first, as the original does.
+pub fn can_use_auto_battle(h: &mut impl ffx_graphic::host::Host) -> u32 {
+    use ffx_graphic::host::Conv;
+    #[allow(clippy::cast_possible_truncation)] // the original's movzx of ax
+    let flag = h.call_sym(GET_SCENARIO_FLAG, Conv::Cdecl, &[]) as u16;
+    let battle = h.call_sym(MS_BATTLE_GET_NUM, Conv::Cdecl, &[]);
+    let off = flag == 0xf || flag == 0xd20 || NO_AUTO_BATTLE.contains(&(flag, battle));
+    u32::from(!off)
+}
+
+/// `g_CurrentMapNo` (`u32`).
+pub const CURRENT_MAP_NO: u32 = 0x012f_bc40;
+
+/// `IsCharacterCancleLoad(id)` (`0x00635a70`, cdecl; `al`): the character
+/// loads to skip: id `0x4067` always; at story flag `0x2e` the ids 5, 6,
+/// `0x109b`, `0x5001` and `0x5002`; on map `0x17e` (other flags) every id
+/// whose `id & 0xfffff000` is below `0x4000` (signed). `getScenerioFlag`
+/// is called first. `eax` above `al` is the original's: the id's bytes
+/// (masked to `0xfffff000` on the map test's path).
+pub fn is_character_cancel_load(h: &mut impl ffx_graphic::host::Host, id: u32) -> u32 {
+    use ffx_graphic::host::Conv;
+    #[allow(clippy::cast_possible_truncation)] // movzx of ax
+    let flag = h.call_sym(GET_SCENARIO_FLAG, Conv::Cdecl, &[]) as u16;
+    let high = id & !0xff;
+    if id == 0x4067 {
+        return high | 1;
+    }
+    if flag == 0x2e {
+        return high | u32::from([5, 6, 0x109b, 0x5001, 0x5002].contains(&id));
+    }
+    let map: u32 = h.read(h.rebase(CURRENT_MAP_NO));
+    if map != 0x17e {
+        return high;
+    }
+    let e = id & 0xffff_f000;
+    #[allow(clippy::cast_possible_wrap)] // the original's jl
+    let below = (e as i32) < 0x4000;
+    e | u32::from(below)
+}
+
+/// The page manager's decommit thread: its run flag (`u8`), `g_PageManager`,
+/// `KERNEL32!WaitForSingleObject`'s import slot and `PageManager_Flush`
+/// (thiscall, `ret 4`).
+pub const PAGE_THREAD_RUN: u32 = 0x00c6_13ac;
+pub const PAGE_MANAGER: u32 = 0x00c6_13b0;
+pub const WAIT_IAT: u32 = 0x00b0_c0f8;
+pub const PAGE_FLUSH: u32 = 0x0094_78e0;
+
+/// The page manager thread's body (`0x00947e30`, after
+/// `PtrArray_isSet_00947da0`; cdecl, the thread parameter unused): while
+/// the run flag is set, a wait of 1000 ms on the manager's event
+/// (`+0x1c74`), `PageManager_Flush(0)` and the pass counter (`+0x1c6c`)
+/// up. The manager is read once. Returns 0.
+pub fn page_thread(h: &mut impl ffx_graphic::host::Host) -> u32 {
+    use ffx_graphic::host::Conv;
+    let mgr: u32 = h.read(h.rebase(PAGE_MANAGER));
+    let wait: u32 = h.read(h.rebase(WAIT_IAT));
+    while h.read::<u8>(h.rebase(PAGE_THREAD_RUN)) != 0 {
+        let event: u32 = h.read(mgr.wrapping_add(0x1c74));
+        h.call(wait, Conv::Stdcall, &[event, 1000]);
+        h.call_sym(PAGE_FLUSH, Conv::Thiscall(mgr), &[0]);
+        let n: u32 = h.read(mgr.wrapping_add(0x1c6c));
+        h.write(mgr.wrapping_add(0x1c6c), n.wrapping_add(1));
+    }
+    0
+}
+
+/// `g_FmodManager` and the calls its thread makes: the tick and the queue
+/// drain (thiscall on the manager), the `FfxFmod` shutdown (thiscall on
+/// `+8`), the thread's exit (cdecl, `+0xc`).
+pub const FMOD_MANAGER: u32 = 0x00ce_9010;
+pub const FMOD_TICK: u32 = 0x006f_a700;
+pub const FMOD_DRAIN: u32 = 0x006f_a7e0;
+pub const FMOD_SHUTDOWN: u32 = 0x0070_6ff0;
+pub const FMOD_THREAD_EXIT: u32 = 0x006f_2f00;
+
+/// `FmodManager_threadMain` (`0x006fa1b0`, cdecl): while the manager's run
+/// byte (`+0x4c`) is set, a tick (the manager read again each time); then
+/// the drain, the `FfxFmod` (`+8`) shut down, the done byte (`+0x4d`) set
+/// and the exit call with `+0xc` (read before the shutdown). Its `eax`.
+pub fn fmod_thread(h: &mut impl ffx_graphic::host::Host) -> u32 {
+    use ffx_graphic::host::Conv;
+    let at = h.rebase(FMOD_MANAGER);
+    loop {
+        let mgr: u32 = h.read(at);
+        if h.read::<u8>(mgr.wrapping_add(0x4c)) == 0 {
+            break;
+        }
+        h.call_sym(FMOD_TICK, Conv::Thiscall(mgr), &[]);
+    }
+    let mgr: u32 = h.read(at);
+    h.call_sym(FMOD_DRAIN, Conv::Thiscall(mgr), &[]);
+    let mgr: u32 = h.read(at);
+    let exit_arg: u32 = h.read(mgr.wrapping_add(0xc));
+    let fmod: u32 = h.read(mgr.wrapping_add(8));
+    h.call_sym(FMOD_SHUTDOWN, Conv::Thiscall(fmod), &[]);
+    let mgr: u32 = h.read(at);
+    h.write(mgr.wrapping_add(0x4d), 1u8);
+    h.call_sym(FMOD_THREAD_EXIT, Conv::Cdecl, &[exit_arg])
+}

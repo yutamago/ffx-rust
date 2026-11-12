@@ -108,7 +108,7 @@ pub fn hand() -> Table {
 
 /// A comma list from the environment, or from the file it names as
 /// `@path` (comma or line separated); `None`: unset or empty.
-fn names(var: &str) -> Option<Vec<String>> {
+pub(crate) fn names(var: &str) -> Option<Vec<String>> {
     let mut v = std::env::var(var).ok()?;
     if let Some(path) = v.strip_prefix('@') {
         v = std::fs::read_to_string(path).ok()?.replace('\n', ",");
@@ -166,5 +166,6 @@ pub fn table() -> Table {
     }
     crate::clock::register(&mut t);
     crate::crt::register(&mut t);
+    crate::crt_start::register(&mut t);
     t
 }

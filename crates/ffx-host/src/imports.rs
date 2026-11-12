@@ -69,6 +69,9 @@ impl Imports {
             .chain(crate::iggy::TABLE)
             .chain(crate::audio::TABLE)
             .chain(crate::crt_dll::TABLE)
+            .chain(crate::crt_format::TABLE)
+            .chain(crate::crt_stdio::TABLE)
+            .chain(crate::crt_format::CONSOLE_TABLE)
             .chain(crate::steam::TABLE)
             .find(|(d, n, ..)| d.eq_ignore_ascii_case(dll) && *n == name);
         let b = match found {
@@ -862,7 +865,7 @@ fn mbstowcs(e: &mut Exec, args: &Args) -> Ret {
 /// stack word `first` on (`%d %i %u %x %X %o %c %s %S %p %f %e %g %%`,
 /// flags, width, precision, `h`/`l`/`ll`/`I64`).
 #[allow(clippy::too_many_lines)] // one formatter, conversion by conversion
-fn format(mem: &impl Mem, fmt: &str, args: &Args, first: u32) -> String {
+pub(crate) fn format(mem: &impl Mem, fmt: &str, args: &Args, first: u32) -> String {
     let mut out = String::new();
     let mut next = args.slots + 4 * first;
     let mut word = || {
@@ -984,8 +987,9 @@ fn format(mem: &impl Mem, fmt: &str, args: &Args, first: u32) -> String {
     out
 }
 
-/// `sprintf(buf, fmt, ...)`.
-fn sprintf(e: &mut Exec, args: &Args) -> Ret {
+/// `sprintf(buf, fmt, ...)` (approximate: `crt_format` uses it when there
+/// is no DLL for a case it hands on).
+pub(crate) fn sprintf(e: &mut Exec, args: &Args) -> Ret {
     let mut mem = e.mem();
     let fmt = read_str(&mem, a(args, 1), false);
     let s = format(&mem, &fmt, args, 2);
@@ -996,27 +1000,12 @@ fn sprintf(e: &mut Exec, args: &Args) -> Ret {
 /// `sprintf_s(buf, size, fmt, ...)` / `_snprintf(buf, size, fmt, ...)`
 /// (the cut differs: `_snprintf` doesn't terminate a full buffer, which
 /// this doesn't model yet).
-fn sprintf_s(e: &mut Exec, args: &Args) -> Ret {
+pub(crate) fn sprintf_s(e: &mut Exec, args: &Args) -> Ret {
     let mut mem = e.mem();
     let fmt = read_str(&mem, a(args, 2), false);
     let s = format(&mem, &fmt, args, 3);
     let n = write_str(&mut mem, a(args, 0), a(args, 1), &s, false);
     Ret::eax(n)
-}
-
-/// `_wfopen` / `fopen`: no stdio files yet (NULL, as for a missing file).
-fn fopen_missing(e: &mut Exec, args: &Args, wide: bool) -> Ret {
-    let name = read_str(&e.mem(), a(args, 0), wide);
-    e.files().log.push((format!("fopen {name}"), false));
-    Ret::eax(0)
-}
-
-fn wfopen(e: &mut Exec, args: &Args) -> Ret {
-    fopen_missing(e, args, true)
-}
-
-fn fopen(e: &mut Exec, args: &Args) -> Ret {
-    fopen_missing(e, args, false)
 }
 
 /// The fake window handle (`CreateWindowExA`).
@@ -1186,11 +1175,6 @@ pub const TABLE: &[(&str, &str, Conv, usize, ImportFn)] = &[
     (CRT, "_time64", Conv::Cdecl, 1, time64),
     (CRT, "wcstombs", Conv::Cdecl, 3, wcstombs),
     (CRT, "mbstowcs", Conv::Cdecl, 3, mbstowcs),
-    (CRT, "sprintf", Conv::Cdecl, 2, sprintf),
-    (CRT, "sprintf_s", Conv::Cdecl, 3, sprintf_s),
-    (CRT, "_snprintf", Conv::Cdecl, 3, sprintf_s),
-    (CRT, "_wfopen", Conv::Cdecl, 2, wfopen),
-    (CRT, "fopen", Conv::Cdecl, 2, fopen),
     (
         "SHELL32.dll",
         "SHGetFolderPathW",

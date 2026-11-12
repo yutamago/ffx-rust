@@ -66,3 +66,5 @@ pub mod sync;
 pub mod tolib;
 pub mod vbf;
 pub mod window;
+pub mod wp5_string;
+pub mod wp5_tree;

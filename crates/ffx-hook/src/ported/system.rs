@@ -4618,6 +4618,17 @@ ported! {
             },
         )
     }
+    /// `StdMap_NewHead_copy_00806b20`: a copy of `StdMap_NewHead_0069a1b0` (M5 finish wp5b).
+    StdMap_NewHead_copy_00806b20 @ 0x0080_6b20 => extern "C" fn map_head_new_00806b20() -> u32 {
+        container::bridge::map_head_new(
+            &mut mem(),
+            |m, size| heap::user_malloc(m, &mut GameOs, size),
+            |_| {
+                // std::_Xbad_alloc through its MSVCP110 import slot; it throws
+                ffx_bridge::route::cdecl(GameOs::import(0x00b0_c2a0), &[])
+            },
+        )
+    }
     /// `0x0061c270()`.
     Parser_Reset_0061c270 @ 0x0061_c270 => extern "thiscall" fn parser_reset_0061c270(this: u32) {
         container::bridge::parser_reset(&mut mem(), this, delete);

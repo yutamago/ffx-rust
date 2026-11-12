@@ -4811,15 +4811,22 @@ fn round6c(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
     put(a, b, head + 4, nodes[3]);
     let tree = alloc(a, b, 4);
     put(a, b, tree, head);
-    for _ in 0..30 {
+    for i in 0..30 {
         let n = nodes[(rng.next() % 7) as usize];
         let right: u32 = Mem::read(a, n + 8);
         let left: u32 = Mem::read(a, n);
+        // the originals and their copies (0x006a0890/0x006a0b50,
+        // 0x0069a3f0/0x0069a4f0; wp5b)
+        let (lrot, rrot) = match i % 3 {
+            0 => (0x00a4_1930, 0x00a4_1b40),
+            1 => (0x006a_0890, 0x006a_0b50),
+            _ => (0x0069_a3f0, 0x0069_a4f0),
+        };
         if rng.next().is_multiple_of(2) && right != head {
-            call(a, 0x00a4_1930, Conv::Thiscall(tree), &[n]);
+            call(a, lrot, Conv::Thiscall(tree), &[n]);
             stl::bridge::tree_rotate_left(b, tree, n);
         } else if left != head {
-            call(a, 0x00a4_1b40, Conv::Thiscall(tree), &[n]);
+            call(a, rrot, Conv::Thiscall(tree), &[n]);
             stl::bridge::tree_rotate_right(b, tree, n);
         }
         same_memory("tree rotations", a, b);
@@ -5653,6 +5660,12 @@ fn round8_containers(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
         c::map_head_new(b, b_new, |_| unreachable!("allocated"))
     );
     same_memory("map head", a, b);
+    // its copy (0x00806b20; wp5b)
+    assert_eq!(
+        eax(a, 0x0080_6b20, &[]),
+        c::map_head_new(b, b_new, |_| unreachable!("allocated"))
+    );
+    same_memory("map head copy", a, b);
     // Phyre array appends into new buffers
     for f in [0x0062_9b90, 0x0069_b530, 0x0069_b5c0, 0x0069_b650] {
         for _ in 0..4 {

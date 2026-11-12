@@ -42,6 +42,9 @@ pub const TABLE: &[(&str, &str, Conv, usize, ImportFn)] = &[
     (CRT, "strchr", Conv::Cdecl, 2, strchr),
     (CRT, "strncpy", Conv::Cdecl, 3, strncpy),
     (CRT, "memchr", Conv::Cdecl, 3, memchr),
+    (CRT, "atoi", Conv::Cdecl, 1, atol),
+    (CRT, "atol", Conv::Cdecl, 1, atol),
+    (CRT, "qsort", Conv::Cdecl, 4, qsort),
 ];
 
 fn a(args: &Args, i: usize) -> u32 {
@@ -67,10 +70,12 @@ fn c_str(mem: &impl Mem, p: u32) -> Vec<u8> {
 const LOCALE_CHANGED: u32 = 0x100c_87d0;
 
 /// Whether the DLL's "C"-locale paths apply.
-fn c_locale(e: &Exec) -> bool {
+/// Without the DLLs (the no-Unicorn build) nothing changes the locale: the
+/// "C" locale always.
+pub(crate) fn c_locale(e: &Exec) -> bool {
     e.shared()
         .dll(CRT)
-        .is_some_and(|d| e.mem().read::<u32>(d.base + (LOCALE_CHANGED - DLL_BASE)) == 0)
+        .is_none_or(|d| e.mem().read::<u32>(d.base + (LOCALE_CHANGED - DLL_BASE)) == 0)
 }
 
 /// `_stricmp(a, b)` in the "C" locale (`__ascii_stricmp` `0x10096b4f`):
@@ -166,11 +171,83 @@ fn memchr(e: &mut Exec, args: &Args) -> Ret {
     Ret::eax(0)
 }
 
+/// `MSVCR110`'s exports whose entries are traps to [`dll_copy`]: the
+/// DLL's internal callers reach them directly (gate run 1: 72 k calls,
+/// 13 M emulated blocks of `memcpy` and its vector loops, filed under the
+/// exports after it: `wcsnlen`, `wcscpy_s`).
+pub const DLL_COPIES: [&str; 2] = ["memcpy", "memmove"];
+
+/// `memcpy(dst, src, n)` / `memmove(dst, src, n)` as the DLL's (one body:
+/// overlap allowed, `dst` returned), for the traps on their entries.
+pub fn dll_copy(e: &mut Exec, _: u32, args: &Args) -> Ret {
+    const CHUNK: u32 = 0x1_0000;
+    let (dst, src, n) = (a(args, 0), a(args, 1), a(args, 2));
+    let mut mem = e.mem();
+    let mut buf = vec![0u8; n.min(CHUNK) as usize];
+    // in chunks, from the end when the destination overlaps the source's
+    // tail, so each chunk is read before a write reaches it
+    let backward = dst > src && dst < src.wrapping_add(n);
+    let mut done = 0;
+    while done < n {
+        let len = (n - done).min(CHUNK);
+        let off = if backward { n - done - len } else { done };
+        let b = &mut buf[..len as usize];
+        mem.read_bytes(src.wrapping_add(off), b);
+        mem.write_bytes(dst.wrapping_add(off), b);
+        done += len;
+    }
+    Ret::eax(dst)
+}
+
+/// `atoi(s)` / `atol(s)` (`strtol(s, NULL, 10)` in VS2012's `atox.c`) in
+/// the "C" locale: spaces (`\t`..`\r`, ` `) skipped, a sign, decimal
+/// digits; none: 0. A NULL argument and a value past `long`'s range (errno
+/// `ERANGE`, the clamp) go to the DLL, as does another locale.
+#[allow(clippy::many_single_char_names)] // the C names
+fn atol(e: &mut Exec, args: &Args) -> Ret {
+    let s = a(args, 0);
+    // atoi is (int) atol: one export for both cases handed on
+    let name = "atol";
+    if s == 0 || !c_locale(e) {
+        return dll_export(e, CRT, name, Conv::Cdecl, args);
+    }
+    let mem = e.mem();
+    let mut at = s;
+    let mut b: u8 = mem.read(at);
+    while b == b' ' || (0x09..=0x0d).contains(&b) {
+        at = at.wrapping_add(1);
+        b = mem.read(at);
+    }
+    let negative = b == b'-';
+    if b == b'-' || b == b'+' {
+        at = at.wrapping_add(1);
+        b = mem.read(at);
+    }
+    let mut n: u64 = 0;
+    while b.is_ascii_digit() {
+        n = n * 10 + u64::from(b - b'0');
+        if n > 0x8000_0000 {
+            return dll_export(e, CRT, name, Conv::Cdecl, args);
+        }
+        at = at.wrapping_add(1);
+        b = mem.read(at);
+    }
+    if n == 0x8000_0000 && !negative {
+        return dll_export(e, CRT, name, Conv::Cdecl, args);
+    }
+    #[allow(clippy::cast_possible_truncation)] // within long's range
+    let v = n as u32;
+    Ret::eax(if negative { v.wrapping_neg() } else { v })
+}
+
 /// Whether `name` (an import of `FFX.exe`) has a Rust side here even when
 /// the player's DLLs are loaded.
 #[must_use]
 pub fn keeps(name: &str) -> bool {
-    TABLE.iter().any(|(_, n, ..)| *n == name)
+    TABLE
+        .iter()
+        .chain(crate::crt_format::TABLE)
+        .any(|(_, n, ..)| *n == name)
 }
 
 /// Calls the DLL's own export `name` with the import's arguments (the case
@@ -192,6 +269,22 @@ fn dll_export(e: &mut Exec, dll: &str, name: &str, conv: Conv, args: &Args) -> R
         ..args.clone()
     };
     e.call(at, conv, &a).unwrap_or(Ret::VOID)
+}
+
+/// [`dll_export`] (cdecl) with `words` as the stack words: a varargs
+/// function's declared words and the ones after them.
+pub(crate) fn dll_export_words(
+    e: &mut Exec,
+    dll: &str,
+    name: &str,
+    args: &Args,
+    words: Vec<u32>,
+) -> Ret {
+    let a = Args {
+        stack: words,
+        ..args.clone()
+    };
+    dll_export(e, dll, name, Conv::Cdecl, &a)
 }
 
 /// `istream::getline(str, count)` (thiscall, `ret 0xc`; `getline(str,
@@ -443,4 +536,166 @@ fn intrinsic_without_operand(e: &mut Exec, _: &Args) -> Ret {
         0,
     ));
     Ret::VOID
+}
+
+/// `qsort`'s insertion threshold (`CUTOFF`): parts of at most 8 elements
+/// are selection-sorted.
+const QSORT_CUTOFF: u32 = 8;
+
+/// `comp(a, b)` (cdecl, game code): its `int` result.
+fn qsort_cmp(e: &mut Exec, comp: u32, x: u32, y: u32) -> Option<i32> {
+    let args = Args {
+        stack: vec![x, y],
+        ..Args::default()
+    };
+    e.call(comp, Conv::Cdecl, &args)
+        .ok()
+        .map(|r| r.eax.cast_signed())
+}
+
+/// The `width` bytes at `x` and `y` exchanged (nothing when they are the
+/// same element).
+fn qsort_swap(e: &Exec, x: u32, y: u32, width: u32) {
+    if x == y {
+        return;
+    }
+    let mut mem = e.mem();
+    let (mut first, mut second) = (vec![0u8; width as usize], vec![0u8; width as usize]);
+    mem.read_bytes(x, &mut first);
+    mem.read_bytes(y, &mut second);
+    mem.write_bytes(x, &second);
+    mem.write_bytes(y, &first);
+}
+
+/// `shortsort`: the largest of `[lo, hi]` swapped to the end, repeatedly.
+fn qsort_short(e: &mut Exec, lo: u32, mut hi: u32, width: u32, comp: u32) -> Option<()> {
+    while hi > lo {
+        let mut max = lo;
+        let mut p = lo + width;
+        while p <= hi {
+            if qsort_cmp(e, comp, p, max)? > 0 {
+                max = p;
+            }
+            p += width;
+        }
+        qsort_swap(e, max, hi, width);
+        hi -= width;
+    }
+    Some(())
+}
+
+/// `qsort(base, num, width, comp)` as VS2012's `qsort.c`: the median of
+/// the first, middle and last element as the pivot, the two-way partition
+/// that skips the pivot's equals, the larger part stacked and the smaller
+/// sorted first, `shortsort` below [`QSORT_CUTOFF`] + 1 elements; the
+/// comparisons and swaps in the CRT's order. An invalid argument (NULL
+/// `base` with elements, zero `width`, NULL `comp`): the DLL (its
+/// invalid-parameter path), or nothing without it.
+#[allow(clippy::many_single_char_names)]
+fn qsort(e: &mut Exec, args: &Args) -> Ret {
+    let (base, num, width, comp) = (a(args, 0), a(args, 1), a(args, 2), a(args, 3));
+    if (base == 0 && num != 0) || width == 0 || comp == 0 {
+        if e.shared().dll(CRT).is_some() {
+            return dll_export(e, CRT, "qsort", Conv::Cdecl, args);
+        }
+        return Ret::VOID;
+    }
+    if num < 2 {
+        return Ret::VOID;
+    }
+    let _ = qsort_run(e, base, num, width, comp);
+    Ret::VOID
+}
+
+fn qsort_run(e: &mut Exec, base: u32, num: u32, width: u32, comp: u32) -> Option<()> {
+    let mut stack: Vec<(u32, u32)> = Vec::new();
+    let mut lo = base;
+    let mut hi = base + width * (num - 1);
+    loop {
+        let size = (hi - lo) / width + 1;
+        if size <= QSORT_CUTOFF {
+            qsort_short(e, lo, hi, width, comp)?;
+        } else {
+            let mut mid = lo + (size / 2) * width;
+            if qsort_cmp(e, comp, lo, mid)? > 0 {
+                qsort_swap(e, lo, mid, width);
+            }
+            if qsort_cmp(e, comp, lo, hi)? > 0 {
+                qsort_swap(e, lo, hi, width);
+            }
+            if qsort_cmp(e, comp, mid, hi)? > 0 {
+                qsort_swap(e, mid, hi, width);
+            }
+            let mut loguy = lo;
+            let mut higuy = hi;
+            loop {
+                if mid > loguy {
+                    loop {
+                        loguy += width;
+                        if !(loguy < mid && qsort_cmp(e, comp, loguy, mid)? <= 0) {
+                            break;
+                        }
+                    }
+                }
+                if mid <= loguy {
+                    loop {
+                        loguy += width;
+                        if !(loguy <= hi && qsort_cmp(e, comp, loguy, mid)? <= 0) {
+                            break;
+                        }
+                    }
+                }
+                loop {
+                    higuy -= width;
+                    if !(higuy > mid && qsort_cmp(e, comp, higuy, mid)? > 0) {
+                        break;
+                    }
+                }
+                if higuy < loguy {
+                    break;
+                }
+                qsort_swap(e, loguy, higuy, width);
+                if mid == higuy {
+                    mid = loguy;
+                }
+            }
+            higuy += width;
+            if mid < higuy {
+                loop {
+                    higuy -= width;
+                    if !(higuy > mid && qsort_cmp(e, comp, higuy, mid)? == 0) {
+                        break;
+                    }
+                }
+            }
+            if mid >= higuy {
+                loop {
+                    higuy -= width;
+                    if !(higuy > lo && qsort_cmp(e, comp, higuy, mid)? == 0) {
+                        break;
+                    }
+                }
+            }
+            if higuy.wrapping_sub(lo).cast_signed() >= hi.wrapping_sub(loguy).cast_signed() {
+                if lo < higuy {
+                    stack.push((lo, higuy));
+                }
+                if loguy < hi {
+                    lo = loguy;
+                    continue;
+                }
+            } else {
+                if loguy < hi {
+                    stack.push((loguy, hi));
+                }
+                if lo < higuy {
+                    hi = higuy;
+                    continue;
+                }
+            }
+        }
+        let (l, h) = stack.pop()?;
+        lo = l;
+        hi = h;
+    }
 }

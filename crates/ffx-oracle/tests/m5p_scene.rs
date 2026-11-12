@@ -5088,3 +5088,267 @@ fn l9_build_combinations_matches_the_original() {
         }
     }
 }
+
+// ---- M5 finish, WP5 part 2 (ffx_prender::wp5_sort) ----
+
+use ffx_prender::wp5_sort as ws;
+
+/// The comparators of the sort family's tests, in both oracles: they log
+/// what they compare (`log`: a count, then 1024 pairs) and order by
+/// unsigned `<`. By value: the two words. By pointer: the records' second
+/// words (unique ids, so the log names the exact records), ordering by
+/// their first words. Each leaves junk above `al`.
+struct Preds {
+    log: u32,
+    by_value: u32,
+    by_pointer: u32,
+}
+
+impl Preds {
+    fn new(tw: &mut Twins) -> Self {
+        let log = tw.zeros(4 + 8 * 1024);
+        let buf = log + 4;
+        let head = |c: &mut Vec<u8>| {
+            c.extend([0x8b, 0x15]);
+            c.extend(log.to_le_bytes()); // mov edx, [log]
+            c.extend([0x81, 0xe2, 0xff, 0x03, 0x00, 0x00]); // and edx, 0x3ff
+            c.extend([0x8b, 0x44, 0x24, 0x04]); // mov eax, [esp+4]
+            c.extend([0x8b, 0x4c, 0x24, 0x08]); // mov ecx, [esp+8]
+        };
+        let mut c = Vec::new();
+        head(&mut c);
+        c.extend([0x89, 0x04, 0xd5]);
+        c.extend(buf.to_le_bytes()); // mov [buf+edx*8], eax
+        c.extend([0x89, 0x0c, 0xd5]);
+        c.extend((buf + 4).to_le_bytes()); // mov [buf+4+edx*8], ecx
+        c.extend([0xff, 0x05]);
+        c.extend(log.to_le_bytes()); // inc dword [log]
+        c.extend([0x39, 0xc8, 0x0f, 0x92, 0xc0, 0xc3]); // cmp eax, ecx; setb al; ret
+        let by_value = tw.a.alloc_code(&c).unwrap();
+        assert_eq!(tw.b.alloc_code(&c).unwrap(), by_value);
+        let mut c = Vec::new();
+        head(&mut c);
+        c.push(0x56); // push esi
+        c.extend([0x8b, 0x70, 0x04, 0x89, 0x34, 0xd5]);
+        c.extend(buf.to_le_bytes()); // mov esi, [eax+4]; mov [buf+edx*8], esi
+        c.extend([0x8b, 0x71, 0x04, 0x89, 0x34, 0xd5]);
+        c.extend((buf + 4).to_le_bytes()); // mov esi, [ecx+4]; mov [buf+4+edx*8], esi
+        c.push(0x5e); // pop esi
+        c.extend([0xff, 0x05]);
+        c.extend(log.to_le_bytes()); // inc dword [log]
+        // mov eax, [eax]; cmp eax, [ecx]; setb al; ret
+        c.extend([0x8b, 0x00, 0x3b, 0x01, 0x0f, 0x92, 0xc0, 0xc3]);
+        let by_pointer = tw.a.alloc_code(&c).unwrap();
+        assert_eq!(tw.b.alloc_code(&c).unwrap(), by_pointer);
+        Self {
+            log,
+            by_value,
+            by_pointer,
+        }
+    }
+
+    /// The three instantiations, by index into `ws::addr`.
+    fn orders(&self) -> [ws::Order; 3] {
+        [
+            ws::Order::Below,
+            ws::Order::ByValue(self.by_value),
+            ws::Order::ByPointer(self.by_pointer),
+        ]
+    }
+}
+
+/// `n` elements of `order`'s size: keys below `keys` (the top bit set on
+/// about a third, for the unsigned compares), records' second words
+/// unique ids; 8 bytes of junk after them.
+fn sort_data(tw: &mut Twins, rng: &mut Rng, order: ws::Order, n: u32, keys: u32) -> u32 {
+    let mut bytes = Vec::new();
+    for i in 0..n {
+        let mut k = rng.next() % keys;
+        if rng.next().is_multiple_of(3) {
+            k |= 0x8000_0000;
+        }
+        bytes.extend(k.to_le_bytes());
+        if order.size() == 8 {
+            bytes.extend((0x7700_0000 + i).to_le_bytes());
+        }
+    }
+    bytes.extend([0xee; 8]);
+    tw.alloc(&bytes)
+}
+
+/// The predicate word the original takes (none for the keys).
+fn with_pred(order: ws::Order, mut args: Vec<u32>) -> Vec<u32> {
+    match order {
+        ws::Order::ByValue(p) | ws::Order::ByPointer(p) => args.push(p),
+        ws::Order::Below => {}
+    }
+    args
+}
+
+/// `_Sort` over random ranges (0 to 300 elements; few distinct keys so
+/// runs of equal ones form, and many), with the full ideal (the
+/// introsort's path) and small ones (its heap sort fallback at every
+/// depth); the comparators' logs and every byte compared.
+#[test]
+fn wp5b_sort() {
+    for (what, mut tw) in Twins::all() {
+        let p = Preds::new(&mut tw);
+        let frame = tw.b.stack_range().start + 0x1000;
+        let mut rng = Rng(71);
+        for round in 0..48u32 {
+            let n = match round % 4 {
+                0 => rng.next() % 40,
+                1 => 33 + rng.next() % 20,
+                _ => rng.next() % 301,
+            };
+            let keys = if round % 3 == 0 { 4 } else { 100_000 };
+            let ideal = match round % 6 {
+                0 => 0,
+                1 => 1 + rng.next() % 12,
+                2 => 40 + rng.next() % 40,
+                _ => n,
+            };
+            for (k, order) in p.orders().into_iter().enumerate() {
+                let first = sort_data(&mut tw, &mut rng, order, n, keys);
+                let last = first + n * order.size();
+                tw.w32(p.log, 0);
+                let label = format!("{what} sort {k} round {round} ({n} of {keys}, ideal {ideal})");
+                let args = with_pred(order, vec![first, last, ideal]);
+                tw.run_void(&label, ws::addr::SORT[k], Conv::Cdecl, &args, |g| {
+                    ws::bridge::sort(g, order, first, last, ideal, frame);
+                });
+            }
+        }
+    }
+}
+
+/// The insertion sort, heap make and heap sort steps on their own (0 to
+/// 60 elements; the heap sort on the heap the make step left).
+#[test]
+fn wp5b_heap_and_insertion() {
+    for (what, mut tw) in Twins::all() {
+        let p = Preds::new(&mut tw);
+        let frame = tw.b.stack_range().start + 0x1000;
+        let mut rng = Rng(72);
+        for round in 0..40u32 {
+            let n = rng.next() % 61;
+            let keys = if round % 3 == 0 { 3 } else { 1000 };
+            for (k, order) in p.orders().into_iter().enumerate() {
+                let size = order.size();
+                let first = sort_data(&mut tw, &mut rng, order, n, keys);
+                let last = first + n * size;
+                let args = with_pred(order, vec![first, last]);
+                tw.w32(p.log, 0);
+                let label = format!("{what} insertion {k} round {round} ({n})");
+                tw.run_void(
+                    &label,
+                    ws::addr::INSERTION_SORT[k],
+                    Conv::Cdecl,
+                    &args,
+                    |g| {
+                        ws::bridge::insertion_sort(g, order, first, last, frame);
+                    },
+                );
+                let first = sort_data(&mut tw, &mut rng, order, n, keys);
+                let last = first + n * size;
+                let args = with_pred(order, vec![first, last]);
+                tw.w32(p.log, 0);
+                let label = format!("{what} make heap {k} round {round} ({n})");
+                tw.run_void(&label, ws::addr::MAKE_HEAP[k], Conv::Cdecl, &args, |g| {
+                    ws::bridge::make_heap(g, order, first, last, frame);
+                });
+                if k < 2 {
+                    tw.w32(p.log, 0);
+                    let label = format!("{what} sort heap {k} round {round} ({n})");
+                    tw.run_void(&label, ws::addr::SORT_HEAP[k], Conv::Cdecl, &args, |g| {
+                        ws::bridge::sort_heap(g, order, first, last, frame);
+                    });
+                }
+            }
+        }
+    }
+}
+
+/// `_Adjust_heap` and `_Push_heap` from random holes (the bottom just
+/// past the hole on some), the push's top at 0, at the hole, past it and
+/// between; `eax` checked.
+#[test]
+fn wp5b_adjust_and_push() {
+    for (what, mut tw) in Twins::all() {
+        let p = Preds::new(&mut tw);
+        let mut rng = Rng(73);
+        for round in 0..40u32 {
+            let n = 1 + rng.next() % 40;
+            for (k, order) in p.orders().into_iter().enumerate() {
+                let size = order.size();
+                let first = sort_data(&mut tw, &mut rng, order, n, 1000);
+                let value = sort_data(&mut tw, &mut rng, order, 1, 1000);
+                let hole = rng.next() % n;
+                let bottom = if round % 5 == 0 { hole + 1 } else { n };
+                let saved = Oracle::read(&mut tw.a, first, (n * size) as usize).unwrap();
+                tw.w32(p.log, 0);
+                let label = format!("{what} adjust {k} round {round} (hole {hole} of {bottom})");
+                let args = with_pred(order, vec![first, hole, bottom, value]);
+                tw.run(&label, ws::addr::ADJUST_HEAP[k], Conv::Cdecl, &args, |g| {
+                    ws::bridge::adjust_heap(g, order, first, hole, bottom, value)
+                });
+                if k == 0 {
+                    continue;
+                }
+                tw.write(first, &saved);
+                let top = match round % 4 {
+                    0 => hole,
+                    1 => hole + 1 + rng.next() % 3,
+                    2 => 0,
+                    _ => rng.next() % (hole + 1),
+                };
+                tw.w32(p.log, 0);
+                let label = format!("{what} push {k} round {round} (hole {hole}, top {top})");
+                let args = with_pred(order, vec![first, hole, top, value]);
+                tw.run(
+                    &label,
+                    ws::addr::PUSH_HEAP[k - 1],
+                    Conv::Cdecl,
+                    &args,
+                    |g| ws::bridge::push_heap(g, order, first, hole, top, value),
+                );
+            }
+        }
+    }
+}
+
+/// The medians (3 to 120 elements: the median of three and the ninther)
+/// and the records' `_Med3`.
+#[test]
+fn wp5b_medians() {
+    for (what, mut tw) in Twins::all() {
+        let p = Preds::new(&mut tw);
+        let mut rng = Rng(74);
+        for round in 0..40u32 {
+            let n = 3 + rng.next() % 118;
+            let keys = if round % 3 == 0 { 3 } else { 1000 };
+            for (k, order) in p.orders().into_iter().enumerate() {
+                let size = order.size();
+                let first = sort_data(&mut tw, &mut rng, order, n, keys);
+                let mid = first + (n / 2) * size;
+                let last = first + (n - 1) * size;
+                tw.w32(p.log, 0);
+                let label = format!("{what} median {k} round {round} ({n})");
+                let args = with_pred(order, vec![first, mid, last]);
+                tw.run_void(&label, ws::addr::MEDIAN[k], Conv::Cdecl, &args, |g| {
+                    ws::bridge::median(g, order, first, mid, last);
+                });
+                if k == 2 {
+                    let first = sort_data(&mut tw, &mut rng, order, 3, keys);
+                    let (b, c) = (first + 8, first + 16);
+                    tw.w32(p.log, 0);
+                    let label = format!("{what} med3 round {round}");
+                    let args = vec![first, b, c, p.by_pointer];
+                    tw.run_void(&label, ws::addr::MED3, Conv::Cdecl, &args, |g| {
+                        ws::bridge::med3(g, order, first, b, c);
+                    });
+                }
+            }
+        }
+    }
+}

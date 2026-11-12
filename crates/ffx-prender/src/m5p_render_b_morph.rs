@@ -1,5 +1,5 @@
 //! M5 stage 1, list `phyre-render-b`: the dynamic geometry's morph
-//! blends, one generic port for the seven copies (`StaticInit_Morph<K><N>`
+//! blends, one generic port for the nine copies (`StaticInit_Morph<K><N>`
 //! register them): `(weights, n, streams, out)` (cdecl) blends `K`
 //! weighted source streams of `n` vertices of `N` floats into `*out`.
 //! The weights that are not 0 (a NaN counts) are gathered with their
@@ -25,8 +25,11 @@ pub struct Morph {
 }
 
 /// The copies `(address, shape)`.
-pub const MORPHS: [(u32, Morph); 7] = [
+pub const MORPHS: [(u32, Morph); 9] = [
     (0x005c_9f50, Morph { k: 2, n: 2 }),
+    // not in the dump (`symbols/sizes.tsv`); M5 finish wp5b
+    (0x005c_a0d0, Morph { k: 2, n: 3 }),
+    (0x005c_a250, Morph { k: 2, n: 4 }),
     (0x005c_a3e0, Morph { k: 3, n: 2 }),
     (0x005c_a5b0, Morph { k: 3, n: 3 }),
     (0x005c_a780, Morph { k: 3, n: 4 }),
