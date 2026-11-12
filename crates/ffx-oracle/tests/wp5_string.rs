@@ -637,3 +637,96 @@ fn wp5b_string_ctors_and_move_assign() {
         }
     }
 }
+
+/// `std::map<std::string, ...>::lower_bound` (`0x006e9920`) on random
+/// search trees of string keys (inline and heap strings, shared
+/// prefixes, the empty string), with keys present, absent, longer and
+/// shorter; an empty tree.
+#[test]
+fn wp5b_tree_lower_bound_string() {
+    use ffx_system::wp5_tree::bridge as tb;
+    for (label, mut t) in Twins::all() {
+        for round in 0..20u32 {
+            let head = t.alloc(&[0; 0x30]);
+            let mut h = Vec::new();
+            for _ in 0..3 {
+                h.extend(head.to_le_bytes());
+            }
+            h.extend([1, 1, 0, 0]);
+            t.write(head, &h);
+            let tree = t.alloc(&[0; 8]);
+            t.w32(tree, head);
+            // a plain search tree, keys inserted in random order
+            let mut keys: Vec<Vec<u8>> = Vec::new();
+            let mut nodes: Vec<u32> = Vec::new();
+            let count = if round == 0 { 0 } else { 1 + t.rng.below(30) };
+            for _ in 0..count {
+                let l = t.rng.len();
+                let k = t.text(l);
+                let s = t.string(0);
+                let p = t.alloc(&k);
+                b::assign(&mut G(&mut t.a), s, p, l);
+                b::assign(&mut G(&mut t.b), s, p, l);
+                let node = t.alloc(&[0x66; 0x30]);
+                let mut n = Vec::new();
+                for _ in 0..3 {
+                    n.extend(head.to_le_bytes());
+                }
+                n.extend([0, 0, 0, 0]);
+                t.write(node, &n);
+                let mut sbytes = vec![0u8; 0x18];
+                t.b.read_bytes(s, &mut sbytes);
+                t.write(node + 0x10, &sbytes);
+                // walk down from the root
+                let mut at: u32 = Mem::read(&t.b, head + 4);
+                if at == head {
+                    t.w32(head + 4, node);
+                    t.w32(node + 4, head);
+                } else {
+                    loop {
+                        let i = nodes.iter().position(|&x| x == at).unwrap();
+                        let off = if k < keys[i] { 0 } else { 8 };
+                        let next: u32 = Mem::read(&t.b, at + off);
+                        if next == head {
+                            t.w32(at + off, node);
+                            t.w32(node + 4, at);
+                            break;
+                        }
+                        at = next;
+                    }
+                }
+                keys.push(k);
+                nodes.push(node);
+            }
+            t.a.clear_dirty();
+            t.b.clear_dirty();
+            for q in 0..20u32 {
+                let k = if q % 3 == 0 && !keys.is_empty() {
+                    let mut k = keys[t.rng.below(keys.len() as u32) as usize].clone();
+                    match q % 4 {
+                        1 => k.push(b'a'),
+                        2 => {
+                            k.pop();
+                        }
+                        _ => {}
+                    }
+                    k
+                } else {
+                    let l = t.rng.len();
+                    t.text(l)
+                };
+                let s = t.string(0);
+                let p = t.alloc(&k);
+                let l = k.len() as u32;
+                b::assign(&mut G(&mut t.a), s, p, l);
+                b::assign(&mut G(&mut t.b), s, p, l);
+                t.a.clear_dirty();
+                t.b.clear_dirty();
+                let w = format!("{label} lower_bound {round}.{q} ({} keys)", keys.len());
+                t.run(&w, 0x006e_9920, tree, &[s], false, |g| {
+                    tb::lower_bound_string(g, tree, s)
+                });
+            }
+        }
+    }
+}

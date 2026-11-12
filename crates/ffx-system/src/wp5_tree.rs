@@ -98,4 +98,44 @@ pub mod bridge {
         h.write(out.wrapping_add(4), 0u8);
         out
     }
+
+    /// The characters of the `std::string` at `s`.
+    fn chars(h: &impl Host, s: u32) -> u32 {
+        let cap: u32 = h.read(s.wrapping_add(0x14));
+        if cap >= 16 { h.read(s) } else { s }
+    }
+
+    /// `std::map<std::string, ...>::lower_bound(this; &key)`
+    /// (`0x006e9920`, thiscall, `ret 4`): from the root, the first node
+    /// whose key (the `std::string` at `+0x10`) is not below `key`
+    /// (`memcmp` of the shorter length, then the lengths); the head when
+    /// none.
+    #[allow(clippy::many_single_char_names)]
+    pub fn lower_bound_string(h: &mut impl Host, this: u32, key: u32) -> u32 {
+        let head: u32 = h.read(this);
+        let mut result = head;
+        let mut n: u32 = h.read(head.wrapping_add(4));
+        let klen: u32 = h.read(key.wrapping_add(0x10));
+        while !nil(h, n) {
+            let nk = n.wrapping_add(0x10);
+            let nlen: u32 = h.read(nk.wrapping_add(0x10));
+            let a = chars(h, nk);
+            let b = chars(h, key);
+            let mut r = crate::stl::bridge::memcmp(h, a, b, nlen.min(klen));
+            if r == 0 {
+                r = if nlen < klen {
+                    -1
+                } else {
+                    i32::from(nlen != klen)
+                };
+            }
+            if r >= 0 {
+                result = n;
+                n = h.read(n);
+            } else {
+                n = h.read(n.wrapping_add(8));
+            }
+        }
+        result
+    }
 }

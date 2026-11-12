@@ -30,4 +30,8 @@ ported! {
     std_Tree_Rrotate_copy_006a0b50 @ 0x006a_0b50 => extern "thiscall" fn wtr_006a0b50(this: u32, node: u32) {
         stl::tree_rotate_right(&mut mem(), this, node);
     }
+    /// `std_Tree_lower_bound_string_006e9920`: the first node whose string key is not below `key`.
+    std_Tree_lower_bound_string_006e9920 @ 0x006e_9920 => extern "thiscall" fn wtr_006e9920(this: u32, key: u32) -> u32 {
+        b::lower_bound_string(&mut mem(), this, key)
+    }
 }
