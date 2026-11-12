@@ -751,3 +751,55 @@ pub fn rigid_body_base_dtor(h: &mut impl Host, this: u32) -> u32 {
     h.write(this + 0xa0, 0u32);
     eax
 }
+
+/// `Phyre_PPhysics_PPhysicsModel_removeBody_00601a60` (thiscall `(model;
+/// body)`).
+pub const MODEL_REMOVE_BODY: u32 = 0x0060_1a60;
+/// `Phyre_PPhysics_PPhysicsRigidBody_unlinkFromWorld_00601a20` (thiscall
+/// `(body; head)`).
+pub const BODY_UNLINK_FROM_WORLD: u32 = 0x0060_1a20;
+/// `Phyre_PPhysics_PPhysicsRigidBodyBase_dtor_005e2660` (thiscall).
+pub const RIGID_BODY_BASE_DTOR: u32 = 0x005e_2660;
+
+/// `PPhysicsRigidBody::~PPhysicsRigidBody` (`0x005e2570`, thiscall) ->
+/// the base destructor's `eax`: with a model (`+0xb0`) whose world
+/// (`+8`) has a simulation object (`+0x54`) and a shape (`+0xdc`), the
+/// object's virtual 20 `(shape)`; the body removed from the model
+/// (`removeBody`) and, with a world, unlinked from its list (`world +
+/// 0x50`); the shape's and `+0xe0`'s deleting destructors (virtuals 1 and
+/// 0, argument 1); `+0xe0`, `+0xdc`, `+0xb0` 0; then
+/// [`RIGID_BODY_BASE_DTOR`].
+pub fn rigid_body_dtor(h: &mut impl Host, this: u32) -> u32 {
+    let model: u32 = h.read(this + 0xb0);
+    if model != 0 {
+        let world: u32 = h.read(model + 8);
+        if world != 0 {
+            let sim: u32 = h.read(world + 0x54);
+            let shape: u32 = h.read(this + 0xdc);
+            if sim != 0 && shape != 0 {
+                h.call_virtual(sim, 20, &[shape]);
+            }
+        }
+        h.call_sym(MODEL_REMOVE_BODY, Conv::Thiscall(model), &[this]);
+        let world: u32 = h.read(model + 8);
+        if world != 0 {
+            h.call_sym(
+                BODY_UNLINK_FROM_WORLD,
+                Conv::Thiscall(this),
+                &[world + 0x50],
+            );
+        }
+    }
+    let shape: u32 = h.read(this + 0xdc);
+    if shape != 0 {
+        h.call_virtual(shape, 1, &[1]);
+    }
+    let other: u32 = h.read(this + 0xe0);
+    if other != 0 {
+        h.call_virtual(other, 0, &[1]);
+    }
+    h.write(this + 0xe0, 0u32);
+    h.write(this + 0xdc, 0u32);
+    h.write(this + 0xb0, 0u32);
+    h.call_sym(RIGID_BODY_BASE_DTOR, Conv::Thiscall(this), &[])
+}

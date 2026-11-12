@@ -150,4 +150,8 @@ ported! {
     Phyre_PPhysics_PPhysicsRigidBodyBase_dtor_005e2660 @ 0x005e_2660 => extern "thiscall" fn sm_005e2660(this: u32) -> u32 {
         s::rigid_body_base_dtor(&mut mem(), this)
     }
+    /// `Phyre_PPhysics_PPhysicsRigidBody_dtor_005e2570`: the body taken out of its model and world, its shape and `+0xe0` deleted, then the base destructor; its `eax`.
+    Phyre_PPhysics_PPhysicsRigidBody_dtor_005e2570 @ 0x005e_2570 => extern "thiscall" fn sm_005e2570(this: u32) -> u32 {
+        s::rigid_body_dtor(&mut mem(), this)
+    }
 }

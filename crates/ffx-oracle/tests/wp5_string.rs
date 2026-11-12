@@ -2086,3 +2086,48 @@ fn wp5b_rigid_body_base_dtor() {
         }
     }
 }
+
+/// `PPhysicsRigidBody`'s destructor (`0x005e2570`): the model, its world,
+/// the world's simulation object, the shape and `+0xe0` each present or
+/// null; every callee (the two list helpers, the virtuals through one
+/// logging vtable, `Phyre_PhyreFree` under the base destructor) a logging
+/// stub; `eax` and memory.
+#[test]
+fn wp5b_rigid_body_dtor() {
+    use ffx_prender::wp5_small as sm;
+    for (label, mut t) in Twins::all() {
+        let log = t.alloc(&[0; 4 + 8 * 64]);
+        let c = log_stub(&mut t, log, 4, 0x5151);
+        jmp_stub(&mut t, sm::MODEL_REMOVE_BODY, &c);
+        let c = log_stub(&mut t, log, 4, 0x5252);
+        jmp_stub(&mut t, sm::BODY_UNLINK_FROM_WORLD, &c);
+        let c = log_stub_plain(&mut t, log, 0, 0x6161_0000, true);
+        jmp_stub(&mut t, sm::PHYRE_FREE, &c);
+        let virt = log_stub(&mut t, log, 4, 0x7171);
+        let virt = t.code(&virt);
+        let mut vt = Vec::new();
+        for _ in 0..24 {
+            vt.extend(virt.to_le_bytes());
+        }
+        let vtable = t.alloc(&vt);
+        let body = t.alloc(&[0x6b; 0xf0]);
+        let model = t.alloc(&[0x6b; 0x10]);
+        let world = t.alloc(&[0x6b; 0x60]);
+        let sim = t.alloc(&vtable.to_le_bytes());
+        let shape = t.alloc(&vtable.to_le_bytes());
+        let other = t.alloc(&vtable.to_le_bytes());
+        for case in 0..32u32 {
+            t.w32(body + 0xb0, if case & 1 != 0 { 0 } else { model });
+            t.w32(model + 8, if case & 2 != 0 { 0 } else { world });
+            t.w32(world + 0x54, if case & 4 != 0 { 0 } else { sim });
+            t.w32(body + 0xdc, if case & 8 != 0 { 0 } else { shape });
+            t.w32(body + 0xe0, if case & 16 != 0 { 0 } else { other });
+            t.w32(body + 0xa0, 2);
+            t.w32(body + 0xd0, 0x0099_0000);
+            let w = format!("{label} rigid body dtor case {case}");
+            t.run(&w, 0x005e_2570, body, &[], false, |g| {
+                sm::rigid_body_dtor(g, body)
+            });
+        }
+    }
+}
