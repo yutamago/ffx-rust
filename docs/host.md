@@ -19,7 +19,8 @@ same memory. The release runs no `FFX.exe` code.
 | `src/exec.rs` | `Shared` (what every game thread sees) and `Exec` (one game thread): the mixed Rust/Unicorn executor, `Exec::call`, threads, the stats |
 | `src/exec/seh.rs` | structured exceptions: `RaiseException` and faults through the `fs:[0]` chain, `RtlUnwind`, the report of an unhandled one (below, "Exceptions") |
 | `crates/ffx-fpu` | the x87 instructions Unicorn gets wrong, computed as the FPU does (moved out of `ffx-oracle`, which uses it too; below, "x87") |
-| `src/imports.rs` | the Rust side of each import (C runtime, Win32 stand-ins, Steam, Iggy, milestones) |
+| `src/imports.rs` | the Rust side of each import (C runtime, Win32 stand-ins, Iggy, milestones) |
+| `src/steam.rs` | `steam_api.dll`'s imports and interfaces bridged to `steam_api64.dll` (below, "Steam") |
 | `src/win32.rs` | threads, synchronisation, TLS, modules and code pages: what the DLLs and the threads need |
 | `src/sync.rs` | events, semaphores, mutexes, thread handles, critical sections on host primitives |
 | `src/files.rs` | the `CreateFile` family over `std::fs`: the game folder (read-only) and a documents folder (read-write) |
@@ -501,10 +502,9 @@ convention, stack words and Rust side.
   behind them: below, "D3D11 and DXGI".
 - **FMOD, Iggy, movies, Steam.** FMOD on the Rust mixer (below,
   "FMOD"), Iggy on the layer of `src/iggy.rs` and `ffx-swf` (below,
-  "Iggy"); `ffx-movie` and `steam_api.dll` (`steam_api64.dll` at stage 4)
-  later. Steam is absent for now (`SteamAPI_RestartAppIfNecessary` and
-  `SteamAPI_Init` return false, so `Steam_Init` skips the interfaces and
-  achievements); Iggy exports without a Rust side are null stand-ins that
+  "Iggy"); `ffx-movie` later. Steam goes to the real `steam_api64.dll`
+  when it is there and `SteamAPI_Init` succeeds, and is absent otherwise
+  (below, "Steam"); Iggy exports without a Rust side are null stand-ins that
   return 0 (their stack size comes from the decorated name,
   `_IggyInit@4`).
 - **The window.** Linux: `CreateWindowExA` returns a fake handle and
@@ -566,7 +566,7 @@ Every import without a Rust side, 116 on Windows before this round
 | `IggyGDrawSendWarning` | a note | `GDraw`'s warnings on a failed `D3D11` call or a full pool |
 | MSVCR110's `LoadLibraryExW` (0), `OutputDebugStringW` (a note) | stand-ins | `__crtMessageBoxW` under `_wassert`: a failed assert ends as `abort` with its text in the notes, not on a missing import |
 | `MiniDumpWriteDump`, `GetProcessId`, `ReadProcessMemory`, `GetThreadContext`, VERSION's three | unreachable | `CrashDump_UnhandledExceptionFilter` and its `StackWalker`: the host's `SetUnhandledExceptionFilter` keeps no filter (an unhandled exception ends the run through `UnhandledExceptionFilter`) |
-| `SteamUserStats`, `SteamUtils`, `SteamUser` | unreachable (WP10) | `Steam_Init` after `SteamAPI_Init` succeeds, and `StatsAndAchievements_ctor` under `g_SteamReady`: `SteamAPI_Init` returns false |
+| `SteamUserStats`, `SteamUtils`, `SteamUser` | bound since WP10 (2026-11-12, `src/steam.rs`, below "Steam"); 0 while Steam is absent | `Steam_Init` after `SteamAPI_Init` succeeds, and `StatsAndAchievements_ctor` under `g_SteamReady` |
 | `AllocConsole`, `GetConsoleScreenBufferInfo`, `SetConsoleScreenBufferSize` | unreachable | `FUN_0042f340`, 0 refs |
 | `CreateThreadpoolWait`, `SetThreadpoolWait` | unreachable | `FileSys_SubmitRead`, 0 refs |
 | the DLLs' console calls (`ReadConsoleW`, `WriteConsoleW`, `ReadConsoleInputA/W`, `PeekConsoleInputA`, `GetNumberOfConsoleInputEvents`, `SetConsoleMode`, `SetConsoleCtrlHandler`, `Beep`) | unreachable | MSVCR110's `_write`/`_read` take the console path only when `GetConsoleMode` succeeds, and its stand-in answers 0; `signal` and `_beep` are no import of `FFX.exe` |
@@ -881,6 +881,100 @@ thread):
   writes every 30th image of each player as a straight-alpha PNG.
 
 Without the feature the players are null: no image, the calls do nothing.
+
+## Steam
+
+`src/steam.rs` (2026-11-12, WP10) bridges the game's Steam calls to
+Valve's 64-bit `steam_api64.dll`, loaded at run time: `FFX_STEAM_API`,
+else beside `ffx-rust.exe`. The DLL is the Steamworks SDK's
+(`sdk/redistributable_bin/win64/steam_api64.dll`, SDK 1.65: FileVersion
+10.87.46.89, sha256 `e6d9bafb...e776d`). It is never in git; the
+release package carries it beside `ffx-rust.exe` under the Steamworks
+SDK's terms (Valve's licence, not MIT OR Apache-2.0: WP13 lists it with
+the other licences). The SDK's headers are used for facts only (struct
+layouts, callback ids, packing, vtable order).
+
+What the game calls (docs/formats/platform.md, "Steam"; the call sites
+are in `steam::METHODS`):
+
+| Import or slot | The bridge |
+|---|---|
+| `SteamAPI_RestartAppIfNecessary(0)` | false, never forwarded (a restart would start the Steam build of `FFX.exe`) |
+| `SteamAPI_Init` | loads the DLL, `SteamInternal_SteamAPI_Init` with the game's three interface versions, then the interfaces from `SteamClient()` (`SteamAPI_ISteamClient_GetISteamUser`/`GetISteamUtils`/`GetISteamUserStats` at those versions); true when all of it worked |
+| `SteamUser`, `SteamUtils`, `SteamUserStats` | the interface's handle: a word in the arena pointing at a vtable of `int3` traps (64 slots each, as `crate::com` does); 0 when the DLL gave none |
+| `ISteamUser017` slot 1 `BLoggedOn`; `ISteamUtils007` 9 `GetAppID`, 10 `SetOverlayNotificationPosition`; `ISteamUserStats011` 0 `RequestCurrentStats`, 6 `GetAchievement`, 7 `SetAchievement`, 10 `StoreStats`, 12 `GetAchievementDisplayAttribute` | thiscall traps: the strings read from the arena, the 64-bit method called at the same slot of the same version, `bool *pbAchieved` written back (only when the call returned true), a returned string copied into the arena (one block per distinct string) |
+| `ISteamUserStats011` slot 21 `ResetAllStats` | refused: false and a note; the back end has no such call, so nothing can forward it |
+| any other slot | stops the run, naming the version and slot |
+| `SteamAPI_RegisterCallback(cb, id)` | a 64-bit twin of the game's `CCallback` (`HostCallback`: vtable, flags at +8, id at +12, as MSVC lays out `CCallbackBase`) registered with the DLL; the flags byte and id the DLL set are mirrored into the game's object (+4, +8), which its destructors test |
+| `SteamAPI_RunCallbacks` | the DLL's `SteamAPI_RunCallbacks`; the twins queue what Steam hands them, then each struct goes to the game's object in order: a copy on the arena heap, `Run(void *)` (vtable slot 1, thiscall) called through the executor |
+| `SteamAPI_UnregisterCallback`, `SteamAPI_Shutdown` | forwarded; after `Shutdown` Steam is absent again |
+
+Interface versions. `FFX.exe` names none; its 32-bit `steam_api.dll`
+asks `steamclient` for `SteamUser017`, `SteamUtils007` and
+`STEAMUSERSTATS_INTERFACE_VERSION011` (and `SteamClient016`), so the
+bridge asks for exactly these, never the SDK 1.65 defaults
+(`SteamUser023`, `SteamUtils011`, `STEAMUSERSTATS_INTERFACE_VERSION013`,
+whose `ISteamUserStats` has no `RequestCurrentStats` any more). The
+slots are the old versions' (the game's call offsets / 4) and the same
+on x64 (MSVC orders a vtable the same way on both widths). Whether
+Steam's current client serves the three old versions is checked by
+`SteamInternal_SteamAPI_Init` (it fails with a message when not) and
+by `steam-probe` below; not yet measured (Steam was not running on the
+development machine, 2026-11-12).
+
+Callback structs. Steam packs them to 8 on Windows on both widths
+(`VALVE_CALLBACK_PACK_LARGE`); `CSteamID` is packed to 1, so
+`UserStatsReceived_t` is the game id (+0), the result (+8), the user
+(+0xc), 0x18 bytes. The 64-bit and 32-bit layouts are the same for the
+three the game registers (1101 `UserStatsReceived_t` 0x18, 1102
+`UserStatsStored_t` 0x10, 1103 `UserAchievementStored_t` 0x98: the
+sizes the game's own `GetCallbackSizeBytes` return); `steam::CALLBACKS`
+moves each field by its offsets all the same, padding zero.
+
+Steam absent. Without the DLL, on Linux, with `FFX_NO_STEAM` set, or
+when `SteamAPI_Init` fails (Steam not running, no app id: the harness
+sets none, so replays stay off the account), the run is the one from before the
+bridge: `SteamAPI_Init` returns false, `Steam_Init` leaves `g_SteamReady`
+clear and the game never asks for an interface. The notes say why
+(`Steam: absent (...)`). The app id: Steam sets `SteamAppId` for a game
+it starts; started any other way, `ffx-rust.exe` needs
+`SteamAppId=359870` in its environment (or a `steam_appid.txt` in its
+working folder, never in the game folder). WP13's launcher sets it.
+
+Tests:
+
+```bash
+cargo test -p ffx-host --lib steam                                  # the marshalling, the call table, the twins
+FFX_GAME_DIR=~/steam-games/FFX-X2-HD cargo test --release -p ffx-host --test steam
+FFX_STEAM_API=~/tools/steamworks_sdk_165/sdk/redistributable_bin/win64/steam_api64.dll \
+  cargo test --release -p ffx-host --test steam -- --ignored        # the DLL's exports
+```
+
+`tests/steam.rs` runs the game's own Steam code on a stand-in for
+Steam: `StatsAndAchievements_Create` (three registrations, `GetAppID`,
+`BLoggedOn`, `RequestCurrentStats`), `SteamAPI_RunCallbacks` delivering
+`UserStatsReceived_t` to `OnUserStatsReceived` (each record's achieved
+byte, name and description from the stand-in), an unlock through
+`SaveDataUnlockAchievement` (`SetAchievement`, `StoreStats`) and the
+debug menu's `StatsAndAchievements_ResetAll` (Steam never asked), once
+with the ported table and once with the originals in Unicorn: the same
+107 calls and the same memory.
+
+The live check, read-only (it never sets, clears or stores anything),
+on Windows with Steam running and logged on:
+
+```bash
+tools/build-host.sh build --example steam-probe
+mkdir -p ~/ffx-work/steam-probe && echo 359870 > ~/ffx-work/steam-probe/steam_appid.txt
+cd ~/ffx-work/steam-probe && FFX_STEAM_API="$(wslpath -w ~/tools/steamworks_sdk_165/sdk/redistributable_bin/win64/steam_api64.dll)" \
+  FFX_GAME_DIR="$(wslpath -w ~/steam-games/FFX-X2-HD)" WSLENV=FFX_STEAM_API/w:FFX_GAME_DIR/w \
+  <repo>/target/x86_64-pc-windows-msvc/release/examples/steam-probe.exe
+```
+
+It prints whether each old interface version is served, the app id,
+`BLoggedOn`, the `UserStatsReceived_t` result and every achievement's
+state, name and description. `steam-probe.exe --exports` only loads the
+DLL and resolves the exports (no Steam needed).
 
 ## The C runtime DLLs
 
