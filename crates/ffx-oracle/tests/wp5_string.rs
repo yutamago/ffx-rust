@@ -1711,3 +1711,65 @@ fn wp5b_atl_base_module() {
         }
     }
 }
+
+/// A stub that appends its tag, `ecx` and `n` stack words to `log` (a
+/// count, then 8-word entries), returns `ret` and pops `pops` bytes.
+fn wide_stub(t: &mut Twins, log: u32, tag: u32, n: u32, pops: u16, ret: u32) -> Vec<u8> {
+    let mut c = vec![0xa1];
+    c.extend(log.to_le_bytes()); // mov eax, [log]
+    c.extend([0x83, 0xe0, 0x1f, 0xc1, 0xe0, 0x05]); // and eax, 31; shl eax, 5
+    c.push(0x05);
+    c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+    c.extend([0xc7, 0x00]);
+    c.extend(tag.to_le_bytes()); // mov [eax], tag
+    c.extend([0x89, 0x48, 0x04]); // mov [eax+4], ecx
+    for i in 0..n {
+        c.extend([0x8b, 0x54, 0x24, (4 + 4 * i) as u8]); // mov edx, [esp+4+4i]
+        c.extend([0x89, 0x50, (8 + 4 * i) as u8]); // mov [eax+8+4i], edx
+    }
+    c.extend([0xff, 0x05]);
+    c.extend(log.to_le_bytes()); // inc dword [log]
+    c.push(0xb8);
+    c.extend(ret.to_le_bytes()); // mov eax, ret
+    if pops == 0 {
+        c.push(0xc3);
+    } else {
+        c.push(0xc2);
+        c.extend(pops.to_le_bytes());
+    }
+    let _ = t;
+    c
+}
+
+/// Every class descriptor constructor of `ffx_prender::wp5_descr`
+/// against its original, on junk descriptors (the six callees recording
+/// stubs: every argument word and `ecx` compared through the log).
+#[test]
+fn wp5b_descriptor_ctors() {
+    use ffx_prender::wp5_descr as dd;
+    for (label, mut t) in Twins::all() {
+        let log = t.alloc(&[0; 4 + 32 * 32]);
+        for (sym, n, pops, ret) in [
+            (dd::BASE_DESCRIPTOR, 0u32, 0u16, 0x0bad_0001u32),
+            (dd::GLOBAL_NAMESPACE, 0, 0, 0x0bad_0002),
+            (dd::DESCRIPTOR_CTOR, 6, 0x18, 0x0bad_0003),
+            (dd::SET_DEFAULT, 1, 4, 0x0bad_0004),
+            (dd::SET_VALIDATION, 1, 4, 0x0bad_0005),
+            (dd::SET_WRITE_MASK, 1, 4, 0x0bad_0006),
+        ] {
+            let mut s = wide_stub(&mut t, log, sym, n, pops, ret);
+            if sym == dd::BASE_DESCRIPTOR || sym == dd::GLOBAL_NAMESPACE {
+                // cdecl: the caller's `ecx` is junk
+                s.splice(0..0, [0x31, 0xc9]);
+            }
+            jmp_stub(&mut t, sym, &s);
+        }
+        for &(f, d) in &dd::DESCRIPTORS {
+            assert_eq!(dd::descriptor_of(f), d);
+            let obj = t.alloc(&[0x6d; 0xa0]);
+            t.w32(log, 0);
+            let w = format!("{label} descriptor ctor {f:#x}");
+            t.run(&w, f, obj, &[], false, |g| dd::construct(g, obj, &d));
+        }
+    }
+}
