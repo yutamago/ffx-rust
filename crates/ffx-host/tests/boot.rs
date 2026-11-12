@@ -261,9 +261,10 @@ fn boots_past_the_d3d11_device_to_the_first_frames() {
 
 /// Without the player's C runtime DLLs the run stops at the first C
 /// runtime function with no Rust side yet: since the STL's users were
-/// ported (WP6, 2026-11-12) that is `MSVCR110!fwrite` in `Settings_Save`
-/// (the default `GameSetting.ini`), no longer an `MSVCP110` import. The
-/// wall moves as `crate::crt_dll` grows (WP5).
+/// ported (WP6, 2026-11-12) an `MSVCR110` import, no longer an `MSVCP110`
+/// one; `fwrite` in `Settings_Save` until the no-DLL stdio
+/// (`crate::crt_stdio`, wp5b), `qsort` after it. The wall moves as the
+/// C runtime's Rust sides grow (WP5).
 #[test]
 fn without_the_dlls_the_c_runtime_is_the_wall() {
     let Some(exe) = exe() else { return };
@@ -277,7 +278,8 @@ fn without_the_dlls_the_c_runtime_is_the_wall() {
     let stop = exec.run_entry().unwrap();
     match &stop {
         Stop::Failed(why, _) => assert!(
-            why.starts_with("unstubbed import MSVCR110.dll!fwrite "),
+            why.starts_with("unstubbed import MSVCR110.dll!")
+                && !why.starts_with("unstubbed import MSVCR110.dll!fwrite "),
             "{why}"
         ),
         other => panic!("unexpected stop {other:?}"),

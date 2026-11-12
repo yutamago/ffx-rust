@@ -476,3 +476,56 @@ fn approx_va(e: &mut Exec, args: &Args, fmt: usize, va: usize, cap: Option<usize
     let n = crate::imports::write_str(&mut mem, a(args, 0), limit, &s, false);
     Ret::eax(n)
 }
+
+/// The console output of `printf`/`vprintf`/`puts` without the DLLs: the
+/// host process's standard output (the game's console, when it has one,
+/// shows the same).
+fn console(text: &[u8]) {
+    use std::io::Write as _;
+    let mut out = std::io::stdout().lock();
+    let _ = out.write_all(text);
+}
+
+/// The approximate formatter's text for the cases the exact one hands on.
+fn approx_text(e: &Exec, fmt: u32, va: u32) -> Vec<u8> {
+    let mem = e.mem();
+    let text = crate::imports::read_str(&mem, fmt, false);
+    let list = Args {
+        slots: va,
+        ..Args::default()
+    };
+    crate::imports::format(&mem, &text, &list, 0).into_bytes()
+}
+
+/// `printf(fmt, ...)` / `vprintf(fmt, va)` without the DLLs: the text on
+/// the console; its length. With the DLLs the DLL's own runs (these are
+/// `imports` entries only).
+fn print(e: &mut Exec, fmt: u32, va: u32) -> Ret {
+    let text = formatted(e, fmt, va).unwrap_or_else(|| approx_text(e, fmt, va));
+    console(&text);
+    Ret::eax(u32::try_from(text.len()).unwrap_or(u32::MAX))
+}
+
+fn printf(e: &mut Exec, args: &Args) -> Ret {
+    print(e, a(args, 0), varargs(args, 1))
+}
+
+fn vprintf(e: &mut Exec, args: &Args) -> Ret {
+    print(e, a(args, 0), a(args, 1))
+}
+
+/// `puts(s)`: `s` and a newline on the console; 0.
+fn puts(e: &mut Exec, args: &Args) -> Ret {
+    let mut text = crate::imports::read_str(&e.mem(), a(args, 0), false).into_bytes();
+    text.push(b'\n');
+    console(&text);
+    Ret::eax(0)
+}
+
+/// The console functions for the no-DLL build (`imports` entries: with
+/// the DLLs their own run).
+pub const CONSOLE_TABLE: &[(&str, &str, Conv, usize, ImportFn)] = &[
+    (CRT, "printf", Conv::Cdecl, 1, printf),
+    (CRT, "vprintf", Conv::Cdecl, 2, vprintf),
+    (CRT, "puts", Conv::Cdecl, 1, puts),
+];

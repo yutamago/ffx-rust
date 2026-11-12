@@ -70,6 +70,8 @@ impl Imports {
             .chain(crate::audio::TABLE)
             .chain(crate::crt_dll::TABLE)
             .chain(crate::crt_format::TABLE)
+            .chain(crate::crt_stdio::TABLE)
+            .chain(crate::crt_format::CONSOLE_TABLE)
             .chain(crate::steam::TABLE)
             .find(|(d, n, ..)| d.eq_ignore_ascii_case(dll) && *n == name);
         let b = match found {
@@ -1006,21 +1008,6 @@ pub(crate) fn sprintf_s(e: &mut Exec, args: &Args) -> Ret {
     Ret::eax(n)
 }
 
-/// `_wfopen` / `fopen`: no stdio files yet (NULL, as for a missing file).
-fn fopen_missing(e: &mut Exec, args: &Args, wide: bool) -> Ret {
-    let name = read_str(&e.mem(), a(args, 0), wide);
-    e.files().log.push((format!("fopen {name}"), false));
-    Ret::eax(0)
-}
-
-fn wfopen(e: &mut Exec, args: &Args) -> Ret {
-    fopen_missing(e, args, true)
-}
-
-fn fopen(e: &mut Exec, args: &Args) -> Ret {
-    fopen_missing(e, args, false)
-}
-
 /// The fake window handle (`CreateWindowExA`).
 pub const HWND: u32 = 0x0001_0010;
 
@@ -1188,8 +1175,6 @@ pub const TABLE: &[(&str, &str, Conv, usize, ImportFn)] = &[
     (CRT, "_time64", Conv::Cdecl, 1, time64),
     (CRT, "wcstombs", Conv::Cdecl, 3, wcstombs),
     (CRT, "mbstowcs", Conv::Cdecl, 3, mbstowcs),
-    (CRT, "_wfopen", Conv::Cdecl, 2, wfopen),
-    (CRT, "fopen", Conv::Cdecl, 2, fopen),
     (
         "SHELL32.dll",
         "SHGetFolderPathW",
