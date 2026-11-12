@@ -2131,3 +2131,21 @@ fn wp5b_rigid_body_dtor() {
         }
     }
 }
+
+/// The world settings constructors `0x005e0900` and `0x005e0970` on junk.
+#[test]
+fn wp5b_world_settings_ctors() {
+    use ffx_prender::wp5_small as sm;
+    for (label, mut t) in Twins::all() {
+        let obj = t.alloc(&[0x6b; 0xb0]);
+        let w = format!("{label} world settings ctor");
+        t.run(&w, 0x005e_0900, obj, &[], false, |g| {
+            sm::world_settings_ctor(g, obj)
+        });
+        t.write(obj, &[0x6b; 0xb0]);
+        let w = format!("{label} world settings ctor b");
+        t.run(&w, 0x005e_0970, obj, &[], false, |g| {
+            sm::world_settings_ctor_b(g, obj)
+        });
+    }
+}

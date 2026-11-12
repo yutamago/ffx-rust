@@ -154,4 +154,12 @@ ported! {
     Phyre_PPhysics_PPhysicsRigidBody_dtor_005e2570 @ 0x005e_2570 => extern "thiscall" fn sm_005e2570(this: u32) -> u32 {
         s::rigid_body_dtor(&mut mem(), this)
     }
+    /// `PPhysicsWorldSettings_ctor_005e0900`: gravity -9.8, bounds -5000..5000 and zeros; `this`.
+    PPhysicsWorldSettings_ctor_005e0900 @ 0x005e_0900 => extern "thiscall" fn sm_005e0900(this: u32) -> u32 {
+        s::world_settings_ctor(&mut mem(), this)
+    }
+    /// `PPhysicsWorldSettings_ctor_005e0970`: 0x005e0900's settings, zeros, the all-ones block and its two words; `this`.
+    PPhysicsWorldSettings_ctor_005e0970 @ 0x005e_0970 => extern "thiscall" fn sm_005e0970(this: u32) -> u32 {
+        s::world_settings_ctor_b(&mut mem(), this)
+    }
 }

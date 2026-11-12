@@ -803,3 +803,54 @@ pub fn rigid_body_dtor(h: &mut impl Host, this: u32) -> u32 {
     h.write(this + 0xb0, 0u32);
     h.call_sym(RIGID_BODY_BASE_DTOR, Conv::Thiscall(this), &[])
 }
+
+/// The image floats `0x005e0900` loads: `+4` (-9.8), `+0x14..+0x1c`
+/// (-5000), `+0x24..+0x2c` (5000).
+pub const WORLD_GRAVITY: u32 = 0x00b3_ebb8;
+/// See [`WORLD_GRAVITY`].
+pub const WORLD_MIN: u32 = 0x00b3_ebc0;
+/// See [`WORLD_GRAVITY`].
+pub const WORLD_MAX: u32 = 0x00b3_eba0;
+/// `PPhysicsWorldSettings_ctor_005e0900` (thiscall).
+pub const WORLD_SETTINGS_CTOR: u32 = 0x005e_0900;
+
+/// `0x005e0900(this)` (thiscall; `Phyre_PPhysics_DestroyCall_005f8350`'s
+/// callee) -> `this`: the floats `+0` 0, `+4` the image's -9.8, `+8` 0,
+/// `+0x10` 1, `+0x14..+0x1c` -5000, `+0x24..+0x2c` 5000 (`+0xc`, `+0x20`,
+/// `+0x30` untouched); `+0x34..+0x50` 0.
+pub fn world_settings_ctor(h: &mut impl Host, this: u32) -> u32 {
+    let gravity = h.rebase(WORLD_GRAVITY);
+    let gravity: u32 = h.read(gravity);
+    let min = h.rebase(WORLD_MIN);
+    let min: u32 = h.read(min);
+    let max = h.rebase(WORLD_MAX);
+    let max: u32 = h.read(max);
+    h.write(this, 0u32);
+    h.write(this + 4, gravity);
+    h.write(this + 8, 0u32);
+    h.write(this + 0x10, 1.0f32.to_bits());
+    for off in [0x14, 0x18, 0x1c] {
+        h.write(this + off, min);
+    }
+    for off in [0x24, 0x28, 0x2c] {
+        h.write(this + off, max);
+    }
+    h.write_bytes(this + 0x34, &[0; 0x20]);
+    this
+}
+
+/// `0x005e0970(this)` (thiscall; `Phyre_PPhysics_DestroyCall_005f8330`
+/// and `_005f8370`'s callee) -> `this`: [`WORLD_SETTINGS_CTOR`], then
+/// `+0x54..+0x5c` and `+0x80..+0xa4` 0, `+0x60..+0x78` all ones and the
+/// word `+0x7c` 0xffff, the word `+0x62` with bit 1 cleared, the word
+/// `+0x64` 3.
+pub fn world_settings_ctor_b(h: &mut impl Host, this: u32) -> u32 {
+    h.call_sym(WORLD_SETTINGS_CTOR, Conv::Thiscall(this), &[]);
+    h.write_bytes(this + 0x54, &[0; 0xc]);
+    h.write_bytes(this + 0x80, &[0; 0x28]);
+    h.write_bytes(this + 0x60, &[0xff; 0x1e]);
+    let w: u16 = h.read(this + 0x62);
+    h.write(this + 0x62, w & 0xfffd);
+    h.write(this + 0x64, 3u16);
+    this
+}
