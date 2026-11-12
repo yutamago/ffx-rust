@@ -830,3 +830,127 @@ pub fn init_user_mstate(h: &mut impl Host, base: u32, size: u32) -> u32 {
     h.write(m + 0x1c, trim);
     m
 }
+
+/// `std::_Tree::_Buynode0` copy for the string maps (`0x00654f40`,
+/// thiscall on the tree; the same code as `std_Tree_buyNode2c_006a03c0`).
+pub const BUY_NODE_2C: u32 = 0x0065_4f40;
+/// `std::string::assign(p, n)` (`0x00404270`, thiscall, `ret 8`).
+pub const STRING_ASSIGN: u32 = 0x0040_4270;
+
+/// `std::map<std::string, u32>`'s `_Buynode(&pair)` (`0x006e8970`,
+/// thiscall on the tree, `ret 4`; `InitIggyHelper` and `0x006e9140`):
+/// a 0x2c-byte node (`0x00654f40`), the word `+0xc` (colour, nil) 0,
+/// the key at `+0x10` an empty string assigned the C string `[pair]`
+/// (`strlen` of it), the value `+0x28` `[pair + 4]`. The node.
+pub fn string_map_buy_node(h: &mut impl Host, this: u32, pair: u32) -> u32 {
+    let node = h.call_sym(BUY_NODE_2C, Conv::Thiscall(this), &[]);
+    h.write(node.wrapping_add(0xc), 0u16);
+    let s = node.wrapping_add(0x10);
+    if s == 0 {
+        return node;
+    }
+    let p: u32 = h.read(pair);
+    h.write(s + 0x14, 0xfu32);
+    h.write(s + 0x10, 0u32);
+    h.write(s, 0u8);
+    let mut len = 0u32;
+    while h.read::<u8>(p.wrapping_add(len)) != 0 {
+        len += 1;
+    }
+    h.call_sym(STRING_ASSIGN, Conv::Thiscall(s), &[p, len]);
+    let v: u32 = h.read(pair + 4);
+    h.write(s + 0x18, v);
+    node
+}
+
+/// `g_PhyreScene` (the scene the loads run on).
+pub const PHYRE_SCENE: u32 = 0x00cc_b9d8;
+/// The menu textures' manager global (`MenuTextures_ResetBuffers`'s
+/// `this`).
+pub const MENU_TEXTURES: u32 = 0x00cc_c81c;
+/// `RemapButtonIcon`'s strings for `setButtons` and its layout
+/// constants (`f32`, `.rdata`): `0x00b41d80..0x00b41d94`, and the scale
+/// `0x00b3eb98` stored at `+0`.
+pub const REMAP_TEXT_A: u32 = 0x00b4_1548;
+pub const REMAP_TEXT_B: u32 = 0x00b4_1588;
+pub const REMAP_LAYOUT: u32 = 0x00b4_1d80;
+pub const REMAP_SCALE: u32 = 0x00b3_eb98;
+/// `RemapButtonIcon_setLayout_006e8140` (thiscall, eight `f32` words).
+pub const REMAP_SET_LAYOUT: u32 = 0x006e_8140;
+
+/// The asset loader's start-up task (`0x00636430`, cdecl; run by
+/// `AsyncLoadManager_RegistTaskRequest_run_00691350`, registered by
+/// `asyncFFXInitialize`) -> `g_PhyreScene`: the scene's shaders loaded
+/// in order (wave, cone, the menu shaders, the character shadow, the
+/// optimised font) and its settings applied; the shadow manager
+/// initialised, `0x006e55e0` (an empty function) on the
+/// `0x00ce5194` object, the character shader renderer made, the effect
+/// shaders loaded, the scene's boot set-up, the menu textures and the
+/// character shaders, the video index map (Japanese: `english` 0), the UI and the menu
+/// textures' buffers reset. Without a remap button icon in the scene
+/// (`+0x10de0`): one made (`operator new(0x6c)`, its constructor; 0 when
+/// that fails), its buttons set (`setButtons(text a, text b, the skip
+/// texture path)`), its layout (eight `f32`s from `.rdata`), `+0` the
+/// scale, and it goes to the scene.
+pub fn loader_startup_task(h: &mut impl Host) -> u32 {
+    let scene_at = h.rebase(PHYRE_SCENE);
+    for f in [
+        0x0066_3e20u32,
+        0x0066_3d40,
+        0x0066_53c0,
+        0x0066_50f0,
+        0x0066_5200,
+        0x0066_52e0,
+        0x0066_4360,
+        0x0066_5010,
+        0x0066_54a0,
+        0x0066_5580,
+        0x0066_f010,
+    ] {
+        let scene: u32 = h.read(scene_at);
+        h.call_sym(f, Conv::Thiscall(scene), &[]);
+    }
+    let shadow = h.call_sym(0x006d_2390, Conv::Cdecl, &[]);
+    h.call_sym(0x006c_e100, Conv::Thiscall(shadow), &[]);
+    let g = h.call_sym(0x006e_55d0, Conv::Cdecl, &[]);
+    h.call_sym(0x006e_55e0, Conv::Thiscall(g), &[]);
+    h.call_sym(0x0069_f3a0, Conv::Cdecl, &[]);
+    let vfx = h.call_sym(0x006c_14c0, Conv::Cdecl, &[]);
+    h.call_sym(0x006c_0fc0, Conv::Thiscall(vfx), &[]);
+    let scene: u32 = h.read(scene_at);
+    h.call_sym(0x0065_7a50, Conv::Thiscall(scene), &[]);
+    h.call_sym(0x0067_b740, Conv::Cdecl, &[]);
+    h.call_sym(0x006d_f3c0, Conv::Cdecl, &[]);
+    // createVideoIndexMap(0) (`english` pushed before the getter runs)
+    let fmv = h.call_sym(0x006d_73a0, Conv::Cdecl, &[]);
+    h.call_sym(0x006d_82f0, Conv::Thiscall(fmv), &[0]);
+    h.call_sym(0x0067_b6c0, Conv::Cdecl, &[]);
+    let menu: u32 = h.read(h.rebase(MENU_TEXTURES));
+    h.call_sym(0x0067_c440, Conv::Thiscall(menu), &[]);
+    let scene: u32 = h.read(scene_at);
+    if h.read::<u32>(scene + 0x10de0) != 0 {
+        return scene;
+    }
+    let n = h.call_sym(OPERATOR_NEW, Conv::Cdecl, &[0x6c]);
+    let icon = if n == 0 {
+        0
+    } else {
+        h.call_sym(0x006e_77d0, Conv::Thiscall(n), &[])
+    };
+    let path = h.call_sym(0x0063_8e90, Conv::Cdecl, &[]);
+    let (a, b) = (h.rebase(REMAP_TEXT_A), h.rebase(REMAP_TEXT_B));
+    h.call_sym(0x006e_78e0, Conv::Thiscall(icon), &[a, b, path]);
+    let l = h.rebase(REMAP_LAYOUT);
+    let mut f = [0u32; 6];
+    for (k, w) in f.iter_mut().enumerate() {
+        *w = quiet(h.read(l + 4 * k as u32));
+    }
+    // the words as the original stores them: [esp] .. [esp+0x1c]
+    let args = [f[5], f[2], f[1], f[1], f[3], f[2], f[4], f[0]];
+    h.call_sym(REMAP_SET_LAYOUT, Conv::Thiscall(icon), &args);
+    let s = quiet(h.read(h.rebase(REMAP_SCALE)));
+    h.write(icon, s);
+    let scene: u32 = h.read(scene_at);
+    h.write(scene + 0x10de0, icon);
+    scene
+}

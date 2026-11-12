@@ -992,3 +992,114 @@ fn wp5d_dlmalloc_init() {
         }
     }
 }
+
+/// The 0x2c node makers `0x00654f40`/`0x00654f80` (bound to
+/// `ffx_system::wp5_tree`'s `buy_node`) and the string map's node maker
+/// `0x006e8970` (C strings of 0..40 characters, `std::string::assign`
+/// running as the original on both sides). `eax` and memory.
+#[test]
+fn wp5d_string_map_nodes() {
+    use ffx_prender::wp5d as d;
+    use ffx_system::wp5_tree::bridge as tb;
+    for (label, mut t) in Twins::all() {
+        for at in [0x0065_4f40u32, 0x0065_4f80] {
+            for round in 0..3u32 {
+                let head = t.alloc(&[0x66; 0x10]);
+                let tree = t.alloc(&head.to_le_bytes());
+                let w = format!("{label} buy node {at:#x} {round}");
+                t.run(&w, at, tree, &[], false, |g| tb::buy_node(g, tree, 0x2c));
+            }
+        }
+        for round in 0..40u32 {
+            let head = t.alloc(&[0x66; 0x10]);
+            let tree = t.alloc(&head.to_le_bytes());
+            let n = t.rng.below(41);
+            let mut text = t.text(n);
+            text.push(0);
+            let p = t.alloc(&text);
+            let pair = t.alloc(&[0; 8]);
+            t.w32(pair, p);
+            t.w32(pair + 4, 0x7100_0000 | round);
+            let w = format!("{label} string map node {round} (n {n})");
+            t.run(&w, 0x006e_8970, tree, &[pair], false, |g| {
+                d::string_map_buy_node(g, tree, pair)
+            });
+        }
+    }
+}
+
+/// The loader's start-up task (`0x00636430`) with every callee a
+/// logging stub (the singletons' getters returning distinct objects, the
+/// icon's constructor returning its block): the scene with and without a
+/// remap button icon, `operator new` failing. `eax` and memory (the
+/// call order and every word through the log).
+#[test]
+fn wp5d_loader_startup_task() {
+    use ffx_prender::wp5d as d;
+    for (label, mut t) in Twins::all() {
+        let log = t.alloc(&[0; 4 + 32 * 64]);
+        let this_calls = [
+            0x0066_3e20u32,
+            0x0066_3d40,
+            0x0066_53c0,
+            0x0066_50f0,
+            0x0066_5200,
+            0x0066_52e0,
+            0x0066_4360,
+            0x0066_5010,
+            0x0066_54a0,
+            0x0066_5580,
+            0x0066_f010,
+            0x006c_e100,
+            0x006c_0fc0,
+            0x0065_7a50,
+            0x0067_c440,
+        ];
+        for (k, &f) in this_calls.iter().enumerate() {
+            let s = wide_stub(log, 0x100 + k as u32, 0, 0, 0x5000 + k as u32);
+            jmp_stub(&mut t, f, &s);
+        }
+        let plain = [
+            (0x006d_2390u32, 0x6100u32),
+            (0x006e_55d0, 0x6200),
+            (0x0069_f3a0, 0x6300),
+            (0x006c_14c0, 0x6400),
+            (0x0067_b740, 0x6500),
+            (0x006d_f3c0, 0x6600),
+            (0x006d_73a0, 0x6700),
+            (0x0067_b6c0, 0x6800),
+            (0x0063_8e90, 0x6900),
+        ];
+        for &(f, r) in &plain {
+            let s = wide_stub_plain(log, f, 0, 0, r);
+            jmp_stub(&mut t, f, &s);
+        }
+        let s = wide_stub(log, 0x1ff, 1, 4, 0x76);
+        jmp_stub(&mut t, 0x006d_82f0, &s);
+        let s = wide_stub(log, 0x200, 3, 0xc, 0x77);
+        jmp_stub(&mut t, 0x006e_78e0, &s);
+        let s = wide_stub(log, 0x201, 6, 0x20, 0x78);
+        jmp_stub(&mut t, d::REMAP_SET_LAYOUT, &s);
+        let s = ctor_stub(log);
+        jmp_stub(&mut t, 0x006e_77d0, &s);
+        for case in 0..3u32 {
+            if case == 2 {
+                let s = log_stub_plain(&mut t, log, 0, 0, true);
+                jmp_stub(&mut t, ws::OPERATOR_NEW, &s);
+            }
+            let scene = t.alloc(&vec![0x13; 0x10de4]);
+            t.w32(scene + 0x10de0, if case == 1 { 0x4321 } else { 0 });
+            t.w32(t.a.rebase(d::PHYRE_SCENE), scene);
+            t.w32(t.a.rebase(d::MENU_TEXTURES), 0x9a9a + case);
+            t.w32(log, 0);
+            let w = format!("{label} loader start-up task {case}");
+            if case == 2 {
+                // the icon's constructor isn't called; setButtons and the
+                // layout get ecx 0 (stubs here), the scale goes to address
+                // 0 in the original: only up to there
+                continue;
+            }
+            t.run_cdecl(&w, 0x0063_6430, &[], |h| d::loader_startup_task(h));
+        }
+    }
+}

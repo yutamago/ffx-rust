@@ -144,4 +144,20 @@ ported! {
     dlmalloc_init_user_mstate_006ea180 @ 0x006e_a180 => extern "C" fn d_006ea180(base: u32, size: u32) -> u32 {
         d::init_user_mstate(&mut mem(), base, size)
     }
+    /// `std_Tree_buyNode2c_00654f40`: a 0x2c-byte node hung on the head (`std_Tree_buyNode2c_006a03c0`'s code).
+    std_Tree_buyNode2c_00654f40 @ 0x0065_4f40 => extern "thiscall" fn d_00654f40(this: u32) -> u32 {
+        ffx_system::wp5_tree::bridge::buy_node(&mut mem(), this, 0x2c)
+    }
+    /// `std_Tree_buyNode2c_00654f80`: the same code.
+    std_Tree_buyNode2c_00654f80 @ 0x0065_4f80 => extern "thiscall" fn d_00654f80(this: u32) -> u32 {
+        ffx_system::wp5_tree::bridge::buy_node(&mut mem(), this, 0x2c)
+    }
+    /// `StdMapStringU32_buyNode_006e8970`: a node holding a string key from a C string and a word.
+    StdMapStringU32_buyNode_006e8970 @ 0x006e_8970 => extern "thiscall" fn d_006e8970(this: u32, pair: u32) -> u32 {
+        d::string_map_buy_node(&mut mem(), this, pair)
+    }
+    /// `AsyncLoad_startupTask_00636430`: the loader's start-up loads; `g_PhyreScene`.
+    AsyncLoad_startupTask_00636430 @ 0x0063_6430 => extern "C" fn d_00636430() -> u32 {
+        d::loader_startup_task(&mut mem())
+    }
 }
