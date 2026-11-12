@@ -243,7 +243,13 @@ fn x87_intrinsics_match_the_dll() {
     use ffx_bridge::route::Float;
     let Some(exe) = exe() else { return };
     let mut e = ffx_host::boot(&exe).unwrap();
-    let cases: [(&str, u32, Vec<Vec<f64>>, usize); 8] = [
+    let cases: [(&str, u32, Vec<Vec<f64>>, usize); 9] = [
+        (
+            "_CIasin",
+            0x0094_98f2,
+            unit_operand(3000, 0x9abc_def0),
+            2900,
+        ),
         (
             "_CIacos",
             0x0094_98da,
@@ -1633,7 +1639,8 @@ fn cin_getline_without_the_dlls_matches_the_dll() {
 fn sse2_functions_match_the_dll() {
     let Some(exe) = exe() else { return };
     let mut e = ffx_host::boot(&exe).unwrap();
-    let cases: [(&str, u32, usize); 6] = [
+    let cases: [(&str, u32, usize); 7] = [
+        ("_libm_sse2_asin_precise", 0x9100_0007, 3000),
         ("_libm_sse2_acos_precise", 0x9100_0006, 3000),
         ("_libm_sse2_atan_precise", 0x9100_0005, 3000),
         ("_libm_sse2_sin_precise", 0x9100_0001, 3000),
