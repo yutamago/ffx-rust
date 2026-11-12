@@ -4,6 +4,8 @@
 0x00440ea0	5	0	RenderTarget_release_00440ea0
 0x005c8930	1367	0	Phyre_PDynamicGeometry_skin4Bones_005c8930
 0x005c8e90	1623	0	Phyre_PDynamicGeometry_skin4BonesTangents_005c8e90
+0x005ca0d0	366	0	Phyre_PDynamicGeometry_PMorphModifier_blend2x3_005ca0d0
+0x005ca250	370	0	Phyre_PDynamicGeometry_PMorphModifier_blend2x4_005ca250
 0x005ffe40	652	0	Phyre_PPhysics_PUtilityPhysics_initialize
 0x00605720	3	0	Phyre_PPhysics_PUtilityPhysics_slot2
 0x00613f70	64	0	

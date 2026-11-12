@@ -3753,7 +3753,7 @@ use ffx_prender::m5p_render_b_morph::{self as morph, bridge as gb};
 
 #[test]
 fn morphs_match_the_original() {
-    assert_eq!(morph::MORPHS.len(), 7);
+    assert_eq!(morph::MORPHS.len(), 9);
     for (label, mut t) in Twins::all() {
         for &(f, m) in &morph::MORPHS {
             assert_eq!(morph::morph_of(f), m);
