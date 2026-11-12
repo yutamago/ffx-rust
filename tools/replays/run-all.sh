@@ -121,9 +121,11 @@ eye+=(event-arrival)  # voiced, real time
 # --record [replay...]`).
 if [ -n "$extra" ]; then
     replays=(settings-hdao settings-msaa settings-fxaa settings-smaa settings-shadow settings-texhigh movie-fmv iggy-menus battle-ifrit)
+    # the Flash screens no other replay reaches (WP12): HUD icons and tips, Korean and Chinese
+    replays+=(iggy-hud iggy-lang-kr iggy-lang-ch)
     # later story points from the developer saves (docs/harness.md, "Coverage replays")
     replays+=(devsave-12-liki devsave-22-luca devsave-51-thunder devsave-73-bevelle devsave-92-gagazet devsave-109-sin)
-    eye=(iggy-menus)  # Flash fades follow the wall clock: 21,746 px in one of three original runs
+    eye=(iggy-menus iggy-hud iggy-lang-kr iggy-lang-ch)  # Flash fades follow the wall clock: 21,746 px in one of three original runs
     # Tidus's idle pose in the battle started from inside Luca's cut scene: 1,090 px
     # in one of three original runs (docs/harness.md, devsave-22-luca)
     eye+=(devsave-22-luca)

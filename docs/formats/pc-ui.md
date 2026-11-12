@@ -573,6 +573,29 @@ update (3,001 ticks over 3,000 updates of the PC menu in the pilot);
 hidden menus are not drawn and do not tick. `GotoFrameRS` is never called
 on these screens.
 
+## The 19 movies
+
+`ffx_data/gamedata/ps3data/flash/` (WP12, 2026-11-12). "Offers" are the
+`addCallback` names with their argument counts (`swf-abc`), "calls" the
+`ExternalInterface.call` names. Replays: which ones open the movie.
+
+| Movie | Opened by | Offers / calls | Replays |
+|---|---|---|---|
+| `escmenu.swf` | `PhyreScene_initScene` | 38 (pages, items, keys, pop-ups) / 10 `EscMenu*`, `playEscSound`, `ExitAudioMenu` | iggy-menus (all pages), iggy-lang-kr/ch |
+| `pausemenu.swf` | `PhyreScene_initScene`; shown by `Pause_Update` (`showPause("pause"/"pausa")`) | `SetLanguage`, `showPause/1`, `hidePause` / `playEscSound` | created in every replay, shown by none (the pause: `TkMenuStart` -> `Pause_Request`; a replay for it is left open) |
+| `saveload_jp.swf` (every language but kr, ch) | `SaveLoadMenu_open_00702a80` | 12 / `playEscSound` | menu-save, iggy-menus 11-12 |
+| `saveload_kr.swf`, `saveload_ch.swf` | the same, languages 9, 10 | the same | iggy-lang-kr, iggy-lang-ch |
+| `box.swf` (`BOX%s.swf`; the font) | `0x006e85f0` (TipSystem) | `OnPlay/2` / `Hide` | created everywhere; a tip played by iggy-hud |
+| `box_kr.swf`, `box_ch.swf` | the same, kr, ch | the same | iggy-lang-kr, iggy-lang-ch |
+| `openingscreen.swf` | `PhyreScene_beginRenderOpeningScreen` | - / `Finish`, `getLocByStr`, `getFontBitmapSuffix` | boot, menu-browse |
+| `chocobo.swf` (autosave, 50x50 at 1220,660) | `IggyPlayerOpenScaled_006e9250` | - | event-besaid, event-agency |
+| `speed_2.swf`, `speed_4.swf` | `IconPanel_showIcon` 0, 1 (`SpdCtrl_Tick`, F1) | `OnEnable`, `OnDisable` | iggy-hud |
+| `invincible.swf` | icon 2 (F2) | - | iggy-hud |
+| `enemy_0.swf`, `enemy_1.swf` | icons 3, 4 (F3) | - | iggy-hud |
+| `autobattle.swf` | icon 5 (F4) | - | iggy-hud |
+| `autobattle_disable.swf` | icon 6: never (no `IconPanel_showIcon(6)`, `refs.py` lists 7 calls with 5, 2, 3/4, 0, 1, 9, 8) | - | none: dead |
+| `freecamera.swf`, `time_stop.swf` | never: `SetFields_006f7700` stores their paths at `+0x3c`/`+0x40` and overwrites both with the icons' position bytes; `FreeCamera_handleInput` asks for icons 8 and 9, which `IconPanel_showIcon` refuses (`i < 7`) | - | none: dead |
+
 ## How Iggy draws
 
 GDraw, Iggy's D3D11 back end, is game code in `FFX.exe`
