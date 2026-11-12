@@ -76,11 +76,20 @@ def rets(a, size):
     """The byte counts the original's `ret` instructions pop (a near ret
     without an operand pops 0)."""
     found = set()
-    for insn in DIS.get(a, size).values():
+    prev = ""
+    for _, insn in sorted(DIS.get(a, size).items()):
         m = RET.match(insn)
-        if m:
+        # a catch funclet's `mov eax, <continuation>; ret` hands the address
+        # to resume at back to the C++ runtime: not the function's own return
+        # (std_string_Copy 0x00404740, wp5b 2026-11-12)
+        cont = FUNCLET.match(prev)
+        if m and not (cont and a <= int(cont.group(1), 16) < a + size):
             found.add(int(m.group(1) or "0", 16))
+        prev = insn
     return found
+
+
+FUNCLET = re.compile(r"\s*mov\s+eax,\s*0x([0-9a-f]+)\s*$")
 
 
 DIS = None
