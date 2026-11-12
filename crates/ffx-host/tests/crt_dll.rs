@@ -470,3 +470,46 @@ fn sprintf_family_matches_the_dll() {
     }
     assert!(checked > 3000, "{checked}");
 }
+
+/// The DLL's own `memcpy`/`memmove` entries are traps to Rust
+/// (`crt_dll::dll_copy`): called directly and from the DLL's code
+/// (`memcpy_s`, which calls `memcpy`), forward, backward over an overlap
+/// and past a 64 KB chunk, the bytes must be `memmove`'s (Rust's
+/// `copy_within`) and `eax` the destination (`memcpy_s`: 0).
+#[test]
+#[allow(clippy::cast_possible_truncation)] // bytes of a pattern
+fn the_dlls_copies_are_memmove() {
+    let Some(exe) = exe() else { return };
+    let mut e = ffx_host::boot(&exe).unwrap();
+    let len = 0x3_0000u32;
+    let at = e.alloc(len);
+    let fresh: Vec<u8> = (0..len).map(|i| ((i * 7 + i / 251) % 256) as u8).collect();
+    let memcpy = export(&e, "MSVCR110.dll", "memcpy");
+    let memmove = export(&e, "MSVCR110.dll", "memmove");
+    let memcpy_s = export(&e, "MSVCR110.dll", "memcpy_s");
+    for (dst, src, n) in [
+        (0u32, 0x100u32, 0x80u32),
+        (0x100, 0, 0x80),
+        (0x10, 0, 0x2_2345),
+        (0, 0x10, 0x2_2345),
+        (0x1_0000, 0x1_0007, 0x1_8000),
+        (0x5, 0x5, 0x40),
+        (0x40, 0, 0),
+    ] {
+        for f in [memcpy, memmove, memcpy_s] {
+            e.mem().write_bytes(at, &fresh);
+            let words = if f == memcpy_s {
+                vec![at + dst, len - dst, at + src, n]
+            } else {
+                vec![at + dst, at + src, n]
+            };
+            let r = e.call_cdecl(f, &words).unwrap();
+            let mut want = fresh.clone();
+            want.copy_within(src as usize..(src + n) as usize, dst as usize);
+            let mut got = vec![0u8; len as usize];
+            e.mem().read_bytes(at, &mut got);
+            assert!(got == want, "{f:#x} ({dst:#x}, {src:#x}, {n:#x})");
+            assert_eq!(r, if f == memcpy_s { 0 } else { at + dst });
+        }
+    }
+}

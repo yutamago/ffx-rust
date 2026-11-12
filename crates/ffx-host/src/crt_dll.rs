@@ -166,6 +166,34 @@ fn memchr(e: &mut Exec, args: &Args) -> Ret {
     Ret::eax(0)
 }
 
+/// `MSVCR110`'s exports whose entries are traps to [`dll_copy`]: the
+/// DLL's internal callers reach them directly (gate run 1: 72 k calls,
+/// 13 M emulated blocks of `memcpy` and its vector loops, filed under the
+/// exports after it: `wcsnlen`, `wcscpy_s`).
+pub const DLL_COPIES: [&str; 2] = ["memcpy", "memmove"];
+
+/// `memcpy(dst, src, n)` / `memmove(dst, src, n)` as the DLL's (one body:
+/// overlap allowed, `dst` returned), for the traps on their entries.
+pub fn dll_copy(e: &mut Exec, _: u32, args: &Args) -> Ret {
+    const CHUNK: u32 = 0x1_0000;
+    let (dst, src, n) = (a(args, 0), a(args, 1), a(args, 2));
+    let mut mem = e.mem();
+    let mut buf = vec![0u8; n.min(CHUNK) as usize];
+    // in chunks, from the end when the destination overlaps the source's
+    // tail, so each chunk is read before a write reaches it
+    let backward = dst > src && dst < src.wrapping_add(n);
+    let mut done = 0;
+    while done < n {
+        let len = (n - done).min(CHUNK);
+        let off = if backward { n - done - len } else { done };
+        let b = &mut buf[..len as usize];
+        mem.read_bytes(src.wrapping_add(off), b);
+        mem.write_bytes(dst.wrapping_add(off), b);
+        done += len;
+    }
+    Ret::eax(dst)
+}
+
 /// Whether `name` (an import of `FFX.exe`) has a Rust side here even when
 /// the player's DLLs are loaded.
 #[must_use]

@@ -452,6 +452,7 @@ impl Shared {
         };
         s.bind_imports(stubs_at);
         s.find_thunks();
+        s.trap_dll_copies();
         s.build_trampolines(stubs_at + TRAMPOLINES);
         for addr in s.table.addresses().collect::<Vec<_>>() {
             if s.image.is_code(addr) {
@@ -636,6 +637,32 @@ impl Shared {
     #[must_use]
     pub fn table(&self) -> &Table {
         &self.table
+    }
+
+    /// `MSVCR110`'s own `memcpy` and `memmove` entries as traps
+    /// ([`crate::crt_dll::DLL_COPIES`]): the DLL's code calls them
+    /// directly (`fread`'s buffer copies, the `_s` functions), which the
+    /// import routes never see.
+    fn trap_dll_copies(&mut self) {
+        let Some(d) = self.dll("MSVCR110.dll") else {
+            return;
+        };
+        let at: Vec<u32> = crate::crt_dll::DLL_COPIES
+            .iter()
+            .filter_map(|n| d.exports.get(*n).copied())
+            .collect();
+        for a in at {
+            self.arena.fill(a, &[INT3]);
+            self.add_trap(
+                a,
+                Trap {
+                    run: crate::crt_dll::dll_copy,
+                    tag: 0,
+                    conv: Conv::Cdecl,
+                    words: 3,
+                },
+            );
+        }
     }
 
     /// The trap at `at`.
