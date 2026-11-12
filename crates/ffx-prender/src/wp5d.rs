@@ -619,10 +619,16 @@ pub fn destroy_strings(h: &mut impl Host, first: u32, last: u32) {
 /// original calls itself), then the node's string (`+0x10`) emptied and the node
 /// deleted, then on to its left child (`+0`, read before). `eax` junk.
 pub fn tree_erase_strings(h: &mut impl Host, this: u32, node: u32) {
+    let _ = this;
+    erase_string_nodes(h, node);
+}
+
+/// [`tree_erase_strings`]' walk (the tree itself is not read).
+fn erase_string_nodes(h: &mut impl Host, node: u32) {
     let mut n = node;
     while h.read::<u8>(n + 0xd) == 0 {
         let right: u32 = h.read(n + 8);
-        tree_erase_strings(h, this, right);
+        erase_string_nodes(h, right);
         let left: u32 = h.read(n);
         string_tidy(h, n + 0x10);
         h.call_sym(OPERATOR_DELETE, Conv::Cdecl, &[n]);
@@ -747,7 +753,7 @@ pub fn init_mparams(h: &mut impl Host, frame: u32) -> u32 {
             break;
         }
         spins = spins.wrapping_add(1);
-        if spins & 0x3f == 0 {
+        if spins.trailing_zeros() >= 6 {
             import(h, SLEEP_EX_IAT, &[0, 0]);
         }
     }
@@ -776,7 +782,11 @@ pub fn init_mparams(h: &mut impl Host, frame: u32) -> u32 {
 /// dlmalloc's `align_offset` of an address: the bytes to the next
 /// multiple of 8.
 fn align8(a: u32) -> u32 {
-    if a & 7 == 0 { 0 } else { a.wrapping_neg() & 7 }
+    if a.trailing_zeros() >= 3 {
+        0
+    } else {
+        a.wrapping_neg() & 7
+    }
 }
 
 /// dlmalloc's `init_user_mstate(base, size)` (`0x006ea180`, cdecl;
@@ -1224,8 +1234,8 @@ pub fn basic_debug_line<H: Host>(h: &mut H, this: u32, n: u32, buf: u32) -> u32 
     line(h, buf, fmt, &words)
 }
 
-/// The save data's string for `i` (`0x007870d0`, cdecl): `[save + 0x2c
-/// + 4 i]`, `i` clamped to 0..7 (signed), `save` from
+/// The save data's string for `i` (`0x007870d0`, cdecl): the word at
+/// `save + 0x2c + 4 i`, `i` clamped to 0..7 (signed), `save` from
 /// `MsGetSaveEventAddress`.
 pub fn save_string(h: &mut impl Host, i: u32) -> u32 {
     let save = h.call_sym(SAVE_EVENT_ADDRESS, Conv::Cdecl, &[]);
@@ -1344,7 +1354,7 @@ pub fn game_param_line<H: Host>(h: &mut H, this: u32, n: u32, buf: u32) -> u32 {
     }
 }
 
-/// GDraw's context (`gdraw_createContext_00a35780` stores it).
+/// `GDraw`'s context (`gdraw_createContext_00a35780` stores it).
 pub const GDRAW_CONTEXT: u32 = 0x01a8_58b4;
 
 /// The two draw lists' reset in [`gdraw_reset_frame`]: flags `+0xc`
@@ -1362,7 +1372,7 @@ fn gdraw_reset_list(h: &mut impl Host, list: u32, a: u32, b: u32) -> u32 {
     old_b
 }
 
-/// GDraw's frame reset (`0x00a37fe0`, cdecl; Iggy's render command run
+/// `GDraw`'s frame reset (`0x00a37fe0`, cdecl; Iggy's render command run
 /// through `IggyRenderCommand_trampoline_00a34b00` on the render
 /// thread): the device context's `ClearState` (`ID3D11DeviceContext`
 /// slot 110, `[ctx+4]`), then on the context: `+0xab8` 1, `+0x9bc` the

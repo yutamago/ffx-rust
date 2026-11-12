@@ -260,13 +260,6 @@ fn jmp_stub(t: &mut Twins, sym: u32, code: &[u8]) {
     t.write(at, &j);
 }
 
-/// A logging stub: `inc dword [count]`, its `ecx` and (when `pops` is not
-/// 0, or for `arg`) its first stack word appended to `log` (pairs), `ret
-/// pops`; `eax` = `ret`.
-fn log_stub(t: &mut Twins, log: u32, pops: u16, ret: u32) -> Vec<u8> {
-    log_stub_arg(t, log, pops, ret, pops != 0)
-}
-
 fn log_stub_arg(_t: &mut Twins, log: u32, pops: u16, ret: u32, arg: bool) -> Vec<u8> {
     let mut c = vec![0xa1];
     c.extend(log.to_le_bytes()); // mov eax, [log]
@@ -1311,7 +1304,7 @@ fn wp5d_tweak_line_texts() {
     }
 }
 
-/// GDraw's frame reset (`0x00a37fe0`): a junk context with a device
+/// `GDraw`'s frame reset (`0x00a37fe0`): a junk context with a device
 /// context whose vtable slot 110 is a logging stub, two draw lists (also
 /// the same list twice). `eax` and memory.
 #[test]
@@ -1441,7 +1434,7 @@ fn wp5d_button_material() {
         let effect = t.alloc(&[0x61; 0x10]);
         let fx_table = t.alloc(&[0; 0x40]);
         t.w32(fx_table + 0x18, effect);
-        let scene = t.alloc(&[0x13; 0xfa90]);
+        let scene = t.alloc(&vec![0x13; 0xfa90]);
         let effects = t.alloc(&[0x26; 0x40]);
         t.w32(scene + 0xfa84, effects);
         t.w32(t.a.rebase(d::PHYRE_SCENE), scene);
@@ -1499,10 +1492,10 @@ fn wp5d_button_material() {
             t.w32(cells + 0x10, 8);
             t.w32(cells + 0x14, fx_table + 0x10);
             // the parameter: offset 8 or 2 (too small), size 16 or 0x3f
-            let off = if case & 4 == 0 { 8 } else { 2 };
-            let size = if case < 12 { 16 } else { 0x3f } | 0xe000;
-            t.write(param + 8, &(off as u16).to_le_bytes());
-            t.write(param + 0xa, &(size as u16).to_le_bytes());
+            let off: u16 = if case & 4 == 0 { 8 } else { 2 };
+            let size: u16 = if case < 12 { 16 } else { 0x3f } | 0xe000;
+            t.write(param + 8, &off.to_le_bytes());
+            t.write(param + 0xa, &size.to_le_bytes());
             let slots = t.alloc(&[0; 16]);
             if case % 3 == 0 {
                 t.w32(slots + 8, mat);
@@ -1557,7 +1550,7 @@ fn wp5d_remap_set_layout() {
             jmp_stub(&mut t, d::BUILD_QUAD, &s);
             let this = t.alloc(&[0x47; 0x70]);
             let f: Vec<u32> = (0..8)
-                .map(|k| (k as f32 * 0.25 - round as f32 * 3.5).to_bits())
+                .map(|k: u8| (f32::from(k) * 0.25 - f32::from(round as u8) * 3.5).to_bits())
                 .collect();
             let a = [f[0], f[1], f[2], f[3]];
             let b = [f[4], f[5], f[6], f[7]];
@@ -1734,6 +1727,9 @@ fn wp5d_event_map_insert() {
     }
 }
 
+/// A port of `(this; n)`.
+type Port2 = fn(&mut G, u32, u32) -> u32;
+
 /// `std::vector<std::string>`: the string move (`0x0064aa10`, a NULL
 /// target included), `_Reallocate` (`0x00655b20`) and `_Reserve`
 /// (`0x00655de0`) on random vectors (empty, NULL, spare room or full;
@@ -1779,7 +1775,7 @@ fn wp5d_string_vector_reserve() {
             t.w32(v + 4, first + 0x18 * size);
             t.w32(v + 8, first + 0x18 * (size + spare));
             let n = t.rng.below(10);
-            let (at, port): (u32, fn(&mut G, u32, u32) -> u32) = if round % 2 == 0 {
+            let (at, port): (u32, Port2) = if round % 2 == 0 {
                 (0x0065_5de0, |g, v, n| d::string_vector_reserve(g, v, n))
             } else {
                 (0x0065_5b20, |g, v, n| d::string_vector_reallocate(g, v, n))
