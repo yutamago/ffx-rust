@@ -182,3 +182,100 @@ fn x87_intrinsics_match_the_dll() {
         assert!(fast > floor, "{name}: {fast} in Rust");
     }
 }
+
+/// The string functions (`_stricmp`, `strstr`, `strchr`, `strncpy`,
+/// `memchr`) through the import against the DLL's exports: `eax` and the
+/// bytes written, on strings with case, high bytes, empty ones and
+/// matches at the start, the end and nowhere.
+#[test]
+fn string_functions_match_the_dll() {
+    let Some(exe) = exe() else { return };
+    let mut e = ffx_host::boot(&exe).unwrap();
+    let strings: [&[u8]; 9] = [
+        b"",
+        b"a",
+        b"Hello World",
+        b"hello world",
+        b"HELLO",
+        b"world",
+        b"\xe9t\xc9\x80z",
+        b"abcabcabd",
+        b"abd",
+    ];
+    let put = |e: &mut Exec, s: &[u8]| -> u32 {
+        let at = e.alloc(u32::try_from(s.len()).unwrap() + 16);
+        let mut v = s.to_vec();
+        v.extend_from_slice(&[0, 0x5a, 0x5a, 0x5a]);
+        e.mem().write_bytes(at, &v);
+        at
+    };
+    let at: Vec<u32> = strings.iter().map(|s| put(&mut e, s)).collect();
+    let call = |e: &mut Exec, f: u32, words: &[u32]| -> u32 { e.call_cdecl(f, words).unwrap() };
+    let both = |e: &Exec, name: &str| -> (u32, u32) {
+        (
+            e.mem().read(slot(e, "MSVCR110.dll", name)),
+            export(e, "MSVCR110.dll", name),
+        )
+    };
+    let mut checked = 0;
+    for name in ["_stricmp", "strstr"] {
+        let (rust, dll) = both(&e, name);
+        for &x in &at {
+            for &y in &at {
+                assert_eq!(
+                    call(&mut e, rust, &[x, y]),
+                    call(&mut e, dll, &[x, y]),
+                    "{name}"
+                );
+                checked += 1;
+            }
+        }
+    }
+    let (rust, dll) = both(&e, "strchr");
+    for &x in &at {
+        for c in [
+            0u32,
+            u32::from(b'o'),
+            u32::from(b'H'),
+            0xc9,
+            0x1_0000 + u32::from(b'l'),
+        ] {
+            assert_eq!(
+                call(&mut e, rust, &[x, c]),
+                call(&mut e, dll, &[x, c]),
+                "strchr {c:#x}"
+            );
+        }
+    }
+    let (rust, dll) = both(&e, "memchr");
+    for &x in &at {
+        for (c, n) in [
+            (0u32, 4u32),
+            (u32::from(b'o'), 11),
+            (0x15a, 20),
+            (u32::from(b'd'), 0),
+        ] {
+            assert_eq!(
+                call(&mut e, rust, &[x, c, n]),
+                call(&mut e, dll, &[x, c, n]),
+                "memchr"
+            );
+        }
+    }
+    let (rust, dll) = both(&e, "strncpy");
+    for &x in &at {
+        for n in [0u32, 1, 3, 11, 24] {
+            let mut out = Vec::new();
+            for f in [rust, dll] {
+                let dst = e.alloc(40);
+                e.mem().write_bytes(dst, &[0xee; 40]);
+                let r = call(&mut e, f, &[dst, x, n]);
+                let mut b = vec![0u8; 40];
+                e.mem().read_bytes(dst, &mut b);
+                out.push((r - dst, b));
+            }
+            assert_eq!(out[0], out[1], "strncpy {n}");
+        }
+    }
+    assert!(checked > 100);
+}

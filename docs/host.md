@@ -844,6 +844,8 @@ each with the DLL.
 | `MSVCP110!istream::getline(char *, streamsize)` | a stream whose state is not good (the auto-test console thread polls `std::cin` at its end every 5 ms: 1.4 M calls, about 80 emulated blocks each, in gate run 1): `_Chcount` 0, `*str` 0, the state `(state \| failbit \| badbit without a buffer) & 0x17` | a good stream; a state the exception mask throws for |
 | `MSVCR110!_CIsin`, `_CIcos` | the SSE2 paths (`__libm_sse2_sin`/`cos` at `0x1004ba00`/`0x10044aef`: the 64-entry table at the multiples of π/32, three-part reduction, two series side by side), operation for operation in doubles, the DLL's constants and table read from the loaded DLL; 31 M calls and some 250 M emulated blocks in gate run 1 | no SSE2 flag, other `MXCSR`/x87 control settings, \|x\| from about 2^16 (the DLL's x87 `fcos`/`fsin` path), infinities, NaNs |
 | `MSVCR110!_CIsqrt` | the correctly rounded root at 53-bit precision (the processor's `fsqrt`) | negative or non-finite arguments (errno), another precision |
+| `MSVCR110!_stricmp` | the "C" locale's `__ascii_stricmp` (`A`-`Z` lowered, the difference of the first differing bytes) | a NULL argument (errno, the invalid-parameter handler); a changed locale (`__locale_changed`) |
+| `MSVCR110!strstr`, `strchr`, `strncpy`, `memchr` | the standard results (no locale, no errno) | - |
 
 The intrinsics take their argument in `ST0`: Unicorn code calling one
 enters `Exec::enter_x87_import` (the stub's `int3`: `ST0` replaced by the

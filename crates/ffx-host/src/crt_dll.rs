@@ -37,7 +37,134 @@ pub const TABLE: &[(&str, &str, Conv, usize, ImportFn)] = &[
     (CRT, "_CIsin", Conv::Cdecl, 0, intrinsic_without_operand),
     (CRT, "_CIcos", Conv::Cdecl, 0, intrinsic_without_operand),
     (CRT, "_CIsqrt", Conv::Cdecl, 0, intrinsic_without_operand),
+    (CRT, "_stricmp", Conv::Cdecl, 2, stricmp),
+    (CRT, "strstr", Conv::Cdecl, 2, strstr),
+    (CRT, "strchr", Conv::Cdecl, 2, strchr),
+    (CRT, "strncpy", Conv::Cdecl, 3, strncpy),
+    (CRT, "memchr", Conv::Cdecl, 3, memchr),
 ];
+
+fn a(args: &Args, i: usize) -> u32 {
+    args.stack.get(i).copied().unwrap_or(0)
+}
+
+/// The NUL-terminated string at `p` (without the NUL).
+fn c_str(mem: &impl Mem, p: u32) -> Vec<u8> {
+    let mut out = Vec::new();
+    let mut at = p;
+    loop {
+        let b: u8 = mem.read(at);
+        if b == 0 {
+            return out;
+        }
+        out.push(b);
+        at = at.wrapping_add(1);
+    }
+}
+
+/// `__locale_changed`: 0 while every thread is in the "C" locale, when
+/// the string functions take their ASCII paths (`_stricmp` `0x10026c5c`).
+const LOCALE_CHANGED: u32 = 0x100c_87d0;
+
+/// Whether the DLL's "C"-locale paths apply.
+fn c_locale(e: &Exec) -> bool {
+    e.shared()
+        .dll(CRT)
+        .is_some_and(|d| e.mem().read::<u32>(d.base + (LOCALE_CHANGED - DLL_BASE)) == 0)
+}
+
+/// `_stricmp(a, b)` in the "C" locale (`__ascii_stricmp` `0x10096b4f`):
+/// bytes compared with `A`-`Z` lowered, until a difference or the end of
+/// `a`; the difference of the two lowered bytes. A NULL argument (errno,
+/// the invalid-parameter handler) or another locale: the DLL.
+fn stricmp(e: &mut Exec, args: &Args) -> Ret {
+    let (left, right) = (a(args, 0), a(args, 1));
+    if left == 0 || right == 0 || !c_locale(e) {
+        return dll_export(e, CRT, "_stricmp", Conv::Cdecl, args);
+    }
+    let mem = e.mem();
+    let lower = |b: u8| u32::from(if b.is_ascii_uppercase() { b + 0x20 } else { b });
+    let mut i = 0u32;
+    loop {
+        let l = lower(mem.read(left.wrapping_add(i)));
+        let r = lower(mem.read(right.wrapping_add(i)));
+        if l == 0 || l != r {
+            return Ret::eax(l.wrapping_sub(r));
+        }
+        i += 1;
+    }
+}
+
+/// `strstr(haystack, needle)`: the first occurrence or NULL; an empty
+/// needle finds the haystack's start.
+fn strstr(e: &mut Exec, args: &Args) -> Ret {
+    let (h, n) = (a(args, 0), a(args, 1));
+    let mem = e.mem();
+    let needle = c_str(&mem, n);
+    let hay = c_str(&mem, h);
+    if needle.is_empty() {
+        return Ret::eax(h);
+    }
+    let at = hay
+        .windows(needle.len())
+        .position(|w| w == needle.as_slice());
+    Ret::eax(at.map_or(0, |i| h + u32::try_from(i).unwrap_or(0)))
+}
+
+/// `strchr(s, c)`: the first byte equal to `(char) c`, the terminating NUL
+/// included (`c` 0 finds it); NULL when none.
+fn strchr(e: &mut Exec, args: &Args) -> Ret {
+    let (s, c) = (a(args, 0), a(args, 1));
+    #[allow(clippy::cast_possible_truncation)] // (char) c
+    let c = c as u8;
+    let mem = e.mem();
+    let mut at = s;
+    loop {
+        let b: u8 = mem.read(at);
+        if b == c {
+            return Ret::eax(at);
+        }
+        if b == 0 {
+            return Ret::eax(0);
+        }
+        at = at.wrapping_add(1);
+    }
+}
+
+/// `strncpy(dst, src, n)`: at most `n` bytes of `src`, the rest of the `n`
+/// zeroed when `src` is shorter (no NUL added when it is not); `dst`.
+fn strncpy(e: &mut Exec, args: &Args) -> Ret {
+    let (dst, src, n) = (a(args, 0), a(args, 1), a(args, 2));
+    let mut mem = e.mem();
+    let mut out = Vec::with_capacity(n.min(1 << 20) as usize);
+    let mut ended = false;
+    for i in 0..n {
+        let b: u8 = if ended {
+            0
+        } else {
+            mem.read(src.wrapping_add(i))
+        };
+        ended |= b == 0;
+        out.push(b);
+    }
+    mem.write_bytes(dst, &out);
+    Ret::eax(dst)
+}
+
+/// `memchr(p, c, n)`: the first of the `n` bytes equal to `(unsigned
+/// char) c`, or NULL.
+fn memchr(e: &mut Exec, args: &Args) -> Ret {
+    let (p, c, n) = (a(args, 0), a(args, 1), a(args, 2));
+    #[allow(clippy::cast_possible_truncation)] // (unsigned char) c
+    let c = c as u8;
+    let mem = e.mem();
+    for i in 0..n {
+        if mem.read::<u8>(p.wrapping_add(i)) == c {
+            return Ret::eax(p.wrapping_add(i));
+        }
+    }
+    Ret::eax(0)
+}
 
 /// Whether `name` (an import of `FFX.exe`) has a Rust side here even when
 /// the player's DLLs are loaded.
