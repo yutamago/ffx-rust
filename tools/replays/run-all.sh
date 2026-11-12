@@ -70,6 +70,9 @@
 # references. Traces and screenshots are not compared in this mode.
 # FFX_HARNESS_EXE=rust: ffx-rust.exe's own mixer writes the capture and the
 # marks (crates/ffx-host/src/audio.rs), compared with the same references.
+# With FFX_HARNESS_EXE=rust a replay whose ffx-rust.exe counted accesses
+# outside the arena (`bad_accesses: N` in its log) fails (docs/harness.md,
+# "Bad accesses in ffx-rust").
 # Unicorn profile (docs/harness.md, "Unicorn coverage in ffx-rust"):
 #   FFX_HARNESS_EXE=rust FFX_HOST_PROFILE=1 tools/replays/run-all.sh [--extra|--audio] [replay...]
 # has each ffx-rust.exe write every function that ran in Unicorn
@@ -171,6 +174,30 @@ profile_report() { # tag
     echo "== unicorn profile: ${#files[@]} of ${#replays[@]} replays ($d/unicorn-report.txt)"
     python3 -I tools/unicorn-report.py "${files[@]}" --brief --top 20 --out "$d/unicorn-report.txt" \
         --tsv "$d/unicorn-summed.tsv" | sed 's/^/   /'
+}
+
+# ffx-rust.exe's accesses outside the arena (M5 stage 4's check: no host
+# pointer built from an arena address without the base): each run's log
+# ends with `bad_accesses: N` (the harness's `quit`, or the report); a
+# replay with N > 0 fails (docs/harness.md, "Bad accesses in ffx-rust").
+bad_access_report() { # tag; returns 1 when a run had any
+    [[ -n "$host" ]] || return 0
+    local rc=0 r log line n
+    for r in "${replays[@]}"; do
+        log="$runs/$1/$r.ffx-rust.log"
+        line="$(grep -h '^bad_accesses:' "$log" 2>/dev/null | tail -1)"
+        if [[ -z "$line" ]]; then
+            echo "== $r: no bad_accesses line in $log (the run never reached quit or its report)"
+            continue
+        fi
+        n="${line#bad_accesses: }"
+        n="${n%% *}"
+        if [[ "$n" =~ ^[0-9]+$ ]] && (( n > 0 )); then
+            echo "== $r: FAIL, $line"
+            rc=1
+        fi
+    done
+    return $rc
 }
 
 # Build once, not three times side by side. With FFX_NO_BUILD=1 already set,
@@ -283,6 +310,7 @@ if [ "${1:-}" = --audio ]; then
         [ -f "$audio_dir/$r-orig2.wav" ] && { wavcmp "$r Rust against original 2" "$audio_dir/$r-orig2.wav" "$runs/rust/$r-rust.wav" || bad=1; }
     done
     profile_report rust
+    bad_access_report rust || bad=1
     exit $bad
 fi
 while [ "${1:-}" = --hits ] || [ "${1:-}" = --iggy-log ] || [ "${1:-}" = --rust-map ] || [ "${1:-}" = --rust-map=build ]; do
@@ -376,6 +404,7 @@ for r in "${eye[@]}"; do
     echo "== $r screenshots, by eye: $runs/rust/$r-*.bmp against $shots/orig/eye and $shots/orig2/eye"
 done
 profile_report rust
+bad_access_report rust || bad=1
 if [ -n "$hits" ]; then
     # the coverage session on every save entry, one game at a time
     for e in ${FFX_HITS_SAVES:-0 1 2 3 5}; do

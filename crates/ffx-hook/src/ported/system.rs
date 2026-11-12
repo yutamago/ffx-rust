@@ -7323,9 +7323,11 @@ ported! {
 /// local, as the original's).
 fn important_text(id: u32, field: u32) -> u32 {
     let hiragana = ffx_battle::save::bridge::ms_get_save_config_hiragana(&mem());
-    let mut strings = 0u32;
-    #[allow(clippy::cast_possible_truncation)] // 32-bit process
-    let out = std::ptr::from_mut(&mut strings) as usize as u32;
+    // the local `MsImportantPtr` stores into: a frame word (game memory in
+    // ffx-host too; a Rust local's address was a host address there,
+    // tools/check-hostptr.py)
+    let mut frame = super::StackFrame::<1>::new();
+    let out = frame.at();
     let record = ffx_battle::save::bridge::ms_important_ptr(&mut mem(), id, out);
     let strings = mem().read::<u32>(out);
     menu::bridge::important_text(&mem(), field, hiragana, record, strings)

@@ -150,7 +150,31 @@ Regions (`Arena::regions`):
 Regions are 64 KB aligned, Windows' allocation granularity. Pages outside
 every region stay unmapped: Unicorn reports an access there as
 `BadAccess`, and `ArenaMem` reads zeros, drops the write and counts it
-(the report lists the first ones).
+(the report lists the first ones; `run-all.sh` fails a replay with any:
+`docs/harness.md`, "Bad accesses in ffx-rust").
+
+Stage 4's check, "no code path builds a host pointer from an arena
+address without the arena base", has a static half:
+`python3 -I tools/check-hostptr.py` (run by `verify-batch.py` with the
+other `check-*.py`; `--self-test` checks its patterns, `-v` lists what it
+allowed). It scans what `ffx-host` compiles (the crates of its dependency
+tree and the hook's `ported/` under `cfg(ffx_host)`, skipping code a
+`cfg` turns off in the 64-bit host) for host addresses narrowed to game
+words (`.as_ptr()`, `&raw`, `ptr::from_mut`, a `*const` local or
+parameter, a Rust function's address, then `as u32`/`as i32`/
+`u32::try_from`) and for game words made host pointers (`as usize as
+*const`, `with_exposed_provenance`, an integer `as *mut`). The held
+shims' findings (`HELD`: their originals run, WP6 moves them to
+`StackFrame`) are counted apart; `tools/check-hostptr.allow` lists the
+right ones with a reason (window and Unicorn handles, Windows' fault
+address, `ffx-movie`'s hook-only `addr()`). It must report 0 problems.
+Its first run (2026-11-12, wp78) found one real case outside the held
+shims: `important_text` (ported/system.rs, under `TkMenuGetImportantName`/`Help`)
+handed `MsImportantPtr` a Rust local's address (`ptr::from_mut`, which
+`host-ports.py` didn't know); a one-word `StackFrame` now. It reads
+source, not types: a host address kept in a struct field or passed
+through a helper the patterns don't name escapes it, which is what the
+run-time counter is for.
 
 The release maps only the data sections (`.rdata`, `.data`, `.rodata`,
 `_RDATA`, `.rsrc`). This build maps `.text` too, read as data, for Unicorn.

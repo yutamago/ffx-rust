@@ -11,7 +11,7 @@ ffx-host compiles the hook's shims a second time (crates/ffx-host-ports).
 Calls into original code go through ffx_bridge::route and the per-call
 frames through StackFrame, so both work there. What doesn't: a shim that
 hands the game the address of a Rust local or a thread-local (`&raw mut
-x`, `buf.as_mut_ptr()`, `expose_provenance`, `addr_of_mut!`, a
+x`, `buf.as_mut_ptr()`, `ptr::from_mut(&mut x)`, `expose_provenance`, `addr_of_mut!`, a
 `thread_local!` buffer's `.get()`/`.as_ptr()`): on x86_64 that address is
 outside the 32-bit arena, and even on i686 Unicorn doesn't map the host
 stack. Such a shim stays out of the table (its original runs in Unicorn)
@@ -32,7 +32,7 @@ OUT = ROOT / 'crates/ffx-host-ports/src/held.rs'
 
 HOST_ADDR = re.compile(
     r'\.as_mut_ptr\(\)|\.as_ptr\(\)|&raw\s+(?:mut|const)\b|\baddr_of(?:_mut)?!|'
-    r'expose_provenance|\bthread_local!|\.get\(\)\s+as\s+usize|'
+    r'expose_provenance|\bthread_local!|\.get\(\)\s+as\s+usize|\bptr::from_(?:ref|mut)\b|'
     r'\bas\s+\*(?:const|mut)\b')
 ENTRY = re.compile(
     r'(\w+)\s*@\s*(0x[0-9a-fA-F_]+)\s*=>\s*extern\s+"[^"]+"\s+fn\s+(\w+)\s*\(')
