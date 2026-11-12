@@ -38,6 +38,7 @@ pub const TABLE: &[(&str, &str, Conv, usize, ImportFn)] = &[
     (CRT, "_CIcos", Conv::Cdecl, 0, intrinsic_without_operand),
     (CRT, "_CIsqrt", Conv::Cdecl, 0, intrinsic_without_operand),
     (CRT, "_CItan", Conv::Cdecl, 0, intrinsic_without_operand),
+    (CRT, "_CIatan", Conv::Cdecl, 0, intrinsic_without_operand),
     (CRT, "_CIatan2", Conv::Cdecl, 0, intrinsic_without_operand),
     (CRT, "_CIfmod", Conv::Cdecl, 0, intrinsic_without_operand),
     (CRT, "_stricmp", Conv::Cdecl, 2, stricmp),

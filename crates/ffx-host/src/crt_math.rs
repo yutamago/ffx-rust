@@ -32,6 +32,8 @@ use std::path::Path;
 use ffx_fpu::x87::{Ext, Op, execute};
 
 use crate::exec::Exec;
+use crate::imports::ImportFn;
+use crate::table::{Args, Conv, Ret};
 
 /// The DLL the constants come from, and the build they were read from.
 const CRT_FILE: &str = "MSVCR110.dll";
@@ -915,6 +917,113 @@ fn fmod(e: &Exec, st: &[f64]) -> Option<Ext> {
     })
 }
 
+// ----------------------------------------------------------------- atan
+
+/// `atan`'s constant block (`_libm_sse2_atan_precise` `0x10036e30`,
+/// `_CIatan`'s copy `0x100446a0`: the same values at the same offsets)
+/// and the shared table of (atan(c) high, low, c) records for c = k/32
+/// (`0x100604a8`; the record at word `0x300` holds π/2 for |x| ≥ 8).
+const ATAN_PRECISE: u32 = 0x1003_6e30;
+const ATAN_CI: u32 = 0x1004_46a0;
+const ATAN_TABLE: u32 = 0x1006_04a8;
+
+/// Offsets in the block: ±π/2, the two polynomials' coefficient pairs
+/// (Q from `+0x30`, P from `+0xb0`, the highest first at the end), the
+/// index bias, -1 and 1, the shifter 8, the band limits (8, 3/8, 1/32,
+/// 2^-27, about 1.6e16) and the tiny value added to ±π/2.
+const ATAN_HALF_PI: u32 = 0x20;
+const ATAN_Q: [u32; 8] = [0xa0, 0x90, 0x80, 0x70, 0x60, 0x50, 0x40, 0x30];
+const ATAN_P: [u32; 4] = [0xe0, 0xd0, 0xc0, 0xb0];
+const ATAN_BIAS: u32 = 0xf0;
+const ATAN_MINUS_ONE: u32 = 0x100;
+const ATAN_ONE: u32 = 0x108;
+const ATAN_SHIFTER: u32 = 0x110;
+const ATAN_EIGHT: u32 = 0x118;
+const ATAN_TABLE_FROM: u32 = 0x120;
+const ATAN_SERIES_FROM: u32 = 0x128;
+const ATAN_TINY_BELOW: u32 = 0x130;
+const ATAN_HUGE_FROM: u32 = 0x138;
+const ATAN_NUDGE: u32 = 0x148;
+
+/// The SSE2 `atan` of `x` (`0x10036b5e`, `_CIatan`'s `0x100443c6`), or
+/// `None` for a NaN (the DLL's handler).
+///
+/// |x| below 2^-27: `x`. Below 1/32: `x - x·P(x²)`; below 3/8: the same
+/// with the longer polynomial Q (each a pair of polynomials in x⁴, lane 0
+/// times x² plus lane 1). Up to 8: the table's c = k/32 just below |x|,
+/// `u = (|x| - c) / (|x|·c + 1)` and `atan c + atan u` as
+/// `hi - ((u·P(u²) - lo) - u)` with x's sign; from 8 the record of π/2
+/// with u = -1/|x|. From about 1.6e16 (infinities too): ±π/2 plus a tiny
+/// value, as the DLL rounds it.
+fn sse2_atan(d: &CrtData, base: u32, x: f64) -> Option<f64> {
+    let k = |off: u32| d.f(base + off);
+    let a = x.abs();
+    if a.is_nan() {
+        return None;
+    }
+    let series = |offs: &[u32], v: f64| {
+        let v2 = P2::dup(v * v);
+        let v4 = v2 * v2;
+        let mut p = d.p(base + offs[0]);
+        for &o in &offs[1..] {
+            p = p * v4 + d.p(base + o);
+        }
+        p.0 * v2.0 + p.1
+    };
+    if a >= k(ATAN_HUGE_FROM) {
+        let half_pi = k(ATAN_HALF_PI + if x.is_sign_negative() { 8 } else { 0 });
+        return Some(k(ATAN_NUDGE) + half_pi);
+    }
+    if a < k(ATAN_TINY_BELOW) {
+        return Some(x);
+    }
+    if a < k(ATAN_SERIES_FROM) {
+        return Some(x - series(&ATAN_P, a) * x);
+    }
+    if a < k(ATAN_TABLE_FROM) {
+        return Some(x - series(&ATAN_Q, a) * x);
+    }
+    let (u, record) = if a >= k(ATAN_EIGHT) {
+        (k(ATAN_MINUS_ONE) / a, 0x300)
+    } else {
+        // the record from |x| + 8's top bits (its exponent and 8 bits of
+        // mantissa: k = floor of 32·|x| after the rounding), three words each
+        let top = u32::try_from((a + k(ATAN_SHIFTER)).to_bits() >> 44).unwrap_or(0);
+        let bias = u32::try_from(d.q(base + ATAN_BIAS) & 0xffff_ffff).unwrap_or(0);
+        let i = top.wrapping_sub(bias).wrapping_mul(3);
+        let c = d.f(ATAN_TABLE.wrapping_add(i.wrapping_mul(8)) + 0x10);
+        ((a - c) / (a * c + k(ATAN_ONE)), i)
+    };
+    let at = ATAN_TABLE.wrapping_add(record * 8);
+    let (hi, lo) = (d.f(at), d.f(at + 8));
+    let tail = (series(&ATAN_P, u) * u - lo) - u;
+    let r = hi - tail;
+    Some(f64::from_bits(r.to_bits() | (x.to_bits() & (1 << 63))))
+}
+
+/// `_libm_sse2_atan_precise` (`0x10036b28`).
+fn atan_precise(e: &Exec, x: f64) -> Option<f64> {
+    let d = data(e)?;
+    if !sse_controls(e) {
+        return None;
+    }
+    match sse2_atan(d, ATAN_PRECISE, x) {
+        Some(v) => Some(v),
+        None => non_finite(e, x),
+    }
+}
+
+/// `_CIatan` (`0x100325ff`): the SSE2 code (`0x100443a8`) on the SSE2
+/// path; its NaNs and the x87 path: `None`.
+fn atan(e: &Exec, st: &[f64]) -> Option<Ext> {
+    let &[x] = st else { return None };
+    let d = data(e)?;
+    if !sse2_path(e) {
+        return None;
+    }
+    sse2_atan(d, ATAN_CI, x).map(ext_of)
+}
+
 // --------------------------------------------- the SSE2 functions
 
 /// Whether the SSE2 functions take their SSE2 code (`MXCSR` and the x87
@@ -1003,6 +1112,7 @@ pub fn sse_function(name: &str) -> Option<SseFn> {
         "_libm_sse2_cos_precise" => Some(|e, x| sin_cos_precise(e, &COS_PRECISE, x)),
         "_libm_sse2_tan_precise" => Some(tan_precise),
         "_libm_sse2_sqrt_precise" => Some(sqrt_precise),
+        "_libm_sse2_atan_precise" => Some(atan_precise),
         _ => None,
     }
 }
@@ -1010,31 +1120,25 @@ pub fn sse_function(name: &str) -> Option<SseFn> {
 /// The SSE2 functions' import entries without the DLLs: the ports call
 /// them through `Exec::call_sse` (`xmm0`); a call through the import's
 /// stub has no operand and stops.
-pub const NO_DLL: &[(
-    &str,
-    &str,
-    crate::table::Conv,
-    usize,
-    crate::imports::ImportFn,
-)] = &[
+pub const NO_DLL: &[(&str, &str, Conv, usize, ImportFn)] = &[
     (
         CRT_FILE,
         "_libm_sse2_sin_precise",
-        crate::table::Conv::Cdecl,
+        Conv::Cdecl,
         0,
         sse_without_operand,
     ),
     (
         CRT_FILE,
         "_libm_sse2_cos_precise",
-        crate::table::Conv::Cdecl,
+        Conv::Cdecl,
         0,
         sse_without_operand,
     ),
     (
         CRT_FILE,
         "_libm_sse2_tan_precise",
-        crate::table::Conv::Cdecl,
+        Conv::Cdecl,
         0,
         sse_without_operand,
     ),
@@ -1045,14 +1149,21 @@ pub const NO_DLL: &[(
         0,
         sse_without_operand,
     ),
+    (
+        CRT_FILE,
+        "_libm_sse2_atan_precise",
+        Conv::Cdecl,
+        0,
+        sse_without_operand,
+    ),
 ];
 
-fn sse_without_operand(e: &mut Exec, _: &crate::table::Args) -> crate::table::Ret {
+fn sse_without_operand(e: &mut Exec, _: &Args) -> Ret {
     e.end(crate::exec::Stop::Failed(
         "an SSE2 maths function called without its xmm0 operand".into(),
         0,
     ));
-    crate::table::Ret::VOID
+    Ret::VOID
 }
 
 /// An x87 intrinsic's Rust side: its operands (the last in `ST0`) to its
@@ -1061,7 +1172,8 @@ pub type X87Fn = fn(&Exec, &[f64]) -> Option<Ext>;
 
 /// The `_CI*` intrinsics with a Rust side ([`intrinsic`]), with the
 /// operands each takes from the x87 stack.
-pub const INTRINSICS: [(&str, usize); 6] = [
+pub const INTRINSICS: [(&str, usize); 7] = [
+    ("_CIatan", 1),
     ("_CIsin", 1),
     ("_CIcos", 1),
     ("_CIsqrt", 1),
@@ -1089,6 +1201,7 @@ pub fn intrinsic(name: &str) -> Option<X87Fn> {
         "_CIcos" => Some(|e, st| sin_cos(e, &COS, st)),
         "_CIsqrt" => Some(sqrt),
         "_CItan" => Some(tan),
+        "_CIatan" => Some(atan),
         "_CIatan2" => Some(atan2),
         "_CIfmod" => Some(fmod),
         _ => None,
