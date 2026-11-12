@@ -1630,3 +1630,227 @@ pub fn rb_tree_release(h: &mut impl Host, this: u32) -> u32 {
     }
     h.call_sym(FREE_LIST_RESET, Conv::Thiscall(this + 0x18), &[])
 }
+
+/// The window event handler map (`std::map<u32, ..>`, 0x14-byte nodes):
+/// its node maker `std_list_newNode_00625880` (thiscall on the map), its
+/// `_Insert_at` (`0x0061ecb0`) and iterator `--`.
+pub const EVENT_MAP_NEW_NODE: u32 = 0x0062_5880;
+pub const EVENT_MAP_INSERT_AT: u32 = 0x0061_ecb0;
+pub const EVENT_MAP_ITER_DEC: u32 = 0x0062_1580;
+/// The node count past which `0x0061ecb0` throws (`_Xlength_error`).
+pub const EVENT_MAP_MAX: u32 = 0x0ccc_cccb;
+
+/// The event map's `_Buynode(this; &key)` (`0x0061ebf0`, thiscall, `ret
+/// 4`): a node (`0x00625880`), colour and nil 0, the key word `+0x10`
+/// copied. The node.
+pub fn event_map_buy_node(h: &mut impl Host, this: u32, key: u32) -> u32 {
+    let node = h.call_sym(EVENT_MAP_NEW_NODE, Conv::Thiscall(this), &[]);
+    h.write(node.wrapping_add(0xc), 0u16);
+    let at = node.wrapping_add(0x10);
+    if at != 0 {
+        let k: u32 = h.read(key);
+        h.write(at, k);
+    }
+    node
+}
+
+/// The overflow path of `0x0061ecb0` (`_Xlength_error`, it throws).
+pub fn event_map_overflow(h: &mut impl Host) {
+    let f: u32 = h.read(h.rebase(XLENGTH_ERROR_IAT));
+    let msg = h.rebase(MAP_TOO_LONG);
+    h.call(f, Conv::Cdecl, &[msg]);
+}
+
+/// The event map's `_Insert_nohint(this; &out, leftish, &key, x)`
+/// (`0x0061eeb0`, thiscall, `ret 0x10`; `WindowEventHandler_insert_00625c70`
+/// and two more): down from the root, left while the key (`[key]`,
+/// unsigned) is below the node's (`+0x10`; at most it with `leftish`);
+/// then, as `std_Tree_insert_nohint` (`0x006995e0`), the predecessor
+/// compared, and a new node for `key` hung (`_Insert_at`, which makes the
+/// node: `x` is only passed on) with `out` = (it, 1), or `out` = (the
+/// equal one, 0) and nothing made. `frame`: one word of game memory (the
+/// original's argument slots). Returns `out`.
+pub fn event_map_insert_nohint(
+    h: &mut impl Host,
+    this: u32,
+    out: u32,
+    leftish: u32,
+    key: u32,
+    x: u32,
+    frame: u32,
+) -> u32 {
+    let head: u32 = h.read(this);
+    let want: u32 = h.read(key);
+    let mut add_left = true;
+    let mut place = head;
+    let mut at: u32 = h.read(head.wrapping_add(4));
+    while h.read::<u8>(at.wrapping_add(0xd)) == 0 {
+        place = at;
+        let k: u32 = h.read(at.wrapping_add(0x10));
+        add_left = if leftish & 0xff != 0 {
+            k >= want
+        } else {
+            want < k
+        };
+        at = h.read(at.wrapping_add(if add_left { 0 } else { 8 }));
+    }
+    h.write(frame, place);
+    if add_left {
+        if place == h.read::<u32>(head) {
+            return event_map_hang(h, this, out, true, place, key, x, frame);
+        }
+        h.call_sym(EVENT_MAP_ITER_DEC, Conv::Thiscall(frame), &[]);
+    }
+    let before: u32 = h.read(frame);
+    let k: u32 = h.read(before.wrapping_add(0x10));
+    if k < h.read::<u32>(key) {
+        return event_map_hang(h, this, out, add_left, place, key, x, frame);
+    }
+    h.write(out, before);
+    h.write(out.wrapping_add(4), 0u8);
+    out
+}
+
+/// `_Insert_at(&it, left, place, key, x)` and `out` = (it, 1).
+#[allow(clippy::too_many_arguments)]
+fn event_map_hang(
+    h: &mut impl Host,
+    this: u32,
+    out: u32,
+    left: bool,
+    place: u32,
+    key: u32,
+    x: u32,
+    frame: u32,
+) -> u32 {
+    let it = h.call_sym(
+        EVENT_MAP_INSERT_AT,
+        Conv::Thiscall(this),
+        &[frame, u32::from(left), place, key, x],
+    );
+    let it: u32 = h.read(it);
+    h.write(out, it);
+    h.write(out.wrapping_add(4), 1u8);
+    out
+}
+
+/// `memmove`'s import slot; `std::_Xbad_alloc`'s.
+pub const MEMMOVE_IAT: u32 = 0x00b0_c34c;
+pub const XBAD_ALLOC_IAT: u32 = 0x00b0_c2a0;
+/// `"vector<T> too long"` (`.rdata`).
+pub const VECTOR_TOO_LONG: u32 = 0x00b3_4498;
+
+/// `std::_Uninitialized_move` of `std::string`s (`0x0064aa10`, cdecl
+/// `(first, last, dst, ..)`): each string of `[first, last)` moved to
+/// `dst` (0x18 bytes apart): the target empty, then an inline source's
+/// `size + 1` bytes `memmove`d (none when that count wraps to 0) or a heap
+/// source's pointer taken (the source's word 0); size and capacity
+/// copied; the source left empty (capacity 15, size 0, first byte 0). A
+/// NULL target position skips the string (the source too). The end of
+/// the destination.
+pub fn move_strings(h: &mut impl Host, first: u32, last: u32, dst: u32) -> u32 {
+    let mut s = first;
+    let mut d = dst;
+    while s != last {
+        if d != 0 {
+            h.write(d + 0x14, 0xfu32);
+            h.write(d + 0x10, 0u32);
+            h.write(d, 0u8);
+            let cap: u32 = h.read(s + 0x14);
+            if cap < 0x10 {
+                let n = h.read::<u32>(s + 0x10).wrapping_add(1);
+                if n != 0 {
+                    let f: u32 = h.read(h.rebase(MEMMOVE_IAT));
+                    h.call(f, Conv::Cdecl, &[d, s, n]);
+                }
+            } else {
+                let p: u32 = h.read(s);
+                h.write(d, p);
+                h.write(s, 0u32);
+            }
+            let size: u32 = h.read(s + 0x10);
+            h.write(d + 0x10, size);
+            let cap: u32 = h.read(s + 0x14);
+            h.write(d + 0x14, cap);
+            h.write(s + 0x14, 0xfu32);
+            h.write(s + 0x10, 0u32);
+            h.write(s, 0u8);
+        }
+        s = s.wrapping_add(0x18);
+        d = d.wrapping_add(0x18);
+    }
+    d
+}
+
+/// Signed `(b - a) / 0x18` (the original's multiply by `0x2aaaaaab`).
+fn strings_between(a: u32, b: u32) -> u32 {
+    (b.wrapping_sub(a).cast_signed() / 0x18).cast_unsigned()
+}
+
+/// `std::vector<std::string>::_Reallocate(this; n)` (`0x00655b20`,
+/// thiscall, `ret 4`): a buffer of `n` strings (`operator new(n * 0x18)`;
+/// none for 0; `_Xbad_alloc` past `0xaaaaaaa` or on NULL, not ported:
+/// the vector is left as it is), the strings moved in
+/// (`0x0064aa10`), the old ones destroyed (`0x00635c40`) and their
+/// buffer deleted; first, end and last point into the new one. `eax`:
+/// the last pointer.
+pub fn string_vector_reallocate(h: &mut impl Host, this: u32, n: u32) -> u32 {
+    let mut buf = 0;
+    if n != 0 {
+        if n > 0x0aaa_aaaa {
+            return 0;
+        }
+        buf = h.call_sym(OPERATOR_NEW, Conv::Cdecl, &[n * 0x18]);
+        if buf == 0 {
+            return 0;
+        }
+    }
+    let first: u32 = h.read(this);
+    let last: u32 = h.read(this + 4);
+    h.call_sym(0x0064_aa10, Conv::Cdecl, &[first, last, buf, 0, 0, n]);
+    let first: u32 = h.read(this);
+    let last: u32 = h.read(this + 4);
+    let size = strings_between(first, last);
+    if first != 0 {
+        h.call_sym(0x0063_5c40, Conv::Stdcall, &[first, last]);
+        let first: u32 = h.read(this);
+        h.call_sym(OPERATOR_DELETE, Conv::Cdecl, &[first]);
+    }
+    h.write(this, buf);
+    h.write(this + 8, buf.wrapping_add(n.wrapping_mul(0x18)));
+    let end = buf.wrapping_add(size.wrapping_mul(0x18));
+    h.write(this + 4, end);
+    end
+}
+
+/// `std::vector<std::string>::_Reserve(this; n)` (`0x00655de0`,
+/// thiscall, `ret 4`; `std_vectorString_pushBack_00667770` and
+/// `AutoTestManager_pushCommand_006bd160`): with fewer than `n` free
+/// places, `_Reallocate` (a tail jump) to `max(size + n, capacity *
+/// 1.5)` (the growth 0 when `capacity / 2` overflows `0xaaaaaaa`);
+/// `_Xlength_error` past `0xaaaaaaa` strings is not ported (nothing
+/// done). `eax`: `_Reallocate`'s, or the free count.
+pub fn string_vector_reserve(h: &mut impl Host, this: u32, n: u32) -> u32 {
+    let first: u32 = h.read(this);
+    let last: u32 = h.read(this + 4);
+    let end: u32 = h.read(this + 8);
+    let room = strings_between(last, end);
+    if room >= n {
+        return room;
+    }
+    let size = strings_between(first, last);
+    if 0x0aaa_aaaau32.wrapping_sub(size) < n {
+        return 0;
+    }
+    let need = size.wrapping_add(n);
+    let cap = strings_between(first, end);
+    let mut grown = if 0x0aaa_aaaau32.wrapping_sub(cap >> 1) < cap {
+        0
+    } else {
+        cap.wrapping_add(cap >> 1)
+    };
+    if grown < need {
+        grown = need;
+    }
+    h.call_sym(0x0065_5b20, Conv::Thiscall(this), &[grown])
+}

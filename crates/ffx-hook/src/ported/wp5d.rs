@@ -258,6 +258,39 @@ ported! {
     PRedBlackTree_releaseAll_00636970 @ 0x0063_6970 => extern "thiscall" fn d_00636970(this: u32) -> u32 {
         d::rb_tree_release(&mut mem(), this)
     }
+    /// `EventMap_buyNode_0061ebf0`: a node holding the key word.
+    EventMap_buyNode_0061ebf0 @ 0x0061_ebf0 => extern "thiscall" fn d_0061ebf0(this: u32, key: u32) -> u32 {
+        d::event_map_buy_node(&mut mem(), this, key)
+    }
+    /// `EventMap_insertAt_0061ecb0`: the node made here, then `StdTree_insertAt_006993d0`'s code.
+    EventMap_insertAt_0061ecb0 @ 0x0061_ecb0 => extern "thiscall" fn d_0061ecb0(this: u32, out: u32, add_left: u32, at: u32, key: u32, x: u32) -> u32 {
+        let _ = x;
+        let mut m = mem();
+        let size: u32 = ffx_bridge::Mem::read(&m, this.wrapping_add(4));
+        if size >= d::EVENT_MAP_MAX {
+            d::event_map_overflow(&mut m);
+            return out;
+        }
+        let node = super::call_thiscall(crate::rebase(0x0061_ebf0) as u32, this, &[key]);
+        ffx_system::m5b_stl::bridge::tree_insert_at(&mut m, this, out, add_left, at, node)
+    }
+    /// `EventMap_insertNohint_0061eeb0`: a `u32`-keyed insert without a hint; `out`.
+    EventMap_insertNohint_0061eeb0 @ 0x0061_eeb0 => extern "thiscall" fn d_0061eeb0(this: u32, out: u32, leftish: u32, key: u32, x: u32) -> u32 {
+        let mut frame = StackFrame::<1>::new();
+        d::event_map_insert_nohint(&mut mem(), this, out, leftish, key, x, frame.at())
+    }
+    /// `StdString_moveRange_0064aa10`: strings moved into a new buffer; its end.
+    StdString_moveRange_0064aa10 @ 0x0064_aa10 => extern "C" fn d_0064aa10(first: u32, last: u32, dst: u32) -> u32 {
+        d::move_strings(&mut mem(), first, last, dst)
+    }
+    /// `StdVectorString_reallocate_00655b20`: the strings moved to a buffer of `n`.
+    StdVectorString_reallocate_00655b20 @ 0x0065_5b20 => extern "thiscall" fn d_00655b20(this: u32, n: u32) -> u32 {
+        d::string_vector_reallocate(&mut mem(), this, n)
+    }
+    /// `StdVectorString_reserve_00655de0`: room for `n` more strings.
+    StdVectorString_reserve_00655de0 @ 0x0065_5de0 => extern "thiscall" fn d_00655de0(this: u32, n: u32) -> u32 {
+        d::string_vector_reserve(&mut mem(), this, n)
+    }
 }
 
 /// `ffx-host` only: `Rng_ClockSeed` (`0x00798950`) as a table entry. In

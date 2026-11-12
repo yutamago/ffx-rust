@@ -1648,3 +1648,147 @@ fn wp5d_rb_tree_release() {
         }
     }
 }
+
+/// An empty `std::map` with 0x14-byte nodes (the event map's).
+fn empty_map14(t: &mut Twins) -> (u32, u32) {
+    let head = t.new_block(0x14);
+    for off in [0, 4, 8] {
+        t.w32(head + off, head);
+    }
+    t.write(head + 0xc, &[1, 1]);
+    let map = t.alloc(&[0; 8]);
+    t.w32(map, head);
+    (map, head)
+}
+
+/// The event map: its node maker (`0x0061ebf0`), its `_Insert_at`
+/// (`0x0061ecb0`: the node made, then the shim's path, `m5b_stl`'s
+/// `tree_insert_at`) growing a map at random keys, and its
+/// `_Insert_nohint` (`0x0061eeb0`, `leftish` 0 and 1; its `_Insert_at`
+/// and `--` the originals on both sides) growing maps from empty with
+/// keys from a small range (equal ones make nothing). `eax`, `out` and
+/// memory after every call.
+#[test]
+fn wp5d_event_map_insert() {
+    use ffx_prender::wp5d as d;
+    use ffx_system::m5b_stl::bridge as st;
+    for (label, mut t) in Twins::all() {
+        let (map, _) = empty_map14(&mut t);
+        for round in 0..4u32 {
+            let key = t.alloc(&(0x77 + round).to_le_bytes());
+            let w = format!("{label} event map node {round}");
+            t.run(&w, 0x0061_ebf0, map, &[key], false, |g| {
+                d::event_map_buy_node(g, map, key)
+            });
+        }
+        for leftish in [0u32, 1] {
+            let (map, _) = empty_map14(&mut t);
+            let out = t.alloc(&[0; 8]);
+            let frame = t.b.stack_range().start + 0x1000;
+            for i in 0..40u32 {
+                let k = t.rng.below(24);
+                let key = t.alloc(&k.to_le_bytes());
+                let w = format!("{label} event map nohint leftish {leftish} {i} (key {k})");
+                t.run(
+                    &w,
+                    0x0061_eeb0,
+                    map,
+                    &[out, leftish, key, 0x5e5e],
+                    false,
+                    |g| d::event_map_insert_nohint(g, map, out, leftish, key, 0x5e5e, frame),
+                );
+            }
+        }
+        let (map, head) = empty_map14(&mut t);
+        let out = t.alloc(&[0; 8]);
+        let mut nodes: Vec<u32> = Vec::new();
+        for i in 0..40u32 {
+            let key = t.alloc(&i.to_le_bytes());
+            let (place, left) = if nodes.is_empty() {
+                (head, 1)
+            } else {
+                loop {
+                    let p = nodes[t.rng.below(nodes.len() as u32) as usize];
+                    let side = t.rng.below(2);
+                    let child: u32 = Mem::read(&t.b, p + if side == 1 { 0 } else { 8 });
+                    if child == head {
+                        break (p, side);
+                    }
+                }
+            };
+            let w = format!("{label} event map insert_at {i}");
+            t.run(
+                &w,
+                0x0061_ecb0,
+                map,
+                &[out, left, place, key, 0],
+                false,
+                |g| {
+                    let node = g.call_sym(0x0061_ebf0, host::Conv::Thiscall(map), &[key]);
+                    st::tree_insert_at(g, map, out, left, place, node)
+                },
+            );
+            let node: u32 = Mem::read(&t.b, out);
+            nodes.push(node);
+        }
+    }
+}
+
+/// `std::vector<std::string>`: the string move (`0x0064aa10`, a NULL
+/// target included), `_Reallocate` (`0x00655b20`) and `_Reserve`
+/// (`0x00655de0`) on random vectors (empty, NULL, spare room or full;
+/// inline and heap strings), `n` 0..9; the callees as the originals on
+/// both sides. `eax` and memory.
+#[test]
+fn wp5d_string_vector_reserve() {
+    use ffx_prender::wp5d as d;
+    for (label, mut t) in Twins::all() {
+        for round in 0..20u32 {
+            let n = t.rng.below(5);
+            let src = t.alloc(&vec![0; (0x18 * n.max(1)) as usize]);
+            for i in 0..n {
+                let len = t.rng.below(30);
+                put_string(&mut t, src + 0x18 * i, len);
+            }
+            // a NULL target only for one string (the next targets are 0x18, ..)
+            let dst = if round % 5 == 4 && n <= 1 {
+                0
+            } else {
+                t.alloc(&vec![0x6c; (0x18 * n.max(1)) as usize])
+            };
+            let w = format!("{label} move strings {round}");
+            t.run_cdecl(&w, 0x0064_aa10, &[src, src + 0x18 * n, dst], |g| {
+                d::move_strings(g, src, src + 0x18 * n, dst)
+            });
+        }
+        for round in 0..60u32 {
+            let size = t.rng.below(5);
+            let spare = t.rng.below(3);
+            let v = t.alloc(&[0; 12]);
+            let first = if size + spare == 0 && t.rng.below(2) == 0 {
+                0
+            } else {
+                let b = t.new_block((size + spare).max(1) * 0x18);
+                for i in 0..size {
+                    let len = t.rng.below(30);
+                    put_string(&mut t, b + 0x18 * i, len);
+                }
+                b
+            };
+            t.w32(v, first);
+            t.w32(v + 4, first + 0x18 * size);
+            t.w32(v + 8, first + 0x18 * (size + spare));
+            let n = t.rng.below(10);
+            let (at, port): (u32, fn(&mut G, u32, u32) -> u32) = if round % 2 == 0 {
+                (0x0065_5de0, |g, v, n| d::string_vector_reserve(g, v, n))
+            } else {
+                (0x0065_5b20, |g, v, n| d::string_vector_reallocate(g, v, n))
+            };
+            let n = if at == 0x0065_5b20 { n.max(size) } else { n };
+            let w = format!(
+                "{label} string vector {at:#x} {round} (size {size}, spare {spare}, n {n})"
+            );
+            t.run(&w, at, v, &[n], false, |g| port(g, v, n));
+        }
+    }
+}
