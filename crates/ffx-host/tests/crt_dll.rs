@@ -1691,7 +1691,8 @@ fn cin_getline_without_the_dlls_matches_the_dll() {
 fn sse2_functions_match_the_dll() {
     let Some(exe) = exe() else { return };
     let mut e = ffx_host::boot(&exe).unwrap();
-    let cases: [(&str, u32, usize); 9] = [
+    let cases: [(&str, u32, usize); 10] = [
+        ("_libm_sse2_log10_precise", 0x9100_000a, 3000),
         ("_libm_sse2_exp_precise", 0x9100_0009, 2300),
         ("_libm_sse2_log_precise", 0x9100_0008, 3000),
         ("_libm_sse2_asin_precise", 0x9100_0007, 3000),

@@ -1694,6 +1694,94 @@ fn exp_precise(e: &Exec, x: f64) -> Option<f64> {
     }
 }
 
+/// `_libm_sse2_log10_precise`'s constants (`0x100383d0`) and tables
+/// (`0x100388c0`: the reciprocals; `0x100384b0`: -log10 r in two parts).
+/// The same scheme as `log` with log10 2, the reciprocal's product less
+/// a split of log10 e, and a linear term in u of its own.
+const LOG10_K: u32 = 0x1003_83d0;
+const LOG10_RECIP: u32 = 0x1003_88c0;
+const LOG10_NEG_LOG: u32 = 0x1003_84b0;
+const LOG10_SPLIT: u32 = 0x10;
+const LOG10_ROUND: u32 = 0x20;
+const LOG10_CUT: u32 = 0x30;
+const LOG10_LG2: u32 = 0x40;
+const LOG10_MASKS: u32 = 0x50;
+const LOG10_ONE: u32 = 0x70;
+const LOG10_TWO52: u32 = 0x80;
+const LOG10_P: [u32; 3] = [0xa0, 0xb0, 0xc0];
+const LOG10_LINEAR: u32 = 0xd0;
+
+/// The SSE2 `log10` of `x` (`0x10038159`), or `None` for what the DLL's
+/// error handler takes (zero, negative values, NaNs).
+fn sse2_log10(d: &CrtData, x: f64) -> Option<f64> {
+    let kp = |o: u32| d.p(LOG10_K + o);
+    let mut x = x;
+    let mut bias = 0i32;
+    loop {
+        let biased = u32::try_from((x.to_bits() >> 52) & 0xfff).unwrap_or(0);
+        let ecx = biased.wrapping_sub(1);
+        let m = or2(and2(P2::dup(x), kp(LOG_MANT)), kp(LOG10_ONE));
+        if ecx > 0x7fd {
+            if x == 0.0 {
+                return None; // -∞, a pole error
+            }
+            if ecx == u32::MAX {
+                x *= d.f(LOG10_K + LOG10_TWO52);
+                bias = -52;
+                continue;
+            }
+            if ecx == 0x7fe && m.0.to_bits() == d.q(LOG10_K + LOG10_ONE) {
+                return Some(f64::INFINITY);
+            }
+            return None; // a NaN or a negative value
+        }
+        let index = u32::try_from((m + kp(LOG10_ROUND)).0.to_bits() & 0x7f0).unwrap_or(0);
+        let r = d.p(LOG10_RECIP + index);
+        let neg_log = d.p(LOG10_NEG_LOG + index);
+        let m_hi = and2(m, kp(LOG10_CUT));
+        let m_lo = m - m_hi;
+        let hi_r = m_hi * r - kp(LOG10_SPLIT);
+        let mut acc = P2(neg_log.0 + hi_r.0, neg_log.1);
+        let lo_r = m_lo * r;
+        let u = lo_r + hi_r;
+        let e = i32::try_from(biased).unwrap_or(0) - 0x3ff + bias;
+        let exact = i32::try_from(index).unwrap_or(1).wrapping_add(e << 10) == 0;
+        let mask = d.p(LOG10_K + LOG10_MASKS + if exact { 0x10 } else { 0 });
+        let p = kp(LOG10_P[0]) * u + kp(LOG10_P[1]);
+        let u2 = u * u;
+        let u4 = u2.0 * u2.0;
+        acc = acc + P2::dup(f64::from(e)) * kp(LOG10_LG2);
+        acc = acc + and2(lo_r, mask);
+        let p = p * u + kp(LOG10_P[2]);
+        let u5 = u4 * u.0;
+        let lin = kp(LOG10_LINEAR) * u;
+        let p = p * P2(u5, u2.1);
+        let sum = p + lin;
+        return Some(((p.1 + sum.0) + acc.1) + acc.0);
+    }
+}
+
+/// `_libm_sse2_log10_precise` (`0x10038128`): as [`log_precise`].
+fn log10_precise(e: &Exec, x: f64) -> Option<f64> {
+    let d = data(e)?;
+    if !sse_controls(e) {
+        return None;
+    }
+    if let Some(v) = sse2_log10(d, x) {
+        return Some(v);
+    }
+    if e.shared().dll(CRT_FILE).is_some() {
+        return None;
+    }
+    Some(if x == 0.0 {
+        f64::NEG_INFINITY
+    } else if x.is_nan() {
+        f64::from_bits(x.to_bits() | (1 << 51))
+    } else {
+        f64::from_bits(0xfff8_0000_0000_0000)
+    })
+}
+
 // --------------------------------------------- the SSE2 functions
 
 /// Whether the SSE2 functions take their SSE2 code (`MXCSR` and the x87
@@ -1787,6 +1875,7 @@ pub fn sse_function(name: &str) -> Option<SseFn> {
         "_libm_sse2_asin_precise" => Some(asin_precise),
         "_libm_sse2_log_precise" => Some(log_precise),
         "_libm_sse2_exp_precise" => Some(exp_precise),
+        "_libm_sse2_log10_precise" => Some(log10_precise),
         _ => None,
     }
 }
@@ -1811,6 +1900,7 @@ pub const NO_DLL: &[(&str, &str, Conv, usize, ImportFn)] = sse_rows![
     "_libm_sse2_asin_precise",
     "_libm_sse2_log_precise",
     "_libm_sse2_exp_precise",
+    "_libm_sse2_log10_precise",
 ];
 
 fn sse_without_operand(e: &mut Exec, _: &Args) -> Ret {
