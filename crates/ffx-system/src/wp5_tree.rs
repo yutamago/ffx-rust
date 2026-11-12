@@ -14,6 +14,19 @@ pub const ITERATOR_DEC: u32 = 0x0069_9f50;
 /// `operator delete(p)` (cdecl).
 pub const OPERATOR_DELETE: u32 = 0x0063_0390;
 
+/// `operator new(n)` (cdecl) and `MSVCP110!std::_Xbad_alloc`'s import
+/// slot.
+pub const OPERATOR_NEW: u32 = 0x0063_0310;
+pub const XBAD_ALLOC_IAT: u32 = 0x00b0_c2a0;
+/// The node makers the value nodes call (thiscall on the tree): 0x20 and
+/// 0x2c bytes, and the video map's copy of the 0x2c one.
+pub const BUY_NODE_20: u32 = 0x006a_0400;
+pub const BUY_NODE_2C: u32 = 0x006a_03c0;
+pub const BUY_NODE_VIDEO: u32 = 0x006d_7930;
+/// `StdString_moveWithWord_0069c200(this; src, unused)` (thiscall, `ret
+/// 8`): the prototype's move into a node.
+pub const PROTOTYPE_COPY: u32 = 0x0069_c200;
+
 pub mod bridge {
     //! The ports over game memory.
 
@@ -137,5 +150,99 @@ pub mod bridge {
             }
         }
         result
+    }
+
+    /// `operator new(size)` for a node; `_Xbad_alloc` (through the import)
+    /// when it fails, as the original's tail jump.
+    fn new_node(h: &mut impl Host, size: u32) -> u32 {
+        let n = h.call_sym(super::OPERATOR_NEW, Conv::Cdecl, &[size]);
+        if n == 0 {
+            let f: u32 = h.read(h.rebase(super::XBAD_ALLOC_IAT));
+            h.call(f, Conv::Cdecl, &[]);
+        }
+        n
+    }
+
+    /// `std::_Tree::_Buyheadnode` of a 0x20-byte node (`0x006a0390`,
+    /// cdecl): its left, parent and right itself, black and nil
+    /// (`+0xc` = `0x0101`). The node.
+    pub fn buy_head_node(h: &mut impl Host) -> u32 {
+        let n = new_node(h, 0x20);
+        if n == 0 {
+            return 0;
+        }
+        for off in [0, 4, 8] {
+            h.write(n + off, n);
+        }
+        h.write(n + 0xc, 0x0101u16);
+        n
+    }
+
+    /// `std::_Tree::_Buynode0` (`0x006a03c0`: `size` 0x2c, `0x006a0400`:
+    /// 0x20; thiscall on the tree): a node of `size` bytes with its left,
+    /// parent and right the tree's head. The node.
+    pub fn buy_node(h: &mut impl Host, this: u32, size: u32) -> u32 {
+        let n = new_node(h, size);
+        if n == 0 {
+            return 0;
+        }
+        let head: u32 = h.read(this);
+        for off in [0, 4, 8] {
+            h.write(n + off, head);
+        }
+        n
+    }
+
+    /// `std::_Tree::_Buynode(value)` of a 0x20-byte node with a 12-byte
+    /// value (`0x0069c5f0`, `0x0069c630`; thiscall on the tree, `ret 4`):
+    /// [`buy_node`], colour and nil 0 (`+0xc` word), the value's three
+    /// words to `+0x10`. The node.
+    pub fn buy_node_value12(h: &mut impl Host, this: u32, value: u32) -> u32 {
+        let n = h.call_sym(super::BUY_NODE_20, Conv::Thiscall(this), &[]);
+        h.write(n.wrapping_add(0xc), 0u16);
+        let at = n.wrapping_add(0x10);
+        if at != 0 {
+            for k in 0..3 {
+                let w: u32 = h.read(value.wrapping_add(4 * k));
+                h.write(at + 4 * k, w);
+            }
+        }
+        n
+    }
+
+    /// The same for the prototype table's 0x2c-byte nodes (`0x0069c5c0`):
+    /// [`super::BUY_NODE_2C`], the word at `+0xc` 0, the value copied
+    /// into `+0x10` by its copy constructor (`0x0069c200`, thiscall
+    /// `(value, 0)`). The node.
+    pub fn buy_node_prototype(h: &mut impl Host, this: u32, value: u32) -> u32 {
+        let n = h.call_sym(super::BUY_NODE_2C, Conv::Thiscall(this), &[]);
+        h.write(n.wrapping_add(0xc), 0u16);
+        let at = n.wrapping_add(0x10);
+        if at != 0 {
+            h.call_sym(super::PROTOTYPE_COPY, Conv::Thiscall(at), &[value, 0]);
+        }
+        n
+    }
+
+    /// `VideoIndexMap_buyNode_006d5ca0(this; &(id, path))` (thiscall, `ret
+    /// 4`): a 0x2c-byte node ([`super::BUY_NODE_VIDEO`], a copy of
+    /// `0x006a03c0`), the word at `+0xc` 0, the id at `+0x10` and a
+    /// `std::string` of the C string `path` at `+0x14` (made empty, then
+    /// `assign(path, strlen(path))`). The node.
+    pub fn video_buy_node(h: &mut impl Host, this: u32, value: u32) -> u32 {
+        let n = h.call_sym(super::BUY_NODE_VIDEO, Conv::Thiscall(this), &[]);
+        h.write(n.wrapping_add(0xc), 0u16);
+        let v = n.wrapping_add(0x10);
+        if v != 0 {
+            let id: u32 = h.read(value);
+            h.write(v, id);
+            let path: u32 = h.read(value.wrapping_add(4));
+            let s = v + 4;
+            h.write(s + 0x14, 0xfu32);
+            h.write(s + 0x10, 0u32);
+            h.write(s, 0u8);
+            crate::wp5_string::bridge::assign_cstr(h, s, path);
+        }
+        n
     }
 }

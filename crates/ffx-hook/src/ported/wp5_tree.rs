@@ -34,4 +34,36 @@ ported! {
     std_Tree_lower_bound_string_006e9920 @ 0x006e_9920 => extern "thiscall" fn wtr_006e9920(this: u32, key: u32) -> u32 {
         b::lower_bound_string(&mut mem(), this, key)
     }
+    /// `std_Tree_buyHeadNode_006a0390`: a head node (itself all round, black, nil).
+    std_Tree_buyHeadNode_006a0390 @ 0x006a_0390 => extern "C" fn wtr_006a0390() -> u32 {
+        b::buy_head_node(&mut mem())
+    }
+    /// `std_Tree_buyNode2c_006a03c0`: a 0x2c-byte node hung on the head.
+    std_Tree_buyNode2c_006a03c0 @ 0x006a_03c0 => extern "thiscall" fn wtr_006a03c0(this: u32) -> u32 {
+        b::buy_node(&mut mem(), this, 0x2c)
+    }
+    /// `std_Tree_buyNode20_006a0400`: a 0x20-byte node hung on the head.
+    std_Tree_buyNode20_006a0400 @ 0x006a_0400 => extern "thiscall" fn wtr_006a0400(this: u32) -> u32 {
+        b::buy_node(&mut mem(), this, 0x20)
+    }
+    /// `std_Tree_buyNode2c_006d7930`: a copy of `0x006a03c0`.
+    std_Tree_buyNode2c_006d7930 @ 0x006d_7930 => extern "thiscall" fn wtr_006d7930(this: u32) -> u32 {
+        b::buy_node(&mut mem(), this, 0x2c)
+    }
+    /// `std_Tree_buyNodeValue12_0069c5f0`: a node with a 12-byte value.
+    std_Tree_buyNodeValue12_0069c5f0 @ 0x0069_c5f0 => extern "thiscall" fn wtr_0069c5f0(this: u32, value: u32) -> u32 {
+        b::buy_node_value12(&mut mem(), this, value)
+    }
+    /// `std_Tree_buyNodeValue12_0069c630`: the same (a copy).
+    std_Tree_buyNodeValue12_0069c630 @ 0x0069_c630 => extern "thiscall" fn wtr_0069c630(this: u32, value: u32) -> u32 {
+        b::buy_node_value12(&mut mem(), this, value)
+    }
+    /// `std_Tree_buyNodePrototype_0069c5c0`: a prototype table node, its value moved in.
+    std_Tree_buyNodePrototype_0069c5c0 @ 0x0069_c5c0 => extern "thiscall" fn wtr_0069c5c0(this: u32, value: u32) -> u32 {
+        b::buy_node_prototype(&mut mem(), this, value)
+    }
+    /// `VideoIndexMap_buyNode_006d5ca0`: a node of (id, the path as a `std::string`).
+    VideoIndexMap_buyNode_006d5ca0 @ 0x006d_5ca0 => extern "thiscall" fn wtr_006d5ca0(this: u32, value: u32) -> u32 {
+        b::video_buy_node(&mut mem(), this, value)
+    }
 }

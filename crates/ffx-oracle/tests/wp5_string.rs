@@ -785,3 +785,73 @@ fn wp5b_is_character_cancel_load() {
         }
     }
 }
+
+/// The `_Tree` node makers: the head node (`0x006a0390`), the plain nodes
+/// of 0x2c and 0x20 bytes (`0x006a03c0`, `0x006a0400`), the 12-byte value
+/// nodes (`0x0069c5f0`, `0x0069c630`) and the prototype table's
+/// (`0x0069c5c0`, its value copied by the original `0x0069c200`), over
+/// the stub allocator (junk in the fresh nodes).
+#[test]
+fn wp5b_tree_node_makers() {
+    use ffx_system::wp5_tree::bridge as tb;
+    for (label, mut t) in Twins::all() {
+        for round in 0..8u32 {
+            let tree = t.alloc(&[0; 8]);
+            let head = t.alloc(&[0x77; 0x20]);
+            t.w32(tree, head);
+            let w = format!("{label} head node {round}");
+            t.run_cdecl(&w, 0x006a_0390, &[], |g| tb::buy_head_node(g));
+            for (sym, size) in [(0x006a_03c0u32, 0x2cu32), (0x006a_0400, 0x20)] {
+                let w = format!("{label} node {sym:#x} {round}");
+                t.run(&w, sym, tree, &[], false, |g| tb::buy_node(g, tree, size));
+            }
+            let value = t.alloc(&[0x10 + round as u8; 16]);
+            for sym in [0x0069_c5f0u32, 0x0069_c630] {
+                let w = format!("{label} value node {sym:#x} {round}");
+                t.run(&w, sym, tree, &[value], false, |g| {
+                    tb::buy_node_value12(g, tree, value)
+                });
+            }
+            // a prototype: a string, then words (what 0x0069c200 copies)
+            let l = t.rng.len();
+            let s = t.string(l);
+            let mut proto = vec![0u8; 0x1c];
+            t.b.read_bytes(s, &mut proto[..0x18]);
+            proto[0x18..].copy_from_slice(&(0x1234_0000 + round).to_le_bytes());
+            let p = t.alloc(&proto);
+            let w = format!("{label} prototype node {round}");
+            t.run(&w, 0x0069_c5c0, tree, &[p], false, |g| {
+                tb::buy_node_prototype(g, tree, p)
+            });
+        }
+    }
+}
+
+/// `VideoIndexMap_buyNode_006d5ca0` and its node maker `0x006d7930`:
+/// paths of every length around the inline limit, empty included.
+#[test]
+fn wp5b_video_buy_node() {
+    use ffx_system::wp5_tree::bridge as tb;
+    for (label, mut t) in Twins::all() {
+        let tree = t.alloc(&[0; 8]);
+        let head = t.alloc(&[0x77; 0x20]);
+        t.w32(tree, head);
+        for round in 0..30u32 {
+            let l = t.rng.len();
+            let mut path = t.text(l);
+            path.push(0);
+            let p = t.alloc(&path);
+            let mut v = (0x0100_0000 + round).to_le_bytes().to_vec();
+            v.extend(p.to_le_bytes());
+            let value = t.alloc(&v);
+            let w = format!("{label} video node {round} ({l})");
+            t.run(&w, 0x006d_5ca0, tree, &[value], false, |g| {
+                tb::video_buy_node(g, tree, value)
+            });
+            let w = format!("{label} video node maker {round}");
+            t.run(&w, 0x006d_7930, tree, &[], false, |g| {
+                tb::buy_node(g, tree, 0x2c)
+            });
+        }
+    }
+}
