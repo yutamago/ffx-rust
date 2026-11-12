@@ -50,6 +50,7 @@ pub mod report;
 pub mod rsrc;
 pub mod stacks;
 pub mod stand_ins;
+pub mod steam;
 pub mod sync;
 pub mod table;
 #[cfg(windows)]
