@@ -890,7 +890,7 @@ else beside `ffx-rust.exe`. The DLL is the Steamworks SDK's
 (`sdk/redistributable_bin/win64/steam_api64.dll`, SDK 1.65: FileVersion
 10.87.46.89, sha256 `e6d9bafb...e776d`). It is never in git; the
 release package carries it beside `ffx-rust.exe` under the Steamworks
-SDK's terms (Valve's licence, not MIT OR Apache-2.0: WP13 lists it with
+SDK's terms (Valve's licence, not MIT OR Apache-2.0: the package lists it with
 the other licences). The SDK's headers are used for facts only (struct
 layouts, callback ids, packing, vtable order).
 
@@ -939,7 +939,8 @@ clear and the game never asks for an interface. The notes say why
 (`Steam: absent (...)`). The app id: Steam sets `SteamAppId` for a game
 it starts; started any other way, `ffx-rust.exe` needs
 `SteamAppId=359870` in its environment (or a `steam_appid.txt` in its
-working folder, never in the game folder). WP13's launcher sets it.
+working folder, never in the game folder). `ffx-launch --rust` sets it
+(below, "The release package").
 
 Tests:
 
@@ -1299,6 +1300,82 @@ at a copy of the toolchain file without that line (all under
 LLVM's `llvm-ml64` under the name `ml64`. The hook (`dinput8.dll`) stays
 32-bit (`tools/build-hook.sh`), and so does its 32-bit clippy
 (`-p ffx-hook`); `ffx-host` is no longer in it.
+`FFX_HOST_RUSTFLAGS` and `FFX_HOST_CFLAGS` are added to cargo-xwin's
+target flags (the package's path remapping, below), and
+`CARGO_TARGET_DIR` is honoured.
+
+## The release package
+
+What a player gets (M5 stage 5, WP13, 2026-11-12): a zip with
+`ffx-rust.exe` and `ffx-launch.exe` (both x86_64), Steam's
+`steam_api64.dll`, `ffx.sym` (the report's names: `Symbols::locate`
+finds it beside the program), `README.txt` (`docs/player.md`, CRLF),
+`play-ffx-rust.cmd` (`ffx-launch.exe --rust %*`), `SHA256SUMS.txt`, and
+`licences/`: `LICENSE-MIT`, `LICENSE-APACHE`, `THIRD-PARTY.txt`,
+zvidlib-vp8's `LICENSE` and `THIRD_PARTY_NOTICES.md`, `ffx-movie`'s
+`NOTICE` (libVorbis, libogg), Ruffle's `LICENSE.md` (from the fork's
+checkout at the pinned rev) and `steam_api64-NOTICE.txt`
+(`tools/release/`).
+
+```bash
+tools/package-release.sh --dry-run          # no build, no zip: stage, check, self-test (seconds)
+tools/package-release.sh --dev --dry-run    # the same for the development package
+tools/package-release.sh                    # the release: refused today (below)
+tools/package-release.sh --dev [--out DIR]  # ffx-rust-<version>-<rev>-win64-dev-not-for-release.zip
+tools/package-release.sh --prebuilt DIR     # package DIR's ffx-rust.exe and ffx-launch.exe
+python3 -I tools/release-files.py check DIR [--dev]   # the checks on any staged folder
+```
+
+- **Features.** `FFX_RELEASE_FEATURES` (default `swf`), built with
+  `--no-default-features`. `dev-unicorn` in it is refused without
+  `--dev`; `--dev` adds it and names the zip `-dev-not-for-release`,
+  with Unicorn's `COPYING` (GPL-2.0) and `licences/unicorn-NOTICE.txt`.
+  Today `ffx-host` refuses to build without `dev-unicorn` (the
+  `compile_error!` in `lib.rs`, finish plan WP9), so the release build
+  fails with that message and only `--dev` packages build. When WP9
+  lands, the plain command makes the release.
+- **The builds** go to `target/package` with `--remap-path-prefix` for
+  the repo, `~/.cargo`, `~/.rustup` and the home folder (clang-cl's
+  `-ffile-prefix-map` for C code), so the development build in
+  `target/` is untouched and no build path ends up in the binaries.
+- **steam_api64.dll** from `STEAMWORKS_SDK` (default
+  `~/tools/steamworks_sdk_165/sdk`, `redistributable_bin/win64/`); never
+  in git (the user accepted the SDK's licence and downloaded it).
+- **THIRD-PARTY.txt** (`tools/release-files.py notices`): the release
+  trees of `ffx-host` (with the features) and `ffx-launch`, as
+  `tools/check-licences.py` lists them (its `tree` and `gpl_bound`):
+  every package with its licence expression and repository, then each
+  distinct licence file the packages ship (`LICENSE*`, `COPYING*`,
+  `NOTICE*`, `THIRD_PARTY*`, ...; for a git dependency the checkout's
+  root), with the packages that ship it. 311 packages and 185 texts
+  with `swf` (2026-11-12). A GPL-bound package fails it unless `--dev`.
+- **The checks** (`tools/release-files.py check`, the dry run runs them
+  and then `selftest`, which plants a user path, a game file, a stray
+  program and, for a release, Unicorn's strings, and expects each to be
+  caught): only the files above (`PACKAGE`), PE files only the three
+  programs, no game file by name (`.vbf`, `FFX.exe`, `magic_*.dll`,
+  FMOD, Iggy, the runtime DLLs, `steam_api.dll`, ...), in every file's
+  ASCII and UTF-16 strings no user path (`check-privacy.py`'s pattern),
+  no word of the user's real name (its hashes), not `$HOME`, `$USER`,
+  the repo's path or the Windows user name (read at run time), and in a
+  release `ffx-rust.exe` none of Unicorn's strings.
+- **ffx-launch** (`crates/ffx-launch`, `src/plan.rs` with the unit
+  tests): `--rust [GAME]` as docs/player.md describes it, for players;
+  without `--rust` it starts `FFX.exe` with bottom-up ASLR off and
+  prints the process ID, as `tools/run-game.sh --fixed-addresses` uses
+  it. `--rust` passes `--game-dir`, `--documents` (`SHGetFolderPathW
+  (CSIDL_PERSONAL)`, the folder `FFX.exe` asks for) and `--budget` one
+  year (`ffx-rust`'s default is 60 s), starts the program in the game
+  folder without a console, with `SteamAppId=359870` unless the
+  environment has one (Steam sets it), and its stdout and stderr in
+  `ffx-rust.log` beside it (the run before as `ffx-rust.previous.log`;
+  the temporary folder when that folder is read-only). A missing
+  `steam_api64.dll` (beside `ffx-rust.exe`, or `FFX_STEAM_API`) is a
+  warning after the start (not with `FFX_NO_STEAM`); a missing game
+  folder, game file (`FFX.exe`, `data\FFX_Data.vbf`, `magicFiles\FFX`,
+  and while the development build loads them the two runtime DLLs:
+  `plan::NEEDED`), `ffx-rust.exe` or Documents folder stops it. Each
+  shows in a message box (`--no-dialog`: stderr only).
 
 ## Status (2026-10-29, the device round)
 

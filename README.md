@@ -40,7 +40,7 @@ crates/ffx-oracle     runs original FFX.exe functions in an emulator, for parity
 crates/ffx-hook       the hook table, the patcher, the shims (src/ported), mods, the test harness
 crates/ffx-dinput8    dinput8.dll proxy that loads ffx-hook into the game
 crates/ffx-harness    launches and drives the game from tests; replays; game-slot
-crates/ffx-launch     starts FFX.exe with bottom-up ASLR off, for repeatable addresses
+crates/ffx-launch     starts FFX.exe with bottom-up ASLR off (repeatable addresses), or with --rust ffx-rust.exe for players (docs/player.md)
 crates/ffx-auto       trivial functions ported by tools/autoport.py
                       game modules (ports, each with its bridge):
 crates/ffx-battle     battle (Ms); also the encounter table and formations
@@ -143,7 +143,7 @@ derived from `FFX.exe` and the game files.
 
 ## Licence
 
-MIT OR Apache-2.0. Two parts carry other permissive licences and keep
+MIT OR Apache-2.0 ([LICENSE-MIT](LICENSE-MIT), [LICENSE-APACHE](LICENSE-APACHE)). Two parts carry other permissive licences and keep
 their notices:
 
 - `crates/ffx-movie/src/vorbis` is a port of the libVorbis 1.3.5 decoder
