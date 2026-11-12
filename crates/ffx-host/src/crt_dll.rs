@@ -69,10 +69,12 @@ fn c_str(mem: &impl Mem, p: u32) -> Vec<u8> {
 const LOCALE_CHANGED: u32 = 0x100c_87d0;
 
 /// Whether the DLL's "C"-locale paths apply.
+/// Without the DLLs (the no-Unicorn build) nothing changes the locale: the
+/// "C" locale always.
 pub(crate) fn c_locale(e: &Exec) -> bool {
     e.shared()
         .dll(CRT)
-        .is_some_and(|d| e.mem().read::<u32>(d.base + (LOCALE_CHANGED - DLL_BASE)) == 0)
+        .is_none_or(|d| e.mem().read::<u32>(d.base + (LOCALE_CHANGED - DLL_BASE)) == 0)
 }
 
 /// `_stricmp(a, b)` in the "C" locale (`__ascii_stricmp` `0x10096b4f`):

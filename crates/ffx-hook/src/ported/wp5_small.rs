@@ -91,4 +91,12 @@ ported! {
     CharacterSwitchTweakUtil_CreateInstance @ 0x006b_5eb0 => extern "C" fn sm_006b5eb0() -> u32 {
         s::char_switch_create(&mut mem())
     }
+    /// `AtlBaseModule_ctor_009d9c20`: ATL's base module constructed; `this`.
+    AtlBaseModule_ctor_009d9c20 @ 0x009d_9c20 => extern "thiscall" fn sm_009d9c20(this: u32) -> u32 {
+        s::atl_base_module_ctor(&mut mem(), this)
+    }
+    /// `ComCriticalSection_Init_009d9dfe` (`CComCriticalSection::Init`): the lock initialised; an `HRESULT`.
+    ComCriticalSection_Init_009d9dfe @ 0x009d_9dfe => extern "thiscall" fn sm_009d9dfe(this: u32) -> u32 {
+        s::atl_cs_init(&mut mem(), this)
+    }
 }

@@ -1662,3 +1662,52 @@ fn wp5b_tree_erase_range() {
         }
     }
 }
+
+/// `CAtlBaseModule`'s constructor (`0x009d9c20`) and its lock's `Init`
+/// (`0x009d9dfe`): `InitializeCriticalSectionEx` succeeding or failing
+/// with last errors 0, 5 and a negative one (both imports stubs through
+/// their slots, the first logging its arguments).
+#[test]
+fn wp5b_atl_base_module() {
+    use ffx_prender::wp5_small as sm;
+    for (label, mut t) in Twins::all() {
+        let log = t.alloc(&[0; 4 + 8 * 64]);
+        let cells = t.alloc(&[0; 8]);
+        // the init: logs its first word, returns [cells]; ret 0xc
+        let s = log_stub_plain(&mut t, log, 0, 0, true);
+        let mut c = s[..s.len() - 6].to_vec();
+        c.push(0xa1);
+        c.extend(cells.to_le_bytes()); // mov eax, [cells]
+        c.extend([0xc2, 0x0c, 0x00]);
+        let init = t.code(&c);
+        let mut c = vec![0xa1];
+        c.extend((cells + 4).to_le_bytes()); // mov eax, [cells + 4]
+        c.push(0xc3);
+        let last = t.code(&c);
+        let s = t.a.rebase(sm::INIT_CS_EX_IAT);
+        t.w32(s, init);
+        let s = t.a.rebase(sm::GET_LAST_ERROR_IAT);
+        t.w32(s, last);
+        for (ok, err) in [
+            (1u32, 0u32),
+            (0, 5),
+            (0, 0),
+            (0, 0x8000_0002),
+            (0, 0x1_0005),
+        ] {
+            t.w32(cells, ok);
+            t.w32(cells + 4, err);
+            t.write(t.a.rebase(sm::ATL_INIT_FAILED), &[0]);
+            let obj = t.alloc(&[0x5c; 0x40]);
+            t.w32(log, 0);
+            let w = format!("{label} atl base module ({ok}, {err:#x})");
+            t.run(&w, 0x009d_9c20, obj, &[], false, |g| {
+                sm::atl_base_module_ctor(g, obj)
+            });
+            let w = format!("{label} atl cs init ({ok}, {err:#x})");
+            t.run(&w, 0x009d_9dfe, obj + 0x14, &[], false, |g| {
+                sm::atl_cs_init(g, obj + 0x14)
+            });
+        }
+    }
+}

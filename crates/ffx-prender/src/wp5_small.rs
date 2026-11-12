@@ -341,3 +341,53 @@ pub fn char_switch_create(h: &mut impl Host) -> u32 {
     h.write(at, v);
     v
 }
+
+/// `KERNEL32` import slots: `InitializeCriticalSectionEx`, `GetLastError`.
+pub const INIT_CS_EX_IAT: u32 = 0x00b0_c048;
+pub const GET_LAST_ERROR_IAT: u32 = 0x00b0_c030;
+/// ATL's version GUID and the "the module's lock failed" byte.
+pub const ATL_GUID: u32 = 0x00b7_0290;
+pub const ATL_INIT_FAILED: u32 = 0x00cc_9c17;
+
+/// `CComCriticalSection::Init(this)` (`0x009d9dfe`, thiscall):
+/// `InitializeCriticalSectionEx(this, 0, 0)`; 0 (`S_OK`), or the last
+/// error as an `HRESULT` (`0x8007xxxx`; 0 when it is not positive).
+pub fn atl_cs_init(h: &mut impl Host, this: u32) -> u32 {
+    let f: u32 = h.read(h.rebase(INIT_CS_EX_IAT));
+    if h.call(f, Conv::Stdcall, &[this, 0, 0]) != 0 {
+        return 0;
+    }
+    let f: u32 = h.read(h.rebase(GET_LAST_ERROR_IAT));
+    let e = h.call(f, Conv::Stdcall, &[]);
+    if e.cast_signed() > 0 {
+        (e & 0xffff) | 0x8007_0000
+    } else {
+        e
+    }
+}
+
+/// `CAtlBaseModule::CAtlBaseModule(this)` (`0x009d9c20`, thiscall; the
+/// global at `0x0193fcc4` from `StaticInit_Ctor_00af1308`): the lock's 0x18
+/// bytes (`+0x14`) and the words `+0x2c`..`+0x34` zeroed
+/// (`_ATL_BASE_MODULE70`'s base, `0x009d9c82`), `cbSize` 0x38, both
+/// instance handles the image base, version 0xb00, the version GUID; the
+/// lock initialised ([`atl_cs_init`]), a failure noted in
+/// [`ATL_INIT_FAILED`]. `this`.
+pub fn atl_base_module_ctor(h: &mut impl Host, this: u32) -> u32 {
+    h.write_bytes(this + 0x14, &[0; 0x18]);
+    for off in [0x2c, 0x30, 0x34] {
+        h.write(this + off, 0u32);
+    }
+    let base = h.rebase(0x0040_0000);
+    h.write(this, 0x38u32);
+    h.write(this + 8, base);
+    h.write(this + 4, base);
+    h.write(this + 0xc, 0xb00u32);
+    let guid = h.rebase(ATL_GUID);
+    h.write(this + 0x10, guid);
+    if atl_cs_init(h, this + 0x14).cast_signed() < 0 {
+        let at = h.rebase(ATL_INIT_FAILED);
+        h.write(at, 1u8);
+    }
+    this
+}

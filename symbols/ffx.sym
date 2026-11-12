@@ -22448,6 +22448,8 @@
 0x00955860 function luaopen_table             # fh switch:bsim1.00 0x7100781c48
 0x00956900 function lua_getinfo                  # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'for iterator'; Switch 0x7100773fe4 lua_getinfo (symbols from Fahrenheit's server export)
 0x00957d30 function lua_yieldk                   # str-match switch: only user of 2 string(s) held once by both builds, e.g. 'attempt to yield across metamethod/C-call boundary'; Switch 0x7100775d18 lua_yieldk (symbols from Fahrenheit's server export)
+0x009d9c20 function AtlBaseModule_ctor_009d9c20 # thiscall(this) -> this: ATL's CAtlBaseModule (the dump's name; global 0x0193fcc4 from StaticInit_Ctor_00af1308): 0x009d9c82's zeroing, cbSize 0x38, instance handles 0x00400000, version 0xb00, GUID 0x00b70290, CComCriticalSection::Init of +0x14, failure byte 0x00cc9c17; ported M5 wp5b (ffx_prender::wp5_small)
+0x009d9dfe function ComCriticalSection_Init_009d9dfe # thiscall(cs) -> HRESULT: InitializeCriticalSectionEx(cs, 0, 0), else GetLastError as 0x8007xxxx (CComCriticalSection::Init, the dump's Init); ported M5 wp5b (ffx_prender::wp5_small)
 0x009da280 function IsLoadTexture             # fh v3:exact 0x009da280; flag 0x01940ab0 set: 1; handle 0x00c64cac -1: 0; else graphicMagicVFXLoadTexture([0x00c64ca0]), set flag, 1
 0x009da2c0 function GetU32_01940ab4 # () -> u32 at 0x01940ab4; name ours
 0x009da2d0 function MagicFile_Cleanup         # fh v3:bsim1.00 0x009da2d0; (): graphicMagicSetToBeDeletePath(graphicMagicGetPath()), graphicMagicSetPath(0x00b8fbeb); 0x00c64ca8 = 0x00c64ca4 = id, 0x00c64cb0 = handle, id = handle = -1
