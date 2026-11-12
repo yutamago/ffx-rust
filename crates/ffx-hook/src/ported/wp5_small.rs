@@ -137,4 +137,8 @@ ported! {
         let mut f = StackFrame::<16>::new();
         s::physics_defaults_ctor_b(&mut mem(), this, f.at())
     }
+    /// `PPhysicsHeader_ctor_005e0330`: the header words, a one-word member and two semaphores constructed; `this`.
+    PPhysicsHeader_ctor_005e0330 @ 0x005e_0330 => extern "thiscall" fn sm_005e0330(this: u32) -> u32 {
+        s::physics_header_ctor(&mut mem(), this)
+    }
 }

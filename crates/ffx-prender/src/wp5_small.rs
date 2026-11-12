@@ -652,3 +652,32 @@ pub fn physics_defaults_ctor_b(h: &mut impl Host, this: u32, frame: u32) -> u32 
     h.call_sym(MATRIX_COPY, Conv::Thiscall(this + 0x11c), &[frame]);
     this
 }
+
+/// `PhyreCtor_zeroWord_0042fcc0` (thiscall).
+pub const ZERO_WORD_CTOR: u32 = 0x0042_fcc0;
+/// `Phyre_PSemaphoreWin32_PSemaphoreWin32` (thiscall).
+pub const SEMAPHORE_CTOR: u32 = 0x0042_fc90;
+
+/// `0x005e0330(this)` (thiscall; `Phyre_PPhysics_DestroyCall_005f7de0`'s
+/// callee) -> `this`: the byte `+0` 0, `+4` 0, `+8` 0x10, `+0xc`, `+0x1c`,
+/// `+0x20` 0; the one-word constructor on `+0x28`, the byte `+0x2c` 0, a
+/// semaphore constructed at `+0x30`, the byte `+0x34` 0, one at `+0x38`,
+/// the byte `+0x3c` 0; the float `+0x44` 0, `+0x40` 0, the word `+0x48` 0.
+pub fn physics_header_ctor(h: &mut impl Host, this: u32) -> u32 {
+    h.write(this, 0u8);
+    h.write(this + 4, 0u32);
+    h.write(this + 8, 0x10u32);
+    for off in [0xc, 0x1c, 0x20] {
+        h.write(this + off, 0u32);
+    }
+    h.call_sym(ZERO_WORD_CTOR, Conv::Thiscall(this + 0x28), &[]);
+    h.write(this + 0x2c, 0u8);
+    h.call_sym(SEMAPHORE_CTOR, Conv::Thiscall(this + 0x30), &[]);
+    h.write(this + 0x34, 0u8);
+    h.call_sym(SEMAPHORE_CTOR, Conv::Thiscall(this + 0x38), &[]);
+    h.write(this + 0x3c, 0u8);
+    h.write(this + 0x44, 0u32);
+    h.write(this + 0x40, 0u32);
+    h.write(this + 0x48, 0u16);
+    this
+}

@@ -2010,3 +2010,22 @@ fn wp5b_physics_defaults_ctor_b() {
         t.same(&w);
     }
 }
+
+/// `PPhysicsHeader_ctor_005e0330` on junk, its three member constructors
+/// logging stubs.
+#[test]
+fn wp5b_physics_header_ctor() {
+    use ffx_prender::wp5_small as sm;
+    for (label, mut t) in Twins::all() {
+        let log = t.alloc(&[0; 4 + 8 * 64]);
+        let c = log_stub(&mut t, log, 0, 0x5151);
+        jmp_stub(&mut t, sm::ZERO_WORD_CTOR, &c);
+        let c = log_stub(&mut t, log, 0, 0x6161);
+        jmp_stub(&mut t, sm::SEMAPHORE_CTOR, &c);
+        let obj = t.alloc(&[0x6b; 0x50]);
+        let w = format!("{label} physics header ctor");
+        t.run(&w, 0x005e_0330, obj, &[], false, |g| {
+            sm::physics_header_ctor(g, obj)
+        });
+    }
+}
