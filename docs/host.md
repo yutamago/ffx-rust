@@ -383,6 +383,68 @@ stops the emulator, and the executor's loop decides.
 - **x87.** The control word starts at `0x027f` (53-bit), as Windows starts
   threads. The transcendental instructions run exactly (below, "x87").
 
+## Without Unicorn
+
+`dev-unicorn` is the default feature; the release (`tools/package-release.sh`,
+`--no-default-features --features swf`) builds without it (2026-11-12,
+WP9), and then the crate links no Unicorn and runs no `FFX.exe` or DLL
+code. What changes (`src/exec/cpu.rs`, the `cfg`s in `src/exec.rs`):
+
+- **The CPU** is a register file with Unicorn's register names: `esp` (the
+  ports' frames on the game stack, a call's words put there), `eax`,
+  `ecx`, `edx` as a call leaves them, the control words, an empty x87
+  stack. Nothing is mapped, hooked or emulated; the int3 patches stay in
+  the arena's copy of `.text`, unused.
+- **Calls** (`Exec::call`, the router, the overlays' `Game::call`) take the
+  table, an import's Rust side, a trap or a one-instruction leaf as with
+  Unicorn. Anything else is a hard stop: `Error::Unported`, the thread's
+  outcome `unported address 0x… (name) called from A <- B <- …` (the name
+  from `ffx.sym`, or an import's `DLL!name`, or an overlay's
+  `magic_nnnn.dll!export+off`; the chain from the thread's host entries,
+  innermost first), noted at once and listed in the report's "unported
+  addresses" and `Stats::unported`. On the main thread it ends the run.
+  The same stop for `Exec::call_original` without a wrapped port (no
+  trampolines), `call_sse` (the `_libm_sse2_*` imports: their `xmm0`
+  doesn't fit `Args`), an x87 intrinsic case its Rust side hands to the
+  DLL, and `RaiseException` (its handlers are emulated code).
+- **The C runtime DLLs** are never loaded (`Options::no_dlls` is forced):
+  every `MSVCR110`/`MSVCP110` import is its Rust side or missing, and a
+  missing one stops the run when called, as an unstubbed import always
+  did. An overlay import `FFX.exe` doesn't have (the overlay CRT's
+  start-up imports, `__clean_type_info_names_internal`, `_malloc_crt`,
+  `__CppXcptFilter`, `DisableThreadLibraryCalls`, which the ported
+  `DllMain` never calls) gets a trap that stops the thread when called,
+  so the load goes on.
+- **Threads** run as before (one host thread and executor each); a
+  thread-pool work item's routine is a trap that calls its callback (no
+  emulated trampoline). The budget is watched by the watchdog, which
+  ends the run (`Stop::Budget` at the main thread's innermost host
+  entry); `TerminateThread` ends a thread at its next call.
+- **The profile** (`--cover`, `--profile`, `--count`) stays empty:
+  nothing is emulated.
+- **Tests.** `tests/no_unicorn.rs` (only without the feature): a port
+  called from Rust, the hard stop's text and chain from a trap, a
+  thread-pool item, and the boot to its first unported address; with
+  `FFX_HOST_UNPORTED_OUT=<file>` it writes that address and every C
+  runtime import without a Rust side as TSV. `tests/overlay_bind.rs`
+  runs in both builds: all 581 overlays load, bind and run `DllMain`,
+  `InitMagicPRX` and `GetEffectOverlayTable` as ports with no emulator.
+  The other test files compare with or boot through original code and
+  need the feature (`required-features` in `Cargo.toml`).
+
+```bash
+FFX_GAME_DIR=~/steam-games/FFX-X2-HD cargo test -p ffx-host --no-default-features --features swf
+FFX_HOST_FEATURES=swf tools/build-host.sh build --no-default-features             # the release ffx-rust.exe
+python3 -I tools/check-licences.py                                                 # 0 GPL in the release trees
+```
+
+On 2026-11-12 the boot stops at once: `FFX.exe`'s entry point
+`0x009493c1` (the CRT start-up's wrapper, `__security_init_cookie` then
+`__tmainCRTStartup`) has no port, and 210 of `FFX.exe`'s C runtime
+imports have no Rust side. The list WP5 closes, with the Unicorn build's
+Rust → Unicorn entries of a headless boot (the next addresses the
+no-emulator boot will meet), is `~/ffx-work/m5/finish/wp9/unported.tsv`.
+
 ## x87
 
 Unicorn (QEMU) computes `fsin`, `fcos`, `fsincos`, `fptan`, `fpatan`,
@@ -1321,7 +1383,7 @@ checkout at the pinned rev) and `steam_api64-NOTICE.txt`
 ```bash
 tools/package-release.sh --dry-run          # no build, no zip: stage, check, self-test (seconds)
 tools/package-release.sh --dev --dry-run    # the same for the development package
-tools/package-release.sh                    # the release: refused today (below)
+tools/package-release.sh                    # the release (no emulator: boots only as far as the Rust side reaches)
 tools/package-release.sh --dev [--out DIR]  # ffx-rust-<version>-<rev>-win64-dev-not-for-release.zip
 tools/package-release.sh --prebuilt DIR     # package DIR's ffx-rust.exe and ffx-launch.exe
 python3 -I tools/release-files.py check DIR [--dev]   # the checks on any staged folder
@@ -1331,10 +1393,11 @@ python3 -I tools/release-files.py check DIR [--dev]   # the checks on any staged
   `--no-default-features`. `dev-unicorn` in it is refused without
   `--dev`; `--dev` adds it and names the zip `-dev-not-for-release`,
   with Unicorn's `COPYING` (GPL-2.0) and `licences/unicorn-NOTICE.txt`.
-  Today `ffx-host` refuses to build without `dev-unicorn` (the
-  `compile_error!` in `lib.rs`, finish plan WP9), so the release build
-  fails with that message and only `--dev` packages build. When WP9
-  lands, the plain command makes the release.
+  Since WP9 (2026-11-12) `ffx-host` builds without `dev-unicorn`
+  ("Without Unicorn"), so the plain command makes the release; its
+  `ffx-rust.exe` stops at the first address without a Rust side (today
+  `FFX.exe`'s entry point), so a playable package is still `--dev` until
+  the stage 4 gate passes on the release build.
 - **The builds** go to `target/package` with `--remap-path-prefix` for
   the repo, `~/.cargo`, `~/.rustup` and the home folder (clang-cl's
   `-ffile-prefix-map` for C code), so the development build in

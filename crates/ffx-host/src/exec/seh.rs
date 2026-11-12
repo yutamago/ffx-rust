@@ -25,9 +25,10 @@
 //! as an unwind abandons a frame without handlers ([`Exec::run`]).
 
 use ffx_bridge::Mem as _;
-use unicorn_engine::RegisterX86;
 
-use super::{Exec, SAVED_REGS, Stop};
+#[cfg(feature = "dev-unicorn")]
+use super::SAVED_REGS;
+use super::{Exec, RegisterX86, Stop};
 use crate::table::{Args, Ret};
 use crate::{Error, Result};
 
@@ -38,6 +39,7 @@ const UNWINDING: u32 = 0x02;
 /// `EXCEPTION_EXIT_UNWIND`.
 const EXIT_UNWIND: u32 = 0x04;
 /// `EXCEPTION_NESTED_CALL`.
+#[cfg(feature = "dev-unicorn")]
 const NESTED_CALL: u32 = 0x10;
 /// The end of the registration chain.
 const CHAIN_END: u32 = u32::MAX;
@@ -66,11 +68,13 @@ const AREA_DC: u32 = 0x320;
 /// `CONTEXT_i386 | CONTROL | INTEGER | SEGMENTS | FLOATING_POINT`.
 const CONTEXT_FLAGS: u32 = 0x0001_000f;
 /// How deep exceptions may nest (one raised in a handler, ...).
+#[cfg(feature = "dev-unicorn")]
 const MAX_NESTED: usize = 32;
 
 // CONTEXT offsets
 const CTX_FLOAT: u32 = 0x1c;
 const CTX_GS: u32 = 0x8c;
+#[cfg(feature = "dev-unicorn")]
 const CTX_EDI: u32 = 0x9c;
 const CTX_EIP: u32 = 0xb8;
 const CTX_CS: u32 = 0xbc;
@@ -85,6 +89,7 @@ const STUB_SEARCH: u32 = 0xf50;
 
 /// One dispatch in flight: the records in the block at `area`, the frame
 /// whose handler runs.
+#[cfg(feature = "dev-unicorn")]
 #[derive(Debug, Clone, Copy)]
 struct Dispatch {
     area: u32,
@@ -98,7 +103,9 @@ struct Dispatch {
 
 /// A run being unwound to an outer Rust level: a C++ catch continued in a
 /// frame older than a port, and that frame returned to the outer level's
-/// sentinel with these registers.
+/// sentinel with these registers. (Without the emulator nothing
+/// unwinds: the dispatch never starts.)
+#[cfg_attr(not(feature = "dev-unicorn"), allow(dead_code))]
 #[derive(Debug, Clone, Copy)]
 pub(super) struct Unwinding {
     /// The `esp` the outer level's sentinel return leaves.
@@ -107,9 +114,11 @@ pub(super) struct Unwinding {
 }
 
 /// A `RaiseException` waiting for the executor to start its dispatch.
+/// (Without the emulator only its code is read, for the stop.)
+#[cfg_attr(not(feature = "dev-unicorn"), allow(dead_code))]
 #[derive(Debug, Clone)]
 pub(super) struct Raise {
-    code: u32,
+    pub(super) code: u32,
     flags: u32,
     params: Vec<u32>,
 }
@@ -118,9 +127,11 @@ pub(super) struct Raise {
 #[derive(Debug, Default)]
 pub(super) struct State {
     pub pending: Option<Raise>,
+    #[cfg(feature = "dev-unicorn")]
     dispatches: Vec<Dispatch>,
     /// The `esp` each Rust → Unicorn call's sentinel return leaves,
     /// outermost first.
+    #[cfg(feature = "dev-unicorn")]
     pub levels: Vec<u32>,
     pub unwinding: Option<Unwinding>,
     /// Exceptions dispatched (for the report and the tests).
@@ -291,6 +302,7 @@ impl Exec {
     /// Starts the dispatch of a pending `RaiseException` (its import's
     /// registers restored: `esp` at the return address); returns where to
     /// go on (the first handler).
+    #[cfg(feature = "dev-unicorn")]
     pub(super) fn raise_pending(&mut self, stub: u32) -> Result<u32> {
         let Some(r) = self.seh.pending.take() else {
             return Err(Error::Interrupt(3, stub));
@@ -303,12 +315,14 @@ impl Exec {
     }
 
     /// Starts the dispatch of a fault at `eip` (the faulting instruction).
+    #[cfg(feature = "dev-unicorn")]
     pub(super) fn raise_fault(&mut self, code: u32, eip: u32, params: &[u32]) -> Result<u32> {
         let esp = self.reg(RegisterX86::ESP)?;
         self.dispatch(code, 0, eip, params, eip, esp)
     }
 
     /// Writes the records below `resume_sp` and calls the first handler.
+    #[cfg(feature = "dev-unicorn")]
     fn dispatch(
         &mut self,
         code: u32,
@@ -357,6 +371,7 @@ impl Exec {
 
     /// Calls the handler of the top dispatch's frame (or ends the thread
     /// at the chain's end); returns where to go on.
+    #[cfg(feature = "dev-unicorn")]
     fn call_handler(&mut self) -> Result<u32> {
         let Some(mut d) = self.seh.dispatches.pop() else {
             return Err(Error::Interrupt(3, self.sentinel + STUB_RETURN));
@@ -403,6 +418,7 @@ impl Exec {
 
     /// A handler returned to the dispatcher's stub: its disposition in
     /// `eax` decides; returns where to go on.
+    #[cfg(feature = "dev-unicorn")]
     pub(super) fn handler_returned(&mut self) -> Result<u32> {
         let esp = self.reg(RegisterX86::ESP)?;
         let Some(i) = self
@@ -466,12 +482,14 @@ impl Exec {
 
     /// The chain ended without a handler taking the exception: the
     /// thread ends (the main thread: the run) with a report.
+    #[cfg(feature = "dev-unicorn")]
     fn unhandled(&mut self, rec: u32, area: u32) -> Result<u32> {
         let mem = self.mem();
         let eip: u32 = mem.read(area + CTX_EIP);
         self.unhandled_at(format!("unhandled {}", describe(&mem, rec)), eip)
     }
 
+    #[cfg(feature = "dev-unicorn")]
     fn unhandled_at(&mut self, why: String, eip: u32) -> Result<u32> {
         self.seh.dispatches.clear();
         self.end(Stop::Failed(why, eip));
@@ -607,6 +625,7 @@ impl Exec {
 
     /// Loads the registers from the `CONTEXT` at `ctx` (a handler said
     /// continue); returns its `eip`.
+    #[cfg(feature = "dev-unicorn")]
     fn read_context(&mut self, ctx: u32) -> Result<u32> {
         let mem = self.mem();
         for (k, r) in (0u32..).zip([
@@ -639,12 +658,14 @@ impl Exec {
 
     /// The outer Rust level a sentinel return at `esp` belongs to, if not
     /// the innermost (`expect`).
+    #[cfg(feature = "dev-unicorn")]
     pub(super) fn outer_level(&self, esp: u32, expect: u32) -> bool {
         esp != expect && self.seh.levels.iter().rev().skip(1).any(|&l| l == esp)
     }
 
     /// Starts unwinding the Rust levels to the one whose sentinel return
     /// leaves `esp`.
+    #[cfg(feature = "dev-unicorn")]
     pub(super) fn start_unwinding(&mut self, esp: u32) -> Result<()> {
         let regs = self.save_regs()?;
         self.seh.unwinding = Some(Unwinding { esp, regs });
@@ -653,6 +674,7 @@ impl Exec {
 
     /// If this level (`expect`) is the one being unwound to: its
     /// registers back as the sentinel return left them; `true`.
+    #[cfg(feature = "dev-unicorn")]
     pub(super) fn unwound_to(&mut self, expect: u32) -> Result<bool> {
         match self.seh.unwinding {
             Some(u) if u.esp == expect => {

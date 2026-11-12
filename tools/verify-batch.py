@@ -205,6 +205,17 @@ def main():
             # only when the hook or a crate it links changed (a change to
             # tests alone left this 2.6 min build with nothing to check)
             run(["tools/build-hook.sh"], None, dry)
+        if "ffx-host" in affected:
+            # the release's ffx-rust.exe: without dev-unicorn (no emulator,
+            # docs/host.md "Without Unicorn"), the package's features
+            # (tools/package-release.sh, FFX_RELEASE_FEATURES), and no GPL
+            # package in the release trees; its lints here first (the host
+            # clippy above has the default features)
+            run(["cargo", "clippy", "--all-targets", "-p", "ffx-host", "--no-default-features",
+                 "--features", "swf", "--", "-D", "warnings"], None, dry)
+            run(["tools/build-host.sh", "build", "--no-default-features"],
+                {"FFX_HOST_FEATURES": os.environ.get("FFX_RELEASE_FEATURES", "swf")}, dry)
+            run(["python3", "-I", "tools/check-licences.py"], None, dry)
     # the replays also check their own scripts and comparison tools
     replay_inputs = ("crates/", "tools/replays/", "tools/shot-compare.py", "tools/replay-compare.py")
     # (the oracle tests and docs can't change what the games do)
