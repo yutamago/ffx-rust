@@ -2018,6 +2018,201 @@ fn pow(e: &Exec, st: &[f64]) -> Option<Ext> {
     Some(ext_of(x.powf(y)))
 }
 
+// ------------------------------------------------- sinh, cosh, tanh
+
+/// `fldl2e` under round to nearest.
+const LOG2E: Ext = Ext {
+    neg: false,
+    exp: 0x3fff,
+    mant: 0xb8aa_3b29_5c17_f0bc,
+};
+
+const ONE: Ext = Ext {
+    neg: false,
+    exp: 0x3fff,
+    mant: 1 << 63,
+};
+
+/// `a / b` at precision 64 bits (finite, non-zero `b`).
+fn ext_div(a: Ext, b: Ext) -> Ext {
+    if a.mant == 0 {
+        return Ext {
+            neg: a.neg != b.neg,
+            exp: 0,
+            mant: 0,
+        };
+    }
+    let (na, ma, ea) = ext_parts(a);
+    let (nb, mb, eb) = ext_parts(b);
+    // 128 bits of quotient by long division (a·2^63 / b, then 64 more
+    // bits), the last remainder as a sticky bit
+    let num = ma << 63;
+    let (q1, r1) = (num / mb, num % mb);
+    let (q2, r2) = ((r1 << 64) / mb, (r1 << 64) % mb);
+    let q = (q1 << 64) | q2 | u128::from(r2 != 0);
+    ext_round(na != nb, q, ea - eb - 127)
+}
+
+/// `frndint` under round to nearest (ties to even).
+fn ext_rint(x: Ext) -> Ext {
+    let e = i32::from(x.exp) - 0x3fff;
+    if e >= 63 {
+        return x;
+    }
+    if e < -1 {
+        return Ext {
+            exp: 0,
+            mant: 0,
+            ..x
+        };
+    }
+    let frac_bits = u32::try_from(63 - e).unwrap_or(64);
+    let m = u128::from(x.mant);
+    let unit = 1u128 << frac_bits;
+    let mut q = m >> frac_bits;
+    let rem = m & (unit - 1);
+    let half = unit >> 1;
+    if rem > half || (rem == half && q & 1 == 1) {
+        q += 1;
+    }
+    if q == 0 {
+        return Ext {
+            exp: 0,
+            mant: 0,
+            ..x
+        };
+    }
+    ext_round(x.neg, q, 0)
+}
+
+/// `fscale` by the integer `n` (exact here).
+fn ext_scale(x: Ext, n: i32) -> Ext {
+    if x.mant == 0 {
+        return x;
+    }
+    Ext {
+        exp: u16::try_from((i32::from(x.exp) + n).clamp(1, 0x7ffe)).unwrap_or(1),
+        ..x
+    }
+}
+
+/// The integer value of an `frndint` result (|n| < 2^15 here).
+fn ext_int(n: Ext) -> i32 {
+    if n.mant == 0 {
+        return 0;
+    }
+    let shift = 63 - (i32::from(n.exp) - 0x3fff);
+    let v = i32::try_from(n.mant >> shift.clamp(0, 63)).unwrap_or(0);
+    if n.neg { -v } else { v }
+}
+
+/// The dispatcher's `exp` core (`0x100455d9`, at precision 64 bits):
+/// t = x·log2 e, n = rint t, 2^(t-n) - 1 by `f2xm1` (of |t - n|, turned
+/// into 2^-|f| - 1 = -g/(1+g) for a negative remainder); for n = 0 that
+/// value (e^x - 1, `false`), else `(1 + it)·2^n` (e^x, `true`). `None`
+/// for |t| from 32767.5 (overflow or underflow).
+fn exp_core(x: Ext) -> Option<(Ext, bool)> {
+    let t = ext_mul(x, LOG2E);
+    let limit = Ext {
+        neg: false,
+        exp: 0x400d,
+        mant: 0xffff_0000_0000_0000,
+    };
+    if !ext_add(abs(t), neg(limit)).neg {
+        return None; // |t| at or past the limit
+    }
+    let n = ext_rint(t);
+    let f = ext_add(t, neg(n));
+    let g = execute(Op::F2xm1, abs(f), abs(f), 0x133f).st0?;
+    let h = if f.neg && f.mant != 0 {
+        neg(ext_div(g, ext_add(ONE, g)))
+    } else {
+        g
+    };
+    if n.mant == 0 {
+        return Some((h, false));
+    }
+    Some((ext_scale(ext_add(ONE, h), ext_int(n)), true))
+}
+
+/// `0x10045620`: 1/E for a full value, -h/(1+h) (= e^-x - 1) for an
+/// e^x - 1.
+fn exp_inverse(v: Ext, full: bool) -> Ext {
+    if full {
+        ext_div(ONE, v)
+    } else {
+        neg(ext_div(v, ext_add(ONE, v)))
+    }
+}
+
+/// `0x1004560e`: e^x + e^-x.
+fn exp_sum(v: Ext, full: bool) -> Ext {
+    let s = ext_add(v, exp_inverse(v, full));
+    if full {
+        s
+    } else {
+        ext_add(ext_add(s, ONE), ONE)
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Hyp {
+    Sinh,
+    Cosh,
+    Tanh,
+}
+
+/// `_CIsinh`/`_CIcosh`/`_CItanh` (x87 only: the dispatcher with tables
+/// `0x100603a0`/`c0`/`e0`, precision 64 bits): (e^x ∓ e^-x)/2 and their
+/// quotient from [`exp_core`]; zeros: x (cosh 1); infinities: ±∞ (cosh
+/// +∞, tanh ±1); tanh from |x| ≥ 19.06: ±1; NaNs quieted. `None` (the
+/// DLL's handler) for an overflowing sinh or cosh, and another control
+/// word.
+fn hyperbolic(e: &Exec, st: &[f64], which: Hyp) -> Option<Ext> {
+    let &[x] = st else { return None };
+    if e.fpu_control() != 0x027f {
+        return None;
+    }
+    let xe = ext_of(x);
+    let one = if xe.neg { neg(ONE) } else { ONE };
+    match class(xe) {
+        Class::Nan => return Some(through_handler(quiet(xe))),
+        Class::Zero => return Some(if which == Hyp::Cosh { ONE } else { xe }),
+        Class::Inf => {
+            return Some(match which {
+                Hyp::Sinh => xe,
+                Hyp::Cosh => abs(xe),
+                Hyp::Tanh => one,
+            });
+        }
+        Class::Normal => {}
+    }
+    if which == Hyp::Tanh {
+        let limit = Ext {
+            neg: false,
+            exp: 0x4003,
+            mant: 0x987e_0c99_9669_9000,
+        };
+        if !ext_add(abs(xe), neg(limit)).neg {
+            return Some(one);
+        }
+    }
+    let (v, full) = exp_core(xe)?;
+    let r = match which {
+        Hyp::Sinh => ext_scale(ext_add(v, neg(exp_inverse(v, full))), -1),
+        Hyp::Cosh => ext_scale(exp_sum(v, full), -1),
+        Hyp::Tanh => {
+            let c = exp_sum(v, full);
+            let s = ext_add(v, neg(exp_inverse(v, full)));
+            ext_div(s, c)
+        }
+    };
+    if which != Hyp::Tanh && (ext_to_f64(r).to_bits() >> 52) & 0x7ff == 0x7ff {
+        return None; // overflow: the handler
+    }
+    Some(r)
+}
+
 // --------------------------------------------- the SSE2 functions
 
 /// Whether the SSE2 functions take their SSE2 code (`MXCSR` and the x87
@@ -2166,7 +2361,10 @@ pub type X87Fn = fn(&Exec, &[f64]) -> Option<Ext>;
 
 /// The `_CI*` intrinsics with a Rust side ([`intrinsic`]), with the
 /// operands each takes from the x87 stack.
-pub const INTRINSICS: [(&str, usize); 10] = [
+pub const INTRINSICS: [(&str, usize); 13] = [
+    ("_CIsinh", 1),
+    ("_CIcosh", 1),
+    ("_CItanh", 1),
     ("_CIpow", 2),
     ("_CIasin", 1),
     ("_CIacos", 1),
@@ -2202,6 +2400,9 @@ pub fn intrinsic(name: &str) -> Option<X87Fn> {
         "_CIacos" => Some(acos),
         "_CIasin" => Some(asin),
         "_CIpow" => Some(pow),
+        "_CIsinh" => Some(|e, st| hyperbolic(e, st, Hyp::Sinh)),
+        "_CIcosh" => Some(|e, st| hyperbolic(e, st, Hyp::Cosh)),
+        "_CItanh" => Some(|e, st| hyperbolic(e, st, Hyp::Tanh)),
         "_CIatan2" => Some(atan2),
         "_CIfmod" => Some(fmod),
         _ => None,

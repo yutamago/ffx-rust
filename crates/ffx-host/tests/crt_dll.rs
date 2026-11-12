@@ -348,7 +348,10 @@ fn x87_intrinsics_match_the_dll() {
     use ffx_bridge::route::Float;
     let Some(exe) = exe() else { return };
     let mut e = ffx_host::boot(&exe).unwrap();
-    let cases: [(&str, u32, Vec<Vec<f64>>, usize); 10] = [
+    let cases: [(&str, u32, Vec<Vec<f64>>, usize); 13] = [
+        ("_CIsinh", 0x00a8_d78a, one_operand(3000, 0xb2c3_d4e5), 2400),
+        ("_CIcosh", 0x00a8_d784, one_operand(3000, 0xc3d4_e5f6), 2400),
+        ("_CItanh", 0x00a8_d790, one_operand(3000, 0xd4e5_f607), 2900),
         ("_CIpow", 0x0094_98f8, pow_operands(3000, 0xa1b2_c3d4), 2400),
         (
             "_CIasin",
