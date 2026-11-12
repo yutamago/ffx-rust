@@ -19007,7 +19007,7 @@
 0x00887d20 function FFXSetLang                # fh v3:bsim1.00 0x00887c90
 0x00887d30 function TkClearSoundSyncVFlag     # fh v3:bsim1.00 0x00887ca0
 0x00887d50 function TkClearSoundSyncVFlag3    # 0x013301ec = 0; flags e4/e8/ec are SoundSyncVFlag/2/3 (TkSyncV sets all three); Switch name
-0x00887d60 label VsyncHandler                 # the vsync handler createVsyncEmuThread gets (from 0x00888680, TkInitAllSyncVCallback): runs the TkSetSyncVCallbackPtr callbacks
+0x00887d60 function VsyncHandler              # cdecl() -> eax the last word (flag, callback pointer or result): the vsync handler createVsyncEmuThread gets (from 0x00888680, TkInitAllSyncVCallback): runs the TkSetSyncVCallbackPtr callbacks: while [0x013301f0] is set, callback 0, then 1 and 2 unless g_TkSyncVDisableCount; not in the dump (sizes.tsv); ported M5 wp5b (ffx_prender::wp5_hot)
 0x00887db0 function TkGetGsRegisterCSR        # () -> 0x013301f4; Switch symbol name (BSim)
 0x00887dc0 function TkGetLastSyncVCounter     # fh v3:bsim1.00 0x00887d30
 0x00887dd0 function TkGetSoundSyncVFlag       # fh v3:bsim1.00 0x00887d40

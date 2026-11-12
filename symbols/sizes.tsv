@@ -366,6 +366,7 @@
 0x00887750	5	0	SndStop
 0x00887ae0	5	0	TkSndIsRead_thunk_00887ae0
 0x00887c30	5	0	TkGetLang_thunk
+0x00887d60	71	0	VsyncHandler
 0x00888310	28	0	TkMcResetPorts_00888310
 0x00888760	19	0	TkSyncAndClearVsync_00888760
 0x0088c830	5	0	TkGetSaveEventAddress

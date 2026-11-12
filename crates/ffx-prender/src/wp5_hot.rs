@@ -216,3 +216,44 @@ pub mod cloth {
         h.call_sym(SET_RANGE, Conv::Thiscall(target), &[vertices, bytes, s]);
     }
 }
+
+/// The word `SetGlobal013301f0_00887e80` sets: the vsync callbacks run
+/// while it is not 0.
+pub const SYNCV_ON: u32 = 0x0133_01f0;
+/// `g_TkSyncVDisableCount`: callbacks 1 and 2 are skipped while it is not
+/// 0.
+pub const SYNCV_DISABLE: u32 = 0x0133_01e0;
+/// `g_TkSyncVCallbackPtrs` (3 words).
+pub const SYNCV_CALLBACKS: u32 = 0x0133_026c;
+
+/// `VsyncHandler` (`0x00887d60`, cdecl, no arguments; the handler
+/// `TkSetVsyncHandler` gives the vsync emulation thread, which calls it
+/// every vsync): while [`SYNCV_ON`] is set, callback 0, then (unless
+/// [`SYNCV_DISABLE`] is set) callbacks 1 and 2, each when not NULL
+/// (`TkGetSyncVCallbackPtr` inlined). `eax`: the last word the original
+/// left there (the flag, the last callback pointer read, or the last
+/// callback's result).
+pub fn vsync_handler(h: &mut impl ffx_graphic::host::Host) -> u32 {
+    let on: u32 = h.read(h.rebase(SYNCV_ON));
+    if on == 0 {
+        return on;
+    }
+    let mut eax = run(h, 0);
+    if h.read::<u32>(h.rebase(SYNCV_DISABLE)) == 0 {
+        for i in 1..3 {
+            eax = run(h, i);
+        }
+    }
+    eax
+}
+
+/// Callback `i` of [`SYNCV_CALLBACKS`] called when not NULL; the pointer
+/// or its result.
+fn run(h: &mut impl ffx_graphic::host::Host, i: u32) -> u32 {
+    let f: u32 = h.read(h.rebase(SYNCV_CALLBACKS) + 4 * i);
+    if f == 0 {
+        f
+    } else {
+        h.call(f, ffx_graphic::host::Conv::Cdecl, &[])
+    }
+}

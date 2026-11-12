@@ -22,4 +22,8 @@ ported! {
         let mut f = StackFrame::<2>::new();
         hot::cloth::batch_set_cloth_vertex_buffers(&mut mem(), first, last, f.at())
     }
+    /// `VsyncHandler`: the vsync thread's callbacks (0, then 1 and 2 unless disabled) while on.
+    VsyncHandler @ 0x0088_7d60 => extern "C" fn w_00887d60() -> u32 {
+        hot::vsync_handler(&mut mem())
+    }
 }

@@ -1,5 +1,6 @@
-//! M5 finish, WP5 part 2 (`ffx_system::wp5_string`): `std::string` as
-//! compiled into `FFX.exe`, against the original machine code: `eax` and
+//! M5 finish, WP5 part 2 (`ffx_system::wp5_string`, `wp5_tree`,
+//! `ffx_prender::wp5_hot`'s vsync handler): `std::string` as compiled into
+//! `FFX.exe` and the other small originals, against the original machine code: `eax` and
 //! every byte written, on the image alone and over a snapshot
 //! (`FFX_SNAPSHOT`). `operator new`/`operator delete` and the CRT copies
 //! run as the game's code and the oracle's CRT on both sides alike, so the
@@ -236,6 +237,18 @@ impl Twins {
         );
         self.a.clear_dirty();
         self.b.clear_dirty();
+    }
+
+    /// The original at `sym` (cdecl) against `port`: `eax` and memory.
+    fn run_cdecl(&mut self, what: &str, sym: u32, args: &[u32], port: impl FnOnce(&mut G) -> u32) {
+        let at = self.a.rebase(sym);
+        let r = self
+            .a
+            .call(at, Conv::Cdecl, args)
+            .unwrap_or_else(|e| panic!("{what}: the original: {e}"));
+        let p = port(&mut G(&mut self.b));
+        assert_eq!(r.eax, p, "{what}: eax");
+        self.same(what);
     }
 
     /// The original at `sym` (thiscall on `this`) against `port`: `eax`
@@ -510,6 +523,46 @@ fn wp5b_tree_insert_nohint_and_iterator_dec() {
                     ffx_glue_other::m5v_a::bridge::tree_iterator_dec(g, it)
                 });
             }
+        }
+    }
+}
+
+/// `VsyncHandler` (`0x00887d60`): the on flag 0 or not, the disable count
+/// 0 or not, each callback NULL or a stub that counts its calls in its
+/// own word and returns a tag; `eax` and memory.
+#[test]
+fn wp5b_vsync_handler() {
+    use ffx_prender::wp5_hot as hot;
+    for (label, mut t) in Twins::all() {
+        let counts = t.alloc(&[0; 12]);
+        let stubs: Vec<u32> = (0..3u32)
+            .map(|i| {
+                let mut c = vec![0xff, 0x05];
+                c.extend((counts + 4 * i).to_le_bytes()); // inc dword [count i]
+                c.push(0xb8);
+                c.extend((0x7100_0000 + i).to_le_bytes()); // mov eax, tag
+                c.push(0xc3);
+                t.code(&c)
+            })
+            .collect();
+        let (on, off, table) = (
+            t.a.rebase(hot::SYNCV_ON),
+            t.a.rebase(hot::SYNCV_DISABLE),
+            t.a.rebase(hot::SYNCV_CALLBACKS),
+        );
+        for case in 0..32u32 {
+            t.w32(on, [0, 1, 0x100][(case % 3) as usize]);
+            t.w32(off, u32::from(case & 4 != 0));
+            for i in 0..3 {
+                let f = if case & (8 << i) != 0 {
+                    0
+                } else {
+                    stubs[i as usize]
+                };
+                t.w32(table + 4 * i, f);
+            }
+            let w = format!("{label} vsync handler case {case}");
+            t.run_cdecl(&w, 0x0088_7d60, &[], |g| hot::vsync_handler(g));
         }
     }
 }
