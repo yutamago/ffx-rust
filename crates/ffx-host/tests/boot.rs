@@ -259,14 +259,14 @@ fn boots_past_the_d3d11_device_to_the_first_frames() {
     );
 }
 
-/// Without the player's C runtime DLLs the run stops at the first C
-/// runtime function with no Rust side yet: since the STL's users were
-/// ported (WP6, 2026-11-12) an `MSVCR110` import, no longer an `MSVCP110`
-/// one; `fwrite` in `Settings_Save` until the no-DLL stdio
-/// (`crate::crt_stdio`, wp5b), `qsort` after it. The wall moves as the
-/// C runtime's Rust sides grow (WP5).
+/// Without the player's C runtime DLLs the run (here with Unicorn for
+/// the code without a port) no longer stops at the C runtime: every
+/// `MSVCR110`/`MSVCP110` import the boot calls has a Rust side (m5-wp5c;
+/// the wall was `fwrite` in `Settings_Save` before wp5b's stdio, `qsort`
+/// after it, then the maths). The run uses its whole budget, and no C
+/// runtime import without a Rust side was called.
 #[test]
-fn without_the_dlls_the_c_runtime_is_the_wall() {
+fn without_the_dlls_the_c_runtime_is_no_wall() {
     let Some(exe) = exe() else { return };
     let opts = ffx_host::Options {
         no_dlls: true,
@@ -276,14 +276,19 @@ fn without_the_dlls_the_c_runtime_is_the_wall() {
     let mut exec = ffx_host::boot_opts(&exe, ffx_host::ports::table(), &opts).unwrap();
     exec.set_budget(Duration::from_secs(60));
     let stop = exec.run_entry().unwrap();
-    match &stop {
-        Stop::Failed(why, _) => assert!(
-            why.starts_with("unstubbed import MSVCR110.dll!")
-                && !why.starts_with("unstubbed import MSVCR110.dll!fwrite "),
+    if let Stop::Failed(why, _) = &stop {
+        assert!(
+            !why.contains("MSVCR110.dll!") && !why.contains("MSVCP110.dll!"),
             "{why}"
-        ),
-        other => panic!("unexpected stop {other:?}"),
+        );
     }
+    let crt_missing: Vec<&String> = exec
+        .stats
+        .missing_imports
+        .iter()
+        .filter(|n| n.starts_with("MSVCR110") || n.starts_with("MSVCP110"))
+        .collect();
+    assert!(crt_missing.is_empty(), "{crt_missing:?}");
 }
 
 /// A port calling `wsprintfW` through its IAT slot (Rust → import, as
