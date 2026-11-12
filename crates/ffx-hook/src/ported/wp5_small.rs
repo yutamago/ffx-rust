@@ -166,4 +166,8 @@ ported! {
     Phyre_PPhysics_PPhysicsWorldBullet_dtor_005e2950 @ 0x005e_2950 => extern "thiscall" fn sm_005e2950(this: u32) -> u32 {
         s::world_bullet_dtor(&mut mem(), this)
     }
+    /// `Phyre_PPhysics_PPhysicsWorld_dtor_005e28d0`: group resources released, controllers removed, then the Bullet part's destructor; its `eax`.
+    Phyre_PPhysics_PPhysicsWorld_dtor_005e28d0 @ 0x005e_28d0 => extern "thiscall" fn sm_005e28d0(this: u32) -> u32 {
+        s::world_dtor(&mut mem(), this)
+    }
 }

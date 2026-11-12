@@ -2182,3 +2182,42 @@ fn wp5b_world_bullet_dtor() {
         }
     }
 }
+
+/// `PPhysicsWorld`'s destructor (`0x005e28d0`): 0 to 3 controllers, the
+/// removal stub returning a word from memory (0, or non-zero at the
+/// second), the other callees logging stubs; `eax` and memory.
+#[test]
+fn wp5b_world_dtor() {
+    use ffx_prender::wp5_small as sm;
+    for (label, mut t) in Twins::all() {
+        let log = t.alloc(&[0; 4 + 8 * 64]);
+        let cell = t.alloc(&[0; 4]);
+        let c = log_stub(&mut t, log, 0, 0x5151);
+        jmp_stub(&mut t, sm::RELEASE_GROUP_RESOURCES, &c);
+        let c = log_stub(&mut t, log, 0, 0x5353);
+        jmp_stub(&mut t, sm::WORLD_BULLET_DTOR, &c);
+        // inc dword [log]; mov eax, [cell]; ret 4
+        let mut c = vec![0xff, 0x05];
+        c.extend(log.to_le_bytes());
+        c.push(0xa1);
+        c.extend(cell.to_le_bytes());
+        c.extend([0xc2, 4, 0]);
+        jmp_stub(&mut t, sm::WORLD_REMOVE_CONTROLLER, &c);
+        let world = t.alloc(&[0x6b; 0x60]);
+        let nodes = t.alloc(&[0x6b; 3 * 0xd0]);
+        for case in 0..8u32 {
+            let n = case % 4;
+            for i in 0..n {
+                let next = if i + 1 < n { nodes + 0xd0 * (i + 1) } else { 0 };
+                t.w32(nodes + 0xd0 * i, next);
+                t.w32(nodes + 0xd0 * i + 0xcc, 0x5a5a_5a5a);
+            }
+            t.w32(world + 0x4c, if n == 0 { 0 } else { nodes });
+            t.w32(cell, u32::from(case >= 4));
+            let w = format!("{label} world dtor case {case}");
+            t.run(&w, 0x005e_28d0, world, &[], false, |g| {
+                sm::world_dtor(g, world)
+            });
+        }
+    }
+}

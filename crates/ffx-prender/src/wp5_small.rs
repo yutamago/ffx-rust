@@ -883,3 +883,31 @@ pub fn world_bullet_dtor(h: &mut impl Host, this: u32) -> u32 {
     }
     eax
 }
+
+/// `Phyre_releaseGroupResources_006019b0` (thiscall).
+pub const RELEASE_GROUP_RESOURCES: u32 = 0x0060_19b0;
+/// `Phyre_PPhysics_PPhysicsWorld_removeController_006016c0` (thiscall
+/// `(world; ctrl)`).
+pub const WORLD_REMOVE_CONTROLLER: u32 = 0x0060_16c0;
+/// `Phyre_PPhysics_PPhysicsWorldBullet_dtor_005e2950` (thiscall).
+pub const WORLD_BULLET_DTOR: u32 = 0x005e_2950;
+
+/// `PPhysicsWorld::~PPhysicsWorld` (`0x005e28d0`, thiscall) -> the
+/// Bullet part's destructor's `eax`: `Phyre_releaseGroupResources(this)`;
+/// each controller of the list at `+0x4c` (next at `+0`, read first)
+/// removed (`removeController`) and its `+0xcc` cleared, stopping at the
+/// first non-zero result; then [`WORLD_BULLET_DTOR`].
+pub fn world_dtor(h: &mut impl Host, this: u32) -> u32 {
+    h.call_sym(RELEASE_GROUP_RESOURCES, Conv::Thiscall(this), &[]);
+    let mut node: u32 = h.read(this + 0x4c);
+    while node != 0 {
+        let next: u32 = h.read(node);
+        let r = h.call_sym(WORLD_REMOVE_CONTROLLER, Conv::Thiscall(this), &[node]);
+        if r != 0 {
+            break;
+        }
+        h.write(node + 0xcc, 0u32);
+        node = next;
+    }
+    h.call_sym(WORLD_BULLET_DTOR, Conv::Thiscall(this), &[])
+}
