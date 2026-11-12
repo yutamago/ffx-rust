@@ -291,4 +291,5 @@ pub mod thread;
 pub mod visibility;
 pub mod world;
 pub mod wp5_hot;
+pub mod wp5_small;
 pub mod wp5_sort;

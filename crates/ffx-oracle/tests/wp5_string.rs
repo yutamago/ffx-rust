@@ -1044,3 +1044,90 @@ fn wp5b_tree_min_max() {
         }
     }
 }
+
+/// The small originals of `ffx_prender::wp5_small`: junk objects, the
+/// callees logging stubs (their `ecx` and argument words compared through
+/// memory), the allocator stub for the list node.
+#[test]
+fn wp5b_small_originals() {
+    use ffx_prender::wp5_small as sm;
+    for (label, mut t) in Twins::all() {
+        let log = t.alloc(&[0; 4 + 8 * 64]);
+        for round in 0..6u32 {
+            let obj = t.alloc(&[0x40 + round as u8; 0x40]);
+            t.w32(
+                obj,
+                if round % 2 == 0 {
+                    0x8000_0005
+                } else {
+                    0x7fff_fff0
+                },
+            );
+            let w = format!("{label} parray count {round}");
+            t.run(&w, 0x0043_20c0, obj, &[], false, |g| {
+                sm::parray_count(g, obj)
+            });
+            let w = format!("{label} zero three {round}");
+            t.run(&w, 0x0069_06b0, obj, &[], false, |g| {
+                sm::zero_three_words(g, obj)
+            });
+            let w = format!("{label} job worker ctor {round}");
+            t.run(&w, 0x0070_3960, obj, &[], false, |g| {
+                sm::job_worker_ctor(g, obj)
+            });
+            let w = format!("{label} clear word 10 {round}");
+            t.run(&w, 0x0070_38f0, obj, &[], false, |g| {
+                sm::clear_word10(g, obj)
+            });
+            let (next, prev) = if round % 3 == 0 {
+                (0, 0x1234)
+            } else {
+                (obj, obj + 8)
+            };
+            let w = format!("{label} list node {round}");
+            let at = t.a.rebase(0x0065_4f00);
+            let r = t.a.call(at, Conv::Stdcall, &[next, prev]).unwrap();
+            let p = sm::list_buy_node(&mut G(&mut t.b), next, prev);
+            assert_eq!(r.eax, p, "{w}: eax");
+            t.same(&w);
+        }
+        // the callees: logging stubs (ret 4 / ret 8 / cdecl)
+        let s = log_stub(&mut t, log, 4, 0x41);
+        jmp_stub(&mut t, sm::CLUSTER_DELETE_OBJECT, &s);
+        let s = log_stub(&mut t, log, 8, 0x42);
+        jmp_stub(&mut t, sm::SCENE_DELETE_MESH_INSTANCE, &s);
+        let s = log_stub_arg(&mut t, log, 0, 0x43, true);
+        jmp_stub(&mut t, sm::CD_CHANNEL_CLEAR, &s);
+        let s = log_stub_arg(&mut t, log, 0, 0x44, false);
+        jmp_stub(&mut t, sm::HDD_STATE_CLEAR, &s);
+        let s = log_stub_arg(&mut t, log, 0, 0x45, true);
+        jmp_stub(&mut t, sm::OPERATOR_DELETE, &s);
+        let scene = t.a.rebase(sm::PHYRE_SCENE);
+        t.w32(scene, 0x5ce0_0000);
+        for round in 0..4u32 {
+            let obj = t.alloc(&[0x50 + round as u8; 0x40]);
+            t.w32(log, 0);
+            let w = format!("{label} delete object {round}");
+            t.run(&w, 0x006a_1550, obj, &[], false, |g| {
+                sm::character_delete_object(g, obj)
+            });
+            t.w32(log, 0);
+            let w = format!("{label} delete mesh instance {round}");
+            t.run(&w, 0x006a_1570, obj, &[], false, |g| {
+                sm::character_delete_mesh_instance(g, obj)
+            });
+            let abmap = t.a.rebase(sm::GRAPHIC_ABMAP);
+            t.w32(abmap, if round % 2 == 0 { 0 } else { obj });
+            t.w32(log, 0);
+            let w = format!("{label} abmap free {round}");
+            t.run_cdecl(&w, 0x0068_4ae0, &[], |g| sm::abmap_free(g));
+        }
+        for &a in &sm::CD_WORDS {
+            let at = t.a.rebase(a);
+            t.w32(at, 0x7777_7777);
+        }
+        t.w32(log, 0);
+        let w = format!("{label} cd reset channels");
+        t.run_cdecl(&w, 0x0076_dcb0, &[], |g| sm::cd_reset_channels(g));
+    }
+}

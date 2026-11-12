@@ -1,0 +1,52 @@
+//! M5 finish, WP5 part 2 (`ffx_prender::wp5_small`): small originals
+//! after ported symbols. Parity tests:
+//! `crates/ffx-oracle/tests/wp5_string.rs` (`wp5b_small_*`).
+//!
+//! Threads: any. No shim keeps state.
+
+use ffx_prender::wp5_small as s;
+
+use super::{mem, ported};
+
+ported! {
+    /// `Phyre_PArray_count_004320c0`: the count without bit 31.
+    Phyre_PArray_count_004320c0 @ 0x0043_20c0 => extern "thiscall" fn sm_004320c0(this: u32) -> u32 {
+        s::parray_count(&mem(), this)
+    }
+    /// `std_List_buyNode_00654f00(next, prev)`: a 12-byte list node.
+    std_List_buyNode_00654f00 @ 0x0065_4f00 => extern "stdcall" fn sm_00654f00(next: u32, prev: u32) -> u32 {
+        s::list_buy_node(&mut mem(), next, prev)
+    }
+    /// `graphicAbmapFree_00684ae0`: `g_GraphicAbmap` freed and cleared.
+    graphicAbmapFree_00684ae0 @ 0x0068_4ae0 => extern "C" fn sm_00684ae0() -> u32 {
+        s::abmap_free(&mut mem())
+    }
+    /// `ZeroThreeWords_006906b0`: three words zeroed; `this`.
+    ZeroThreeWords_006906b0 @ 0x0069_06b0 => extern "thiscall" fn sm_006906b0(this: u32) -> u32 {
+        s::zero_three_words(&mut mem(), this)
+    }
+    /// `ClassCharacterInstance_deleteObject_006a1550`: the cluster object deleted.
+    ClassCharacterInstance_deleteObject_006a1550 @ 0x006a_1550 => extern "thiscall" fn sm_006a1550(this: u32) -> u32 {
+        s::character_delete_object(&mut mem(), this)
+    }
+    /// `ClassCharacterInstance_deleteMeshInstance_006a1570`: the mesh instance deleted.
+    ClassCharacterInstance_deleteMeshInstance_006a1570 @ 0x006a_1570 => extern "thiscall" fn sm_006a1570(this: u32) -> u32 {
+        s::character_delete_mesh_instance(&mut mem(), this)
+    }
+    /// `ClearWord10_007038f0`: `+0x10` zeroed; `this`.
+    ClearWord10_007038f0 @ 0x0070_38f0 => extern "thiscall" fn sm_007038f0(this: u32) -> u32 {
+        s::clear_word10(&mut mem(), this)
+    }
+    /// `JobWorker_ctor_00703960`: a job worker's fields and vtable; `this`.
+    JobWorker_ctor_00703960 @ 0x0070_3960 => extern "thiscall" fn sm_00703960(this: u32) -> u32 {
+        s::job_worker_ctor(&mut mem(), this)
+    }
+    /// `cd_resetChannels_0076dcb0`: the CD channels and reader state cleared.
+    cd_resetChannels_0076dcb0 @ 0x0076_dcb0 => extern "C" fn sm_0076dcb0() -> u32 {
+        s::cd_reset_channels(&mut mem())
+    }
+    /// `std_Tree_BuyHeadNode_00654ea0`: the same code as `std_Tree_BuyHeadNode_00654ed0`.
+    std_Tree_BuyHeadNode_00654ea0 @ 0x0065_4ea0 => extern "C" fn sm_00654ea0() -> u32 {
+        ffx_prender::glue3::bridge::tree_buy_head_node(&mut mem())
+    }
+}
