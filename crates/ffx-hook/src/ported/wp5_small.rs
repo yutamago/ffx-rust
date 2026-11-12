@@ -119,4 +119,12 @@ ported! {
     Phyre_PAnimation_PAnimationClip_dtor_005133f0 @ 0x0051_33f0 => extern "thiscall" fn sm_005133f0(this: u32) -> u32 {
         s::animation_clip_dtor(&mut mem(), this)
     }
+    /// `Phyre_PAnimation_PAnimationChannel_ctor_0050d150`: the base descriptor and eight zero words; `this`.
+    Phyre_PAnimation_PAnimationChannel_ctor_0050d150 @ 0x0050_d150 => extern "thiscall" fn sm_0050d150(this: u32) -> u32 {
+        s::channel_ctor(&mut mem(), this)
+    }
+    /// `Phyre_PAnimation_PAnimationChannel_dtor_0050d1d0`: `+0x1c` cleared, the owned `+0x14` freed; `al` as the original's.
+    Phyre_PAnimation_PAnimationChannel_dtor_0050d1d0 @ 0x0050_d1d0 => extern "thiscall" fn sm_0050d1d0(this: u32) -> u32 {
+        s::channel_dtor(&mut mem(), this)
+    }
 }

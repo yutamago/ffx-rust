@@ -545,3 +545,31 @@ pub fn animation_clip_dtor(h: &mut impl Host, this: u32) -> u32 {
     h.write(this + 8, 0u32);
     eax
 }
+
+/// `Phyre_PBase_GetClassDescriptor` (cdecl, no arguments).
+pub const BASE_CLASS_DESCRIPTOR: u32 = 0x0043_5740;
+
+/// `PAnimationChannel::PAnimationChannel` (`0x0050d150`, thiscall) ->
+/// `this`: `+0` = `PBase::GetClassDescriptor()`, `+4` to `+0x20` = 0.
+pub fn channel_ctor(h: &mut impl Host, this: u32) -> u32 {
+    let desc = h.call_sym(BASE_CLASS_DESCRIPTOR, Conv::Cdecl, &[]);
+    h.write(this, desc);
+    h.write_bytes(this + 4, &[0; 0x20]);
+    this
+}
+
+/// `PAnimationChannel::~PAnimationChannel` (`0x0050d1d0`, thiscall):
+/// `+0x1c` = 0, then `Phyre_PhyreFree([+0x14])` (its `eax`) when that
+/// word's bit 0 is clear. With bit 0 set the original returns its
+/// caller's `eax` with `al` = the byte inverted; the port returns that
+/// byte alone (no caller reads more than `al`: the `destructInstance`
+/// copies set `al` = 1, the array destructors drop it).
+pub fn channel_dtor(h: &mut impl Host, this: u32) -> u32 {
+    h.write(this + 0x1c, 0u32);
+    let name: u32 = h.read(this + 0x14);
+    if name & 1 == 0 {
+        h.call_sym(PHYRE_FREE, Conv::Cdecl, &[name])
+    } else {
+        u32::from(!(name as u8))
+    }
+}

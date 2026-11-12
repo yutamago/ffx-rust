@@ -1927,3 +1927,35 @@ fn wp5b_animation_clip_dtors() {
         }
     }
 }
+
+/// `PAnimationChannel`'s constructor (`0x0050d150`, the class descriptor
+/// getter a stub returning a tag) and destructor (`0x0050d1d0`,
+/// `Phyre_PhyreFree` a logging stub) on junk, the `+0x14` word with bit 0
+/// clear and set.
+#[test]
+fn wp5b_animation_channel_ctor_dtor() {
+    use ffx_prender::wp5_small as sm;
+    for (label, mut t) in Twins::all() {
+        let log = t.alloc(&[0; 4 + 8 * 64]);
+        jmp_stub(
+            &mut t,
+            sm::BASE_CLASS_DESCRIPTOR,
+            &[0xb8, 0x44, 0x33, 0x22, 0x11, 0xc3],
+        );
+        let c = log_stub_plain(&mut t, log, 0, 0x6161_0000, true);
+        jmp_stub(&mut t, sm::PHYRE_FREE, &c);
+        let obj = t.alloc(&[0x6b; 0x30]);
+        let w = format!("{label} channel ctor");
+        t.run(&w, 0x0050_d150, obj, &[], false, |g| {
+            sm::channel_ctor(g, obj)
+        });
+        for word in [0x0099_0000u32, 0x0099_0001, 0xff, 0x6b6b_6b6b, 0] {
+            t.w32(obj + 0x14, word);
+            t.w32(obj + 0x1c, 0x5a5a_5a5a);
+            let w = format!("{label} channel dtor {word:#x}");
+            t.run(&w, 0x0050_d1d0, obj, &[], word & 1 != 0, |g| {
+                sm::channel_dtor(g, obj)
+            });
+        }
+    }
+}
