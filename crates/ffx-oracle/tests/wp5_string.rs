@@ -284,7 +284,7 @@ fn wp5b_string_assign_erase_cut() {
             let s = t.string(l);
             let size = t.size(s);
             let (p, len) = if round % 3 == 0 && size > 0 {
-                let off = t.rng.below(size);
+                let off = t.rng.below(size + 1);
                 (t.data(s) + off, t.rng.below(size - off + 3))
             } else {
                 let len = t.rng.len();
@@ -346,7 +346,7 @@ fn wp5b_string_append_substr_move() {
             let s = t.string(l);
             let size = t.size(s);
             let (p, len) = if round % 3 == 0 && size > 0 {
-                let off = t.rng.below(size);
+                let off = t.rng.below(size + 1);
                 (t.data(s) + off, t.rng.below(size - off + 3))
             } else {
                 let len = t.rng.len();
@@ -395,7 +395,12 @@ fn wp5b_string_find_compare_grow() {
             let s = t.string(n);
             // a needle from the string itself or random, 0 to 4 long
             let k = t.rng.below(5);
-            let needle = if round % 2 == 0 && n >= k {
+            let needle = if round % 4 == 1 && k > 0 && n + 1 >= k {
+                // the string's tail and its 0: found only past the window
+                let mut v = vec![0u8; k as usize];
+                t.b.read_bytes(t.data(s) + n + 1 - k, &mut v);
+                v
+            } else if round % 2 == 0 && n >= k {
                 let off = t.rng.below(n - k + 1);
                 let mut v = vec![0u8; k as usize];
                 t.b.read_bytes(t.data(s) + off, &mut v);
