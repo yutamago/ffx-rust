@@ -55,6 +55,13 @@ impl Symbols {
         paths.into_iter().find(|p| p.is_file())
     }
 
+    /// Reads `ffx.sym` from where [`Symbols::locate`] finds it (none:
+    /// no names).
+    #[must_use]
+    pub fn located() -> Self {
+        Self::locate().map(|p| Self::read(&p)).unwrap_or_default()
+    }
+
     /// The function containing `addr` (the nearest start at or below it).
     #[must_use]
     pub fn containing(&self, addr: u32) -> Option<(u32, &str)> {
@@ -73,6 +80,13 @@ impl Symbols {
             None => format!("{addr:#010x}"),
         }
     }
+}
+
+/// The run's `ffx.sym` names ([`Symbols::located`]), read on first use:
+/// for the executor's own messages (an unported address's name).
+pub fn symbols() -> &'static Symbols {
+    static SYMS: std::sync::OnceLock<Symbols> = std::sync::OnceLock::new();
+    SYMS.get_or_init(Symbols::located)
 }
 
 /// One function that ran in Unicorn.
@@ -411,6 +425,16 @@ pub fn text(exec: &Exec, syms: &Symbols, outcome: &str) -> String {
         st.x87,
         st.exceptions
     );
+    if !st.unported.is_empty() {
+        let _ = writeln!(
+            out,
+            "unported addresses (no emulator): {}",
+            st.unported.len()
+        );
+        for (a, what) in &st.unported {
+            let _ = writeln!(out, "  {a:#010x}{what}");
+        }
+    }
     let count = |r: Route| shared.routes.iter().filter(|(_, x)| *x == r).count();
     let _ = writeln!(
         out,

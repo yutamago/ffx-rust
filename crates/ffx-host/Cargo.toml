@@ -11,13 +11,56 @@ publish = false
 name = "ffx-rust"
 path = "src/bin/ffx-rust.rs"
 
+# The tests that run original code in Unicorn (compare with it, or boot
+# through code without a port) need the emulator; tests/no_unicorn.rs is
+# the build without it, tests/overlay_bind.rs runs in both.
+[[test]]
+name = "boot"
+required-features = ["dev-unicorn"]
+[[test]]
+name = "crt"
+required-features = ["dev-unicorn"]
+[[test]]
+name = "crt_dll"
+required-features = ["dev-unicorn"]
+[[test]]
+name = "free_play"
+required-features = ["dev-unicorn"]
+[[test]]
+name = "m5_system_a"
+required-features = ["dev-unicorn"]
+[[test]]
+name = "m5_vfx_stubs"
+required-features = ["dev-unicorn"]
+[[test]]
+name = "m5p_physics"
+required-features = ["dev-unicorn"]
+[[test]]
+name = "m5p_stubs"
+required-features = ["dev-unicorn"]
+[[test]]
+name = "overlay"
+required-features = ["dev-unicorn"]
+[[test]]
+name = "seh"
+required-features = ["dev-unicorn"]
+[[test]]
+name = "steam"
+required-features = ["dev-unicorn"]
+[[test]]
+name = "table"
+required-features = ["dev-unicorn"]
+[[test]]
+name = "x87"
+required-features = ["dev-unicorn"]
+
 [features]
 default = ["dev-unicorn"]
 # Development only: the executor runs FFX.exe's functions that have no
-# port yet in Unicorn (docs/host.md, "Rust and Unicorn"); gone before the
-# stage 4 gate. Unicorn is GPL-2.0: the release builds without it
-# (tools/check-licences.py). Until the executor has a path without
-# Unicorn, the crate refuses to build with the feature off.
+# port yet in Unicorn (docs/host.md, "Rust and Unicorn"). Unicorn is
+# GPL-2.0: the release builds without it (tools/check-licences.py), and
+# then a call to an address with no Rust side is a hard stop that names
+# it (docs/host.md, "Without Unicorn").
 dev-unicorn = ["dep:unicorn-engine", "ffx-fpu/unicorn"]
 # Iggy's players on Ruffle (ffx-swf); without it the players are null.
 swf = ["dep:ffx-swf"]

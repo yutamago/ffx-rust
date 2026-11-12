@@ -19,7 +19,8 @@ same memory. The release runs no `FFX.exe` code.
 | `src/exec.rs` | `Shared` (what every game thread sees) and `Exec` (one game thread): the mixed Rust/Unicorn executor, `Exec::call`, threads, the stats |
 | `src/exec/seh.rs` | structured exceptions: `RaiseException` and faults through the `fs:[0]` chain, `RtlUnwind`, the report of an unhandled one (below, "Exceptions") |
 | `crates/ffx-fpu` | the x87 instructions Unicorn gets wrong, computed as the FPU does (moved out of `ffx-oracle`, which uses it too; below, "x87") |
-| `src/imports.rs` | the Rust side of each import (C runtime, Win32 stand-ins, Steam, Iggy, milestones) |
+| `src/imports.rs` | the Rust side of each import (C runtime, Win32 stand-ins, Iggy, milestones) |
+| `src/steam.rs` | `steam_api.dll`'s imports and interfaces bridged to `steam_api64.dll` (below, "Steam") |
 | `src/win32.rs` | threads, synchronisation, TLS, modules and code pages: what the DLLs and the threads need |
 | `src/sync.rs` | events, semaphores, mutexes, thread handles, critical sections on host primitives |
 | `src/files.rs` | the `CreateFile` family over `std::fs`: the game folder (read-only) and a documents folder (read-write) |
@@ -382,6 +383,68 @@ stops the emulator, and the executor's loop decides.
 - **x87.** The control word starts at `0x027f` (53-bit), as Windows starts
   threads. The transcendental instructions run exactly (below, "x87").
 
+## Without Unicorn
+
+`dev-unicorn` is the default feature; the release (`tools/package-release.sh`,
+`--no-default-features --features swf`) builds without it (2026-11-12,
+WP9), and then the crate links no Unicorn and runs no `FFX.exe` or DLL
+code. What changes (`src/exec/cpu.rs`, the `cfg`s in `src/exec.rs`):
+
+- **The CPU** is a register file with Unicorn's register names: `esp` (the
+  ports' frames on the game stack, a call's words put there), `eax`,
+  `ecx`, `edx` as a call leaves them, the control words, an empty x87
+  stack. Nothing is mapped, hooked or emulated; the int3 patches stay in
+  the arena's copy of `.text`, unused.
+- **Calls** (`Exec::call`, the router, the overlays' `Game::call`) take the
+  table, an import's Rust side, a trap or a one-instruction leaf as with
+  Unicorn. Anything else is a hard stop: `Error::Unported`, the thread's
+  outcome `unported address 0x… (name) called from A <- B <- …` (the name
+  from `ffx.sym`, or an import's `DLL!name`, or an overlay's
+  `magic_nnnn.dll!export+off`; the chain from the thread's host entries,
+  innermost first), noted at once and listed in the report's "unported
+  addresses" and `Stats::unported`. On the main thread it ends the run.
+  The same stop for `Exec::call_original` without a wrapped port (no
+  trampolines), `call_sse` (the `_libm_sse2_*` imports: their `xmm0`
+  doesn't fit `Args`), an x87 intrinsic case its Rust side hands to the
+  DLL, and `RaiseException` (its handlers are emulated code).
+- **The C runtime DLLs** are never loaded (`Options::no_dlls` is forced):
+  every `MSVCR110`/`MSVCP110` import is its Rust side or missing, and a
+  missing one stops the run when called, as an unstubbed import always
+  did. An overlay import `FFX.exe` doesn't have (the overlay CRT's
+  start-up imports, `__clean_type_info_names_internal`, `_malloc_crt`,
+  `__CppXcptFilter`, `DisableThreadLibraryCalls`, which the ported
+  `DllMain` never calls) gets a trap that stops the thread when called,
+  so the load goes on.
+- **Threads** run as before (one host thread and executor each); a
+  thread-pool work item's routine is a trap that calls its callback (no
+  emulated trampoline). The budget is watched by the watchdog, which
+  ends the run (`Stop::Budget` at the main thread's innermost host
+  entry); `TerminateThread` ends a thread at its next call.
+- **The profile** (`--cover`, `--profile`, `--count`) stays empty:
+  nothing is emulated.
+- **Tests.** `tests/no_unicorn.rs` (only without the feature): a port
+  called from Rust, the hard stop's text and chain from a trap, a
+  thread-pool item, and the boot to its first unported address; with
+  `FFX_HOST_UNPORTED_OUT=<file>` it writes that address and every C
+  runtime import without a Rust side as TSV. `tests/overlay_bind.rs`
+  runs in both builds: all 581 overlays load, bind and run `DllMain`,
+  `InitMagicPRX` and `GetEffectOverlayTable` as ports with no emulator.
+  The other test files compare with or boot through original code and
+  need the feature (`required-features` in `Cargo.toml`).
+
+```bash
+FFX_GAME_DIR=~/steam-games/FFX-X2-HD cargo test -p ffx-host --no-default-features --features swf
+FFX_HOST_FEATURES=swf tools/build-host.sh build --no-default-features             # the release ffx-rust.exe
+python3 -I tools/check-licences.py                                                 # 0 GPL in the release trees
+```
+
+On 2026-11-12 the boot stops at once: `FFX.exe`'s entry point
+`0x009493c1` (the CRT start-up's wrapper, `__security_init_cookie` then
+`__tmainCRTStartup`) has no port, and 210 of `FFX.exe`'s C runtime
+imports have no Rust side. The list WP5 closes, with the Unicorn build's
+Rust → Unicorn entries of a headless boot (the next addresses the
+no-emulator boot will meet), is `~/ffx-work/m5/finish/wp9/unported.tsv`.
+
 ## x87
 
 Unicorn (QEMU) computes `fsin`, `fcos`, `fsincos`, `fptan`, `fpatan`,
@@ -501,10 +564,9 @@ convention, stack words and Rust side.
   behind them: below, "D3D11 and DXGI".
 - **FMOD, Iggy, movies, Steam.** FMOD on the Rust mixer (below,
   "FMOD"), Iggy on the layer of `src/iggy.rs` and `ffx-swf` (below,
-  "Iggy"); `ffx-movie` and `steam_api.dll` (`steam_api64.dll` at stage 4)
-  later. Steam is absent for now (`SteamAPI_RestartAppIfNecessary` and
-  `SteamAPI_Init` return false, so `Steam_Init` skips the interfaces and
-  achievements); Iggy exports without a Rust side are null stand-ins that
+  "Iggy"); `ffx-movie` later. Steam goes to the real `steam_api64.dll`
+  when it is there and `SteamAPI_Init` succeeds, and is absent otherwise
+  (below, "Steam"); Iggy exports without a Rust side are null stand-ins that
   return 0 (their stack size comes from the decorated name,
   `_IggyInit@4`).
 - **The window.** Linux: `CreateWindowExA` returns a fake handle and
@@ -566,7 +628,7 @@ Every import without a Rust side, 116 on Windows before this round
 | `IggyGDrawSendWarning` | a note | `GDraw`'s warnings on a failed `D3D11` call or a full pool |
 | MSVCR110's `LoadLibraryExW` (0), `OutputDebugStringW` (a note) | stand-ins | `__crtMessageBoxW` under `_wassert`: a failed assert ends as `abort` with its text in the notes, not on a missing import |
 | `MiniDumpWriteDump`, `GetProcessId`, `ReadProcessMemory`, `GetThreadContext`, VERSION's three | unreachable | `CrashDump_UnhandledExceptionFilter` and its `StackWalker`: the host's `SetUnhandledExceptionFilter` keeps no filter (an unhandled exception ends the run through `UnhandledExceptionFilter`) |
-| `SteamUserStats`, `SteamUtils`, `SteamUser` | unreachable (WP10) | `Steam_Init` after `SteamAPI_Init` succeeds, and `StatsAndAchievements_ctor` under `g_SteamReady`: `SteamAPI_Init` returns false |
+| `SteamUserStats`, `SteamUtils`, `SteamUser` | bound since WP10 (2026-11-12, `src/steam.rs`, below "Steam"); 0 while Steam is absent | `Steam_Init` after `SteamAPI_Init` succeeds, and `StatsAndAchievements_ctor` under `g_SteamReady` |
 | `AllocConsole`, `GetConsoleScreenBufferInfo`, `SetConsoleScreenBufferSize` | unreachable | `FUN_0042f340`, 0 refs |
 | `CreateThreadpoolWait`, `SetThreadpoolWait` | unreachable | `FileSys_SubmitRead`, 0 refs |
 | the DLLs' console calls (`ReadConsoleW`, `WriteConsoleW`, `ReadConsoleInputA/W`, `PeekConsoleInputA`, `GetNumberOfConsoleInputEvents`, `SetConsoleMode`, `SetConsoleCtrlHandler`, `Beep`) | unreachable | MSVCR110's `_write`/`_read` take the console path only when `GetConsoleMode` succeeds, and its stand-in answers 0; `signal` and `_beep` are no import of `FFX.exe` |
@@ -881,6 +943,101 @@ thread):
   writes every 30th image of each player as a straight-alpha PNG.
 
 Without the feature the players are null: no image, the calls do nothing.
+
+## Steam
+
+`src/steam.rs` (2026-11-12, WP10) bridges the game's Steam calls to
+Valve's 64-bit `steam_api64.dll`, loaded at run time: `FFX_STEAM_API`,
+else beside `ffx-rust.exe`. The DLL is the Steamworks SDK's
+(`sdk/redistributable_bin/win64/steam_api64.dll`, SDK 1.65: FileVersion
+10.87.46.89, sha256 `e6d9bafb...e776d`). It is never in git; the
+release package carries it beside `ffx-rust.exe` under the Steamworks
+SDK's terms (Valve's licence, not MIT OR Apache-2.0: the package lists it with
+the other licences). The SDK's headers are used for facts only (struct
+layouts, callback ids, packing, vtable order).
+
+What the game calls (docs/formats/platform.md, "Steam"; the call sites
+are in `steam::METHODS`):
+
+| Import or slot | The bridge |
+|---|---|
+| `SteamAPI_RestartAppIfNecessary(0)` | false, never forwarded (a restart would start the Steam build of `FFX.exe`) |
+| `SteamAPI_Init` | loads the DLL, `SteamInternal_SteamAPI_Init` with the game's three interface versions, then the interfaces from `SteamClient()` (`SteamAPI_ISteamClient_GetISteamUser`/`GetISteamUtils`/`GetISteamUserStats` at those versions); true when all of it worked |
+| `SteamUser`, `SteamUtils`, `SteamUserStats` | the interface's handle: a word in the arena pointing at a vtable of `int3` traps (64 slots each, as `crate::com` does); 0 when the DLL gave none |
+| `ISteamUser017` slot 1 `BLoggedOn`; `ISteamUtils007` 9 `GetAppID`, 10 `SetOverlayNotificationPosition`; `ISteamUserStats011` 0 `RequestCurrentStats`, 6 `GetAchievement`, 7 `SetAchievement`, 10 `StoreStats`, 12 `GetAchievementDisplayAttribute` | thiscall traps: the strings read from the arena, the 64-bit method called at the same slot of the same version, `bool *pbAchieved` written back (only when the call returned true), a returned string copied into the arena (one block per distinct string) |
+| `ISteamUserStats011` slot 21 `ResetAllStats` | refused: false and a note; the back end has no such call, so nothing can forward it |
+| any other slot | stops the run, naming the version and slot |
+| `SteamAPI_RegisterCallback(cb, id)` | a 64-bit twin of the game's `CCallback` (`HostCallback`: vtable, flags at +8, id at +12, as MSVC lays out `CCallbackBase`) registered with the DLL; the flags byte and id the DLL set are mirrored into the game's object (+4, +8), which its destructors test |
+| `SteamAPI_RunCallbacks` | the DLL's `SteamAPI_RunCallbacks`; the twins queue what Steam hands them, then each struct goes to the game's object in order: a copy on the arena heap, `Run(void *)` (vtable slot 1, thiscall) called through the executor |
+| `SteamAPI_UnregisterCallback`, `SteamAPI_Shutdown` | forwarded; after `Shutdown` Steam is absent again |
+
+Interface versions. `FFX.exe` names none; its 32-bit `steam_api.dll`
+asks `steamclient` for `SteamUser017`, `SteamUtils007` and
+`STEAMUSERSTATS_INTERFACE_VERSION011` (and `SteamClient016`), so the
+bridge asks for exactly these, never the SDK 1.65 defaults
+(`SteamUser023`, `SteamUtils011`, `STEAMUSERSTATS_INTERFACE_VERSION013`,
+whose `ISteamUserStats` has no `RequestCurrentStats` any more). The
+slots are the old versions' (the game's call offsets / 4) and the same
+on x64 (MSVC orders a vtable the same way on both widths). Whether
+Steam's current client serves the three old versions is checked by
+`SteamInternal_SteamAPI_Init` (it fails with a message when not) and
+by `steam-probe` below; not yet measured (Steam was not running on the
+development machine, 2026-11-12).
+
+Callback structs. Steam packs them to 8 on Windows on both widths
+(`VALVE_CALLBACK_PACK_LARGE`); `CSteamID` is packed to 1, so
+`UserStatsReceived_t` is the game id (+0), the result (+8), the user
+(+0xc), 0x18 bytes. The 64-bit and 32-bit layouts are the same for the
+three the game registers (1101 `UserStatsReceived_t` 0x18, 1102
+`UserStatsStored_t` 0x10, 1103 `UserAchievementStored_t` 0x98: the
+sizes the game's own `GetCallbackSizeBytes` return); `steam::CALLBACKS`
+moves each field by its offsets all the same, padding zero.
+
+Steam absent. Without the DLL, on Linux, with `FFX_NO_STEAM` set, or
+when `SteamAPI_Init` fails (Steam not running, no app id: the harness
+sets none, so replays stay off the account), the run is the one from before the
+bridge: `SteamAPI_Init` returns false, `Steam_Init` leaves `g_SteamReady`
+clear and the game never asks for an interface. The notes say why
+(`Steam: absent (...)`). The app id: Steam sets `SteamAppId` for a game
+it starts; started any other way, `ffx-rust.exe` needs
+`SteamAppId=359870` in its environment (or a `steam_appid.txt` in its
+working folder, never in the game folder). `ffx-launch --rust` sets it
+(below, "The release package").
+
+Tests:
+
+```bash
+cargo test -p ffx-host --lib steam                                  # the marshalling, the call table, the twins
+FFX_GAME_DIR=~/steam-games/FFX-X2-HD cargo test --release -p ffx-host --test steam
+FFX_STEAM_API=~/tools/steamworks_sdk_165/sdk/redistributable_bin/win64/steam_api64.dll \
+  cargo test --release -p ffx-host --test steam -- --ignored        # the DLL's exports
+```
+
+`tests/steam.rs` runs the game's own Steam code on a stand-in for
+Steam: `StatsAndAchievements_Create` (three registrations, `GetAppID`,
+`BLoggedOn`, `RequestCurrentStats`), `SteamAPI_RunCallbacks` delivering
+`UserStatsReceived_t` to `OnUserStatsReceived` (each record's achieved
+byte, name and description from the stand-in), an unlock through
+`SaveDataUnlockAchievement` (`SetAchievement`, `StoreStats`) and the
+debug menu's `StatsAndAchievements_ResetAll` (Steam never asked), once
+with the ported table and once with the originals in Unicorn: the same
+107 calls and the same memory.
+
+The live check, read-only (it never sets, clears or stores anything),
+on Windows with Steam running and logged on:
+
+```bash
+tools/build-host.sh build --example steam-probe
+mkdir -p ~/ffx-work/steam-probe && echo 359870 > ~/ffx-work/steam-probe/steam_appid.txt
+cd ~/ffx-work/steam-probe && FFX_STEAM_API="$(wslpath -w ~/tools/steamworks_sdk_165/sdk/redistributable_bin/win64/steam_api64.dll)" \
+  FFX_GAME_DIR="$(wslpath -w ~/steam-games/FFX-X2-HD)" WSLENV=FFX_STEAM_API/w:FFX_GAME_DIR/w \
+  <repo>/target/x86_64-pc-windows-msvc/release/examples/steam-probe.exe
+```
+
+It prints whether each old interface version is served, the app id,
+`BLoggedOn`, the `UserStatsReceived_t` result and every achievement's
+state, name and description. `steam-probe.exe --exports` only loads the
+DLL and resolves the exports (no Steam needed).
 
 ## The C runtime DLLs
 
@@ -1208,6 +1365,84 @@ at a copy of the toolchain file without that line (all under
 LLVM's `llvm-ml64` under the name `ml64`. The hook (`dinput8.dll`) stays
 32-bit (`tools/build-hook.sh`), and so does its 32-bit clippy
 (`-p ffx-hook`); `ffx-host` is no longer in it.
+`FFX_HOST_RUSTFLAGS` is added to `RUSTFLAGS` (cargo-xwin sets it, empty,
+which makes cargo ignore every target `rustflags`) and `FFX_HOST_CFLAGS`
+to the C and C++ flags (the package's path remapping, below), and
+`CARGO_TARGET_DIR` is honoured.
+
+## The release package
+
+What a player gets (M5 stage 5, WP13, 2026-11-12): a zip with
+`ffx-rust.exe` and `ffx-launch.exe` (both x86_64), Steam's
+`steam_api64.dll`, `ffx.sym` (the report's names: `Symbols::locate`
+finds it beside the program), `README.txt` (`docs/player.md`, CRLF),
+`play-ffx-rust.cmd` (`ffx-launch.exe --rust %*`), `SHA256SUMS.txt`, and
+`licences/`: `LICENSE-MIT`, `LICENSE-APACHE`, `THIRD-PARTY.txt`,
+zvidlib-vp8's `LICENSE` and `THIRD_PARTY_NOTICES.md`, `ffx-movie`'s
+`NOTICE` (libVorbis, libogg), Ruffle's `LICENSE.md` (from the fork's
+checkout at the pinned rev) and `steam_api64-NOTICE.txt`
+(`tools/release/`).
+
+```bash
+tools/package-release.sh --dry-run          # no build, no zip: stage, check, self-test (seconds)
+tools/package-release.sh --dev --dry-run    # the same for the development package
+tools/package-release.sh                    # the release (no emulator: boots only as far as the Rust side reaches)
+tools/package-release.sh --dev [--out DIR]  # ffx-rust-<version>-<rev>-win64-dev-not-for-release.zip
+tools/package-release.sh --prebuilt DIR     # package DIR's ffx-rust.exe and ffx-launch.exe
+python3 -I tools/release-files.py check DIR [--dev]   # the checks on any staged folder
+```
+
+- **Features.** `FFX_RELEASE_FEATURES` (default `swf`), built with
+  `--no-default-features`. `dev-unicorn` in it is refused without
+  `--dev`; `--dev` adds it and names the zip `-dev-not-for-release`,
+  with Unicorn's `COPYING` (GPL-2.0) and `licences/unicorn-NOTICE.txt`.
+  Since WP9 (2026-11-12) `ffx-host` builds without `dev-unicorn`
+  ("Without Unicorn"), so the plain command makes the release; its
+  `ffx-rust.exe` stops at the first address without a Rust side (today
+  `FFX.exe`'s entry point), so a playable package is still `--dev` until
+  the stage 4 gate passes on the release build.
+- **The builds** go to `target/package` with `--remap-path-prefix` for
+  the repo, `~/.cargo`, `~/.rustup` and the home folder (clang-cl's
+  `-ffile-prefix-map` for C code), so the development build in
+  `target/` is untouched and no build path ends up in the binaries.
+- **steam_api64.dll** from `STEAMWORKS_SDK` (default
+  `~/tools/steamworks_sdk_165/sdk`, `redistributable_bin/win64/`); never
+  in git (the user accepted the SDK's licence and downloaded it).
+- **THIRD-PARTY.txt** (`tools/release-files.py notices`): the release
+  trees of `ffx-host` (with the features) and `ffx-launch`, as
+  `tools/check-licences.py` lists them (its `tree` and `gpl_bound`):
+  every package with its licence expression and repository, then each
+  distinct licence file the packages ship (`LICENSE*`, `COPYING*`,
+  `NOTICE*`, `THIRD_PARTY*`, ...; for a git dependency the checkout's
+  root), with the packages that ship it. 311 packages and 185 texts
+  with `swf` (2026-11-12). A GPL-bound package fails it unless `--dev`.
+- **The checks** (`tools/release-files.py check`, the dry run runs them
+  and then `selftest`, which plants a user path, a game file, a stray
+  program and, for a release, Unicorn's strings, and expects each to be
+  caught): only the files above (`PACKAGE`), PE files only the three
+  programs, no game file by name (`.vbf`, `FFX.exe`, `magic_*.dll`,
+  FMOD, Iggy, the runtime DLLs, `steam_api.dll`, ...), in every file's
+  ASCII and UTF-16 strings no user path (`check-privacy.py`'s pattern),
+  no word of the user's real name (its hashes), not `$HOME`, `$USER`,
+  the repo's path or the Windows user name (read at run time), and in a
+  release `ffx-rust.exe` none of Unicorn's strings.
+- **ffx-launch** (`crates/ffx-launch`, `src/plan.rs` with the unit
+  tests): `--rust [GAME]` as docs/player.md describes it, for players;
+  without `--rust` it starts `FFX.exe` with bottom-up ASLR off and
+  prints the process ID, as `tools/run-game.sh --fixed-addresses` uses
+  it. `--rust` passes `--game-dir`, `--documents` (`SHGetFolderPathW
+  (CSIDL_PERSONAL)`, the folder `FFX.exe` asks for) and `--budget` one
+  year (`ffx-rust`'s default is 60 s), starts the program in the game
+  folder without a console, with `SteamAppId=359870` unless the
+  environment has one (Steam sets it), and its stdout and stderr in
+  `ffx-rust.log` beside it (the run before as `ffx-rust.previous.log`;
+  the temporary folder when that folder is read-only). A missing
+  `steam_api64.dll` (beside `ffx-rust.exe`, or `FFX_STEAM_API`) is a
+  warning after the start (not with `FFX_NO_STEAM`); a missing game
+  folder, game file (`FFX.exe`, `data\FFX_Data.vbf`, `magicFiles\FFX`,
+  and while the development build loads them the two runtime DLLs:
+  `plan::NEEDED`), `ffx-rust.exe` or Documents folder stops it. Each
+  shows in a message box (`--no-dialog`: stderr only).
 
 ## Status (2026-10-29, the device round)
 
@@ -1959,8 +2194,14 @@ skills", "MAX gil" with their Get buttons): the game makes the same
 `addChangeParaPageItem` calls and the page works (the help text is row
 0's), but Ruffle draws no `spinnerButton` row there; the pilot's offline
 replay (`iggy-replay`, `ruffle-iggy-menus/iggy-menus-9-ruffle.png`) shows
-the same, so it is Ruffle's (or the movie on Ruffle), not the host's. Open
-for `ffx-swf`.
+the same, so it is Ruffle's (or the movie on Ruffle), not the host's.
+Found and fixed in WP12 (2026-11-12): the game passes 4 arguments, the
+movie's `addChangeParaPageItem` declares 5, and Ruffle throws where Iggy
+calls anyway; `ffx_swf::stage::Stage` now fits each call to the AS3
+method's count (docs/formats/pc-ui.md, "Ruffle", "Argument counts").
+Offline, shot 9 went from 38,712 to 1,151 pixels off by more than 24
+levels; the in-game run is the coordinator's (`run-all.sh --extra
+iggy-menus` with `FFX_HARNESS_EXE=rust`).
 
 What it took, besides the composite ("Iggy" above): no menu had ever
 ticked or drawn in `ffx-rust` (the null `IggyGDrawMallocAnnotated` left

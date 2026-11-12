@@ -16,6 +16,7 @@
 
 pub mod pacing;
 pub mod replay;
+pub mod saves;
 pub mod screens;
 pub mod slot;
 
@@ -102,6 +103,17 @@ pub struct Options {
     /// --rust`; `docs/harness.md`, "Two processes"). Default from
     /// `FFX_HARNESS_EXE=rust`.
     pub rust: bool,
+    /// Start the sandboxed home as a verbatim copy of this folder (an
+    /// earlier run's home: the saves and `GameSetting.ini` another game
+    /// wrote, with their times) instead of the user's saves and the
+    /// sandbox's settings ([`saves::`](crate::saves), `docs/harness.md`
+    /// "Saves round trip"). Its settings must keep the test display
+    /// (`Resolution=1280*720`, `ScreenMode=SM_WINDOW`); they are not
+    /// rewritten. [`Options::saves`] still go in after it.
+    pub home_from: Option<PathBuf>,
+    /// After the home is prepared (before the game starts), copy it here
+    /// as well: what the game started with, to tell the files it wrote.
+    pub home_seed: Option<PathBuf>,
 }
 
 impl Default for Options {
@@ -126,6 +138,8 @@ impl Default for Options {
             rust_map: std::env::var("FFX_RUST_MAP").is_ok_and(|v| v == "1" || v == "build"),
             settings: std::env::var("FFX_SETTINGS").ok().filter(|v| !v.is_empty()),
             rust: std::env::var("FFX_HARNESS_EXE").is_ok_and(|v| v == "rust"),
+            home_from: None,
+            home_seed: None,
         }
     }
 }
@@ -451,14 +465,7 @@ fn prepare_home(
     copy: bool,
     saves: &[(String, PathBuf)],
 ) -> Result<()> {
-    if let Ok(real) = user_documents()
-        && home.starts_with(&real)
-    {
-        return Err(Error::Launch(format!(
-            "{} is inside the user's Documents folder",
-            home.display()
-        )));
-    }
+    outside_user_documents(home)?;
     if home.exists() {
         std::fs::remove_dir_all(home)?;
     }
@@ -497,6 +504,52 @@ fn prepare_home(
     test_display(&target)
 }
 
+/// Refuses a folder inside the user's Documents folder.
+fn outside_user_documents(dir: &Path) -> Result<()> {
+    if let Ok(real) = user_documents()
+        && dir.starts_with(&real)
+    {
+        return Err(Error::Launch(format!(
+            "{} is inside the user's Documents folder",
+            dir.display()
+        )));
+    }
+    Ok(())
+}
+
+/// Makes `home` a verbatim copy of `from` (an earlier run's home, file
+/// times kept), then puts the chosen saves in ([`Options::home_from`]).
+/// The settings file is not rewritten, so it must already say the test
+/// display: a game must never open full screen or at another size.
+fn prepare_home_from(home: &Path, from: &Path, saves: &[(String, PathBuf)]) -> Result<()> {
+    outside_user_documents(home)?;
+    outside_user_documents(from)?;
+    let settings = from.join(GAME_DOCUMENTS).join(SETTINGS_FILE);
+    let text = std::fs::read_to_string(&settings)
+        .map_err(|e| Error::Launch(format!("home_from settings {}: {e}", settings.display())))?;
+    let has = |line: &str| text.lines().any(|l| l.trim_end_matches('\r') == line);
+    if !has("Resolution=1280*720") || !has("ScreenMode=SM_WINDOW") {
+        return Err(Error::Launch(format!(
+            "{} does not keep the test display (Resolution=1280*720, ScreenMode=SM_WINDOW)",
+            settings.display()
+        )));
+    }
+    if home.exists() {
+        std::fs::remove_dir_all(home)?;
+    }
+    copy_tree(from, home)?;
+    let folder = home.join(GAME_DOCUMENTS).join(SAVE_FOLDER);
+    for (name, source) in saves {
+        if name.is_empty() || name.contains(['/', '\\']) || name.starts_with('.') {
+            return Err(Error::Launch(format!("bad save name {name:?}")));
+        }
+        std::fs::create_dir_all(&folder)?;
+        copy_file(source, &folder.join(name))
+            .map_err(|e| Error::Launch(format!("save {name} from {}: {e}", source.display())))?;
+    }
+    Ok(())
+}
+
 /// Tests run in a 1280x720 window (the sandbox's settings say so too):
 /// screenshots keep one size and the desktop stays usable. Their sound
 /// plays at 5% of the master volume (`FFX_TEST_VOLUME`, 0-100): several
@@ -527,7 +580,10 @@ fn test_display(settings: &Path) -> Result<()> {
 }
 
 /// A WSL path as Windows sees it.
-fn windows_path(path: &Path) -> Result<String> {
+///
+/// # Errors
+/// Fails when `wslpath` does.
+pub fn windows_path(path: &Path) -> Result<String> {
     let out = Command::new("wslpath").arg("-w").arg(path).output()?;
     if !out.status.success() {
         return Err(Error::Launch(format!(
@@ -584,19 +640,12 @@ impl Game {
             Home::Real => None,
         };
         if let Some(home) = home {
-            let overlay = options
-                .settings
-                .as_deref()
-                .map(|name| settings_path(&options.repo, name));
-            prepare_home(
-                &home,
-                &options.repo.join(SANDBOX_SETTINGS),
-                overlay.as_deref(),
-                options.copy_user_data,
-                &options.saves,
-            )?;
+            Self::sandbox(options, &home)?;
             cmd.arg("--home").arg(home);
-        } else if !options.saves.is_empty() {
+        } else if !options.saves.is_empty()
+            || options.home_from.is_some()
+            || options.home_seed.is_some()
+        {
             return Err(Error::Launch(
                 "saves are only put into a sandboxed home".into(),
             ));
@@ -646,6 +695,34 @@ impl Game {
             }
             std::thread::sleep(Duration::from_millis(500));
         }
+    }
+
+    /// Makes the sandboxed home: a copy of [`Options::home_from`], or the
+    /// user's saves and the sandbox's settings; then the seed copy
+    /// ([`Options::home_seed`]).
+    fn sandbox(options: &Options, home: &Path) -> Result<()> {
+        if let Some(from) = &options.home_from {
+            prepare_home_from(home, from, &options.saves)?;
+        } else {
+            let overlay = options
+                .settings
+                .as_deref()
+                .map(|name| settings_path(&options.repo, name));
+            prepare_home(
+                home,
+                &options.repo.join(SANDBOX_SETTINGS),
+                overlay.as_deref(),
+                options.copy_user_data,
+                &options.saves,
+            )?;
+        }
+        if let Some(seed) = &options.home_seed {
+            if seed.exists() {
+                std::fs::remove_dir_all(seed)?;
+            }
+            copy_tree(home, seed)?;
+        }
+        Ok(())
     }
 
     /// Ends a harness game left answering on `port` (its test was stopped
@@ -1102,6 +1179,48 @@ mod tests {
             "in place: {settings}"
         );
         assert_eq!(keys.iter().filter(|k| **k == "NewKey").count(), 1);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A home made from another run's is that run's, byte for byte and with
+    /// its files' times; one whose settings leave the test display is
+    /// refused.
+    #[test]
+    fn prepare_home_from_copies_verbatim() {
+        let dir = std::env::temp_dir().join(format!("ffx-home-from-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let from = dir.join("from");
+        let game = from.join(GAME_DOCUMENTS);
+        std::fs::create_dir_all(game.join(SAVE_FOLDER)).unwrap();
+        let ini = "Language=en\nMusicVolume=60\nResolution=1280*720\nScreenMode=SM_WINDOW\nMasterVolume=5\n";
+        std::fs::write(game.join(SETTINGS_FILE), ini).unwrap();
+        let save = game.join(SAVE_FOLDER).join("ffx_004");
+        std::fs::write(&save, b"written").unwrap();
+        let old = std::time::SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+        std::fs::File::options()
+            .write(true)
+            .open(&save)
+            .unwrap()
+            .set_modified(old)
+            .unwrap();
+        let home = dir.join("home");
+        std::fs::create_dir_all(home.join("stale")).unwrap();
+        prepare_home_from(&home, &from, &[]).unwrap();
+        let copy = home.join(GAME_DOCUMENTS);
+        assert_eq!(
+            std::fs::read_to_string(copy.join(SETTINGS_FILE)).unwrap(),
+            ini
+        );
+        let copied = copy.join(SAVE_FOLDER).join("ffx_004");
+        assert_eq!(std::fs::read(&copied).unwrap(), b"written");
+        assert_eq!(std::fs::metadata(&copied).unwrap().modified().unwrap(), old);
+        assert!(!home.join("stale").exists());
+        std::fs::write(
+            game.join(SETTINGS_FILE),
+            ini.replace("SM_WINDOW", "SM_FULLSCREEN"),
+        )
+        .unwrap();
+        assert!(prepare_home_from(&home, &from, &[]).is_err());
         let _ = std::fs::remove_dir_all(&dir);
     }
 

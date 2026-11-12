@@ -2571,6 +2571,70 @@ records).
   writing the Unicorn profile when `--profile` asked for one ("Unicorn
   coverage in ffx-rust", above).
 
+### Saves round trip
+
+M5 stage 5 (2026-11-12, wp11-saves): what `ffx-rust.exe` writes,
+`FFX.exe` reads, and the other way round, byte for byte. menu-save shows
+one program writing and loading its own save; this crosses them.
+
+```bash
+tools/saves-roundtrip.sh [--out DIR] [step...]   # the four games, then the comparison
+tools/saves-roundtrip.sh --compare DIR           # the comparison alone
+```
+
+Four steps, each a game in a slot, in the background, in its own sandboxed
+home `DIR/<step>/home` (default DIR `~/ffx-work/saves-roundtrip/<time>`):
+
+| Step | Program | Replay | Home starts as |
+|---|---|---|---|
+| `write-orig` | `FFX.exe`, original code (`FFX_ROUNDTRIP_FFX=hooked`: with the replacements) | `saves-write.txt` | every test game's: the user's saves (or `FFX_SAVES_FROM`), `tools/sandbox/GameSetting.ini` |
+| `write-rust` | `ffx-rust.exe` | `saves-write.txt` | the same |
+| `read-orig` | `FFX.exe`, original code | `saves-read.txt` | `write-rust`'s home, verbatim |
+| `read-rust` | `ffx-rust.exe` | `saves-read.txt` | `write-orig`'s home, verbatim |
+
+- `tools/replays/saves-write.txt`: menu-save's first half (from `ffx_005`,
+  Tidus's weapon to Brotherhood, the save sphere's Save, "New Save Data",
+  Yes), then `VoiceVolume` 70 and `MusicVolume` 60 written into the
+  settings object (`writep 0x022fb504 0x18`/`0x1c`, the words the Audio
+  page's sliders store) and the PC menu opened and closed with Esc: its
+  close calls `Settings_Save`. Neither key is one the harness rewrites.
+- `tools/replays/saves-read.txt`: the settings object as `Settings_Load`
+  read the writer's `GameSetting.ini`, then menu-save's second half (back
+  to the title as a game over, Load, list entry 1: the writer's save, the
+  newest manual one; Yes), the loaded block read (`read 0x0112ca90
+  0x68c0`), the Equip screen (Brotherhood), the save sphere again ("New
+  Save Data": the next free slot), the PC menu's System setting, Audio
+  page (shot 5: Voice 70, Music 60), closed with Esc (`Settings_Save`
+  writes what was read).
+- Both read the settings object (`readp 0x022fb504 0 0x430`: the 24 values
+  and the binding tables, not the Documents path at `+0x430`) and run in
+  lockstep. Neither is in `run-all.sh`'s lists: a save list's dates are the
+  files' times, and the reader needs the other program's run first.
+- Harness options for it (`crates/ffx-harness/src/lib.rs`):
+  `Options::home_from` makes the home a verbatim copy of another run's
+  (times kept, settings not rewritten; refused unless the file keeps
+  `Resolution=1280*720` and `ScreenMode=SM_WINDOW`, so a copied file can't
+  open a full-screen window), `Options::home_seed` keeps a copy of the
+  home as the game starts (`DIR/<step>/seed`), so the comparison sees
+  what the game wrote: new files, changed ones, and ones written again
+  with the same bytes (a newer modification time).
+- `saves_roundtrip compare` (`crates/ffx-harness/examples/saves_roundtrip.rs`
+  over `ffx_harness::saves`) writes `DIR/report.txt`: per step the files
+  written (each save's header decoded, its CRC checked as
+  `SaveDataCheckCrc` checks it); the writers against each other (the same
+  files, each identical but the play time and the CRCs, the settings file
+  byte for byte); each reader against the writer it read (its
+  `GameSetting.ini` written back with the same bytes, its settings object
+  the writer's, its new save the writer's but the play time and CRCs, the
+  block it loaded against the writer's save as a note); the readers
+  against each other. What may differ and why: `docs/formats/save.md`,
+  "What a game writes". Differences come out per field (`ply_saves[2]
+  +0x1c`, `script variables (storage 0) block +0x300 (storage 0 +0x114)`).
+  Exit 0 pass, 1 a check failed, 2 runs missing, 3 a run failed.
+- Each step's replies, trace, screenshots (`saves-write-<n>.bmp`,
+  `saves-read-<n>.bmp`) and, for `ffx-rust.exe`, its `ffx-rust.log` are in
+  `DIR/<step>/`.
+
 ## Tests
 
 `crates/ffx-harness` launches the game (`Game::launch`, background mode)

@@ -21763,6 +21763,7 @@
 0x00927230 function rcPrimTriLine                # layout+callees: sorts between rcPrimTri and rcPrint, and its named callees match the Switch 0x7100551970 rcPrimTriLine's (similarity 0.67: cgraphicSetNowUIType, rcPrimDraw2D); symbols from Fahrenheit's server export
 0x009273b0 function rcCopyQword_009273b0      # (dst, src): as rcCopyQword_0091cb40
 0x009273e0 function rcVectorToFixed_009273e0  # (dst, v): v through vf31 as 12.4 fixed point (rcVec4fToFixed); rcPrimDraw2D
+0x00927520 function rcPrint_OpenLog           # cdecl(path): fopen(path, "wt") into 0x0193c08c once (a log for rcPrint, which is ret); no caller in the dump (saves round trip census, docs/formats/save.md "What a game writes"); name ours
 0x00927550 function rcPrint                   # Fahrenheit's name (v3:bsim1.00+call.cs 0x00927550, kept as ours for the verdict); REVIEWED field r14: ret (1 byte), too small to hook and nothing to port; callers' ports skip the call
 0x00927570 function rcPacketDataAlloc         # fh switch:bsim1.00 0x71005506b0
 0x009275b0 function rcPacketDataCloseAdr      # fh v3:exact 0x009275b0

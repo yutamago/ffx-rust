@@ -1,0 +1,96 @@
+# Saves round trip, the reader (docs/harness.md, "Saves round trip";
+# tools/saves-roundtrip.sh runs it with the writer's home copied verbatim,
+# Options::home_from, never run-all.sh): the other program's GameSetting.ini
+# is read at boot (Settings_Load), its save through the title's Load menu
+# (SaveDataMachine_ReadFile 0x006f0070, SaveDataCheckCrc), and both are
+# written back: the save at the same save sphere as a new slot, the
+# settings by the PC menu's close (Settings_Save).
+#
+# From save slot 5 (load direct, as menu-save.txt), back to the title the
+# way a game over goes (`call` AtelJumpGameOver 0x0086da10: map 0x17 by way
+# of memochek and the opening, map 0x15d; Start), Load, list entry 1 (the
+# newest manual save: the one the writer wrote; entry 0 is the autosave),
+# Yes; the save's map (kami0100) opens with Brotherhood equipped. Then the
+# loaded block is read (g_SaveData 0x0112ca90, 0x68c0 bytes), the Equip
+# screen shot, the save sphere's Save, "New Save Data", Yes, and the PC
+# menu's System setting, Audio page (the volumes the writer set: Voice 70,
+# Music 60), closed with Esc. The settings object is read at the start
+# (what Settings_Load made of the file) and at the end.
+#
+# Screenshots (saves-read-<n>.bmp): 1 the title, 2 the field after loading,
+# 3 the Equip screen (Brotherhood), 4 the field after saving again, 5 the
+# Audio page. No shots of the save or load lists: their dates are the
+# files' times.
+load direct 5 kami0100 lockstep
+lockstep on
+pin
+waitfor 0x01325d94:4 40000000 c0ffffff 1500
+wait 37
+trace 0x0112ca90:4 0x00ce72e8:0x18 0x01597f70:0x40
+# what Settings_Load read from the writer's GameSetting.ini
+readp 0x022fb504 0 0x430
+# to the title, as after a game over
+call 0x0086da10
+waitfor 0x0112ca90:2 5d01 ffff 1500
+wait 60
+press start 3 20
+waitfor 0x0112ca90:2 1700 ffff 1500
+waitfor 0x01325d94:4 00000000 c0ffffff 600
+waitfor 0x01325d94:4 40000000 c0ffffff 600
+wait 37
+shot $OUT\saves-read-1.bmp
+# Load, entry 1, Yes
+key 1c 3 3
+waitfor 0x00ce72e8:4 0c000000 ffffffff 600
+wait 60
+key d0 3 20
+key 1c 3 3
+waitfor 0x00ce72e8:4 0d000000 ffffffff 600
+wait 30
+key 1c 3 3
+waitfor 0x0112ca90:2 0701 ffff 1500
+waitfor 0x01325d94:4 00000000 c0ffffff 1500
+waitfor 0x01325d94:4 40000000 c0ffffff 1500
+wait 37
+# the block as loaded (and the file buffer it came from)
+read 0x0112ca90 0x68c0
+shot $OUT\saves-read-2.bmp
+# Equip, Tidus: Brotherhood
+press triangle 8 60
+press down 4 15
+press down 4 15
+press down 4 15
+press down 4 15
+press circle 4 60
+press circle 4 60
+shot $OUT\saves-read-3.bmp
+press cross 4 40
+press cross 4 40
+press cross 4 60
+# the save sphere: Save, New Save Data, Yes
+press up 30 10
+press circle 4 60
+press circle 4 4
+waitfor 0x00ce72e8:4 02000000 ffffffff 600
+wait 60
+key 1c 3 3
+waitfor 0x00ce72e8:4 03000000 ffffffff 600
+wait 30
+key 1c 3 3
+waitfor 0x00ce72e8:4 05000000 ffffffff 600
+waitfor 0x00ce72e8:4 02000000 ffffffff 1200
+wait 60
+key 0e 3 3
+waitfor 0x00ce72e8:4 00000000 ffffffff 600
+wait 60
+shot $OUT\saves-read-4.bmp
+# the PC menu: System setting, Audio; Esc closes it from there
+# (Settings_Save)
+key 01 4 240
+key d0 4 60
+key 1c 4 240
+key 1c 4 240
+shot $OUT\saves-read-5.bmp
+key 01 4 240
+wait 60
+readp 0x022fb504 0 0x430

@@ -26,6 +26,71 @@ size `0x6900`, kept at manager `+0x350`/`+0x354`):
 | `0x64f4` | 4 | the CRC again |
 | `0x64f8` | `0x408` | the tail: block `+0x64b8`..`+0x68c0`, copied with the block but outside the CRC; nothing reads it ("The tail" below) |
 
+The header, as `MenuSave_PackSave` (`0x008b3e60`) fills it (zeroed first;
+`crates/ffx-harness/src/saves.rs` decodes it):
+
+| Offset | Size | |
+|---|---|---|
+| `0x00` | `u32` | `g_MenuSaveCounter` (`0x0186627c`) + 1, capped at `0x80000000`: counts the packs since `MenuSaveLoad_Reset` (`0x008b4e70`, from `TkMenuCtrlSaveLoad`'s states); memory only, never read from a file |
+| `0x04` | `u8` | `PackSave`'s third argument |
+| `0x05` | 7 × `u8` | the party the list shows (`TkMenuGetPlayerFromIndex2`, `0xff` filled; `+5`..`+7` from the frontline, block `+0x3d58`) |
+| `0x0c` | `u8` | the language (`TOGetFFXLang`) |
+| `0x10` | `u32` | the play time, block `+0xbc` |
+| `0x14` | `u32` | gil (`MsGetGIL`) |
+| `0x18` | `u16` | the location (`AtelGetSaveDic`) |
+| `0x1a` | `u16` | the CRC |
+| `0x1c` | `u16` | `0x100` |
+| `0x1e`, `0x1f` | `u8` | `AtelGetAlbhedRikku`, `MsGetSaveConfigEnglish` |
+| `0x20` | | the player's name (`MsGetSaveChrName(0)`, NUL-terminated) |
+
+`PackSave` also sets block `+0x2a` to 1 in the packed copy
+(`TkSetEvSaveStatus` `0x0088ea50`), not in `g_SaveData`.
+
+### What a game writes
+
+Everything `FFX.exe` writes into the Documents folder (every `_wfopen`/
+`fopen`/`CreateFile` for writing in the Ghidra dump):
+
+- **The save slots.** `SaveDataMachine_WriteFile` (`0x006f0860`, menu
+  save: the picked slot, or "New Save Data": the first free of
+  `ffx_001`..`ffx_199`) and `SaveDataManager_debugSave_Internal_6f0650`
+  (`0x006f0510`, the autosave `ffx_000`): `_wfopen(L"wb")`, one `fwrite`
+  of the whole buffer, `0x6900` bytes. The autosave is written on every
+  map entry `TkInitScene` (`0x0088e070`) doesn't exclude: it sets
+  `gNeedAutoSave`, block `+0xb8`/`+0xba` (the map and entrance a load
+  returns to), `+0xa8`/`+0xaa` (the map's music and its volume, the
+  texture video mode), then `TkMenuPreSave` and `SaveDataPreDebugSave(0)`;
+  the save is written at the player worker's next position sync
+  (`Atel_SyncWorkerPos_00869e40` -> `AutoSave_DebugSave_00647e10`). So
+  loading a save and entering its map writes `ffx_000` as well.
+- **`GameSetting.ini`** (`Settings_Save` `0x00401d80`,
+  `docs/formats/platform.md` "The settings file"): `Key=Value`, LF, in key
+  order, when the file is missing at boot, when the ffx key bindings were
+  reset, and when the PC (Esc) menu closes or quits.
+- Nothing else in a normal run: `debugSave` (`0x00646df0`, a developer
+  `fopen("wb")`), `MemoryDebug_dumpVram_006dd3b0` and its neighbours (CSV
+  dumps, `fopen("w")`), `0x00927520` (`fopen("wt")`: the file `rcPrint`
+  would log to; no caller) and `CrashDump_UnhandledExceptionFilter`
+  (`CoreDump.dmp`, only with `g_CrashDumpEnabled`) are debug paths with
+  relative paths, not the Documents folder.
+  The Steam launcher (`FFX&X-2_LAUNCHER.exe`) writes `GameSetting.ini`
+  with CRLF line ends; it is neither `FFX.exe` nor `ffx-rust.exe`.
+
+Two writers of the same state (the same replay on `FFX.exe` and
+`ffx-rust.exe`, or a reader writing back what it loaded) may differ only in:
+
+- the play time, block `+0xbc` (file `0x00fc`) and its copy in the header
+  (`0x10`): `Atel_PlayTimeUpdate_0086ca20` counts it from `graphicGetTime`,
+  so its ticks fall at another point of the script in every run, original
+  code included (menu-save's two original runs differed there);
+- the CRC, header `+0x1a` and file `+0x64f4`, which covers the play time
+  (`SaveDataWriteCrc` `0x00648f20`: `TkCRC(0x64b8, file + 0x40)`).
+
+The file's modification time is not in its bytes (the load list sorts by
+it, above). No other byte, and no byte of `GameSetting.ini`, depends on
+the clock or the program: `tools/saves-roundtrip.sh` (`docs/harness.md`,
+"Saves round trip") checks this both ways.
+
 `SaveDataCheckCrc` (`0x00647d70`) passes a buffer when the `u16` at `+0x1a`
 equals the word at `+0x64f4` and `TkCRC(0x64b8, buffer + 0x40)` gives it
 (the word is zeroed first), or always with `g_SaveData_CrcCheckOff`

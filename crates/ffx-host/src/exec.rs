@@ -20,7 +20,14 @@
 //! arena regions, its own stack, thread block and return stubs.
 //!
 //! Development only: the release runs no `FFX.exe` code (rewrite-plan, M5).
+//! Without the `dev-unicorn` feature there is no emulator ([`cpu`]): the
+//! table, the imports' Rust sides, the traps (the overlays' ports, COM
+//! methods) and the one-instruction leaves run as above, and a call to
+//! any other address is a hard stop, [`Error::Unported`], naming the
+//! address, its `ffx.sym` name and the host entries it was called from
+//! (docs/host.md, "Without Unicorn").
 
+mod cpu;
 pub mod seh;
 pub mod spot;
 
@@ -30,7 +37,11 @@ use std::sync::{Arc, Mutex, MutexGuard, RwLock};
 use std::time::{Duration, Instant};
 
 use ffx_bridge::Mem as _;
-use unicorn_engine::{Arch, HookType, MemType, Mode, Prot, RegisterX86, Unicorn};
+#[cfg(feature = "dev-unicorn")]
+use unicorn_engine::{Arch, HookType, MemType, Mode, Prot, Unicorn};
+
+use cpu::Cpu;
+pub(crate) use cpu::RegisterX86;
 
 use crate::arena::{Arena, ArenaMem, PAGE};
 use crate::dll::Dll;
@@ -47,6 +58,7 @@ const INT3: u8 = 0xcc;
 /// exceptions masked), as the game thread runs (docs/porting.md).
 pub const FPU_CONTROL: u16 = 0x027f;
 /// Each emulator's translation buffer (`Exec::on_thread`).
+#[cfg(feature = "dev-unicorn")]
 const TCG_BUFFER: u32 = 64 << 20;
 /// The main thread's stack.
 const STACK_SIZE: u32 = 0x0020_0000;
@@ -56,6 +68,7 @@ const THREAD_STACK_SIZE: u32 = 0x0010_0000;
 /// The shared stub page: import stubs and data cells.
 const STUB_SIZE: u32 = 0x0001_0000;
 /// Where the trampolines start in the stub page (32 bytes each).
+#[cfg(feature = "dev-unicorn")]
 const TRAMPOLINES: u32 = 0xc000;
 /// Where the executor's own regions start looking for room (above the
 /// image).
@@ -69,6 +82,7 @@ const WATCH: Duration = Duration::from_millis(20);
 
 // Unicorn's own stop request, which (unlike the rest of the API) may be
 // called from another thread: its timeout thread does the same.
+#[cfg(feature = "dev-unicorn")]
 unsafe extern "C" {
     fn uc_emu_stop(uc: *mut std::ffi::c_void) -> i32;
 }
@@ -78,6 +92,7 @@ const THREAD_BLOCK: u32 = 4 * PAGE;
 pub const TEB_TLS: u32 = 0xe10;
 
 /// What stopped the emulator.
+#[cfg(feature = "dev-unicorn")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Event {
     /// An `int3` at this address (a port, an import stub or the sentinel).
@@ -91,9 +106,11 @@ enum Event {
 /// Unicorn's side of the state (what the hooks touch).
 #[derive(Debug, Default)]
 struct State {
+    #[cfg(feature = "dev-unicorn")]
     event: Option<Event>,
     /// The last basic blocks run (`FFX_HOST_TRACE=n`), oldest first.
     recent: std::collections::VecDeque<u32>,
+    #[cfg(feature = "dev-unicorn")]
     recent_cap: usize,
     /// Instructions run (when counting is on).
     instructions: u64,
@@ -160,6 +177,10 @@ pub struct Stats {
     pub x87: u64,
     /// Exceptions dispatched through the SEH chain ([`seh`]).
     pub exceptions: u64,
+    /// Addresses called with no Rust side, without the emulator (the
+    /// first is the thread's hard stop): the address and the rest of the
+    /// stop's text (its name, the callers), in the order first called.
+    pub unported: Vec<(u32, String)>,
 }
 
 impl Stats {
@@ -185,6 +206,11 @@ impl Stats {
         self.instructions += o.instructions;
         self.x87 += o.x87;
         self.exceptions += o.exceptions;
+        for u in &o.unported {
+            if !self.unported.iter().any(|(a, _)| *a == u.0) {
+                self.unported.push(u.clone());
+            }
+        }
     }
 }
 
@@ -309,6 +335,7 @@ pub struct Shared {
     /// thread ends; read while the threads run (the harness's `quit`).
     profiles: Mutex<Vec<Arc<Mutex<Profile>>>>,
     /// Every live emulator (thread id, Unicorn handle), for the watchdog.
+    #[cfg(feature = "dev-unicorn")]
     emulators: Mutex<Vec<(u32, usize)>>,
     /// Every live thread's host entries, for the harness's `stacks`.
     pub spots: Mutex<Vec<Arc<spot::Spot>>>,
@@ -326,6 +353,7 @@ pub struct Shared {
     pub gfx: crate::gfx::Slot,
     /// Trampolines to the originals that ports wrap: address → trampoline
     /// ([`Exec::call_original`]).
+    #[cfg(feature = "dev-unicorn")]
     originals: HashMap<u32, u32>,
     /// `FFX.exe`'s import thunks (`jmp [IAT slot]`, `crt_memcpy_thunk`
     /// and 492 more): thunk → what its slot holds (an import's stub or a
@@ -434,6 +462,7 @@ impl Shared {
             started: Instant::now(),
             threads: Mutex::new(Vec::new()),
             profiles: Mutex::new(Vec::new()),
+            #[cfg(feature = "dev-unicorn")]
             emulators: Mutex::new(Vec::new()),
             spots: Mutex::new(Vec::new()),
             pool_work: Mutex::new(HashMap::new()),
@@ -442,6 +471,7 @@ impl Shared {
             x87_watch: Vec::new(),
             traps: RwLock::new(HashMap::new()),
             gfx: crate::gfx::Slot::default(),
+            #[cfg(feature = "dev-unicorn")]
             originals: HashMap::new(),
             thunks: HashMap::new(),
             iat: HashSet::new(),
@@ -453,6 +483,7 @@ impl Shared {
         s.bind_imports(stubs_at);
         s.find_thunks();
         s.trap_dll_copies();
+        #[cfg(feature = "dev-unicorn")]
         s.build_trampolines(stubs_at + TRAMPOLINES);
         for addr in s.table.addresses().collect::<Vec<_>>() {
             if s.image.is_code(addr) {
@@ -474,6 +505,7 @@ impl Shared {
     /// original's entry gets its `int3`. A prologue that doesn't match the
     /// image leaves that original without a trampoline (its wrapper's
     /// [`Exec::call_original`] fails).
+    #[cfg(feature = "dev-unicorn")]
     fn build_trampolines(&mut self, mut at: u32) {
         let mem = ArenaMem {
             arena: Arc::clone(&self.arena),
@@ -818,6 +850,7 @@ impl Shared {
     /// two `emu_start`s is lost, so it repeats until the thread is gone).
     /// Only inside `emu_start`: an instance still being set up must not
     /// be touched from another thread (Unicorn initialises it lazily).
+    #[cfg(feature = "dev-unicorn")]
     fn stop_killed(&self) {
         if !self.sync.any_killed() {
             return;
@@ -900,6 +933,7 @@ impl Shared {
 
 /// Stops every emulator (at its next block) when the run ends or runs out
 /// of time, so the threads see it; they resume or unwind themselves.
+#[cfg(feature = "dev-unicorn")]
 fn watchdog(shared: &std::sync::Weak<Shared>) {
     loop {
         std::thread::sleep(WATCH);
@@ -919,9 +953,35 @@ fn watchdog(shared: &std::sync::Weak<Shared>) {
     }
 }
 
+/// Ends the run when it runs out of time (without the emulator nothing
+/// polls the budget between calls): the run stops as for the budget, at
+/// the main thread's innermost host entry, and every thread sees it at
+/// its next call ([`Exec::halted`]).
+#[cfg(not(feature = "dev-unicorn"))]
+fn watchdog(shared: &std::sync::Weak<Shared>) {
+    loop {
+        std::thread::sleep(WATCH);
+        let Some(s) = shared.upgrade() else { return };
+        if s.overdue() && !s.sync.stopping() {
+            let at = s
+                .spots
+                .lock()
+                .ok()
+                .and_then(|l| {
+                    l.iter()
+                        .find(|p| p.id == MAIN_THREAD)
+                        .and_then(|p| p.frames().0.last().map(|f| f.what))
+                })
+                .unwrap_or(0);
+            s.stop_all(Stop::Budget(at));
+        }
+    }
+}
+
 /// One game thread's executor.
 pub struct Exec {
-    uc: Unicorn<'static, State>,
+    /// The emulator (`dev-unicorn`), else a register file ([`cpu`]).
+    uc: Cpu,
     shared: Arc<Shared>,
     /// The game thread's id.
     pub id: u32,
@@ -932,7 +992,9 @@ pub struct Exec {
     float_cell: u32,
     /// The thread environment block.
     pub teb: u32,
+    #[cfg(feature = "dev-unicorn")]
     generation: u64,
+    #[cfg(feature = "dev-unicorn")]
     mapped: BTreeSet<u32>,
     stopped: Option<Stop>,
     /// The counters.
@@ -955,12 +1017,14 @@ pub struct Exec {
     /// frame's address and the `esp` below which it was carved.
     frames: Vec<(u32, u32)>,
     /// Nesting of [`ffx_bridge::route::Router::call_x87`] (its stubs).
+    #[cfg(feature = "dev-unicorn")]
     x87_depth: u32,
     /// How the trap that runs now returns, when its [`Trap`]'s convention
     /// can't say (an overlay port's pops or tail jump: [`TrapExit`]).
     pub(crate) trap_exit: Option<TrapExit>,
     /// How many of [`crate::library`]'s overlay counting hooks this
     /// thread's emulator has.
+    #[cfg(feature = "dev-unicorn")]
     pub(crate) overlay_hooks: usize,
     /// Its host entries, for the harness's `stacks`.
     spot: Arc<spot::Spot>,
@@ -969,9 +1033,11 @@ pub struct Exec {
     /// the time Rust spent between two emulator runs (a port, an import)
     /// is not charged to the first block after it (`crt_memcpy_thunk`'s
     /// 35 minutes in gate run 1 were its callers' Rust time).
+    #[cfg(feature = "dev-unicorn")]
     resumed: Arc<AtomicU64>,
     /// This thread's live profile (with [`Exec::cover`]), for the entries
     /// from Rust.
+    #[cfg(feature = "dev-unicorn")]
     profile: Option<Arc<Mutex<Profile>>>,
 }
 
@@ -979,6 +1045,7 @@ pub struct Exec {
 /// argument words it popped, or a tail jump (the caller's stack as it was
 /// at the entry, `eax` the target).
 #[derive(Debug, Clone, Copy)]
+#[cfg_attr(not(feature = "dev-unicorn"), allow(dead_code))] // read by the emulator's return (`enter_trap`)
 pub(crate) struct TrapExit {
     pub pops: u32,
     pub jump: Option<u32>,
@@ -987,6 +1054,7 @@ pub(crate) struct TrapExit {
 impl Drop for Exec {
     fn drop(&mut self) {
         let id = self.id;
+        #[cfg(feature = "dev-unicorn")]
         if let Ok(mut l) = self.shared.emulators.lock() {
             l.retain(|&(t, _)| t != id);
         }
@@ -1025,6 +1093,66 @@ impl Exec {
         let block = arena.map_anywhere(REGION_HINT, THREAD_BLOCK, &format!("thread {id:#x}"))?;
         let stubs_at = block + 3 * PAGE;
 
+        #[cfg(feature = "dev-unicorn")]
+        let uc = Self::emulator()?;
+        #[cfg(not(feature = "dev-unicorn"))]
+        let uc = Cpu::new(State::default());
+
+        let mut exec = Self {
+            uc,
+            shared,
+            id,
+            stack: (stack_base, stack_base + stack_size),
+            sentinel: stubs_at,
+            ret_stubs: stubs_at + 0x10,
+            ret_float_stubs: stubs_at + 0x10 + 4 * (MAX_RET_WORDS + 1),
+            float_cell: stubs_at + 0xf00,
+            teb: block + PAGE,
+            #[cfg(feature = "dev-unicorn")]
+            generation: u64::MAX,
+            #[cfg(feature = "dev-unicorn")]
+            mapped: BTreeSet::new(),
+            stopped: None,
+            stats: Stats::default(),
+            trace: Vec::new(),
+            recent: Vec::new(),
+            crt: ThreadCrt::default(),
+            seh: seh::State::default(),
+            scratch: [0; 4],
+            frames: Vec::new(),
+            #[cfg(feature = "dev-unicorn")]
+            x87_depth: 0,
+            trap_exit: None,
+            #[cfg(feature = "dev-unicorn")]
+            overlay_hooks: 0,
+            spot: Arc::new(spot::Spot::new(id, (stack_base, stack_base + stack_size))),
+            #[cfg(feature = "dev-unicorn")]
+            resumed: Arc::new(AtomicU64::new(0)),
+            #[cfg(feature = "dev-unicorn")]
+            profile: None,
+        };
+        #[cfg(feature = "dev-unicorn")]
+        if let Ok(mut l) = exec.shared.emulators.lock() {
+            l.push((id, exec.uc.get_handle() as usize));
+        }
+        if let Ok(mut l) = exec.shared.spots.lock() {
+            l.push(Arc::clone(&exec.spot));
+        }
+        exec.write_stubs(stubs_at);
+        exec.sync_regions()?;
+        exec.thread_block(block)?;
+        #[cfg(feature = "dev-unicorn")]
+        exec.emulator_hooks()?;
+        let top = exec.stack.1 - 0x100;
+        exec.uc.reg_write(RegisterX86::ESP, u64::from(top))?;
+        exec.uc
+            .reg_write(RegisterX86::FPCW, u64::from(FPU_CONTROL))?;
+        Ok(exec)
+    }
+
+    /// A fresh Unicorn instance for a game thread.
+    #[cfg(feature = "dev-unicorn")]
+    fn emulator() -> Result<Cpu> {
         // Windows: the translation buffers commit through our handler
         // (crate::tcg_commit)
         #[cfg(windows)]
@@ -1050,57 +1178,27 @@ impl Exec {
         // A Core 2: no SSE4.2, whose string instructions Unicorn gets wrong
         // (ffx-oracle, the same choice).
         uc.ctl_set_cpu_model(2)?;
+        Ok(uc)
+    }
 
-        let mut exec = Self {
-            uc,
-            shared,
-            id,
-            stack: (stack_base, stack_base + stack_size),
-            sentinel: stubs_at,
-            ret_stubs: stubs_at + 0x10,
-            ret_float_stubs: stubs_at + 0x10 + 4 * (MAX_RET_WORDS + 1),
-            float_cell: stubs_at + 0xf00,
-            teb: block + PAGE,
-            generation: u64::MAX,
-            mapped: BTreeSet::new(),
-            stopped: None,
-            stats: Stats::default(),
-            trace: Vec::new(),
-            recent: Vec::new(),
-            crt: ThreadCrt::default(),
-            seh: seh::State::default(),
-            scratch: [0; 4],
-            frames: Vec::new(),
-            x87_depth: 0,
-            trap_exit: None,
-            overlay_hooks: 0,
-            spot: Arc::new(spot::Spot::new(id, (stack_base, stack_base + stack_size))),
-            resumed: Arc::new(AtomicU64::new(0)),
-            profile: None,
-        };
-        if let Ok(mut l) = exec.shared.emulators.lock() {
-            l.push((id, exec.uc.get_handle() as usize));
+    /// The emulator's hooks: interrupts, faults, the x87 sites, and the
+    /// profile, the instruction count and `FFX_HOST_TRACE` when on.
+    #[cfg(feature = "dev-unicorn")]
+    fn emulator_hooks(&mut self) -> Result<()> {
+        self.add_hooks()?;
+        if self.shared.cover.load(Ordering::Relaxed) {
+            self.add_profile_hook()?;
         }
-        if let Ok(mut l) = exec.shared.spots.lock() {
-            l.push(Arc::clone(&exec.spot));
-        }
-        exec.write_stubs(stubs_at);
-        exec.sync_regions()?;
-        exec.thread_block(block)?;
-        exec.add_hooks()?;
-        if exec.shared.cover.load(Ordering::Relaxed) {
-            exec.add_profile_hook()?;
-        }
-        if exec.shared.count.load(Ordering::Relaxed) {
-            exec.add_count_hook()?;
+        if self.shared.count.load(Ordering::Relaxed) {
+            self.add_count_hook()?;
         }
         let recent = std::env::var("FFX_HOST_TRACE")
             .ok()
             .and_then(|v| v.parse::<usize>().ok())
             .unwrap_or(0);
         if recent > 0 {
-            exec.uc.get_data_mut().recent_cap = recent;
-            exec.uc.add_block_hook(1, 0, |uc, addr, _| {
+            self.uc.get_data_mut().recent_cap = recent;
+            self.uc.add_block_hook(1, 0, |uc, addr, _| {
                 let d = uc.get_data_mut();
                 if d.recent.len() == d.recent_cap {
                     d.recent.pop_front();
@@ -1109,11 +1207,7 @@ impl Exec {
                 d.recent.push_back(addr as u32);
             })?;
         }
-        let top = exec.stack.1 - 0x100;
-        exec.uc.reg_write(RegisterX86::ESP, u64::from(top))?;
-        exec.uc
-            .reg_write(RegisterX86::FPCW, u64::from(FPU_CONTROL))?;
-        Ok(exec)
+        Ok(())
     }
 
     /// What every thread shares.
@@ -1203,7 +1297,8 @@ impl Exec {
     }
 
     /// Profiles every basic block run, by count and clock samples (slower;
-    /// threads started later profile too).
+    /// threads started later profile too). Without `dev-unicorn` nothing
+    /// is emulated, so the profile stays empty.
     ///
     /// # Errors
     /// When Unicorn refuses the hook.
@@ -1221,9 +1316,12 @@ impl Exec {
                 })
                 .map_err(Error::Io)?;
         }
-        self.add_profile_hook()
+        #[cfg(feature = "dev-unicorn")]
+        self.add_profile_hook()?;
+        Ok(())
     }
 
+    #[cfg(feature = "dev-unicorn")]
     fn add_profile_hook(&mut self) -> Result<()> {
         let tick = Arc::clone(&self.shared.tick);
         // this thread's own profile, uncontended but for a reader's
@@ -1259,9 +1357,12 @@ impl Exec {
     /// When Unicorn refuses the hook.
     pub fn count_instructions(&mut self) -> Result<()> {
         self.shared.count.store(true, Ordering::Relaxed);
-        self.add_count_hook()
+        #[cfg(feature = "dev-unicorn")]
+        self.add_count_hook()?;
+        Ok(())
     }
 
+    #[cfg(feature = "dev-unicorn")]
     fn add_count_hook(&mut self) -> Result<()> {
         self.uc.add_code_hook(1, 0, |uc, _, _| {
             uc.get_data_mut().instructions += 1;
@@ -1392,11 +1493,12 @@ impl Exec {
 
     /// Calls the function at `addr` the way a port calls an original: the
     /// port when the table has one, the import's Rust side for an import
-    /// stub, else the original in Unicorn.
+    /// stub, a trap, a one-instruction leaf, else the original in Unicorn
+    /// (without `dev-unicorn`: [`Error::Unported`], a hard stop).
     ///
     /// # Errors
-    /// A fault in the emulated code, an unstubbed import, or a stop
-    /// ([`Exec::stopped`]) while it ran.
+    /// A fault in the emulated code, an unstubbed import, an unported
+    /// address, or a stop ([`Exec::stopped`]) while it ran.
     pub fn call(&mut self, addr: u32, conv: Conv, args: &Args) -> Result<Ret> {
         if self.halted() {
             return Err(Error::Stopped);
@@ -1430,8 +1532,7 @@ impl Exec {
                 esp,
             );
             let r = if raise {
-                // the dispatch runs in the executor's loop
-                self.call_unicorn(addr, conv, args)
+                self.raise(i, addr, conv, args)
             } else if args.slots == 0 && !args.stack.is_empty() {
                 // from Rust: the words on the game stack too, for the
                 // imports that read past their declared words through
@@ -1463,14 +1564,17 @@ impl Exec {
             self.stats.leaf_calls += 1;
             Ok(crate::leaf::run(&self.mem(), leaf, args.ecx))
         } else {
-            self.call_unicorn(addr, conv, args)
+            self.call_code(addr, conv, args)
         };
         // A failure anywhere ends the thread (the main thread: the run):
         // callers (ports, `_initterm`) can't all carry a `Result`, so every
         // level unwinds with `Stopped`.
         match r {
             Err(e) if !matches!(e, Error::Stopped) => {
-                let eip = self.reg(RegisterX86::EIP).unwrap_or(0);
+                let eip = match &e {
+                    Error::Unported { addr, .. } => *addr,
+                    _ => self.reg(RegisterX86::EIP).unwrap_or(0),
+                };
                 self.end(Stop::Failed(e.to_string(), eip));
                 Err(Error::Stopped)
             }
@@ -1480,11 +1584,12 @@ impl Exec {
 
     /// Calls the original a wrapping port replaced (`Table::wrap`): the
     /// port the wrapper displaced when there was one (a `ported!` entry),
-    /// else the original in Unicorn, through its trampoline.
+    /// else the original in Unicorn, through its trampoline (without
+    /// `dev-unicorn`: a hard stop naming the original, as [`Exec::call`]).
     ///
     /// # Errors
-    /// As [`Exec::call`]; an original without a trampoline is an
-    /// [`Error::Interrupt`] at its address.
+    /// As [`Exec::call`]; an original without a trampoline stops the
+    /// thread.
     pub fn call_original(&mut self, addr: u32, conv: Conv, args: &Args) -> Result<Ret> {
         if let Some(entry) = self.shared.table.wrapped_port(addr).copied() {
             *self.stats.ports.entry(addr).or_default() += 1;
@@ -1503,6 +1608,12 @@ impl Exec {
                 Ok(ret)
             };
         }
+        self.call_trampoline(addr, conv, args)
+    }
+
+    /// The original `addr` through its trampoline.
+    #[cfg(feature = "dev-unicorn")]
+    fn call_trampoline(&mut self, addr: u32, conv: Conv, args: &Args) -> Result<Ret> {
         let Some(&t) = self.shared.originals.get(&addr) else {
             self.end(Stop::Failed(
                 format!("no trampoline for {addr:#010x}"),
@@ -1511,6 +1622,120 @@ impl Exec {
             return Err(Error::Stopped);
         };
         self.call(t, conv, args)
+    }
+
+    /// Without the emulator the original can't run: a hard stop naming it.
+    #[cfg(not(feature = "dev-unicorn"))]
+    fn call_trampoline(&mut self, addr: u32, _: Conv, _: &Args) -> Result<Ret> {
+        self.stop_unported(addr);
+        Err(Error::Stopped)
+    }
+
+    /// Ends this thread at unported `addr` (unless it ended already), as
+    /// [`Exec::call`] does for a failure.
+    #[cfg(not(feature = "dev-unicorn"))]
+    fn stop_unported(&mut self, addr: u32) {
+        if !self.halted() {
+            let e = self.unported(addr);
+            self.end(Stop::Failed(e.to_string(), addr));
+        }
+    }
+
+    /// Code with no Rust side: in Unicorn.
+    #[cfg(feature = "dev-unicorn")]
+    fn call_code(&mut self, addr: u32, conv: Conv, args: &Args) -> Result<Ret> {
+        self.call_unicorn(addr, conv, args)
+    }
+
+    /// Code with no Rust side, without the emulator: the hard stop.
+    #[cfg(not(feature = "dev-unicorn"))]
+    fn call_code(&mut self, addr: u32, _: Conv, _: &Args) -> Result<Ret> {
+        Err(self.unported(addr))
+    }
+
+    /// `RaiseException` (import `i`, its stub `addr`) called from Rust: the
+    /// dispatch runs in the executor's loop.
+    #[cfg(feature = "dev-unicorn")]
+    fn raise(&mut self, _: usize, addr: u32, conv: Conv, args: &Args) -> Result<Ret> {
+        self.call_unicorn(addr, conv, args)
+    }
+
+    /// `RaiseException` without the emulator: the exception is noted, but
+    /// its handlers are `FFX.exe`/C runtime code, which can't run; the
+    /// thread stops, naming the exception and its callers.
+    #[cfg(not(feature = "dev-unicorn"))]
+    fn raise(&mut self, i: usize, _: u32, _: Conv, args: &Args) -> Result<Ret> {
+        self.run_import(i, args)?;
+        let what = match self.seh.pending.take() {
+            Some(r) => format!("exception {:#010x}", r.code),
+            None => "an exception".to_string(),
+        };
+        Err(Error::Image(format!(
+            "RaiseException: {what} with no emulator to run its handlers, raised from {}",
+            self.chain()
+        )))
+    }
+
+    /// The hard stop for a call to `addr`, which has no Rust side, in a
+    /// build without the emulator: the error naming it (its `ffx.sym`
+    /// name, or the overlay and offset) and the host entries it was called
+    /// from, innermost first; the address is noted in [`Stats::unported`].
+    #[cfg(not(feature = "dev-unicorn"))]
+    fn unported(&mut self, addr: u32) -> Error {
+        let import = self
+            .shared
+            .stubs
+            .get(&addr)
+            .and_then(|&i| self.shared.import_name(i))
+            .map(|n| format!("{n}, an import"));
+        let name = import
+            .or_else(|| crate::library::describe(addr))
+            .unwrap_or_else(|| match crate::report::symbols().containing(addr) {
+                Some((a, n)) if a == addr => n.to_string(),
+                Some((a, n)) => {
+                    format!("no ffx.sym function starts here; after {n}+{:#x}", addr - a)
+                }
+                None => "not in ffx.sym".to_string(),
+            });
+        let what = format!(" ({name}) called from {}", self.chain());
+        if !self.stats.unported.iter().any(|(a, _)| *a == addr) {
+            self.stats.unported.push((addr, what.clone()));
+        }
+        Error::Unported { addr, what }
+    }
+
+    /// The host entries this thread is in, innermost first, by name
+    /// (ports and traps by `ffx.sym`/the overlay, imports by `DLL!name`):
+    /// the caller chain of an unported address.
+    #[cfg(not(feature = "dev-unicorn"))]
+    fn chain(&self) -> String {
+        let syms = crate::report::symbols();
+        let (frames, more) = self.spot.frames();
+        let mut out: Vec<String> = frames
+            .iter()
+            .rev()
+            .map(|f| match f.kind {
+                spot::Kind::Port => match self.shared.port_name(f.what) {
+                    Some(n) => format!("{n} ({:#010x})", f.what),
+                    None => syms.describe(f.what),
+                },
+                spot::Kind::Import => self
+                    .shared
+                    .import_name(f.what as usize)
+                    .unwrap_or("an import")
+                    .to_string(),
+                spot::Kind::Trap => crate::library::describe(f.what)
+                    .unwrap_or_else(|| format!("trap {:#010x}", f.what)),
+            })
+            .collect();
+        // the spot keeps the outermost entries: the innermost are lost
+        if more > 0 {
+            out.insert(0, format!("({more} inner entries not kept)"));
+        }
+        if out.is_empty() {
+            return format!("the thread's start (thread {:#x})", self.id);
+        }
+        out.join(" <- ")
     }
 
     /// [`Exec::call`] for a cdecl function of word arguments, returning
@@ -1539,6 +1764,7 @@ impl Exec {
         Ok(self.call(addr, Conv::Stdcall, &args)?.eax)
     }
 
+    #[cfg(feature = "dev-unicorn")]
     fn call_unicorn(&mut self, addr: u32, conv: Conv, args: &Args) -> Result<Ret> {
         self.stats.unicorn_calls += 1;
         if let Some(p) = &self.profile
@@ -1653,6 +1879,7 @@ impl Exec {
     /// A sentinel return at an outer level's `esp` (a C++ catch continued
     /// in a frame older than a Rust port, [`seh`]) unwinds every Rust
     /// level to that one, which then returns as if its own call had.
+    #[cfg(feature = "dev-unicorn")]
     fn run(&mut self, mut pc: u32, expect: u32) -> Result<()> {
         loop {
             if self.halted() {
@@ -1749,8 +1976,17 @@ impl Exec {
         }
     }
 
+    /// Without the emulator there is nothing to map: the ports reach the
+    /// arena directly.
+    #[cfg(not(feature = "dev-unicorn"))]
+    #[allow(clippy::unnecessary_wraps, clippy::unused_self)] // the emulator's signature
+    pub(crate) fn sync_regions(&mut self) -> Result<()> {
+        Ok(())
+    }
+
     /// Maps into this thread's emulator every arena region it hasn't seen
     /// (another thread's `VirtualAlloc`, stack or DLL).
+    #[cfg(feature = "dev-unicorn")]
     pub(crate) fn sync_regions(&mut self) -> Result<()> {
         crate::library::sync_hooks(self)?;
         let g = self.shared.arena.generation();
@@ -1780,6 +2016,7 @@ impl Exec {
 
     /// The caller's arguments at an entry from Unicorn: `esp` at the
     /// return address.
+    #[cfg(feature = "dev-unicorn")]
     fn entry_args(&mut self, words: usize) -> Result<Args> {
         let esp = self.reg(RegisterX86::ESP)?;
         let mem = self.mem();
@@ -1796,6 +2033,7 @@ impl Exec {
 
     /// Runs the port at `at` for Unicorn code that called it; returns where
     /// to resume (a return stub).
+    #[cfg(feature = "dev-unicorn")]
     fn enter_port(&mut self, at: u32) -> Result<u32> {
         let entry = *self.shared.table.get(at).ok_or(Error::Interrupt(3, at))?;
         *self.stats.ports.entry(at).or_default() += 1;
@@ -1939,6 +2177,7 @@ impl Exec {
 
     /// Pops `ST0` off Unicorn's x87 stack (what the caller's `fstp` does
     /// with a float result).
+    #[cfg(feature = "dev-unicorn")]
     pub(crate) fn pop_st0(&mut self) -> Result<()> {
         let sw = self.uc.reg_read(RegisterX86::FPSW)?;
         let top = (sw >> 11) & 7;
@@ -1951,6 +2190,7 @@ impl Exec {
     }
 
     /// Runs trap `t` for Unicorn code that called it.
+    #[cfg(feature = "dev-unicorn")]
     fn enter_trap(&mut self, t: Trap, at: u32) -> Result<u32> {
         let args = self.entry_args(t.words)?;
         let saved = self.save_regs()?;
@@ -1981,6 +2221,7 @@ impl Exec {
     /// Counts the basic blocks this thread's emulator starts at the
     /// addresses `counts` holds, inside `begin..end` (an overlay's code:
     /// its entries that run in Unicorn, [`crate::library`]).
+    #[cfg(feature = "dev-unicorn")]
     pub(crate) fn add_entry_counter(
         &mut self,
         begin: u32,
@@ -1998,6 +2239,7 @@ impl Exec {
     }
 
     /// Whether `addr` is an import's stub (its Rust side or DLL runs).
+    #[cfg(feature = "dev-unicorn")]
     pub(crate) fn is_import_stub(&self, addr: u32) -> bool {
         self.shared.stubs.contains_key(&addr)
     }
@@ -2027,9 +2269,19 @@ impl Exec {
         Ok(())
     }
 
+    /// [`Exec::call_sse`] without the emulator: the SSE maths functions
+    /// have no Rust side (their `xmm0` doesn't fit an import's `Args`), so
+    /// the thread stops there, naming the import; NaN.
+    #[cfg(not(feature = "dev-unicorn"))]
+    pub(crate) fn call_sse(&mut self, addr: u32, _: f64) -> f64 {
+        self.stop_unported(addr);
+        f64::NAN
+    }
+
     /// Calls `addr` (an SSE maths function: `MSVCR110`'s
     /// `_libm_sse2_*_precise`, `xmm0` in and out) with `x` in `xmm0`;
     /// its `xmm0` result. NaN when the call fails or nests too deep.
+    #[cfg(feature = "dev-unicorn")]
     pub(crate) fn call_sse(&mut self, addr: u32, x: f64) -> f64 {
         use ffx_bridge::Mem as _;
         if self.x87_depth >= X87_LEVELS {
@@ -2061,6 +2313,7 @@ impl Exec {
     /// it, its argument in `ST0`: the Rust side replaces `ST0` with the
     /// result, or the DLL's export runs (a jump: the stack and `ST0` as
     /// the caller left them) for the arguments the Rust side hands on.
+    #[cfg(feature = "dev-unicorn")]
     fn enter_x87_import(&mut self, f: crate::crt_dll::X87Fn, export: Option<u32>) -> Result<u32> {
         let x = self.st0()?;
         if let Some(v) = x.and_then(|x| f(self, x)) {
@@ -2093,6 +2346,7 @@ impl Exec {
 
     /// Runs import `i` (its stub at `stub`) for Unicorn code that called
     /// it.
+    #[cfg(feature = "dev-unicorn")]
     fn enter_import(&mut self, i: usize, stub: u32) -> Result<u32> {
         let words = self.shared.imports.bound(i).map_or(0, |b| b.words);
         let args = self.entry_args(words)?;
@@ -2169,6 +2423,7 @@ impl Exec {
 
     /// Applies a port's or import's result and returns the stub that pops
     /// `pops` words (and loads `ST0` for a float).
+    #[cfg(feature = "dev-unicorn")]
     fn finish(&mut self, ret: Ret, pops: usize) -> Result<u32> {
         if ret.sets_eax {
             self.uc.reg_write(RegisterX86::EAX, u64::from(ret.eax))?;
@@ -2192,6 +2447,7 @@ impl Exec {
         Ok(self.uc.reg_read(r)? as u32)
     }
 
+    #[cfg(feature = "dev-unicorn")]
     fn save_regs(&self) -> Result<[u64; 8]> {
         let mut out = [0; 8];
         for (o, r) in out.iter_mut().zip(SAVED_REGS) {
@@ -2200,6 +2456,7 @@ impl Exec {
         Ok(out)
     }
 
+    #[cfg(feature = "dev-unicorn")]
     fn restore_regs(&mut self, saved: &[u64; 8]) -> Result<()> {
         for (&v, r) in saved.iter().zip(SAVED_REGS) {
             self.uc.reg_write(r, v)?;
@@ -2208,6 +2465,7 @@ impl Exec {
     }
 
     /// `ST0` as a double, if the x87 stack holds anything.
+    #[cfg(feature = "dev-unicorn")]
     pub(crate) fn st0(&self) -> Result<Option<f64>> {
         let tag = self.uc.reg_read(RegisterX86::FPTAG)?;
         let sw = self.uc.reg_read(RegisterX86::FPSW)?;
@@ -2295,6 +2553,7 @@ impl Exec {
         Ok(())
     }
 
+    #[cfg(feature = "dev-unicorn")]
     fn add_hooks(&mut self) -> Result<()> {
         let x87 = Arc::clone(&self.shared.x87);
         self.uc.add_intr_hook(move |uc, intno| {
@@ -2376,8 +2635,11 @@ impl Exec {
     pub fn write_code(&mut self, at: u32, code: &[u8]) {
         let mut mem = self.mem();
         mem.write_bytes(at, code);
-        let end = u64::from(at) + code.len() as u64;
-        let _ = self.uc.ctl_remove_cache(u64::from(at), end);
+        #[cfg(feature = "dev-unicorn")]
+        {
+            let end = u64::from(at) + code.len() as u64;
+            let _ = self.uc.ctl_remove_cache(u64::from(at), end);
+        }
     }
 
     /// The import table (for the report).
@@ -2452,7 +2714,32 @@ impl Exec {
     }
 
     /// The thread pool's `SubmitThreadpoolWork(work)`: runs the work's
+    /// callback `(instance, context, work)` on a thread of its own, whose
+    /// routine is a trap (no emulator to run a trampoline).
+    #[cfg(not(feature = "dev-unicorn"))]
+    pub fn submit_work(&mut self, work: u32) {
+        let known = self
+            .shared
+            .pool_work
+            .lock()
+            .is_ok_and(|w| w.contains_key(&work));
+        if known && let Ok(at) = self.alloc_code(&[INT3]) {
+            self.shared.add_trap(
+                at,
+                Trap {
+                    run: pool_work_trap,
+                    tag: work,
+                    conv: Conv::Stdcall,
+                    words: 1,
+                },
+            );
+            self.spawn_thread(at, 0, false, "SubmitThreadpoolWork");
+        }
+    }
+
+    /// The thread pool's `SubmitThreadpoolWork(work)`: runs the work's
     /// callback `(instance, context, work)` on a thread of its own.
+    #[cfg(feature = "dev-unicorn")]
     pub fn submit_work(&mut self, work: u32) {
         let item = self
             .shared
@@ -2470,8 +2757,25 @@ impl Exec {
     }
 }
 
+/// A thread-pool work item's thread routine without the emulator (`tag`
+/// the work): its callback `(0, context, work)`, then 0.
+#[cfg(not(feature = "dev-unicorn"))]
+fn pool_work_trap(e: &mut Exec, work: u32, _: &Args) -> Ret {
+    let item = e
+        .shared
+        .pool_work
+        .lock()
+        .ok()
+        .and_then(|w| w.get(&work).copied());
+    if let Some((callback, context)) = item {
+        let _ = e.call_stdcall(callback, &[0, context, work]);
+    }
+    Ret::eax(0)
+}
+
 /// `push work; push context; push 0; call callback; ret 4`: a thread
 /// routine (stdcall, one parameter) that runs a thread-pool callback.
+#[cfg(feature = "dev-unicorn")]
 fn pool_trampoline(callback: u32, context: u32, work: u32) -> Vec<u8> {
     let mut c = Vec::new();
     for v in [work, context, 0] {
@@ -2555,6 +2859,7 @@ fn finish_thread(shared: &Shared, handle: u32, outcome: String, stats: Option<St
 
 /// The registers a port's caller keeps across the call (the hook's thunk
 /// keeps `eax`, `ecx` and `edx` too, unless the result goes there).
+#[cfg(feature = "dev-unicorn")]
 const SAVED_REGS: [RegisterX86; 8] = [
     RegisterX86::EAX,
     RegisterX86::ECX,
@@ -2621,10 +2926,13 @@ pub fn f80_to_f64(b: &[u8]) -> f64 {
 /// Where [`ffx_bridge::route::Router::call_x87`] writes its stubs in the
 /// thread's stub page (after the `fld; ret n` stubs, before the float cell
 /// at 0xf00 and the SEH stubs), one per nesting level.
+#[cfg(feature = "dev-unicorn")]
 const X87_STUBS: u32 = 0x480;
 /// Bytes per x87 stub.
+#[cfg(feature = "dev-unicorn")]
 const X87_STUB: u32 = 0x80;
 /// Nesting levels of x87 stubs.
+#[cfg(feature = "dev-unicorn")]
 const X87_LEVELS: u32 = 8;
 
 /// How many `FFX_HOST_WATCH` notes a run keeps.
@@ -2667,6 +2975,7 @@ impl ffx_bridge::route::Router for Exec {
     ) -> ffx_bridge::route::Raw {
         use ffx_bridge::route::{Float, Raw};
         let addr = self.shared.thunk(addr).unwrap_or(addr);
+        #[cfg(feature = "dev-unicorn")]
         let emulated = self.shared.table.get(addr).is_none()
             && !self.shared.stubs.contains_key(&addr)
             && self.shared.trap(addr).is_none()
@@ -2682,6 +2991,7 @@ impl ffx_bridge::route::Router for Exec {
             #[allow(clippy::cast_possible_truncation)] // fstp dword
             (Float::F32, Some(v)) => f64::from(v as f32),
         };
+        #[cfg(feature = "dev-unicorn")]
         if emulated && float != Float::None && ret.st0.is_some() {
             // the original left it on Unicorn's x87 stack; the caller's
             // fstp pops it
@@ -2695,7 +3005,6 @@ impl ffx_bridge::route::Router for Exec {
     }
 
     fn call_x87(&mut self, addr: u32, st: &[f64], float: ffx_bridge::route::Float) -> f64 {
-        use ffx_bridge::Mem as _;
         use ffx_bridge::route::Float;
         // an intrinsic with a Rust side (through its thunk or its slot's
         // stub): no emulator
@@ -2710,41 +3019,7 @@ impl ffx_bridge::route::Router for Exec {
                 Float::F64 | Float::None => v,
             };
         }
-        if self.x87_depth >= X87_LEVELS || st.len() > 7 {
-            return f64::NAN;
-        }
-        // fld qword [cell] for each operand; mov eax, addr; call eax;
-        // fstp dword/qword [out]; ret
-        let at = self.sentinel + X87_STUBS + X87_STUB * self.x87_depth;
-        let cells = at + 0x40;
-        let out = cells + 0x38;
-        let mut code = Vec::new();
-        let mut mem = self.mem();
-        for (i, &v) in (0u32..).zip(st) {
-            mem.write(cells + 8 * i, v);
-            code.extend_from_slice(&[0xdd, 0x05]);
-            code.extend_from_slice(&(cells + 8 * i).to_le_bytes());
-        }
-        code.push(0xb8);
-        code.extend_from_slice(&addr.to_le_bytes());
-        code.extend_from_slice(&[0xff, 0xd0]);
-        match float {
-            Float::F32 => code.extend_from_slice(&[0xd9, 0x1d]),
-            Float::F64 | Float::None => code.extend_from_slice(&[0xdd, 0x1d]),
-        }
-        code.extend_from_slice(&out.to_le_bytes());
-        code.push(0xc3);
-        self.write_code(at, &code);
-        self.x87_depth += 1;
-        let r = Exec::call(self, at, Conv::Cdecl, &Args::default());
-        self.x87_depth -= 1;
-        if r.is_err() {
-            halted();
-        }
-        match float {
-            Float::F32 => f64::from(mem.read::<f32>(out)),
-            Float::F64 | Float::None => mem.read::<f64>(out),
-        }
+        self.x87_call(addr, target, st, float)
     }
 
     fn read_bytes(&mut self, addr: u32, out: &mut [u8]) {
@@ -2794,6 +3069,60 @@ impl ffx_bridge::route::Router for Exec {
             if top == at {
                 break;
             }
+        }
+    }
+}
+
+impl Exec {
+    /// [`ffx_bridge::route::Router::call_x87`] without the emulator: an
+    /// intrinsic case its Rust side hands on, or any other function, is
+    /// unported (`target`, through a thunk resolved); the thread stops.
+    #[cfg(not(feature = "dev-unicorn"))]
+    fn x87_call(&mut self, _: u32, target: u32, _: &[f64], _: ffx_bridge::route::Float) -> f64 {
+        self.stop_unported(target);
+        halted()
+    }
+
+    /// [`ffx_bridge::route::Router::call_x87`] in Unicorn: `st` loaded on
+    /// its x87 stack through a stub that calls `addr`.
+    #[cfg(feature = "dev-unicorn")]
+    fn x87_call(&mut self, addr: u32, _: u32, st: &[f64], float: ffx_bridge::route::Float) -> f64 {
+        use ffx_bridge::Mem as _;
+        use ffx_bridge::route::Float;
+        if self.x87_depth >= X87_LEVELS || st.len() > 7 {
+            return f64::NAN;
+        }
+        // fld qword [cell] for each operand; mov eax, addr; call eax;
+        // fstp dword/qword [out]; ret
+        let at = self.sentinel + X87_STUBS + X87_STUB * self.x87_depth;
+        let cells = at + 0x40;
+        let out = cells + 0x38;
+        let mut code = Vec::new();
+        let mut mem = self.mem();
+        for (i, &v) in (0u32..).zip(st) {
+            mem.write(cells + 8 * i, v);
+            code.extend_from_slice(&[0xdd, 0x05]);
+            code.extend_from_slice(&(cells + 8 * i).to_le_bytes());
+        }
+        code.push(0xb8);
+        code.extend_from_slice(&addr.to_le_bytes());
+        code.extend_from_slice(&[0xff, 0xd0]);
+        match float {
+            Float::F32 => code.extend_from_slice(&[0xd9, 0x1d]),
+            Float::F64 | Float::None => code.extend_from_slice(&[0xdd, 0x1d]),
+        }
+        code.extend_from_slice(&out.to_le_bytes());
+        code.push(0xc3);
+        self.write_code(at, &code);
+        self.x87_depth += 1;
+        let r = Exec::call(self, at, Conv::Cdecl, &Args::default());
+        self.x87_depth -= 1;
+        if r.is_err() {
+            halted();
+        }
+        match float {
+            Float::F32 => f64::from(mem.read::<f32>(out)),
+            Float::F64 | Float::None => mem.read::<f64>(out),
         }
     }
 }

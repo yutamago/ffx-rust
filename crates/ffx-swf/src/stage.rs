@@ -4,7 +4,10 @@
 //!
 //! - `IggyPlayerCallFunctionRS(name, args)` calls an AS3 function the movie
 //!   registered with `ExternalInterface.addCallback`: Ruffle's
-//!   `Player::call_internal_interface`.
+//!   `Player::call_internal_interface`, the arguments fitted to the
+//!   function's count first as Iggy does ([`crate::abc::Arity::fit`]: Ruffle
+//!   throws on a missing one, and the game calls `addChangeParaPageItem`
+//!   with 4 of its 5).
 //! - The AS3 side's `ExternalInterface.call(name, args)` reaches the game's
 //!   callback (`IggySetAS3ExternalFunctionCallbackUTF8`): here an
 //!   [`ExternalInterfaceProvider`] that answers with what the game answered
@@ -18,7 +21,7 @@
 //!   Ruffle's stage is put in transparent window mode.
 
 use std::cell::RefCell;
-use std::collections::{HashMap, VecDeque};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
@@ -36,6 +39,7 @@ use ruffle_render_wgpu::descriptors::Descriptors;
 use ruffle_render_wgpu::target::TextureTarget;
 use ruffle_render_wgpu::wgpu;
 
+use crate::abc::Arity;
 use crate::log::Arg;
 
 /// Ruffle's external value, for users of [`CallOut`] (`ffx-host`).
@@ -197,6 +201,43 @@ pub fn deterministic_get_timer(on: bool) {
     ruffle_core::DETERMINISTIC_GET_TIMER.store(on, std::sync::atomic::Ordering::Relaxed);
 }
 
+/// Reports `DisplayObject.width` / `height` in floating point, without
+/// rounding to twips, as Iggy does (the fork's `IGGY_FLOAT_BOUNDS`): the
+/// movies lay out bitmap glyphs with `x = int(x + glyph.width)`, and
+/// twips-rounded widths moved text by a pixel here and there.
+pub fn iggy_float_bounds(on: bool) {
+    ruffle_core::IGGY_FLOAT_BOUNDS.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Keeps the sub-pixel position of objects drawn through the bitmap cache
+/// (filters: the labels' glow), as `GDraw` draws them into screen-sized
+/// targets (the fork's `IGGY_FILTER_PHASE`); stock Ruffle snaps them.
+pub fn iggy_filter_phase(on: bool) {
+    ruffle_core::IGGY_FILTER_PHASE.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Every `GDraw`-like switch on: mipmaps, forced smoothing, the
+/// deterministic `getTimer`, float bounds and sub-pixel filter caches.
+pub fn gdraw_like() {
+    gdraw_mipmaps(true);
+    force_bitmap_smoothing(true);
+    deterministic_get_timer(true);
+    iggy_float_bounds(true);
+    iggy_filter_phase(true);
+}
+
+impl Render {
+    /// How `GDraw` draws (WP12 measurements, docs/formats/pc-ui.md
+    /// "Ruffle"): one sample (stage quality `low`; `GDraw` has no MSAA).
+    #[must_use]
+    pub fn gdraw() -> Self {
+        Self {
+            quality: Some("low".to_owned()),
+            ss: 0,
+        }
+    }
+}
+
 /// One movie in a Ruffle player.
 pub struct Stage {
     player: Arc<Mutex<Player>>,
@@ -205,6 +246,8 @@ pub struct Stage {
     pub ticks: u64,
     size: (u32, u32),
     ss: u32,
+    /// The offered functions' argument counts (`crate::abc`).
+    arities: BTreeMap<String, Arity>,
 }
 
 impl Stage {
@@ -221,6 +264,10 @@ impl Stage {
         render: &Render,
     ) -> Result<Self> {
         let ss = render.ss.max(1);
+        // a movie whose AS3 the reader can't take is played unfitted
+        let arities = crate::abc::Movie::from_swf(data)
+            .map(|m| m.arities())
+            .unwrap_or_default();
         let full = (size.0 * ss, size.1 * ss);
         let movie = SwfMovieData::from_data(data, url.to_owned(), None, None)
             .map_err(|e| anyhow!("{e}"))?;
@@ -256,6 +303,7 @@ impl Stage {
             ticks: 0,
             size,
             ss,
+            arities,
         })
     }
 
@@ -298,12 +346,15 @@ impl Stage {
     /// `IggyPlayerCallFunctionRS`.
     pub fn call(&mut self, name: &str, args: &[Arg]) -> Value {
         let values: Vec<Value> = args.iter().map(to_value).collect();
-        self.lock().call_internal_interface(name, values)
+        self.call_values(name, values)
     }
 
     /// `IggyPlayerCallFunctionRS` with Ruffle's values (string arrays as
-    /// `Value::List`).
-    pub fn call_values(&mut self, name: &str, args: Vec<Value>) -> Value {
+    /// `Value::List`), fitted to the function's argument count.
+    pub fn call_values(&mut self, name: &str, mut args: Vec<Value>) -> Value {
+        if let Some(a) = self.arities.get(name) {
+            a.fit(&mut args, &Value::Undefined);
+        }
         self.lock().call_internal_interface(name, args)
     }
 

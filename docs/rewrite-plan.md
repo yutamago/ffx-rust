@@ -561,7 +561,15 @@ slightly differently.
    - Iggy: the Ruffle pilot on the title, settings and save/load
      screens, for the user to judge. Then the other screens, either on
      Ruffle or rebuilt natively.
-   - Steam: our calls into `steam_api.dll`.
+   - Steam: our calls into `steam_api.dll`. (As it went, 2026-11-12,
+     WP10: in the 64-bit `ffx-rust.exe` the game's nine imports, the
+     interfaces' vtable slots it calls and its three callbacks go to the
+     Steamworks SDK 1.65 `steam_api64.dll`, loaded at run time, at the
+     game's old interface versions; `ResetAllStats` and
+     `RestartAppIfNecessary` are never forwarded; without the DLL or a
+     running Steam it is absent as before. The game's Steam code passes
+     on a stand-in, ported and original alike; the live read on the
+     account is `steam-probe` (docs/host.md, "Steam").)
    - Gate: the in-process build runs no code from `FFX.exe` and loads none
      of the game's DLLs except `steam_api.dll`. Every replay, scene gate
      and audio check passes.
@@ -585,6 +593,24 @@ slightly differently.
      made from 64-bit.
    - Gate: the same as stage 3, plus a check that no code path builds a
      host pointer from an arena address without the arena base.
+   - As it went (2026-11-12, WP9): `ffx-host` builds without
+     `dev-unicorn`. Its executor then has no emulator: the function
+     table, the imports' Rust sides, the traps (the overlays' ports, the
+     COM and Steam vtables, the thread pool's work items) and the
+     one-instruction leaves run as before, and a call to any other
+     address (an unported function, an original a wrapper still calls, an
+     SSE or x87 maths case the Rust side hands to the DLL, a
+     `RaiseException`) stops the thread with an "unported address"
+     outcome naming the address, its `ffx.sym` name and the host entries
+     it was called from (docs/host.md, "Without Unicorn"). The C runtime
+     DLLs are not loaded, so every `MSVCR110`/`MSVCP110` import needs a
+     Rust side. All 581 overlays load and run their entries as ports
+     without the emulator (`tests/overlay_bind.rs` in both builds). The
+     no-emulator boot stops at once, at `FFX.exe`'s own entry point
+     (`0x009493c1`, the CRT start-up, unported) with 210 C runtime imports
+     still without a Rust side: the list for WP5 is
+     `~/ffx-work/m5/finish/wp9/unported.tsv`. The stage 4 gate is met
+     only when the gate run passes on this build.
 5. **Saves, settings and delivery.**
    - Gate: saves and settings written by `ffx-rust.exe` load in `FFX.exe`
      and back, byte for byte (on copies, never the user's saves).
@@ -593,14 +619,44 @@ slightly differently.
      `ffx-host` (on by default for development builds);
      `tools/check-licences.py` lists the release trees (`cargo tree -e
      normal --no-default-features`) of `ffx-dinput8` (i686) and
-     `ffx-host` (x86_64) and fails on any GPL-family licence, and both
-     crates build with `--no-default-features`. Today `ffx-dinput8`
-     builds that way (no overlay runner) and `ffx-host` refuses to (a
-     `compile_error!`: its executor still needs Unicorn for code without
-     a port, which goes at the stage 4 gate).
+     `ffx-host` (x86_64, with the package's `swf`) and fails on any
+     licence expression that leaves only a GPL-family choice (Ruffle's
+     `self_cell`, `Apache-2.0 OR GPL-2.0-only`, passes), and both
+     crates build with `--no-default-features`. Both do since WP9
+     (2026-11-12): `ffx-dinput8` without the overlay runner, `ffx-host`
+     without the emulator (stage 4 above); `tools/verify-batch.py` builds
+     the release `ffx-rust.exe` and runs `check-licences` whenever
+     `ffx-host` is affected.
    - `ffx-launch` starts either program. The release package holds
      `ffx-rust.exe`, `steam_api64.dll` and the licences.
    - Docs: what a player needs and what stays the original's.
+   - As it went (2026-11-12, WP13): `ffx-launch --rust [GAME]` starts
+     `ffx-rust.exe` from its own folder on the player's game folder (the
+     argument, a folder or any file in it, so Steam's `--rust %command%`
+     works; else the current folder; else the launcher's), with the
+     Documents folder `FFX.exe` asks Windows for (saves and settings
+     shared with the original), no run budget, `SteamAppId=359870` when
+     Steam didn't start it, the report in `ffx-rust.log`, and a message
+     box in the player's words for a missing game folder, game file,
+     `ffx-rust.exe` or (a warning; the game starts) `steam_api64.dll`.
+     The default stays `FFX.exe` with ASLR off, as `tools/run-game.sh`
+     uses it; the package's `play-ffx-rust.cmd` passes `--rust`.
+     `tools/package-release.sh` builds both programs with every build
+     path remapped, adds the SDK's `steam_api64.dll`, `ffx.sym`, the
+     player's README (`docs/player.md`), the licences (the project's,
+     a THIRD-PARTY file from the release trees with every package's
+     licence and licence files, zvidlib-vp8, libVorbis, Ruffle, the
+     Steamworks note) and checks the staged tree (only the package's
+     files, no game file, no path or name of the build machine, no
+     Unicorn in a release `ffx-rust.exe`); `--dry-run` runs the checks
+     and their self-test without building. It refuses `dev-unicorn`
+     without `--dev`, which names the zip `-dev-not-for-release`. Since
+     WP9 the release package builds too, but its `ffx-rust.exe` plays
+     only once the Rust side covers the boot (docs/host.md, "The release
+     package").
+     Not measured yet: a player's run outside the harness (the real
+     keyboard, mouse and pads don't reach the game; docs/host.md,
+     "Windows"), the saves round trip on the release build, Steam live.
 
 **Done when** `ffx-rust.exe` (64-bit) plays every replay with the
 original's trace events, passes the scene gates and the audio checks, and

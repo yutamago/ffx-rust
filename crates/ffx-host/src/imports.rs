@@ -70,6 +70,7 @@ impl Imports {
             .chain(crate::audio::TABLE)
             .chain(crate::crt_dll::TABLE)
             .chain(crate::crt_format::TABLE)
+            .chain(crate::steam::TABLE)
             .find(|(d, n, ..)| d.eq_ignore_ascii_case(dll) && *n == name);
         let b = match found {
             Some(&(_, _, conv, words, run)) => Bound {
@@ -1304,38 +1305,6 @@ pub const TABLE: &[(&str, &str, Conv, usize, ImportFn)] = &[
         Conv::Stdcall,
         5,
         crate::gfx::direct_input8_create,
-    ),
-    // Steam, absent: `SteamAPI_Init` fails, so the game runs without
-    // achievements and never asks for the interfaces (Steam_Init)
-    (
-        "steam_api.dll",
-        "SteamAPI_RestartAppIfNecessary",
-        Conv::Cdecl,
-        1,
-        zero,
-    ),
-    ("steam_api.dll", "SteamAPI_Init", Conv::Cdecl, 0, zero),
-    (
-        "steam_api.dll",
-        "SteamAPI_RunCallbacks",
-        Conv::Cdecl,
-        0,
-        void,
-    ),
-    ("steam_api.dll", "SteamAPI_Shutdown", Conv::Cdecl, 0, void),
-    (
-        "steam_api.dll",
-        "SteamAPI_RegisterCallback",
-        Conv::Cdecl,
-        2,
-        void,
-    ),
-    (
-        "steam_api.dll",
-        "SteamAPI_UnregisterCallback",
-        Conv::Cdecl,
-        1,
-        void,
     ),
     // the window (a fake one, no messages)
     ("USER32.dll", "ShowWindow", Conv::Stdcall, 2, zero),

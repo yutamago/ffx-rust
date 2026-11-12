@@ -1,0 +1,38 @@
+# Iggy screens in language ch (WP12, docs/formats/pc-ui.md "The 19 movies"):
+# box_ch.swf (tips) and saveload_ch.swf (the load list), which no other
+# replay reaches, and escmenu.swf in that language
+# (tools/sandbox/lang-ch.ini). The steps of iggy-menus.txt shots 1 and
+# 11-12 plus a Turbo tip (F1 three times: x2, x4, off).
+# Shots (iggy-lang-ch-<n>.bmp): 1 the PC menu, 2 the Turbo tip, 3 the
+# title, 4 the load list (its dates are the save files' times: compare by
+# eye).
+settings lang-ch
+load direct 1 cdsp0000 lockstep
+lockstep on
+pin
+waitfor 0x01325d94:4 40000000 c0ffffff 1500
+wait 37
+trace 0x0112ca90:4 0x00ce72e8:0x18
+key 01 4 240
+shot $OUT\iggy-lang-ch-1.bmp
+key 01 4 240
+key 3b 4 30
+shot $OUT\iggy-lang-ch-2.bmp
+key 3b 4 30
+key 3b 4 60
+call 0x0086da10
+waitfor 0x0112ca90:2 5d01 ffff 1500
+wait 60
+press start 3 20
+waitfor 0x0112ca90:2 1700 ffff 1500
+waitfor 0x01325d94:4 00000000 c0ffffff 600
+waitfor 0x01325d94:4 40000000 c0ffffff 600
+wait 37
+shot $OUT\iggy-lang-ch-3.bmp
+key 1c 3 3
+waitfor 0x00ce72e8:4 0c000000 ffffffff 600
+wait 60
+shot $OUT\iggy-lang-ch-4.bmp
+key 0e 3 3
+waitfor 0x00ce72e8:4 0a000000 ffffffff 600
+wait 60

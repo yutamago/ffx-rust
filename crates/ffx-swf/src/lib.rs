@@ -2,6 +2,7 @@
 //! `docs/formats/pc-ui.md` "Iggy calls" and "Ruffle"): the hook's Iggy call
 //! log ([`log`]) replayed into Ruffle players ([`stage`]), headless.
 
+pub mod abc;
 pub mod compose;
 pub mod log;
 pub mod patch;

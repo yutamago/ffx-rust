@@ -1,0 +1,75 @@
+# Saves round trip, the writer (docs/harness.md, "Saves round trip";
+# tools/saves-roundtrip.sh runs it, never run-all.sh): menu-save.txt's
+# first half, then a settings change written by the game's own path.
+#
+# From save slot 5 (ffx_005, the Thunder Plains agency kami0100), lockstep,
+# fast mode. Equip: Tidus's weapon Sonic Steel -> Brotherhood, so the save
+# differs from ffx_005. The save sphere beside Tidus, Save, "New Save
+# Data", Yes: written as the first free slot of the sandboxed home (the
+# round trip's own folder, never the user's). Then two settings words of
+# the settings object (g_Settings 0x022fb504, a word per GameSetting.ini key:
+# key 6 VoiceVolume at +0x18 -> 70, key 7 MusicVolume at +0x1c -> 60;
+# docs/formats/platform.md "The settings file") are written as the Audio
+# page's sliders write them (SetWordAt_00402a00 stores the word), and the PC
+# menu is opened and closed with Esc: FFEscMenu_update's close calls
+# Settings_Save (0x00401d80), which writes GameSetting.ini (Settings_Format:
+# Key=Value, LF, key order). Neither volume is a key the harness rewrites
+# (Resolution, ScreenMode, Mute, MasterVolume), and no replay checks sound.
+#
+# The waits are menu-save.txt's (the save/load machine's state,
+# g_SaveMachineState 0x00ce72e8: 1 building the list, 2 its input, 3 "Save
+# the game?", 5 writing, 2 again, 0 closed). The settings object is read
+# back after the change (the reply goes into the run's replies.txt).
+# Screenshots (saves-write-<n>.bmp): 1 Brotherhood equipped, 2 the save
+# sphere's choice, 3 the field after saving, 4 the PC menu.
+load direct 5 kami0100 lockstep
+lockstep on
+pin
+waitfor 0x01325d94:4 40000000 c0ffffff 1500
+wait 37
+trace 0x0112ca90:4 0x00ce72e8:0x18 0x01597f70:0x40
+# Equip, Tidus, Weapon, Brotherhood (the first line)
+press triangle 8 60
+press down 4 15
+press down 4 15
+press down 4 15
+press down 4 15
+press circle 4 60
+press circle 4 60
+press circle 4 60
+press circle 4 60
+shot $OUT\saves-write-1.bmp
+press cross 4 40
+press cross 4 40
+press cross 4 60
+# the save sphere: Save
+press up 30 10
+press circle 4 60
+shot $OUT\saves-write-2.bmp
+press circle 4 4
+waitfor 0x00ce72e8:4 02000000 ffffffff 600
+wait 60
+# New Save Data, Yes
+key 1c 3 3
+waitfor 0x00ce72e8:4 03000000 ffffffff 600
+wait 30
+key 1c 3 3
+waitfor 0x00ce72e8:4 05000000 ffffffff 600
+waitfor 0x00ce72e8:4 02000000 ffffffff 1200
+wait 60
+key 0e 3 3
+waitfor 0x00ce72e8:4 00000000 ffffffff 600
+wait 60
+shot $OUT\saves-write-3.bmp
+# the settings: VoiceVolume 70, MusicVolume 60
+writep 0x022fb504 0x18 46000000
+writep 0x022fb504 0x1c 3c000000
+# the PC menu, open and closed: Settings_Save
+key 01 4 240
+shot $OUT\saves-write-4.bmp
+key 01 4 240
+wait 60
+# the settings object as written (values, binding tables, their count;
+# not the path at +0x430, which is each program's own Documents folder)
+readp 0x022fb504 0 0x430
+read 0x0112ca90 0x68c0

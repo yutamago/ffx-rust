@@ -5,8 +5,12 @@
 //! ```text
 //! iggy-replay <log> <out dir> [--vbf <FFX_Data.vbf>] [--no-pace] [--smooth]
 //!     [--quality <q>] [--ss <k>] [--force-smooth] [--mipmaps] [--virtual-clock]
-//!     [--no-font]
+//!     [--no-font] [--float-bounds] [--filter-phase] [--gdraw]
 //! ```
+//!
+//! `--gdraw` is what `ffx-host` plays with (`stage::gdraw_like`,
+//! `Render::gdraw`): every switch below and stage quality `low`; put
+//! `--quality` after it to override.
 //!
 //! Each Iggy player of the log becomes a Ruffle player of the same movie
 //! (matched by size and hash among the `.swf` files of the player's
@@ -50,6 +54,13 @@ fn fnv(data: &[u8]) -> u64 {
 
 #[allow(clippy::too_many_lines)]
 fn main() -> Result<()> {
+    if std::env::var_os("FFX_SWF_TRACE").is_some() {
+        // Ruffle's warnings and the movies' uncaught AS3 errors, on stderr
+        tracing_subscriber::fmt()
+            .with_writer(std::io::stderr)
+            .with_ansi(false)
+            .init();
+    }
     let mut args = std::env::args().skip(1);
     let log_path = PathBuf::from(
         args.next()
@@ -70,6 +81,13 @@ fn main() -> Result<()> {
             "--force-smooth" => ffx_swf::stage::force_bitmap_smoothing(true),
             "--no-font" => no_font = true,
             "--mipmaps" => ffx_swf::stage::gdraw_mipmaps(true),
+            "--float-bounds" => ffx_swf::stage::iggy_float_bounds(true),
+            "--filter-phase" => ffx_swf::stage::iggy_filter_phase(true),
+            "--gdraw" => {
+                ffx_swf::stage::gdraw_like();
+                render = ffx_swf::stage::Render::gdraw();
+                pace = false;
+            }
             "--virtual-clock" => {
                 ffx_swf::stage::deterministic_get_timer(true);
                 pace = false;
