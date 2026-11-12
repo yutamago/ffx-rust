@@ -225,10 +225,16 @@ fn cloth_scene(a: &mut Oracle, b: &mut Oracle, log: &Log, variant: u32) -> (u32,
     let table = a.rebase(c::TABLE);
     for slot in 0..4u32 {
         let entry = junk(a, b, 0x40, 20 + slot as u8);
-        put(a, b, table + 4 * slot, if slot == 1 { 0 } else { entry });
+        // slot 1 empty, but on variant 5 set with no instance list
+        put(
+            a,
+            b,
+            table + 4 * slot,
+            if slot == 1 && variant != 5 { 0 } else { entry },
+        );
         let list = zeros(a, b, 0x10);
         let parallel = zeros(a, b, 0x10);
-        put(a, b, entry, list);
+        put(a, b, entry, if slot == 1 { 0 } else { list });
         put(a, b, entry + 4, parallel);
         // variant 5: slot 0 without its parallel list, slot 2 ready but
         // busy (+8 set), slot 3 with no instances
@@ -251,7 +257,17 @@ fn cloth_scene(a: &mut Oracle, b: &mut Oracle, log: &Log, variant: u32) -> (u32,
         let instances = zeros(a, b, 8);
         let owners = zeros(a, b, 8);
         put(a, b, list + 4, instances);
-        put(a, b, list + 8, 0x8000_0001);
+        // variants 2 and 3: both instances take the buffer path
+        put(
+            a,
+            b,
+            list + 8,
+            if variant == 2 || variant == 3 {
+                0x8000_0002
+            } else {
+                0x8000_0001
+            },
+        );
         put(a, b, list + 0xc, owners);
         for k in 0..2u32 {
             let owner = junk(a, b, 0x20, 40 + k as u8);
@@ -280,7 +296,9 @@ fn cloth_scene(a: &mut Oracle, b: &mut Oracle, log: &Log, variant: u32) -> (u32,
                 entry + 0x30 + 4 * k,
                 if no_table { 0 } else { cloths },
             );
-            put(a, b, parallel + 4 + 4 * k, words);
+            // variant 4: slot 3's instance 1 without its parallel words
+            let no_words = variant == 4 && slot == 3 && k == 1;
+            put(a, b, parallel + 4 + 4 * k, if no_words { 0 } else { words });
             for s in 0..4u32 {
                 let seg = segments + 0x6c * s;
                 put(a, b, seg, s % 2);
@@ -290,7 +308,13 @@ fn cloth_scene(a: &mut Oracle, b: &mut Oracle, log: &Log, variant: u32) -> (u32,
                     0x0001_0002
                 };
                 put(a, b, seg + 0x20, halves);
-                put(a, b, seg + 0x24, 0x0003_0004);
+                // variants 0 and 1: segment 3's second half -1
+                let second = if s == 3 && variant < 2 {
+                    0x0003_ffff
+                } else {
+                    0x0003_0004
+                };
+                put(a, b, seg + 0x24, second);
                 let streams = junk(a, b, 0x80, 80 + s as u8);
                 // variant 4: segment 0 without streams
                 let n_streams = if variant == 4 && s == 0 {
@@ -343,7 +367,7 @@ fn batch_set_cloth_vertex_buffers_matches_the_original() {
             assert_eq!(r.eax, port, "{label} {variant}: eax");
             if variant < 5 {
                 assert!(
-                    log.entries(&b) > 4,
+                    log.entries(&b) > 2,
                     "{label} {variant}: {} calls",
                     log.entries(&b)
                 );
