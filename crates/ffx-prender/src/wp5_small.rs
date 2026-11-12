@@ -936,3 +936,32 @@ pub fn shape_base_ctor(h: &mut impl Host, this: u32, frame: u32) -> u32 {
     h.write(this + 0x54, 8u32);
     this
 }
+
+/// `Phyre_PPhysics_PPhysicsMeshBullet_vftable`.
+pub const MESH_BULLET_VTABLE: u32 = 0x00b3_9ee8;
+
+/// `PPhysicsMeshBullet::~PPhysicsMeshBullet` (`0x005e2360`, thiscall):
+/// the class's vtable ([`MESH_BULLET_VTABLE`]); the objects at `+0x60`,
+/// `+0x64`, `+0x68` deleted when set (virtual 0, argument 1); those three
+/// and `+0x58` 0; then `PPhysicsShapeBase`'s vtable. `eax`: the last
+/// deletion's. With none the original leaves a stack address (its SEH
+/// record's) in `eax`; the port returns 0 there (both callers, the
+/// scalar deleting destructors 0x005e6c90 and 0x005e6cf0, return `this`;
+/// the thunk 0x005e2340 has no reference).
+pub fn mesh_bullet_dtor(h: &mut impl Host, this: u32) -> u32 {
+    let vt = h.rebase(MESH_BULLET_VTABLE);
+    h.write(this, vt);
+    let mut eax = 0;
+    for off in [0x60, 0x64, 0x68] {
+        let obj: u32 = h.read(this + off);
+        if obj != 0 {
+            eax = h.call_virtual(obj, 0, &[1]);
+        }
+    }
+    for off in [0x60, 0x64, 0x68, 0x58] {
+        h.write(this + off, 0u32);
+    }
+    let vt = h.rebase(SHAPE_BASE_VTABLE);
+    h.write(this, vt);
+    eax
+}

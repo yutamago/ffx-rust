@@ -2243,3 +2243,35 @@ fn wp5b_shape_base_ctor() {
         t.same(&w);
     }
 }
+
+/// `PPhysicsMeshBullet`'s destructor (`0x005e2360`): each of the three
+/// owned objects present or null, their vtable's slot 0 a logging stub;
+/// `eax` (when one was deleted: with none the original's is a stack
+/// address) and memory.
+#[test]
+fn wp5b_mesh_bullet_dtor() {
+    use ffx_prender::wp5_small as sm;
+    for (label, mut t) in Twins::all() {
+        let log = t.alloc(&[0; 4 + 8 * 64]);
+        let virt = log_stub(&mut t, log, 4, 0x7171);
+        let virt = t.code(&virt);
+        let vtable = t.alloc(&virt.to_le_bytes());
+        let objs: Vec<u32> = (0..3).map(|_| t.alloc(&vtable.to_le_bytes())).collect();
+        let mesh = t.alloc(&[0x6b; 0x70]);
+        for case in 0..8u32 {
+            for (i, &o) in objs.iter().enumerate() {
+                let set = case & (1 << i) != 0;
+                t.w32(mesh + 0x60 + 4 * i as u32, if set { o } else { 0 });
+            }
+            t.w32(mesh + 0x58, 0x5a5a_5a5a);
+            let w = format!("{label} mesh bullet dtor case {case}");
+            let at = t.a.rebase(0x005e_2360);
+            let r = t.a.call(at, Conv::Thiscall(mesh), &[]).unwrap();
+            let p = sm::mesh_bullet_dtor(&mut G(&mut t.b), mesh);
+            if case != 0 {
+                assert_eq!(r.eax, p, "{w}: eax");
+            }
+            t.same(&w);
+        }
+    }
+}

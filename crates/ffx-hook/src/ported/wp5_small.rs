@@ -175,4 +175,8 @@ ported! {
         let mut f = StackFrame::<16>::new();
         s::shape_base_ctor(&mut mem(), this, f.at())
     }
+    /// `Phyre_PPhysics_PPhysicsMeshBullet_dtor_005e2360`: three owned objects deleted, the base vtable restored; the last deletion's `eax` (0 for none; see the bridge).
+    Phyre_PPhysics_PPhysicsMeshBullet_dtor_005e2360 @ 0x005e_2360 => extern "thiscall" fn sm_005e2360(this: u32) -> u32 {
+        s::mesh_bullet_dtor(&mut mem(), this)
+    }
 }
