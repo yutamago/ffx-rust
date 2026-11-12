@@ -5204,7 +5204,7 @@ fn wp5b_sort() {
             let keys = if round % 3 == 0 { 4 } else { 100_000 };
             let ideal = match round % 6 {
                 0 => 0,
-                1 => 1 + rng.next() % 4,
+                1 => 1 + rng.next() % 12,
                 2 => 40 + rng.next() % 40,
                 _ => n,
             };
