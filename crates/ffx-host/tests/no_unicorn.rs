@@ -43,10 +43,11 @@ fn documents(name: &str) -> PathBuf {
 
 /// `MsCheckRange`, a port (cdecl `(x, lo, hi)`: `x` clamped).
 const MS_CHECK_RANGE: u32 = 0x0079_a0c0;
-/// An address with no Rust side: `GDraw`'s callback trampoline `0x00a34b00`
-/// (Iggy's, left to the Ruffle work; the entry point and `Game_Main` that
-/// this test used are ported now).
-const ENTRY: u32 = 0x00a3_4b00;
+/// An address with no Rust side: the `map<string, ...>::operator[]` at
+/// `0x006f3ae0` (`AssetListReader_getSymbolId`'s callee, the no-Unicorn boot's
+/// next stop after m5-wp5d; the entry point, `Game_Main` and `GDraw`'s
+/// trampoline `0x00a34b00` that this test used are ported now).
+const ENTRY: u32 = 0x006f_3ae0;
 
 #[test]
 fn a_port_called_from_rust_runs_without_the_emulator() {

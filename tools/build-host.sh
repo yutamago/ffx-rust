@@ -41,12 +41,12 @@ if ! command -v ninja >/dev/null; then
     chmod +x "$shims/ninja"
 fi
 if ! command -v llvm-lib >/dev/null; then
-    lib="$(compgen -c llvm-lib- | grep -E '^llvm-lib-[0-9]+$' | sort -t- -k3 -n | tail -1)"
+    lib="$(compgen -c llvm-lib- | grep -E '^llvm-lib-[0-9]+$' | sort -t- -k3 -n | tail -1 || true)"
     [[ -n "$lib" ]] && ln -sf "$(command -v "$lib")" "$shims/llvm-lib"
 fi
 # ml64 (MASM) for unicorn's x86_64 setjmp wrapper: LLVM's llvm-ml64
 if ! command -v ml64 >/dev/null; then
-    ml="$(compgen -c llvm-ml64- | grep -E '^llvm-ml64-[0-9]+$' | sort -t- -k3 -n | tail -1)"
+    ml="$(compgen -c llvm-ml64- | grep -E '^llvm-ml64-[0-9]+$' | sort -t- -k3 -n | tail -1 || true)"
     [[ -n "$ml" ]] && ln -sf "$(command -v "$ml")" "$shims/ml64"
 fi
 export PATH="$repo/tools/shims:$shims:$PATH"
