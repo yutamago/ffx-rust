@@ -1583,3 +1583,37 @@ fn cin_getline_without_the_dlls_matches_the_dll() {
     }
     assert_eq!(got[0], got[1]);
 }
+
+/// The SSE2 maths functions (`_libm_sse2_*_precise`, `xmm0` in and out)
+/// through `Exec::call_sse` (their Rust sides, as the overlays' ports call
+/// them) against the DLL's exports run in Unicorn, bit for bit, over the
+/// one-operand spread; `min_rust` calls must take Rust.
+#[test]
+fn sse2_functions_match_the_dll() {
+    let Some(exe) = exe() else { return };
+    let mut e = ffx_host::boot(&exe).unwrap();
+    let cases: [(&str, u32, usize); 4] = [
+        ("_libm_sse2_sin_precise", 0x9100_0001, 3000),
+        ("_libm_sse2_cos_precise", 0x9100_0002, 3000),
+        ("_libm_sse2_tan_precise", 0x9100_0003, 3000),
+        ("_libm_sse2_sqrt_precise", 0x9100_0004, 1400),
+    ];
+    for (name, seed, min_rust) in cases {
+        let at = export(&e, "MSVCR110.dll", name);
+        let mut fast = 0;
+        for st in one_operand(3000, seed) {
+            let x = st[0];
+            let before = e.stats.leaf_calls;
+            let rust = e.call_sse(at, x);
+            fast += e.stats.leaf_calls - before;
+            let want = e.call_sse_emulated(at, x);
+            assert!(
+                same(rust, want),
+                "{name}({x:e}) = {rust:e} ({:#x}), the DLL's {want:e} ({:#x})",
+                rust.to_bits(),
+                want.to_bits()
+            );
+        }
+        assert!(fast >= min_rust as u64, "{name}: {fast} in Rust");
+    }
+}

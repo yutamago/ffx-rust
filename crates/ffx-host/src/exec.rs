@@ -370,6 +370,10 @@ pub struct Shared {
     /// The player's `MSVCR110.dll` read as data (`crate::crt_math`): the
     /// maths' constant tables, with or without the DLL loaded.
     pub crt_data: Option<crate::crt_math::CrtData>,
+    /// The SSE maths functions with a Rust side
+    /// (`crate::crt_math::sse_function`): what their IAT slots hold (the
+    /// DLL's export, or without it the import's stub) → the Rust side.
+    sse_imports: HashMap<u32, crate::crt_math::SseFn>,
     /// The C runtime's process state without the DLLs (`crate::crt_os`).
     pub crt_state: Mutex<crate::crt_os::CrtState>,
     /// The virtual clock, the frame boundary and the turns
@@ -483,6 +487,7 @@ impl Shared {
             iat: HashSet::new(),
             x87_imports: HashMap::new(),
             crt_data,
+            sse_imports: HashMap::new(),
             crt_state: Mutex::new(crate::crt_os::CrtState::default()),
             clock: crate::clock::Clock::default(),
             audio: crate::audio::Audio::default(),
@@ -766,8 +771,14 @@ impl Shared {
                 && let Some(&x) = d.exports.get(&imp.name)
             {
                 ffx_bridge::Mem::write(&mut mem, imp.slot, x);
+                if let Some(f) = crate::crt_math::sse_function(&full) {
+                    self.sse_imports.insert(x, f);
+                }
                 self.routes.push((full, Route::Dll));
                 continue;
+            }
+            if let Some(f) = crate::crt_math::sse_function(&full) {
+                self.sse_imports.insert(at, f);
             }
             self.imports.bind(index, &imp.dll, &imp.name, None);
             let route = if self.imports.bound(index).is_some_and(|b| b.run.is_some()) {
@@ -2286,11 +2297,24 @@ impl Exec {
         Ok(())
     }
 
-    /// [`Exec::call_sse`] without the emulator: the SSE maths functions
-    /// have no Rust side (their `xmm0` doesn't fit an import's `Args`), so
-    /// the thread stops there, naming the import; NaN.
+    /// The Rust side of the SSE maths function at `addr` (an IAT slot's
+    /// value or a thunk to one) for `x`, if it has one and covers `x`.
+    fn sse_rust(&mut self, addr: u32, x: f64) -> Option<f64> {
+        let target = self.shared.thunk(addr).unwrap_or(addr);
+        let f = *self.shared.sse_imports.get(&target)?;
+        let v = f(self, x)?;
+        self.stats.leaf_calls += 1;
+        Some(v)
+    }
+
+    /// [`Exec::call_sse`] without the emulator: the Rust side
+    /// (`crate::crt_math`), or (a case it doesn't cover, a function without
+    /// one) the thread stops there, naming the import; NaN.
     #[cfg(not(feature = "dev-unicorn"))]
-    pub(crate) fn call_sse(&mut self, addr: u32, _: f64) -> f64 {
+    pub fn call_sse(&mut self, addr: u32, x: f64) -> f64 {
+        if let Some(v) = self.sse_rust(addr, x) {
+            return v;
+        }
         self.stop_unported(addr);
         f64::NAN
     }
@@ -2299,7 +2323,17 @@ impl Exec {
     /// `_libm_sse2_*_precise`, `xmm0` in and out) with `x` in `xmm0`;
     /// its `xmm0` result. NaN when the call fails or nests too deep.
     #[cfg(feature = "dev-unicorn")]
-    pub(crate) fn call_sse(&mut self, addr: u32, x: f64) -> f64 {
+    pub fn call_sse(&mut self, addr: u32, x: f64) -> f64 {
+        if let Some(v) = self.sse_rust(addr, x) {
+            return v;
+        }
+        self.call_sse_emulated(addr, x)
+    }
+
+    /// [`Exec::call_sse`] in Unicorn only (the DLL's own code, for the
+    /// parity tests).
+    #[cfg(feature = "dev-unicorn")]
+    pub fn call_sse_emulated(&mut self, addr: u32, x: f64) -> f64 {
         use ffx_bridge::Mem as _;
         if self.x87_depth >= X87_LEVELS {
             return f64::NAN;

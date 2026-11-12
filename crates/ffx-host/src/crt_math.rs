@@ -440,6 +440,8 @@ struct SinCos {
     q_b: u32,
     table: u32,
     index_offset: u32,
+    /// `_CIsin`'s tiny-argument factor (just under 1), `_CIcos`'s 1.
+    tiny: u32,
     cos: bool,
 }
 
@@ -455,7 +457,43 @@ const SIN: SinCos = SinCos {
     q_b: 0x1004_c3d0,
     table: 0x1004_bbd0,
     index_offset: 0x001c_7600,
+    tiny: 0x1004_c450,
     cos: false,
+};
+
+/// `_libm_sse2_sin_precise`'s copy (`0x1003dd21`: the same code and
+/// values, its own constants).
+const SIN_PRECISE: SinCos = SinCos {
+    inv_step: 0x1003_e700,
+    shifter: 0x1003_e708,
+    step_mid: 0x1003_e710,
+    step_hi: 0x1003_e720,
+    step_lo: 0x1003_e728,
+    p_a: 0x1003_e6f0,
+    p_b: 0x1003_e6e0,
+    q_a: 0x1003_e6d0,
+    q_b: 0x1003_e6c0,
+    table: 0x1003_dec0,
+    index_offset: 0x001c_7600,
+    tiny: 0x1003_e740,
+    cos: false,
+};
+
+/// `_libm_sse2_cos_precise`'s copy (`0x10036fb1`).
+const COS_PRECISE: SinCos = SinCos {
+    inv_step: 0x1003_7980,
+    shifter: 0x1003_7988,
+    step_mid: 0x1003_7990,
+    step_hi: 0x1003_79a0,
+    step_lo: 0x1003_79a8,
+    p_a: 0x1003_7970,
+    p_b: 0x1003_7960,
+    q_a: 0x1003_7950,
+    q_b: 0x1003_7940,
+    table: 0x1003_7140,
+    index_offset: 0x001c_7610,
+    tiny: 0x1003_79b0,
+    cos: true,
 };
 
 const COS: SinCos = SinCos {
@@ -470,13 +508,9 @@ const COS: SinCos = SinCos {
     q_b: 0x1004_54a0,
     table: 0x1004_4ca0,
     index_offset: 0x001c_7610,
+    tiny: 0x1004_5510,
     cos: true,
 };
-
-/// `_CIsin`'s tiny-argument factor (`0x1004c450`, just under 1) and
-/// `_CIcos`'s 1 (`0x10045510`).
-const SIN_TINY: u32 = 0x1004_c450;
-const COS_ONE: u32 = 0x1004_5510;
 
 /// The SSE2 `sin`/`cos` of `x` (`c` says which), in the DLL's operation
 /// order (every step one IEEE double operation, as `mulsd`/`addsd`/
@@ -500,10 +534,10 @@ fn sse2_sin_cos(d: &CrtData, c: &SinCos, x: f64) -> Option<f64> {
         }
         // tiny |x|
         return Some(if c.cos {
-            d.f(COS_ONE) - x.abs()
+            d.f(c.tiny) - x.abs()
         } else if band >> 4 == 0xcfd {
             // a zero or denormal exponent
-            x * d.f(SIN_TINY)
+            x * d.f(c.tiny)
         } else {
             x
         });
@@ -623,17 +657,41 @@ fn sqrt(e: &Exec, st: &[f64]) -> Option<Ext> {
 /// three parts as pairs and the last one alone, the 32 table entries of
 /// 0xb0 bytes, 1.0, the mask that cuts a double to 34 significant bits,
 /// and the tiny-argument scale pair.
-const TAN_INV_STEP: u32 = 0x1004_dcb0;
-const TAN_SHIFTER: u32 = 0x1004_dcc0;
-const TAN_STEP_HI: u32 = 0x1004_dcd0;
-const TAN_STEP_MID: u32 = 0x1004_dce0;
-const TAN_STEP_LO: u32 = 0x1004_dcf0;
-const TAN_STEP_MID1: u32 = 0x1004_dd00;
-const TAN_ONE: u32 = 0x1004_dd08;
-const TAN_CUT: u32 = 0x1004_dd10;
-const TAN_TINY_UP: u32 = 0x1004_dd20;
-const TAN_TINY_DOWN: u32 = 0x1004_dd28;
-const TAN_TABLE: u32 = 0x1004_c6b0;
+/// The constants block's start (`32/π` pair; the rest at fixed offsets)
+/// and the table: `_CItan`'s and `_libm_sse2_tan_precise`'s copies
+/// (`0x1003e877`, the same code).
+#[derive(Clone, Copy)]
+struct Tan {
+    k: u32,
+    table: u32,
+}
+
+const TAN: Tan = Tan {
+    k: 0x1004_dcb0,
+    table: 0x1004_c6b0,
+};
+
+const TAN_PRECISE: Tan = Tan {
+    k: 0x1004_00b0,
+    table: 0x1003_eab0,
+};
+
+impl Tan {
+    const fn at(self, off: u32) -> u32 {
+        self.k + off
+    }
+}
+
+const TAN_INV_STEP: u32 = 0;
+const TAN_SHIFTER: u32 = 0x10;
+const TAN_STEP_HI: u32 = 0x20;
+const TAN_STEP_MID: u32 = 0x30;
+const TAN_STEP_LO: u32 = 0x40;
+const TAN_STEP_MID1: u32 = 0x50;
+const TAN_ONE: u32 = 0x58;
+const TAN_CUT: u32 = 0x60;
+const TAN_TINY_UP: u32 = 0x70;
+const TAN_TINY_DOWN: u32 = 0x78;
 
 /// The SSE2 `tan` of `x`, operation for operation as the DLL's
 /// (`0x1004c476`), or `None` for the arguments it hands to the x87 path
@@ -646,7 +704,7 @@ const TAN_TABLE: u32 = 0x1004_c6b0;
 /// polynomial to the entry's base value and corrects with the reciprocal
 /// of the reduced argument, cut to 34 bits so its products are exact.
 #[allow(clippy::many_single_char_names, clippy::similar_names)]
-fn sse2_tan(d: &CrtData, x: f64) -> Option<f64> {
+fn sse2_tan(d: &CrtData, c: Tan, x: f64) -> Option<f64> {
     let band = (top16(x) & 0x7fff).wrapping_sub(0x3820);
     if band > 0x8a8 {
         if band.cast_signed() > 0x8a8 {
@@ -654,45 +712,45 @@ fn sse2_tan(d: &CrtData, x: f64) -> Option<f64> {
         }
         // tiny |x| (zeros and denormals included): x + x·2^54·2^-54
         // rounded as the DLL does
-        return Some((d.f(TAN_TINY_UP) * x + x) * d.f(TAN_TINY_DOWN));
+        return Some((d.f(c.at(TAN_TINY_UP)) * x + x) * d.f(c.at(TAN_TINY_DOWN)));
     }
     let xx = P2::dup(x);
-    let k_real = d.p(TAN_INV_STEP) * xx;
+    let k_real = d.p(c.at(TAN_INV_STEP)) * xx;
     let k_int = cvtsd2si(k_real.0);
-    let shifter = d.p(TAN_SHIFTER);
+    let shifter = d.p(c.at(TAN_SHIFTER));
     let k = (k_real + shifter) - shifter;
     let index = k_int.cast_unsigned().wrapping_add(0x72900) & 0x1f;
-    let entry = TAN_TABLE + 0xb0 * index;
+    let entry = c.table + 0xb0 * index;
     let t = |off: u32| d.p(entry + off);
     let t1 = |off: u32| d.f(entry + off);
     // the reduction: r1 = x - k·hi, r2 = r1 - k·mid, and what each lost
-    let k_hi = d.p(TAN_STEP_HI) * k;
-    let k_mid = d.p(TAN_STEP_MID) * k;
+    let k_hi = d.p(c.at(TAN_STEP_HI)) * k;
+    let k_mid = d.p(c.at(TAN_STEP_MID)) * k;
     let r1 = xx - k_hi;
-    let k_lo = k * d.p(TAN_STEP_LO);
+    let k_lo = k * d.p(c.at(TAN_STEP_LO));
     // lane 0's reduced argument, cut for the reciprocal
-    let r_sum = d.f(TAN_STEP_MID1) * k.0 + r1.0;
-    let r_cut = and(r_sum, d.q(TAN_CUT));
+    let r_sum = d.f(c.at(TAN_STEP_MID1)) * k.0 + r1.0;
+    let r_cut = and(r_sum, d.q(c.at(TAN_CUT)));
     let r2 = r1 - k_mid;
     let lost = ((r1 - r2) - k_mid) - k_lo;
     let r = r2.1;
     let rr = P2::dup(r);
-    let recip = d.f(TAN_ONE) / r_cut;
+    let recip = d.f(c.at(TAN_ONE)) / r_cut;
     let cut_tail = r2.0 - r_cut;
     let lost0 = lost.0 + cut_tail;
     // the entry's polynomial in r, both lanes
     let r_2 = rr * rr;
     let a = t(0x10) * rr + t(0);
     let b = (t(0x30) * rr + t(0x20)) * r_2;
-    let c = t(0x60) * rr + t(0x50);
+    let cc = t(0x60) * rr + t(0x50);
     let a = a + b;
-    let c = c + t(0x70) * r_2;
+    let cc = cc + t(0x70) * r_2;
     let r_4 = r_2 * r_2;
     let a = a + t(0x40) * r_4;
     let r_5 = rr * r_4;
     let r_8 = r_4.0 * r_4.0;
     let lin = rr * t(0x90);
-    let a = a + c * r_5;
+    let a = a + cc * r_5;
     let poly = r_8 * a.0 + a.1;
     // the linear term's two lanes summed, with the sum's tail
     let lin_sum = lin.0 + lin.1;
@@ -702,7 +760,7 @@ fn sse2_tan(d: &CrtData, x: f64) -> Option<f64> {
     // the correction through the reciprocal
     let lost_q = lost0 * recip;
     let cut = and(t1(0xa8), recip.to_bits());
-    let num = (d.f(TAN_ONE) - r_cut * cut) - lost_q;
+    let num = (d.f(c.at(TAN_ONE)) - r_cut * cut) - lost_q;
     let corr = num * (recip * t1(0xa0));
     let base = cut - t1(0x80);
     let head = lin_sum - base;
@@ -719,7 +777,7 @@ fn tan(e: &Exec, st: &[f64]) -> Option<Ext> {
     if !sse2_path(e) {
         return None;
     }
-    if let Some(v) = sse2_tan(d, x) {
+    if let Some(v) = sse2_tan(d, TAN, x) {
         return Some(ext_of(v));
     }
     if !x.is_finite() {
@@ -855,6 +913,146 @@ fn fmod(e: &Exec, st: &[f64]) -> Option<Ext> {
         (Class::Nan, _) | (_, Class::Nan) => through_handler(nan_case(xe, ye)),
         _ => INDEFINITE,
     })
+}
+
+// --------------------------------------------- the SSE2 functions
+
+/// Whether the SSE2 functions take their SSE2 code (`MXCSR` and the x87
+/// control word as the intrinsics test them; no flag of their own).
+fn sse_controls(e: &Exec) -> bool {
+    e.mxcsr() & 0x7f80 == 0x1f80 && e.fpu_control() & 0x7f == 0x7f
+}
+
+/// What the DLL's x87 fallback of an SSE2 function gives back for a
+/// non-finite argument, without the DLL: a NaN quieted, the indefinite
+/// NaN for an infinity (a domain error). With the DLL: `None` (its
+/// handler, errno).
+fn non_finite(e: &Exec, x: f64) -> Option<f64> {
+    if e.shared().dll(CRT_FILE).is_some() {
+        return None;
+    }
+    Some(if x.is_nan() {
+        f64::from_bits(x.to_bits() | (1 << 51))
+    } else {
+        f64::from_bits(0xfff8_0000_0000_0000)
+    })
+}
+
+/// `_libm_sse2_sin_precise`/`_cos_precise` (`0x1003dcf0`, `0x10036f80`):
+/// `_CIsin`'s and `_CIcos`'s SSE2 code with their own constants, the
+/// result in `xmm0`; the large arguments through the x87 code, stored as
+/// a double.
+fn sin_cos_precise(e: &Exec, c: &SinCos, x: f64) -> Option<f64> {
+    let d = data(e)?;
+    if !sse_controls(e) {
+        return None;
+    }
+    if let Some(v) = sse2_sin_cos(d, c, x) {
+        return Some(v);
+    }
+    if !x.is_finite() {
+        return non_finite(e, x);
+    }
+    x87_trig(
+        d,
+        if c.cos { Op::Fcos } else { Op::Fsin },
+        x,
+        e.fpu_control(),
+    )
+    .map(ext_to_f64)
+}
+
+/// `_libm_sse2_tan_precise` (`0x1003e846`): `_CItan`'s code.
+fn tan_precise(e: &Exec, x: f64) -> Option<f64> {
+    let d = data(e)?;
+    if !sse_controls(e) {
+        return None;
+    }
+    if let Some(v) = sse2_tan(d, TAN_PRECISE, x) {
+        return Some(v);
+    }
+    if !x.is_finite() {
+        return non_finite(e, x);
+    }
+    x87_trig(d, Op::Fptan, x, e.fpu_control()).map(ext_to_f64)
+}
+
+/// `_libm_sse2_sqrt_precise` (`0x1003e748`): `sqrtsd` for a positive
+/// value, +0, -0 and +∞; a negative value (the indefinite NaN, a domain
+/// error) and a NaN go through the DLL's handler: the DLL, or without it
+/// those values.
+fn sqrt_precise(e: &Exec, x: f64) -> Option<f64> {
+    if !sse_controls(e) {
+        return None;
+    }
+    if x >= 0.0 || x == 0.0 {
+        return Some(x.sqrt());
+    }
+    non_finite(e, if x.is_nan() { x } else { f64::INFINITY })
+}
+
+/// An SSE2 function's Rust side: `xmm0` in, `xmm0` out, or `None` to run
+/// the DLL's export.
+pub type SseFn = fn(&Exec, f64) -> Option<f64>;
+
+/// The SSE2 functions with a Rust side (`Exec::call_sse`), by import.
+#[must_use]
+pub fn sse_function(name: &str) -> Option<SseFn> {
+    match name.strip_prefix("MSVCR110.dll!")? {
+        "_libm_sse2_sin_precise" => Some(|e, x| sin_cos_precise(e, &SIN_PRECISE, x)),
+        "_libm_sse2_cos_precise" => Some(|e, x| sin_cos_precise(e, &COS_PRECISE, x)),
+        "_libm_sse2_tan_precise" => Some(tan_precise),
+        "_libm_sse2_sqrt_precise" => Some(sqrt_precise),
+        _ => None,
+    }
+}
+
+/// The SSE2 functions' import entries without the DLLs: the ports call
+/// them through `Exec::call_sse` (`xmm0`); a call through the import's
+/// stub has no operand and stops.
+pub const NO_DLL: &[(
+    &str,
+    &str,
+    crate::table::Conv,
+    usize,
+    crate::imports::ImportFn,
+)] = &[
+    (
+        CRT_FILE,
+        "_libm_sse2_sin_precise",
+        crate::table::Conv::Cdecl,
+        0,
+        sse_without_operand,
+    ),
+    (
+        CRT_FILE,
+        "_libm_sse2_cos_precise",
+        crate::table::Conv::Cdecl,
+        0,
+        sse_without_operand,
+    ),
+    (
+        CRT_FILE,
+        "_libm_sse2_tan_precise",
+        crate::table::Conv::Cdecl,
+        0,
+        sse_without_operand,
+    ),
+    (
+        CRT_FILE,
+        "_libm_sse2_sqrt_precise",
+        crate::table::Conv::Cdecl,
+        0,
+        sse_without_operand,
+    ),
+];
+
+fn sse_without_operand(e: &mut Exec, _: &crate::table::Args) -> crate::table::Ret {
+    e.end(crate::exec::Stop::Failed(
+        "an SSE2 maths function called without its xmm0 operand".into(),
+        0,
+    ));
+    crate::table::Ret::VOID
 }
 
 /// An x87 intrinsic's Rust side: its operands (the last in `ST0`) to its

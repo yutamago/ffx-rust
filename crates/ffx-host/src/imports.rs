@@ -76,6 +76,7 @@ impl Imports {
             .chain(crate::crt_os::NO_DLL)
             .chain(crate::crt_cpp::TABLE)
             .chain(crate::crt_cpp::NO_DLL)
+            .chain(crate::crt_math::NO_DLL)
             .chain(crate::crt_format::TABLE)
             .chain(crate::crt_stdio::TABLE)
             .chain(crate::crt_stdio::MORE)
