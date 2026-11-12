@@ -255,12 +255,22 @@ fn ext_to_bits(x: Ext, p: u32, ebits: u32) -> u64 {
         shift += 1 - biased;
         biased = 0;
     }
-    let shift = u32::try_from(shift.min(66)).unwrap_or(66);
-    // m with two guard words: round at bit `shift`
+    if shift > 64 {
+        // below half the smallest denormal: zero
+        return sign;
+    }
+    let shift = u32::try_from(shift).unwrap_or(64);
+    // m with a guard word: round at bit `shift + 64`
     let wide = u128::from(m) << 64;
     let s = shift + 64;
-    let mut q = u64::try_from(wide >> s).unwrap_or(0);
-    let rem = wide & ((1u128 << s) - 1);
+    let (mut q, rem) = if s >= 128 {
+        (0, wide)
+    } else {
+        (
+            u64::try_from(wide >> s).unwrap_or(0),
+            wide & ((1u128 << s) - 1),
+        )
+    };
     let half = 1u128 << (s - 1);
     if rem > half || (rem == half && q & 1 == 1) {
         q += 1;
@@ -1782,6 +1792,232 @@ fn log10_precise(e: &Exec, x: f64) -> Option<f64> {
     })
 }
 
+// ------------------------------------------------------------------ pow
+
+/// `pow`'s constants and tables (`_libm_sse2_pow_precise`: the block at
+/// `0x1003dc30`; `_CIpow`'s copy: [`POW_CI`]). The tables: three stages
+/// of reciprocals of x's mantissa (r1 by its top 8 bits, r2 by the next
+/// ones, r3 with log2 e folded in) with their log2 parts, and 128
+/// entries of 2^(j/128) in two parts.
+#[derive(Clone, Copy)]
+struct PowK {
+    k: u32,
+    r1: u32,
+    l1: u32,
+    r2: u32,
+    l2: u32,
+    r3: u32,
+    l3: u32,
+    poly: u32,
+    exp2: u32,
+}
+
+const POW_PRECISE: PowK = PowK {
+    k: 0x1003_dc30,
+    r1: 0x1003_a3b0,
+    l1: 0x1003_a7c0,
+    r2: 0x1003_afd0,
+    l2: 0x1003_b3e0,
+    r3: 0x1003_bbf0,
+    l3: 0x1003_c400,
+    poly: 0x1003_d410,
+    exp2: 0x1003_d430,
+};
+
+/// Offsets in the block.
+const PW_SHIFTER: u32 = 0x00;
+const PW_MANT: u32 = 0x10;
+const PW_ONE: u32 = 0x20;
+const PW_E_A: u32 = 0x40; // exp2's coefficient pairs
+const PW_E_B: u32 = 0x50;
+const PW_LN2: u32 = 0x60;
+const PW_CUT27: u32 = 0x68;
+const PW_MINUS_LOG2E: u32 = 0x70;
+
+/// The SSE2 code's main path (`0x100398e9`) for |x|'s bits `x` (a
+/// positive normal double), `y` finite: `bias` the exponent constant
+/// the special paths re-enter with (`0x3fe7f`; denormals scaled by 2^64:
+/// `0x43e7f`), `sign` 0x40000 for a negative x with an odd y. `None`
+/// when y·log2 x is out of the range this path handles (the DLL's
+/// overflow and underflow paths).
+///
+/// log2 x = e + log2(m·r1·r2·r3) - log2(r1·r2·r3) with three table
+/// stages (the last with log2 e), the product m·r split so the
+/// difference to the table's point is exact; y·log2 x = (k + f)/128 with
+/// the result 2^(k/128 + f/128) = 2^(k>>7)·2^((k&127)/128)·2^(f/128) by
+/// the second table and a series.
+#[allow(clippy::too_many_lines, clippy::similar_names)]
+fn pow_main(d: &CrtData, c: PowK, x: f64, y: f64, bias: u64, sign: u32) -> Option<f64> {
+    let k = |o: u32| d.f(c.k + o);
+    let q = |o: u32| d.q(c.k + o);
+    let xb = x.to_bits();
+    let m = f64::from_bits((xb & q(PW_MANT)) | q(PW_ONE));
+    // stage 1: x's top 8 mantissa bits (to nearest)
+    let i1 = u32::try_from(((xb >> 44) & 0xff) + 1).unwrap_or(0) & 0x1fe;
+    let r1 = d.f(c.r1 + i1 * 4);
+    let m1 = m * r1;
+    let mut acc = d.p(c.l1 + i1 * 8);
+    // the exponent: (x >> 44) - bias, >> 8, as a 32-bit integer
+    let e_word = (xb >> 44).wrapping_sub(bias) >> 8;
+    #[allow(clippy::cast_possible_truncation)] // cvtdq2pd's low dword
+    let e = f64::from((e_word as u32).cast_signed());
+    // stage 2
+    let i2 = u32::try_from(((m1.to_bits() >> 38) & 0xff) + 1).unwrap_or(0) & 0x1fe;
+    let m2 = m1 * d.f(c.r2 + i2 * 4);
+    let r12 = r1 * d.f(c.r2 + i2 * 4);
+    acc = acc + d.p(c.l2 + i2 * 8);
+    acc.0 += e;
+    let m_hi = f64::from_bits(m.to_bits() & q(PW_CUT27));
+    let m_lo = m - m_hi;
+    // stage 3 (9 bits)
+    let i3 = u32::try_from(((m2.to_bits() >> 31) & 0x1ff) + 1).unwrap_or(0) & 0x3fe;
+    let r = r12 * d.f(c.r3 + i3 * 4);
+    let m3 = m2 * d.f(c.r3 + i3 * 4);
+    acc = acc + d.p(c.l3 + i3 * 8);
+    let r_hi = f64::from_bits(r.to_bits() & q(PW_CUT27));
+    let r_lo = r - r_hi;
+    let u = k(PW_MINUS_LOG2E) + m3;
+    // d = m3 - m·r, its parts exact
+    let dd = (((m3 - r_hi * m_hi) - m_hi * r_lo) - r_hi * m_lo) - m_lo * r_lo;
+    let s = acc.0 + u;
+    let s_tail = (acc.0 - s) + u;
+    let v = u - dd;
+    let l = s - dd;
+    // the range: y's exponent plus the logarithm's
+    let ye = u32::from(top16(y) & 0x7ff0);
+    if ye >= 0x7ff0 {
+        return None;
+    }
+    let sum = ye
+        .wrapping_sub(0x3ff0)
+        .wrapping_add(u32::from(top16(s) & 0x7ff0));
+    if (0x40a0u32.wrapping_sub(sum) | sum.wrapping_sub(0x3c70)) >= 0x8000_0000 {
+        return None;
+    }
+    let lost = dd - (s - l);
+    let tail = s_tail - lost;
+    let y_hi = f64::from_bits(y.to_bits() & q(PW_CUT27));
+    let l_hi = f64::from_bits(l.to_bits() & q(PW_CUT27));
+    let t = (y_hi * l_hi) * 128.0;
+    let l_lo = l - l_hi;
+    let y_lo = y - y_hi;
+    let kk = cvtsd2si(t);
+    let mid = y_hi * l_lo + l_hi * y_lo;
+    let mid = mid + l_lo * y_lo;
+    if (0x1ff7f_i32.wrapping_sub(kk) | kk.wrapping_add(0x1e1ff)) <= 0 {
+        return None;
+    }
+    let shift_word = (sign.cast_signed().wrapping_add(kk)) & !0x7f;
+    let j = u32::try_from(kk & 0x7f).unwrap_or(0) * 16;
+    let low_sum = acc.1 + tail;
+    let shifter = k(PW_SHIFTER);
+    let t_int = (t + shifter) - shifter;
+    let vv = P2::dup(v);
+    let pa = d.p(c.poly) * vv;
+    let v2 = vv * vv;
+    let t_frac = t - t_int;
+    let e2 = d.p(c.exp2 + j);
+    let series = pa + d.p(c.poly + 0x10) * v2;
+    let series_lo = series.0 * v2.0 + series.1;
+    let series_lo = series_lo + low_sum;
+    let scale_bits = u64::from(shift_word.wrapping_add(0x1ff80).cast_unsigned()) << 45;
+    let scale = f64::from_bits(scale_bits);
+    let z = t_frac * (1.0 / 128.0) + (mid + series_lo * y);
+    let e2 = P2(e2.0 * scale, e2.1 * scale);
+    let zz = P2::dup(z);
+    let lin = k(PW_LN2) * z;
+    let z2 = zz * zz;
+    let poly = (d.p(c.k + PW_E_B) + d.p(c.k + PW_E_A) * zz) * z2;
+    let r = (z2.0 * e2.0) * poly.0;
+    Some(((r + e2.1) + poly.1 * e2.0) + lin * e2.0 + e2.0)
+}
+
+const POW_CI: PowK = PowK {
+    k: 0x1004_b940,
+    r1: 0x1004_80c0,
+    l1: 0x1004_84d0,
+    r2: 0x1004_8ce0,
+    l2: 0x1004_90f0,
+    r3: 0x1004_9900,
+    l3: 0x1004_a110,
+    poly: 0x1004_b120,
+    exp2: 0x1004_b140,
+};
+
+/// The SSE2 `pow(x, y)` (`0x10039871`, `_CIpow`'s `0x10047579`): the
+/// main path for a positive x (a denormal scaled by 2^64 first), a
+/// negative x with an integer y (|x|, the sign for an odd y), zeros (±0
+/// for y > 0), y = ±0 (1); `None` for the cases the DLL's error handler
+/// or its other special paths take (y or x infinite or NaN, x = 0 with
+/// y < 0, a negative x with a fractional y, overflow and underflow).
+fn sse2_pow(d: &CrtData, c: PowK, x: f64, y: f64) -> Option<f64> {
+    const TWO64: f64 = 18_446_744_073_709_551_616.0;
+    if !y.is_finite() || !x.is_finite() {
+        return None;
+    }
+    if y == 0.0 {
+        return Some(1.0);
+    }
+    let top = top16(x);
+    if (0x10..=0x7fef).contains(&top) {
+        return pow_main(d, c, x, y, 0x3fe7f, 0);
+    }
+    let integer = y.fract() == 0.0;
+    #[allow(clippy::cast_possible_truncation)] // |y| < 2^53 here
+    let odd = integer && y.abs() < 9_007_199_254_740_992.0 && (y as i64) & 1 == 1;
+    let negative = x.is_sign_negative();
+    if x == 0.0 {
+        if y < 0.0 {
+            return None; // a pole: ±∞ through the handler
+        }
+        return Some(if negative && odd { -0.0 } else { 0.0 });
+    }
+    if negative && !integer {
+        return None; // a domain error
+    }
+    let sign = if negative && odd { 0x40000 } else { 0 };
+    let a = x.abs();
+    if a < f64::MIN_POSITIVE {
+        return pow_main(d, c, a * TWO64, y, 0x43e7f, sign);
+    }
+    pow_main(d, c, a, y, 0x3fe7f, sign)
+}
+
+/// `_libm_sse2_pow_precise` (`0x10039840`): `xmm0` = x, `xmm1` = y.
+/// Without the DLL, the cases its handler and special paths take are
+/// the IEEE results (Rust's `powf`).
+fn pow_precise(e: &Exec, x: f64, y: f64) -> Option<f64> {
+    let d = data(e)?;
+    if !sse_controls(e) {
+        return None;
+    }
+    if let Some(v) = sse2_pow(d, POW_PRECISE, x, y) {
+        return Some(v);
+    }
+    if e.shared().dll(CRT_FILE).is_some() {
+        return None;
+    }
+    Some(x.powf(y))
+}
+
+/// `_CIpow`: `st` is `[x, y]` (y in `ST0`); the SSE2 code on the SSE2
+/// path, `None` (the DLL) for its special and error cases and the x87
+/// path.
+fn pow(e: &Exec, st: &[f64]) -> Option<Ext> {
+    let &[x, y] = st else { return None };
+    let d = data(e)?;
+    if !sse2_path(e) {
+        return None;
+    }
+    if let Some(v) = sse2_pow(d, POW_CI, x, y) {
+        return Some(ext_of(v));
+    }
+    if e.shared().dll(CRT_FILE).is_some() {
+        return None;
+    }
+    Some(ext_of(x.powf(y)))
+}
+
 // --------------------------------------------- the SSE2 functions
 
 /// Whether the SSE2 functions take their SSE2 code (`MXCSR` and the x87
@@ -1862,6 +2098,18 @@ fn sqrt_precise(e: &Exec, x: f64) -> Option<f64> {
 /// the DLL's export.
 pub type SseFn = fn(&Exec, f64) -> Option<f64>;
 
+/// The same for the two-operand ones (`xmm0`, `xmm1`).
+pub type Sse2Fn = fn(&Exec, f64, f64) -> Option<f64>;
+
+/// The two-operand SSE2 functions with a Rust side (`Exec::call_sse2`).
+#[must_use]
+pub fn sse2_function(name: &str) -> Option<Sse2Fn> {
+    match name.strip_prefix("MSVCR110.dll!")? {
+        "_libm_sse2_pow_precise" => Some(pow_precise),
+        _ => None,
+    }
+}
+
 /// The SSE2 functions with a Rust side (`Exec::call_sse`), by import.
 #[must_use]
 pub fn sse_function(name: &str) -> Option<SseFn> {
@@ -1901,6 +2149,7 @@ pub const NO_DLL: &[(&str, &str, Conv, usize, ImportFn)] = sse_rows![
     "_libm_sse2_log_precise",
     "_libm_sse2_exp_precise",
     "_libm_sse2_log10_precise",
+    "_libm_sse2_pow_precise",
 ];
 
 fn sse_without_operand(e: &mut Exec, _: &Args) -> Ret {
@@ -1917,7 +2166,8 @@ pub type X87Fn = fn(&Exec, &[f64]) -> Option<Ext>;
 
 /// The `_CI*` intrinsics with a Rust side ([`intrinsic`]), with the
 /// operands each takes from the x87 stack.
-pub const INTRINSICS: [(&str, usize); 9] = [
+pub const INTRINSICS: [(&str, usize); 10] = [
+    ("_CIpow", 2),
     ("_CIasin", 1),
     ("_CIacos", 1),
     ("_CIatan", 1),
@@ -1951,6 +2201,7 @@ pub fn intrinsic(name: &str) -> Option<X87Fn> {
         "_CIatan" => Some(atan),
         "_CIacos" => Some(acos),
         "_CIasin" => Some(asin),
+        "_CIpow" => Some(pow),
         "_CIatan2" => Some(atan2),
         "_CIfmod" => Some(fmod),
         _ => None,

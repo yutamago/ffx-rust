@@ -374,6 +374,8 @@ pub struct Shared {
     /// (`crate::crt_math::sse_function`): what their IAT slots hold (the
     /// DLL's export, or without it the import's stub) → the Rust side.
     sse_imports: HashMap<u32, crate::crt_math::SseFn>,
+    /// The two-operand ones (`crate::crt_math::sse2_function`).
+    sse2_imports: HashMap<u32, crate::crt_math::Sse2Fn>,
     /// The C runtime's process state without the DLLs (`crate::crt_os`).
     pub crt_state: Mutex<crate::crt_os::CrtState>,
     /// The virtual clock, the frame boundary and the turns
@@ -488,6 +490,7 @@ impl Shared {
             x87_imports: HashMap::new(),
             crt_data,
             sse_imports: HashMap::new(),
+            sse2_imports: HashMap::new(),
             crt_state: Mutex::new(crate::crt_os::CrtState::default()),
             clock: crate::clock::Clock::default(),
             audio: crate::audio::Audio::default(),
@@ -722,6 +725,18 @@ impl Shared {
         self.dlls.iter().find(|d| d.name.eq_ignore_ascii_case(name))
     }
 
+    /// Records the Rust side of the SSE maths import `full` (`DLL!name`)
+    /// for what its IAT slot holds (`target`: the DLL's export or the
+    /// stub).
+    fn note_sse(&mut self, full: &str, target: u32) {
+        if let Some(f) = crate::crt_math::sse_function(full) {
+            self.sse_imports.insert(target, f);
+        }
+        if let Some(f) = crate::crt_math::sse2_function(full) {
+            self.sse2_imports.insert(target, f);
+        }
+    }
+
     /// Points every IAT slot of `FFX.exe` and the DLLs at its own `int3`
     /// stub (the Rust side), at a DLL's export, or (data imports) at a cell.
     fn bind_imports(&mut self, stubs_at: u32) {
@@ -771,15 +786,11 @@ impl Shared {
                 && let Some(&x) = d.exports.get(&imp.name)
             {
                 ffx_bridge::Mem::write(&mut mem, imp.slot, x);
-                if let Some(f) = crate::crt_math::sse_function(&full) {
-                    self.sse_imports.insert(x, f);
-                }
+                self.note_sse(&full, x);
                 self.routes.push((full, Route::Dll));
                 continue;
             }
-            if let Some(f) = crate::crt_math::sse_function(&full) {
-                self.sse_imports.insert(at, f);
-            }
+            self.note_sse(&full, at);
             self.imports.bind(index, &imp.dll, &imp.name, None);
             let route = if self.imports.bound(index).is_some_and(|b| b.run.is_some()) {
                 Route::Rust
@@ -2305,6 +2316,62 @@ impl Exec {
         let v = f(self, x)?;
         self.stats.leaf_calls += 1;
         Some(v)
+    }
+
+    /// Calls `addr` (a two-operand SSE maths function: `pow`, `xmm0` and
+    /// `xmm1` in, `xmm0` out): its Rust side, else (with the emulator) the
+    /// DLL's code, else the thread stops there; NaN when it fails.
+    pub fn call_sse2(&mut self, addr: u32, x: f64, y: f64) -> f64 {
+        let target = self.shared.thunk(addr).unwrap_or(addr);
+        if let Some(&f) = self.shared.sse2_imports.get(&target)
+            && let Some(v) = f(self, x, y)
+        {
+            self.stats.leaf_calls += 1;
+            return v;
+        }
+        #[cfg(feature = "dev-unicorn")]
+        {
+            self.call_sse2_emulated(addr, x, y)
+        }
+        #[cfg(not(feature = "dev-unicorn"))]
+        {
+            self.stop_unported(addr);
+            f64::NAN
+        }
+    }
+
+    /// [`Exec::call_sse2`] in Unicorn only (the DLL's own code, for the
+    /// parity tests).
+    #[cfg(feature = "dev-unicorn")]
+    pub fn call_sse2_emulated(&mut self, addr: u32, x: f64, y: f64) -> f64 {
+        use ffx_bridge::Mem as _;
+        if self.x87_depth >= X87_LEVELS {
+            return f64::NAN;
+        }
+        // movsd xmm0, [cell]; movsd xmm1, [cell + 8]; mov eax, addr;
+        // call eax; movsd [cell], xmm0; ret
+        let at = self.sentinel + X87_STUBS + X87_STUB * self.x87_depth;
+        let cell = at + 0x40;
+        let mut mem = self.mem();
+        mem.write(cell, x);
+        mem.write(cell + 8, y);
+        let mut code = vec![0xf2, 0x0f, 0x10, 0x05];
+        code.extend_from_slice(&cell.to_le_bytes());
+        code.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x0d]);
+        code.extend_from_slice(&(cell + 8).to_le_bytes());
+        code.push(0xb8);
+        code.extend_from_slice(&addr.to_le_bytes());
+        code.extend_from_slice(&[0xff, 0xd0, 0xf2, 0x0f, 0x11, 0x05]);
+        code.extend_from_slice(&cell.to_le_bytes());
+        code.push(0xc3);
+        self.write_code(at, &code);
+        self.x87_depth += 1;
+        let r = Exec::call(self, at, Conv::Cdecl, &Args::default());
+        self.x87_depth -= 1;
+        if r.is_err() {
+            return f64::NAN;
+        }
+        mem.read::<f64>(cell)
     }
 
     /// [`Exec::call_sse`] without the emulator: the Rust side

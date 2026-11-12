@@ -277,6 +277,59 @@ fn exp_operand(n: usize, seed: u32) -> Vec<Vec<f64>> {
     xs.into_iter().map(|x| vec![x]).collect()
 }
 
+/// `pow`'s argument pairs: the two-operand edges, then bases in (0, 10]
+/// and (0, 1] (the lighting's) with exponents of every size, negative
+/// bases with integer exponents, denormal bases, results near the
+/// overflow and underflow ends.
+#[allow(clippy::cast_possible_truncation)]
+fn pow_operands(n: usize, seed: u32) -> Vec<Vec<f64>> {
+    let mut out = two_operands(0, seed);
+    let mut s = Spread(seed);
+    for i in 0..n {
+        let (u, v) = (s.unit(), s.unit());
+        out.push(match i % 8 {
+            0 => vec![u * 10.0, (v - 0.5) * 20.0],
+            1 => vec![u, v * 64.0],
+            2 => vec![u * 2.0, (v - 0.5) * 2.0],
+            3 => vec![-u * 10.0, f64::from(((v - 0.5) * 20.0) as i32)],
+            4 => vec![u * 1e-310, (v - 0.5) * 0.2],
+            5 => vec![1.0 + (u - 0.5) * 1e-6, (v - 0.5) * 1e6],
+            6 => vec![u * 1e3, 100.0 + v * 20.0],
+            _ => vec![
+                f64::from((u * 30.0) as f32),
+                f64::from(((v - 0.5) * 8.0) as f32),
+            ],
+        });
+    }
+    out
+}
+
+/// `_libm_sse2_pow_precise` (`xmm0`, `xmm1`) through `Exec::call_sse2`
+/// against the DLL's export run in Unicorn, bit for bit.
+#[test]
+fn sse2_pow_matches_the_dll() {
+    let Some(exe) = exe() else { return };
+    let mut e = ffx_host::boot(&exe).unwrap();
+    let at = export(&e, "MSVCR110.dll", "_libm_sse2_pow_precise");
+    let mut fast = 0;
+    let args = pow_operands(4000, 0x0f1e_2d3c);
+    for st in &args {
+        let before = e.stats.leaf_calls;
+        let rust = e.call_sse2(at, st[0], st[1]);
+        fast += e.stats.leaf_calls - before;
+        let want = e.call_sse2_emulated(at, st[0], st[1]);
+        assert!(
+            same(rust, want),
+            "pow({:e}, {:e}) = {rust:e} ({:#x}), the DLL's {want:e} ({:#x})",
+            st[0],
+            st[1],
+            rust.to_bits(),
+            want.to_bits()
+        );
+    }
+    assert!(fast >= 3400, "pow: {fast} of {} in Rust", args.len());
+}
+
 /// The bits a result stores, NaNs compared by their bits too.
 fn same(a: f64, b: f64) -> bool {
     a.to_bits() == b.to_bits()
@@ -295,7 +348,8 @@ fn x87_intrinsics_match_the_dll() {
     use ffx_bridge::route::Float;
     let Some(exe) = exe() else { return };
     let mut e = ffx_host::boot(&exe).unwrap();
-    let cases: [(&str, u32, Vec<Vec<f64>>, usize); 9] = [
+    let cases: [(&str, u32, Vec<Vec<f64>>, usize); 10] = [
+        ("_CIpow", 0x0094_98f8, pow_operands(3000, 0xa1b2_c3d4), 2400),
         (
             "_CIasin",
             0x0094_98f2,
