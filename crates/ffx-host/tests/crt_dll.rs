@@ -250,6 +250,26 @@ fn positive_operand(n: usize, seed: u32) -> Vec<Vec<f64>> {
     xs.into_iter().map(|x| vec![x]).collect()
 }
 
+/// Arguments for `exp`: the edges and `n` spread over the range that
+/// gives finite results, with the ends where the scaling runs in halves.
+fn exp_operand(n: usize, seed: u32) -> Vec<Vec<f64>> {
+    let mut s = Spread(seed);
+    let mut xs: Vec<f64> = EDGES.to_vec();
+    xs.extend([
+        709.78, 709.79, -708.39, -708.4, -745.13, -745.14, -744.0, 1e-17, -1e-17,
+    ]);
+    for i in 0..n {
+        let u = s.unit();
+        xs.push(match i % 4 {
+            0 => (u - 0.5) * 1400.0,
+            1 => (u - 0.5) * 20.0,
+            2 => 690.0 + u * 20.0,
+            _ => -760.0 + u * 60.0,
+        });
+    }
+    xs.into_iter().map(|x| vec![x]).collect()
+}
+
 /// The bits a result stores, NaNs compared by their bits too.
 fn same(a: f64, b: f64) -> bool {
     a.to_bits() == b.to_bits()
@@ -1664,7 +1684,8 @@ fn cin_getline_without_the_dlls_matches_the_dll() {
 fn sse2_functions_match_the_dll() {
     let Some(exe) = exe() else { return };
     let mut e = ffx_host::boot(&exe).unwrap();
-    let cases: [(&str, u32, usize); 8] = [
+    let cases: [(&str, u32, usize); 9] = [
+        ("_libm_sse2_exp_precise", 0x9100_0009, 2300),
         ("_libm_sse2_log_precise", 0x9100_0008, 3000),
         ("_libm_sse2_asin_precise", 0x9100_0007, 3000),
         ("_libm_sse2_acos_precise", 0x9100_0006, 3000),
@@ -1681,6 +1702,8 @@ fn sse2_functions_match_the_dll() {
             unit_operand(3000, seed)
         } else if name.contains("log") {
             positive_operand(3000, seed)
+        } else if name.contains("exp") {
+            exp_operand(3000, seed)
         } else {
             one_operand(3000, seed)
         };

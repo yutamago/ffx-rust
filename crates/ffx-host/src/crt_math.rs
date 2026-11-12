@@ -1509,6 +1509,191 @@ fn log_precise(e: &Exec, x: f64) -> Option<f64> {
     })
 }
 
+// ------------------------------------------------------------------ exp
+
+/// `_libm_sse2_exp_precise`'s constants (`0x10037c70`) and table (64
+/// pairs `0x10037d00`: 2^(j/64)'s low part and its mantissa bits).
+const EXP_K: u32 = 0x1003_7c70;
+const EXP_TABLE: u32 = 0x1003_7d00;
+const EXP_SHIFTER: u32 = 0x30;
+const EXP_INV_STEP: u32 = 0x40; // 64/ln 2
+const EXP_STEP_HI: u32 = 0x50; // ln 2/64, high part
+const EXP_STEP_LO: u32 = 0x60;
+const EXP_P_A: u32 = 0x70; // (1/120, 1/6)
+const EXP_P_B: u32 = 0x80; // (1/24, 1/2)
+const EXP_ONE: u32 = 0x490;
+
+/// An exact product or sum as the x87 keeps it at precision 64 bits:
+/// `m·2^e`, rounded to a 64-bit significand to nearest.
+fn ext_round(neg: bool, m: u128, e: i64) -> Ext {
+    if m == 0 {
+        return Ext {
+            neg,
+            exp: 0,
+            mant: 0,
+        };
+    }
+    let lz = m.leading_zeros();
+    let mm = m << lz;
+    let mut q = u64::try_from(mm >> 64).unwrap_or(0);
+    let rem = mm & u128::from(u64::MAX);
+    let mut exp = e - i64::from(lz) + 64 + 0x3fff + 63;
+    let half = 1u128 << 63;
+    if rem > half || (rem == half && q & 1 == 1) {
+        let (n, carry) = q.overflowing_add(1);
+        q = if carry {
+            exp += 1;
+            1 << 63
+        } else {
+            n
+        };
+    }
+    Ext {
+        neg,
+        exp: u16::try_from(exp.clamp(1, 0x7ffe)).unwrap_or(1),
+        mant: q,
+    }
+}
+
+/// A finite non-zero 80-bit value as (sign, significand, exponent of
+/// its last bit).
+fn ext_parts(x: Ext) -> (bool, u128, i64) {
+    (x.neg, u128::from(x.mant), i64::from(x.exp) - 0x3fff - 63)
+}
+
+/// `a·b` at precision 64 bits.
+fn ext_mul(a: Ext, b: Ext) -> Ext {
+    let (na, ma, ea) = ext_parts(a);
+    let (nb, mb, eb) = ext_parts(b);
+    // 64 × 64 bits: the 128-bit product, exact
+    ext_round(na != nb, ma * mb, ea + eb)
+}
+
+/// `a + b` at precision 64 bits (finite values).
+fn ext_add(a: Ext, b: Ext) -> Ext {
+    if a.mant == 0 {
+        return b;
+    }
+    if b.mant == 0 {
+        return a;
+    }
+    let (na, ma, ea) = ext_parts(a);
+    let (nb, mb, eb) = ext_parts(b);
+    // both at the smaller exponent (at most 64 bits below the larger
+    // one's last bit; further down the smaller one keeps 64 bits and a
+    // sticky bit)
+    let (hi, lo) = if ea >= eb {
+        ((na, ma, ea), (nb, mb, eb))
+    } else {
+        ((nb, mb, eb), (na, ma, ea))
+    };
+    let shift = hi.2 - lo.2;
+    let (m_hi, m_lo, e) = if shift > 64 {
+        let down = u32::try_from(shift - 64).unwrap_or(127).min(127);
+        let kept = lo.1 >> down;
+        let sticky = u128::from(kept << down != lo.1);
+        (hi.1 << 64, kept | sticky, hi.2 - 64)
+    } else {
+        let up = u32::try_from(shift).unwrap_or(0);
+        (hi.1 << up, lo.1, lo.2)
+    };
+    if hi.0 == lo.0 {
+        return ext_round(hi.0, m_hi + m_lo, e);
+    }
+    if m_hi >= m_lo {
+        ext_round(hi.0, m_hi - m_lo, e)
+    } else {
+        ext_round(lo.0, m_lo - m_hi, e)
+    }
+}
+
+/// The SSE2 `exp` of `x` (`0x100379f6`): `Ok`, or `Err` with the value
+/// the DLL hands its error handler (overflow: ∞; underflow: 0 or the
+/// denormal; a NaN quieted).
+///
+/// `x = (64n + j)·ln 2/64 + r` (`k = 64n + j` by the shifter, r reduced
+/// in two parts), `exp x = 2^n·2^(j/64)·(1 + p(r))` with the table's
+/// 2^(j/64) in two parts; near the ends of the range the scaling runs on
+/// the x87 at 64 bits in two halves and is stored once. |x| below about
+/// 2^-54: `1 + x`; ±∞: ∞ and 0.
+#[allow(clippy::similar_names)]
+fn sse2_exp(d: &CrtData, x: f64) -> Result<f64, f64> {
+    let kp = |o: u32| d.p(EXP_K + o);
+    let top = u32::from(top16(x) & 0x7fff);
+    if (0x408f_u32.wrapping_sub(top) | top.wrapping_sub(0x3c90)) >= 0x8000_0000 {
+        let hi = u32::try_from((x.to_bits() >> 32) & 0x7fff_ffff).unwrap_or(0);
+        if hi < 0x4090_0000 {
+            return Ok(x + d.f(EXP_K + EXP_ONE));
+        }
+        if hi < 0x7ff0_0000 {
+            // the largest double squared, or the smallest normal one
+            let big = x > 0.0;
+            let v = d.f(EXP_K + if big { 0x4a8 } else { 0x4b0 });
+            return Err(v * v);
+        }
+        if x == f64::INFINITY {
+            return Ok(f64::INFINITY);
+        }
+        if x == f64::NEG_INFINITY {
+            return Ok(0.0);
+        }
+        return Err(f64::from_bits(x.to_bits() | (1 << 51)));
+    }
+    let xx = P2::dup(x);
+    let shifter = kp(EXP_SHIFTER);
+    let kk = kp(EXP_INV_STEP) * xx + shifter;
+    let k = kk - shifter;
+    let r = (xx - kp(EXP_STEP_HI) * k) - kp(EXP_STEP_LO) * k;
+    let k_int = u32::try_from(kk.0.to_bits() & 0xffff_ffff).unwrap_or(0);
+    let j = (k_int & 0x3f) << 4;
+    let n = k_int.cast_signed() >> 6;
+    let t = d.p(EXP_TABLE + j);
+    let pa = kp(EXP_P_A) * r;
+    let r2 = r * r;
+    let pb = kp(EXP_P_B) + pa;
+    let r4 = r2.0 * r2.0;
+    let head = r.0 + t.0;
+    // the scale 2^n's exponent bits, from k's word
+    let scale_bits = (u64::from(k_int & 0xffff_ffc0) + 0xffc0) << 46;
+    let p = P2(r4, r2.1) * pb;
+    let head = head + p.0;
+    let p = p.1 + head;
+    let scaled = f64::from_bits(t.1.to_bits() | scale_bits);
+    if n.wrapping_add(0x37e).cast_unsigned() <= 0x77c {
+        return Ok(p * scaled + scaled);
+    }
+    // near the ends: 2^n in two halves on the x87 (precision 64 bits)
+    let half = n >> 1;
+    let rest = n - half;
+    let mant = t.1.to_bits() & !0xfff0_0000_0000_0000;
+    let s1 = f64::from_bits(mant | (u64::try_from(half + 0x3ff).unwrap_or(0) << 52));
+    let v = ext_add(ext_mul(ext_of(p), ext_of(s1)), ext_of(s1));
+    let v = Ext {
+        exp: u16::try_from(i32::from(v.exp) + rest).unwrap_or(0),
+        ..v
+    };
+    let out = ext_to_f64(v);
+    let e = (out.to_bits() >> 52) & 0x7ff;
+    if e == 0x7ff || e == 0 {
+        return Err(out); // overflow or underflow: the handler
+    }
+    Ok(out)
+}
+
+/// `_libm_sse2_exp_precise` (`0x100379c0`): the SSE2 code; overflow,
+/// underflow (ERANGE) and NaNs through the DLL's handler, or without it
+/// the value the handler gets.
+fn exp_precise(e: &Exec, x: f64) -> Option<f64> {
+    let d = data(e)?;
+    if !sse_controls(e) {
+        return None;
+    }
+    match sse2_exp(d, x) {
+        Err(_) if e.shared().dll(CRT_FILE).is_some() => None,
+        Ok(v) | Err(v) => Some(v),
+    }
+}
+
 // --------------------------------------------- the SSE2 functions
 
 /// Whether the SSE2 functions take their SSE2 code (`MXCSR` and the x87
@@ -1601,6 +1786,7 @@ pub fn sse_function(name: &str) -> Option<SseFn> {
         "_libm_sse2_acos_precise" => Some(acos_precise),
         "_libm_sse2_asin_precise" => Some(asin_precise),
         "_libm_sse2_log_precise" => Some(log_precise),
+        "_libm_sse2_exp_precise" => Some(exp_precise),
         _ => None,
     }
 }
@@ -1624,6 +1810,7 @@ pub const NO_DLL: &[(&str, &str, Conv, usize, ImportFn)] = sse_rows![
     "_libm_sse2_acos_precise",
     "_libm_sse2_asin_precise",
     "_libm_sse2_log_precise",
+    "_libm_sse2_exp_precise",
 ];
 
 fn sse_without_operand(e: &mut Exec, _: &Args) -> Ret {
