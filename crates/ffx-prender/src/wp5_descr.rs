@@ -1,5 +1,5 @@
 //! M5 finish, WP5 part 2: the class descriptor constructors of one
-//! template (`0x005dd540` and 132 copies found in `FFX.exe` by their
+//! template (`0x005dd540` and 134 copies found (two with the name read from a cell) in `FFX.exe` by their
 //! instruction sequence, `~/ffx-work/m5/finish/wp5b/descr_scan.py`): the
 //! no-Unicorn boot reached them from the static initialisers. Each, thiscall
 //! on the descriptor:
@@ -17,6 +17,9 @@ use ffx_graphic::host::{Conv, Host};
 /// One copy's constants (image addresses, rebased before use).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Descriptor {
+    /// The name is the word at `name` (`push dword [cell]`) rather than
+    /// `name` itself (`push imm`).
+    pub name_cell: bool,
     pub name: u32,
     pub size: u32,
     pub align: u32,
@@ -57,6 +60,7 @@ pub fn construct(h: &mut impl Host, this: u32, d: &Descriptor) -> u32 {
     let parent = h.call_sym(BASE_DESCRIPTOR, Conv::Cdecl, &[]);
     let ns = h.call_sym(GLOBAL_NAMESPACE, Conv::Cdecl, &[]);
     let name = h.rebase(d.name);
+    let name = if d.name_cell { h.read(name) } else { name };
     h.call_sym(
         DESCRIPTOR_CTOR,
         Conv::Thiscall(this),
