@@ -555,3 +555,72 @@ fn atoi_matches_the_dll() {
         }
     }
 }
+
+/// `qsort` (Rust side) against the DLL's: arrays of 0 to 120 records of
+/// 8 and 12 bytes (few distinct keys, so equal ones meet, and many), the
+/// comparator x86 code that logs both records' ids and compares their
+/// first words signed; the array and the log must agree.
+#[test]
+#[allow(clippy::many_single_char_names)]
+fn qsort_matches_the_dll() {
+    let Some(exe) = exe() else { return };
+    let mut e = ffx_host::boot(&exe).unwrap();
+    let log = e.alloc(4 + 8 * 4096);
+    // mov edx,[log]; and edx,0xfff; mov eax,[esp+4]; mov ecx,[esp+8];
+    // push esi; mov esi,[eax+4]; mov [log+4+edx*8],esi; mov esi,[ecx+4];
+    // mov [log+8+edx*8],esi; pop esi; inc dword [log];
+    // mov eax,[eax]; sub eax,[ecx]  (the key difference: <0, 0, >0); ret
+    let mut c = vec![0x8b, 0x15];
+    c.extend(log.to_le_bytes());
+    c.extend([
+        0x81, 0xe2, 0xff, 0x0f, 0, 0, 0x8b, 0x44, 0x24, 0x04, 0x8b, 0x4c, 0x24, 0x08, 0x56,
+    ]);
+    c.extend([0x8b, 0x70, 0x04, 0x89, 0x34, 0xd5]);
+    c.extend((log + 4).to_le_bytes());
+    c.extend([0x8b, 0x71, 0x04, 0x89, 0x34, 0xd5]);
+    c.extend((log + 8).to_le_bytes());
+    c.extend([0x5e, 0xff, 0x05]);
+    c.extend(log.to_le_bytes());
+    c.extend([0x8b, 0x00, 0x2b, 0x01, 0xc3]);
+    let comp = e.alloc_code(&c).unwrap();
+    let rust: u32 = e.mem().read(slot(&e, "MSVCR110.dll", "qsort"));
+    let dll = export(&e, "MSVCR110.dll", "qsort");
+    let mut s = 0x2468_ace1u32;
+    for round in 0..60u32 {
+        s ^= s << 13;
+        s ^= s >> 17;
+        s ^= s << 5;
+        let n: u32 = [0, 1, 2, 7, 8, 9, 17, 50, 120][(round % 9) as usize];
+        let width = if round % 2 == 0 { 8u32 } else { 12 };
+        let keys = if round % 3 == 0 { 4 } else { 1000 };
+        let mut bytes = Vec::new();
+        let mut r = s;
+        for i in 0..n {
+            r ^= r << 13;
+            r ^= r >> 17;
+            r ^= r << 5;
+            bytes.extend((r % keys).to_le_bytes());
+            bytes.extend((0x7700u32 + i).to_le_bytes());
+            if width == 12 {
+                bytes.extend(0x5a5a_5a5au32.to_le_bytes());
+            }
+        }
+        let base = e.alloc(n * width + 4);
+        let mut out = Vec::new();
+        for f in [rust, dll] {
+            e.mem().write_bytes(base, &bytes);
+            e.mem().write(log, 0u32);
+            e.call_cdecl(f, &[base, n, width, comp]).unwrap();
+            let mut arr = vec![0u8; (n * width) as usize];
+            e.mem().read_bytes(base, &mut arr);
+            let count: u32 = e.mem().read(log);
+            let mut calls = vec![0u8; 8 * count.min(4096) as usize];
+            e.mem().read_bytes(log + 4, &mut calls);
+            out.push((arr, count, calls));
+        }
+        assert!(
+            out[0] == out[1],
+            "qsort round {round} ({n} x {width}, {keys} keys)"
+        );
+    }
+}

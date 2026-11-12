@@ -44,6 +44,7 @@ pub const TABLE: &[(&str, &str, Conv, usize, ImportFn)] = &[
     (CRT, "memchr", Conv::Cdecl, 3, memchr),
     (CRT, "atoi", Conv::Cdecl, 1, atol),
     (CRT, "atol", Conv::Cdecl, 1, atol),
+    (CRT, "qsort", Conv::Cdecl, 4, qsort),
 ];
 
 fn a(args: &Args, i: usize) -> u32 {
@@ -535,4 +536,166 @@ fn intrinsic_without_operand(e: &mut Exec, _: &Args) -> Ret {
         0,
     ));
     Ret::VOID
+}
+
+/// `qsort`'s insertion threshold (`CUTOFF`): parts of at most 8 elements
+/// are selection-sorted.
+const QSORT_CUTOFF: u32 = 8;
+
+/// `comp(a, b)` (cdecl, game code): its `int` result.
+fn qsort_cmp(e: &mut Exec, comp: u32, x: u32, y: u32) -> Option<i32> {
+    let args = Args {
+        stack: vec![x, y],
+        ..Args::default()
+    };
+    e.call(comp, Conv::Cdecl, &args)
+        .ok()
+        .map(|r| r.eax.cast_signed())
+}
+
+/// The `width` bytes at `x` and `y` exchanged (nothing when they are the
+/// same element).
+fn qsort_swap(e: &Exec, x: u32, y: u32, width: u32) {
+    if x == y {
+        return;
+    }
+    let mut mem = e.mem();
+    let (mut first, mut second) = (vec![0u8; width as usize], vec![0u8; width as usize]);
+    mem.read_bytes(x, &mut first);
+    mem.read_bytes(y, &mut second);
+    mem.write_bytes(x, &second);
+    mem.write_bytes(y, &first);
+}
+
+/// `shortsort`: the largest of `[lo, hi]` swapped to the end, repeatedly.
+fn qsort_short(e: &mut Exec, lo: u32, mut hi: u32, width: u32, comp: u32) -> Option<()> {
+    while hi > lo {
+        let mut max = lo;
+        let mut p = lo + width;
+        while p <= hi {
+            if qsort_cmp(e, comp, p, max)? > 0 {
+                max = p;
+            }
+            p += width;
+        }
+        qsort_swap(e, max, hi, width);
+        hi -= width;
+    }
+    Some(())
+}
+
+/// `qsort(base, num, width, comp)` as VS2012's `qsort.c`: the median of
+/// the first, middle and last element as the pivot, the two-way partition
+/// that skips the pivot's equals, the larger part stacked and the smaller
+/// sorted first, `shortsort` below [`QSORT_CUTOFF`] + 1 elements; the
+/// comparisons and swaps in the CRT's order. An invalid argument (NULL
+/// `base` with elements, zero `width`, NULL `comp`): the DLL (its
+/// invalid-parameter path), or nothing without it.
+#[allow(clippy::many_single_char_names)]
+fn qsort(e: &mut Exec, args: &Args) -> Ret {
+    let (base, num, width, comp) = (a(args, 0), a(args, 1), a(args, 2), a(args, 3));
+    if (base == 0 && num != 0) || width == 0 || comp == 0 {
+        if e.shared().dll(CRT).is_some() {
+            return dll_export(e, CRT, "qsort", Conv::Cdecl, args);
+        }
+        return Ret::VOID;
+    }
+    if num < 2 {
+        return Ret::VOID;
+    }
+    let _ = qsort_run(e, base, num, width, comp);
+    Ret::VOID
+}
+
+fn qsort_run(e: &mut Exec, base: u32, num: u32, width: u32, comp: u32) -> Option<()> {
+    let mut stack: Vec<(u32, u32)> = Vec::new();
+    let mut lo = base;
+    let mut hi = base + width * (num - 1);
+    loop {
+        let size = (hi - lo) / width + 1;
+        if size <= QSORT_CUTOFF {
+            qsort_short(e, lo, hi, width, comp)?;
+        } else {
+            let mut mid = lo + (size / 2) * width;
+            if qsort_cmp(e, comp, lo, mid)? > 0 {
+                qsort_swap(e, lo, mid, width);
+            }
+            if qsort_cmp(e, comp, lo, hi)? > 0 {
+                qsort_swap(e, lo, hi, width);
+            }
+            if qsort_cmp(e, comp, mid, hi)? > 0 {
+                qsort_swap(e, mid, hi, width);
+            }
+            let mut loguy = lo;
+            let mut higuy = hi;
+            loop {
+                if mid > loguy {
+                    loop {
+                        loguy += width;
+                        if !(loguy < mid && qsort_cmp(e, comp, loguy, mid)? <= 0) {
+                            break;
+                        }
+                    }
+                }
+                if mid <= loguy {
+                    loop {
+                        loguy += width;
+                        if !(loguy <= hi && qsort_cmp(e, comp, loguy, mid)? <= 0) {
+                            break;
+                        }
+                    }
+                }
+                loop {
+                    higuy -= width;
+                    if !(higuy > mid && qsort_cmp(e, comp, higuy, mid)? > 0) {
+                        break;
+                    }
+                }
+                if higuy < loguy {
+                    break;
+                }
+                qsort_swap(e, loguy, higuy, width);
+                if mid == higuy {
+                    mid = loguy;
+                }
+            }
+            higuy += width;
+            if mid < higuy {
+                loop {
+                    higuy -= width;
+                    if !(higuy > mid && qsort_cmp(e, comp, higuy, mid)? == 0) {
+                        break;
+                    }
+                }
+            }
+            if mid >= higuy {
+                loop {
+                    higuy -= width;
+                    if !(higuy > lo && qsort_cmp(e, comp, higuy, mid)? == 0) {
+                        break;
+                    }
+                }
+            }
+            if higuy.wrapping_sub(lo).cast_signed() >= hi.wrapping_sub(loguy).cast_signed() {
+                if lo < higuy {
+                    stack.push((lo, higuy));
+                }
+                if loguy < hi {
+                    lo = loguy;
+                    continue;
+                }
+            } else {
+                if loguy < hi {
+                    stack.push((loguy, hi));
+                }
+                if lo < higuy {
+                    hi = higuy;
+                    continue;
+                }
+            }
+        }
+        let (l, h) = stack.pop()?;
+        lo = l;
+        hi = h;
+    }
 }
