@@ -295,3 +295,4 @@ pub mod wp5_descr;
 pub mod wp5_hot;
 pub mod wp5_small;
 pub mod wp5_sort;
+pub mod wp5d;
