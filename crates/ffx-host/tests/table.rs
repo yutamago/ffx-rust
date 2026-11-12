@@ -439,14 +439,22 @@ fn boot_with_the_table_ends_where_unicorn_alone_ends() {
         other => format!("{other}"),
     };
     assert_eq!(at(&a), at(&b));
-    // the same imports, as often, but the C runtime's memory functions:
-    // the ports fill and copy in Rust where the originals call them
+    // the same imports, as often, but the C runtime's memory functions
+    // (the ports fill and copy in Rust where the originals call them) and
+    // atexit's (the host function registers in Rust where the original
+    // decodes the table's pointers and calls MSVCR110's _onexit)
     let crt = |e: &Exec| {
         let mut m = e.stats.imports.clone();
         m.retain(|k, _| {
-            !["!memset", "!memcpy", "!memmove"]
-                .iter()
-                .any(|f| k.ends_with(f))
+            ![
+                "!memset",
+                "!memcpy",
+                "!memmove",
+                "!_onexit",
+                "!DecodePointer",
+            ]
+            .iter()
+            .any(|f| k.ends_with(f))
         });
         m
     };
