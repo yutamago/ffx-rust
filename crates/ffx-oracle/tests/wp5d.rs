@@ -814,3 +814,181 @@ fn wp5d_string_range_and_tree_erase() {
         }
     }
 }
+
+/// A render target added to a cluster (`0x0064adf0`): the allocator a
+/// logging stub returning a list (with an instance, with none) or NULL,
+/// the constructor a logging stub. `eax` and memory.
+#[test]
+fn wp5d_cluster_add_render_target() {
+    use ffx_prender::wp5d as d;
+    for (label, mut t) in Twins::all() {
+        let log = t.alloc(&[0; 4 + 32 * 32]);
+        let s = wide_stub(log, 2, 1, 4, 0x7777);
+        jmp_stub(&mut t, d::RENDER_TARGET_CTOR, &s);
+        for case in 0..3u32 {
+            let inst = t.alloc(&[0x19; 0x40]);
+            let list = match case {
+                0 => {
+                    let l = t.alloc(&[0x2a; 0x40]);
+                    t.w32(l + 0x34, inst);
+                    l
+                }
+                1 => {
+                    let l = t.alloc(&[0x2a; 0x40]);
+                    t.w32(l + 0x34, 0);
+                    l
+                }
+                _ => 0,
+            };
+            let s = wide_stub(log, 1, 3, 0xc, list);
+            jmp_stub(&mut t, d::ALLOCATE_INSTANCE_LIST, &s);
+            let cluster = t.alloc(&[0x63; 0x10]);
+            t.w32(log, 0);
+            let w = format!("{label} cluster add render target {case}");
+            t.run(&w, 0x0064_adf0, cluster, &[0x5e00 + case], false, |g| {
+                d::cluster_add_render_target(g, cluster, 0x5e00 + case)
+            });
+        }
+    }
+}
+
+/// `PArray<u8>::resize` (`0x00444e90` and its thunk `0x00444e80`):
+/// `AllocCopy` and `PhyreFree` logging stubs (a block, or NULL), counts
+/// around `n` with bit 31 set or clear, the old buffer NULL or not, the
+/// same as the new one or not. `eax` and memory.
+#[test]
+fn wp5d_byte_array_resize() {
+    use ffx_prender::wp5d as d;
+    for (label, mut t) in Twins::all() {
+        let log = t.alloc(&[0; 4 + 32 * 32]);
+        let s = wide_stub_plain(log, 2, 1, 0, 0);
+        jmp_stub(&mut t, d::PHYRE_FREE, &s);
+        let mut k = 0;
+        for at in [0x0044_4e90u32, 0x0044_4e80] {
+            for case in 0..48u32 {
+                let n = [0u32, 3, 16, 40][(case % 4) as usize];
+                let count = [0u32, 3, 16, 40][((case / 4) % 4) as usize];
+                let ext = case & 16 != 0;
+                let old = t.alloc(&[0x44; 4]);
+                let fresh = t.alloc(&[0x55; 4]);
+                let ret = match case / 32 {
+                    0 => fresh,
+                    _ if case & 1 == 0 => old,
+                    _ => 0,
+                };
+                let s = wide_stub_plain(log, 1, 3, 0, ret);
+                jmp_stub(&mut t, d::ALLOC_COPY, &s);
+                let this = t.alloc(&[0; 8]);
+                t.w32(this, count | if ext { 0x8000_0000 } else { 0 });
+                t.w32(this + 4, if case % 7 == 3 { 0 } else { old });
+                t.w32(log, 0);
+                k += 1;
+                let w = format!("{label} byte resize {at:#x} case {case} ({k})");
+                t.run(&w, at, this, &[n], false, |g| {
+                    d::byte_array_resize(g, this, n)
+                });
+            }
+        }
+    }
+}
+
+/// dlmalloc's `init_mparams` (`0x006ea050`) and `init_user_mstate`
+/// (`0x006ea180`). The imports are stubs: the thread id and the tick
+/// count from cells, `GetSystemInfo` writing a page size and a
+/// granularity, `InterlockedCompareExchange` a real `lock cmpxchg`,
+/// `SleepEx` logging and freeing the lock (so a lock another thread
+/// holds is taken after 64 spins). The lock free, held by this thread,
+/// held by another; the magic set or not. Then states over random bases
+/// and sizes. `eax` and memory.
+#[test]
+fn wp5d_dlmalloc_init() {
+    use ffx_prender::wp5d as d;
+    for (label, mut t) in Twins::all() {
+        let log = t.alloc(&[0; 4 + 32 * 32]);
+        let cells = t.alloc(&[0; 8]);
+        let lock = t.a.rebase(d::MALLOC_LOCK);
+        // GetCurrentThreadId: mov eax, [cells]; ret
+        let mut c = vec![0xa1];
+        c.extend(cells.to_le_bytes());
+        c.push(0xc3);
+        let tid = t.code(&c);
+        // GetTickCount: mov eax, [cells+4]; ret
+        let mut c = vec![0xa1];
+        c.extend((cells + 4).to_le_bytes());
+        c.push(0xc3);
+        let ticks = t.code(&c);
+        // GetSystemInfo: mov eax, [esp+4]; [eax+4] = 0x1000; [eax+0x1c] = 0x10000; ret 4
+        let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0xc7, 0x40, 0x04];
+        c.extend(0x1000u32.to_le_bytes());
+        c.extend([0xc7, 0x40, 0x1c]);
+        c.extend(0x1_0000u32.to_le_bytes());
+        c.extend([0xc2, 0x04, 0x00]);
+        let info = t.code(&c);
+        // InterlockedCompareExchange: lock cmpxchg [ecx], edx; ret 0xc
+        let c = [
+            0x8b, 0x4c, 0x24, 0x04, 0x8b, 0x54, 0x24, 0x08, 0x8b, 0x44, 0x24, 0x0c, 0xf0, 0x0f,
+            0xb1, 0x11, 0xc2, 0x0c, 0x00,
+        ];
+        let cmpxchg = t.code(&c);
+        // SleepEx: inc dword [log]; mov dword [lock], 0; ret 8
+        let mut c = vec![0xff, 0x05];
+        c.extend(log.to_le_bytes());
+        c.extend([0xc7, 0x05]);
+        c.extend(lock.to_le_bytes());
+        c.extend(0u32.to_le_bytes());
+        c.extend([0xc2, 0x08, 0x00]);
+        let sleep = t.code(&c);
+        for (slot, code) in [
+            (d::GET_CURRENT_THREAD_ID_IAT, tid),
+            (d::GET_TICK_COUNT_IAT, ticks),
+            (d::GET_SYSTEM_INFO_IAT, info),
+            (d::INTERLOCKED_CMPXCHG_IAT, cmpxchg),
+            (d::SLEEP_EX_IAT, sleep),
+        ] {
+            set_import(&mut t, slot, code);
+        }
+        let frame = t.b.stack_range().start + 0x1000;
+        for case in 0..12u32 {
+            t.w32(cells, 0x1d0 + case);
+            t.w32(cells + 4, 0x0123_4567u32.wrapping_mul(case + 1));
+            let (l, owner, count) = match case % 3 {
+                0 => (0, 0, 0),
+                1 => (1, 0x1d0 + case, 2),
+                _ => (1, 0x999, 1),
+            };
+            t.w32(lock, l);
+            t.w32(t.a.rebase(d::MALLOC_LOCK_OWNER), owner);
+            t.w32(t.a.rebase(d::MALLOC_LOCK_COUNT), count);
+            let magic = if case & 4 == 0 { 0 } else { 0x5858_5858 };
+            t.w32(t.a.rebase(d::MPARAMS_MAGIC), magic);
+            for g in [
+                d::MPARAMS_PAGE_SIZE,
+                d::MPARAMS_GRANULARITY,
+                d::MPARAMS_MMAP_THRESHOLD,
+                d::MPARAMS_TRIM_THRESHOLD,
+                d::MPARAMS_DEFAULT_MFLAGS,
+            ] {
+                t.w32(t.a.rebase(g), 0x3300_0000 | case);
+            }
+            t.w32(log, 0);
+            t.run_cdecl(
+                &format!("{label} init_mparams {case}"),
+                0x006e_a050,
+                &[],
+                |h| d::init_mparams(h, frame),
+            );
+        }
+        for round in 0..24u32 {
+            let size = 0x800 + 0x40 * t.rng.below(64) + t.rng.below(8);
+            let block = t.alloc(&vec![0xc5; (size + 0x40) as usize]);
+            let base = block + t.rng.below(8);
+            t.w32(t.a.rebase(d::MPARAMS_MAGIC), 0x0bad_f00d ^ round);
+            t.w32(t.a.rebase(d::MPARAMS_DEFAULT_MFLAGS), round & 7);
+            t.w32(t.a.rebase(d::MPARAMS_TRIM_THRESHOLD), 0x20_0000 + round);
+            let w = format!("{label} init_user_mstate {round} (base {base:#x}, size {size:#x})");
+            t.run_cdecl(&w, 0x006e_a180, &[base, size], |h| {
+                d::init_user_mstate(h, base, size)
+            });
+        }
+    }
+}

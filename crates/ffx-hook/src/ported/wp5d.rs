@@ -123,4 +123,25 @@ ported! {
     StdTree_eraseStrings_00635c80 @ 0x0063_5c80 => extern "thiscall" fn d_00635c80(this: u32, node: u32) {
         d::tree_erase_strings(&mut mem(), this, node);
     }
+    /// `PCluster_addRenderTarget_0064adf0`: a render target made in the cluster; it or 0.
+    PCluster_addRenderTarget_0064adf0 @ 0x0064_adf0 => extern "thiscall" fn d_0064adf0(cluster: u32, a: u32) -> u32 {
+        d::cluster_add_render_target(&mut mem(), cluster, a)
+    }
+    /// `PArray_u8_resize_00444e90`: the string builder's buffer resized; 0 or 0xd.
+    PArray_u8_resize_00444e90 @ 0x0044_4e90 => extern "thiscall" fn d_00444e90(this: u32, n: u32) -> u32 {
+        d::byte_array_resize(&mut mem(), this, n)
+    }
+    /// `PArray_u8_resize_thunk_00444e80`: a frame and a jump to `0x00444e90`.
+    PArray_u8_resize_thunk_00444e80 @ 0x0044_4e80 => extern "thiscall" fn d_00444e80(this: u32, n: u32) -> u32 {
+        d::byte_array_resize(&mut mem(), this, n)
+    }
+    /// `dlmalloc_init_mparams_006ea050`: `mparams` set once under the global lock; 1.
+    dlmalloc_init_mparams_006ea050 @ 0x006e_a050 => extern "C" fn d_006ea050() -> u32 {
+        let mut frame = StackFrame::<9>::new();
+        d::init_mparams(&mut mem(), frame.at())
+    }
+    /// `dlmalloc_init_user_mstate_006ea180`: an mspace's state in its base; the state.
+    dlmalloc_init_user_mstate_006ea180 @ 0x006e_a180 => extern "C" fn d_006ea180(base: u32, size: u32) -> u32 {
+        d::init_user_mstate(&mut mem(), base, size)
+    }
 }

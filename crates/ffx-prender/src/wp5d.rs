@@ -629,3 +629,204 @@ pub fn tree_erase_strings(h: &mut impl Host, this: u32, node: u32) {
         n = left;
     }
 }
+
+/// `Phyre_PCluster_allocateInstanceList` (thiscall `(cluster; n,
+/// descriptor, c)`), `PRenderTarget`'s class descriptor and the render
+/// target's constructor `Phyre_PRendering_Ctor_00583a60` (thiscall
+/// `(this; a)`).
+pub const ALLOCATE_INSTANCE_LIST: u32 = 0x0044_0b70;
+pub const RENDER_TARGET_DESCRIPTOR: u32 = 0x00ca_4200;
+pub const RENDER_TARGET_CTOR: u32 = 0x0058_3a60;
+
+/// A render target added to a cluster (`0x0064adf0`, thiscall
+/// `(cluster; a)`, `ret 4`; `PostProcessManager_onAllShaderBinFilesLoaded`
+/// and ten more): one `PRenderTarget` instance list allocated in
+/// `cluster`; with one and its first instance (`+0x34`), that instance
+/// constructed with `a`. The instance, or 0.
+pub fn cluster_add_render_target(h: &mut impl Host, cluster: u32, a: u32) -> u32 {
+    let desc = h.rebase(RENDER_TARGET_DESCRIPTOR);
+    let list = h.call_sym(
+        ALLOCATE_INSTANCE_LIST,
+        Conv::Thiscall(cluster),
+        &[1, desc, 0],
+    );
+    if list == 0 {
+        return 0;
+    }
+    let inst: u32 = h.read(list + 0x34);
+    if inst == 0 {
+        return 0;
+    }
+    h.call_sym(RENDER_TARGET_CTOR, Conv::Thiscall(inst), &[a]);
+    inst
+}
+
+/// `Phyre_AllocCopy_00444c50` (cdecl `(n, src, count)`) and
+/// `Phyre_PhyreFree` (cdecl).
+pub const ALLOC_COPY: u32 = 0x0044_4c50;
+pub const PHYRE_FREE: u32 = 0x0042_fb20;
+
+/// `PArray<u8>::resize(this; n)` as `PStringBuilder` uses it
+/// (`0x00444e90`, thiscall, `ret 4`; `Phyre_PStringBuilder_operator`
+/// and the thunk `0x00444e80`) -> 0, or 0xd when the new buffer can't
+/// be had. The count word `+0` (bit 31: the buffer at `+4` is not
+/// ours) equal to `n` as a whole: nothing. Else the new buffer is
+/// `Phyre_AllocCopy(n, [+4], min(n, count))`; NULL for a non-zero `n`:
+/// 0xd, nothing changed. The old buffer is freed when it differs from
+/// the new one, is ours and is not NULL; `+4` the new one, `+0` `n`.
+pub fn byte_array_resize(h: &mut impl Host, this: u32, n: u32) -> u32 {
+    let word: u32 = h.read(this);
+    let count = word & 0x7fff_ffff;
+    if n == word {
+        return 0;
+    }
+    let keep = n.min(count);
+    let old: u32 = h.read(this + 4);
+    let buf = h.call_sym(ALLOC_COPY, Conv::Cdecl, &[n, old, keep]);
+    if buf == 0 && n != 0 {
+        return 0xd;
+    }
+    let old: u32 = h.read(this + 4);
+    if old != buf && h.read::<u32>(this) >> 31 == 0 && old != 0 {
+        h.call_sym(PHYRE_FREE, Conv::Cdecl, &[old]);
+    }
+    h.write(this + 4, buf);
+    h.write(this, n);
+    0
+}
+
+/// dlmalloc's globals: the global lock (`0x00ce6eb8`: the word, its
+/// recursion count, its owner thread) and `mparams` (magic, page size,
+/// granularity, mmap threshold, trim threshold, default flags).
+pub const MALLOC_LOCK: u32 = 0x00ce_6eb8;
+pub const MALLOC_LOCK_COUNT: u32 = 0x00ce_6ebc;
+pub const MALLOC_LOCK_OWNER: u32 = 0x00ce_6ec0;
+pub const MPARAMS_MAGIC: u32 = 0x00ce_6ec4;
+pub const MPARAMS_PAGE_SIZE: u32 = 0x00ce_6ec8;
+pub const MPARAMS_GRANULARITY: u32 = 0x00ce_6ecc;
+pub const MPARAMS_MMAP_THRESHOLD: u32 = 0x00ce_6ed0;
+pub const MPARAMS_TRIM_THRESHOLD: u32 = 0x00ce_6ed4;
+pub const MPARAMS_DEFAULT_MFLAGS: u32 = 0x00ce_6ed8;
+/// `KERNEL32` import slots: `GetCurrentThreadId`, `SleepEx`,
+/// `GetSystemInfo`, `GetTickCount`.
+pub const GET_CURRENT_THREAD_ID_IAT: u32 = 0x00b0_c108;
+pub const SLEEP_EX_IAT: u32 = 0x00b0_c0a8;
+pub const GET_SYSTEM_INFO_IAT: u32 = 0x00b0_c0a4;
+pub const GET_TICK_COUNT_IAT: u32 = 0x00b0_c0a0;
+/// `InterlockedCompareExchange`'s slot: the lock's `xchg [lock], 1` is
+/// `InterlockedCompareExchange(lock, 1, 0)` here (the word is only ever
+/// 0 or 1, so both leave 1 and tell whether it was free; atomic in the
+/// hooked game too).
+pub const INTERLOCKED_CMPXCHG_IAT: u32 = 0x00b0_c12c;
+
+/// dlmalloc's `init_mparams` (`0x006ea050`, cdecl; `create_mspace_with_base`
+/// when the magic is 0) -> 1. The global lock taken (recursively by its
+/// owner; else spun on (see [`INTERLOCKED_CMPXCHG_IAT`]), `SleepEx(0, 0)` every 64th turn);
+/// with no magic yet: `GetSystemInfo` into `frame` (0x24 bytes of game
+/// memory, the original's `ebp - 0x24`) gives the page size and the
+/// allocation granularity, the thresholds 0x40000 and 0x200000, the
+/// flags 7, and the magic `(GetTickCount() ^ 0x55555550) & ~7 | 8`; the
+/// lock released.
+pub fn init_mparams(h: &mut impl Host, frame: u32) -> u32 {
+    let lock = h.rebase(MALLOC_LOCK);
+    let count = h.rebase(MALLOC_LOCK_COUNT);
+    let owner = h.rebase(MALLOC_LOCK_OWNER);
+    let mut spins = 0u32;
+    loop {
+        if h.read::<u32>(lock) != 0 {
+            let me = import(h, GET_CURRENT_THREAD_ID_IAT, &[]);
+            if h.read::<u32>(owner) == me {
+                let c: u32 = h.read(count);
+                h.write(count, c.wrapping_add(1));
+                break;
+            }
+        } else if import(h, INTERLOCKED_CMPXCHG_IAT, &[lock, 1, 0]) == 0 {
+            let me = import(h, GET_CURRENT_THREAD_ID_IAT, &[]);
+            h.write(owner, me);
+            h.write(count, 1u32);
+            break;
+        }
+        spins = spins.wrapping_add(1);
+        if spins & 0x3f == 0 {
+            import(h, SLEEP_EX_IAT, &[0, 0]);
+        }
+    }
+    if h.read::<u32>(h.rebase(MPARAMS_MAGIC)) == 0 {
+        import(h, GET_SYSTEM_INFO_IAT, &[frame]);
+        let granularity: u32 = h.read(frame + 0x1c);
+        h.write(h.rebase(MPARAMS_GRANULARITY), granularity);
+        let page: u32 = h.read(frame + 4);
+        h.write(h.rebase(MPARAMS_PAGE_SIZE), page);
+        h.write(h.rebase(MPARAMS_MMAP_THRESHOLD), 0x4_0000u32);
+        h.write(h.rebase(MPARAMS_TRIM_THRESHOLD), 0x20_0000u32);
+        h.write(h.rebase(MPARAMS_DEFAULT_MFLAGS), 7u32);
+        let t = import(h, GET_TICK_COUNT_IAT, &[]);
+        h.write(h.rebase(MPARAMS_MAGIC), ((t ^ 0x5555_5550) & !7) | 8);
+    }
+    let c = h.read::<u32>(count).wrapping_sub(1);
+    h.write(count, c);
+    if c == 0 {
+        h.write(owner, 0u32);
+        // the original's `xchg` (a release by the owner: a store)
+        h.write(lock, 0u32);
+    }
+    1
+}
+
+/// dlmalloc's `align_offset` of an address: the bytes to the next
+/// multiple of 8.
+fn align8(a: u32) -> u32 {
+    if a & 7 == 0 { 0 } else { a.wrapping_neg() & 7 }
+}
+
+/// dlmalloc's `init_user_mstate(base, size)` (`0x006ea180`, cdecl;
+/// `create_mspace_with_base`) -> the state `m`: placed in the first
+/// chunk at `base` (aligned), cleared (0x1e8 bytes; that chunk's head
+/// 0x1e8 | 3), the magic, `least_addr` and the segment's base `base`,
+/// footprint, max footprint and the segment's size `size`, release
+/// checks 0xfff, the flags `default | 4` (no system allocation); the 32
+/// small bins point at themselves; the top chunk is the rest of the
+/// space but its 0x28-byte foot (`init_top`, inlined), the trim
+/// threshold copied.
+pub fn init_user_mstate(h: &mut impl Host, base: u32, size: u32) -> u32 {
+    let off = align8(base);
+    let m = base.wrapping_add(8).wrapping_add(off);
+    h.call_sym(MEMSET, Conv::Cdecl, &[m, 0, 0x1e8]);
+    for o in [0x1c4, 0x1c0, 0x1bc] {
+        h.write(m + o, 0u32);
+    }
+    h.write(base.wrapping_add(off).wrapping_add(4), 0x1ebu32);
+    let magic: u32 = h.read(h.rebase(MPARAMS_MAGIC));
+    h.write(m + 0x24, magic);
+    let flags: u32 = h.read(h.rebase(MPARAMS_DEFAULT_MFLAGS));
+    h.write(m + 0x10, base);
+    h.write(m + 0x1c8, base);
+    h.write(m + 0x1b4, size);
+    h.write(m + 0x1b0, size);
+    h.write(m + 0x1cc, size);
+    h.write(m + 0x20, 0xfffu32);
+    h.write(m + 0x1d8, 0u32);
+    h.write(m + 0x1dc, 0u32);
+    h.write(m + 0x1b8, flags | 4);
+    for i in 0..32u32 {
+        let bin = m + 0x28 + 8 * i;
+        h.write(bin + 0xc, bin);
+        h.write(bin + 8, bin);
+    }
+    // the chunk after m's: init_top(m, next, base + size - next - 0x28)
+    let head: u32 = h.read(m.wrapping_sub(4));
+    let next = (head & !7).wrapping_sub(8).wrapping_add(m);
+    let rest = size
+        .wrapping_sub(0x28)
+        .wrapping_add(base.wrapping_sub(next));
+    let off = align8(next);
+    let top = next.wrapping_add(off);
+    let tsize = rest.wrapping_sub(off);
+    h.write(m + 0xc, tsize);
+    h.write(m + 0x18, top);
+    h.write(top.wrapping_add(4), tsize | 1);
+    let trim: u32 = h.read(h.rebase(MPARAMS_TRIM_THRESHOLD));
+    h.write(tsize.wrapping_add(top).wrapping_add(4), 0x28u32);
+    h.write(m + 0x1c, trim);
+    m
+}
