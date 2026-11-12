@@ -67,7 +67,7 @@ fn c_str(mem: &impl Mem, p: u32) -> Vec<u8> {
 const LOCALE_CHANGED: u32 = 0x100c_87d0;
 
 /// Whether the DLL's "C"-locale paths apply.
-fn c_locale(e: &Exec) -> bool {
+pub(crate) fn c_locale(e: &Exec) -> bool {
     e.shared()
         .dll(CRT)
         .is_some_and(|d| e.mem().read::<u32>(d.base + (LOCALE_CHANGED - DLL_BASE)) == 0)
@@ -170,7 +170,10 @@ fn memchr(e: &mut Exec, args: &Args) -> Ret {
 /// the player's DLLs are loaded.
 #[must_use]
 pub fn keeps(name: &str) -> bool {
-    TABLE.iter().any(|(_, n, ..)| *n == name)
+    TABLE
+        .iter()
+        .chain(crate::crt_format::TABLE)
+        .any(|(_, n, ..)| *n == name)
 }
 
 /// Calls the DLL's own export `name` with the import's arguments (the case
@@ -192,6 +195,22 @@ fn dll_export(e: &mut Exec, dll: &str, name: &str, conv: Conv, args: &Args) -> R
         ..args.clone()
     };
     e.call(at, conv, &a).unwrap_or(Ret::VOID)
+}
+
+/// [`dll_export`] (cdecl) with `words` as the stack words: a varargs
+/// function's declared words and the ones after them.
+pub(crate) fn dll_export_words(
+    e: &mut Exec,
+    dll: &str,
+    name: &str,
+    args: &Args,
+    words: Vec<u32>,
+) -> Ret {
+    let a = Args {
+        stack: words,
+        ..args.clone()
+    };
+    dll_export(e, dll, name, Conv::Cdecl, &a)
 }
 
 /// `istream::getline(str, count)` (thiscall, `ret 0xc`; `getline(str,

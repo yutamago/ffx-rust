@@ -938,6 +938,7 @@ each with the DLL.
 | `MSVCR110!_CIsqrt` | the correctly rounded root at 53-bit precision (the processor's `fsqrt`) | negative or non-finite arguments (errno), another precision |
 | `MSVCR110!_stricmp` | the "C" locale's `__ascii_stricmp` (`A`-`Z` lowered, the difference of the first differing bytes) | a NULL argument (errno, the invalid-parameter handler); a changed locale (`__locale_changed`) |
 | `MSVCR110!strstr`, `strchr`, `strncpy`, `memchr` | the standard results (no locale, no errno) | - |
+| `MSVCR110!sprintf`, `sprintf_s`, `_snprintf`, `vsprintf`, `_vsnprintf`, `_vsnprintf_s` (`src/crt_format.rs`, m5-wp5b) | VS2012 `_output_l`'s integer, character and string conversions (`%d %i %u %o %x %X %p %c %s %%`, flags `-+ #0`, width and precision as digits or `*`, sizes `h l ll I I32 I64`) in the "C" locale, when the output and its NUL fit (`_vsnprintf_s` with a count that doesn't limit also zeroes `buf[size - 1]`, as the DLL does); 137 k `sprintf` calls in gate run 1, a few hundred emulated blocks each (the profile files the DLL's formatter under nearby exports, `type_info::operator!=` and `_wstat64i32`) | floats, wide characters and strings, `%n`, positional `%1$d`, unknown or unfinished conversions, another locale, NULL buffers, output that doesn't fit (the truncation and invalid-parameter paths): the DLL's export with the caller's stack words; with no DLLs `imports`' approximate formatter |
 
 The intrinsics take their argument in `ST0`: Unicorn code calling one
 enters `Exec::enter_x87_import` (the stub's `int3`: `ST0` replaced by the

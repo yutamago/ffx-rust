@@ -29,6 +29,7 @@ pub mod com;
 pub mod com_methods;
 pub mod crt;
 pub mod crt_dll;
+pub mod crt_format;
 pub mod crypt;
 #[cfg(windows)]
 pub mod d3d11;
