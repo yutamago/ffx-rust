@@ -4815,11 +4815,12 @@ fn round6c(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
         let n = nodes[(rng.next() % 7) as usize];
         let right: u32 = Mem::read(a, n + 8);
         let left: u32 = Mem::read(a, n);
-        // the originals and their copies (0x006a0890, 0x006a0b50; wp5b)
-        let (lrot, rrot) = if i % 2 == 0 {
-            (0x00a4_1930, 0x00a4_1b40)
-        } else {
-            (0x006a_0890, 0x006a_0b50)
+        // the originals and their copies (0x006a0890/0x006a0b50,
+        // 0x0069a3f0/0x0069a4f0; wp5b)
+        let (lrot, rrot) = match i % 3 {
+            0 => (0x00a4_1930, 0x00a4_1b40),
+            1 => (0x006a_0890, 0x006a_0b50),
+            _ => (0x0069_a3f0, 0x0069_a4f0),
         };
         if rng.next().is_multiple_of(2) && right != head {
             call(a, lrot, Conv::Thiscall(tree), &[n]);

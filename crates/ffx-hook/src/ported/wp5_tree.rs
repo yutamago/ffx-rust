@@ -66,4 +66,20 @@ ported! {
     VideoIndexMap_buyNode_006d5ca0 @ 0x006d_5ca0 => extern "thiscall" fn wtr_006d5ca0(this: u32, value: u32) -> u32 {
         b::video_buy_node(&mut mem(), this, value)
     }
+    /// `std_Tree_max_0069a450`: the subtree's last node.
+    std_Tree_max_0069a450 @ 0x0069_a450 => extern "C" fn wtr_0069a450(node: u32) -> u32 {
+        b::tree_max(&mut mem(), node)
+    }
+    /// `std_Tree_min_0069a470`: the subtree's first node.
+    std_Tree_min_0069a470 @ 0x0069_a470 => extern "C" fn wtr_0069a470(node: u32) -> u32 {
+        b::tree_min(&mut mem(), node)
+    }
+    /// `std_Tree_Lrotate_0069a3f0`: the same code as `std_Tree_Lrotate_copy_006a0890`.
+    std_Tree_Lrotate_0069a3f0 @ 0x0069_a3f0 => extern "thiscall" fn wtr_0069a3f0(this: u32, node: u32) {
+        stl::tree_rotate_left(&mut mem(), this, node);
+    }
+    /// `std_Tree_Rrotate_0069a4f0`: the same code as `std_Tree_Rrotate_copy_006a0b50`.
+    std_Tree_Rrotate_0069a4f0 @ 0x0069_a4f0 => extern "thiscall" fn wtr_0069a4f0(this: u32, node: u32) {
+        stl::tree_rotate_right(&mut mem(), this, node);
+    }
 }

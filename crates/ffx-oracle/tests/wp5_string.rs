@@ -1000,3 +1000,47 @@ fn wp5b_vector_string_push_back() {
         }
     }
 }
+
+/// `_Max`/`_Min` (`0x0069a450`, `0x0069a470`) on random search trees,
+/// from every node.
+#[test]
+fn wp5b_tree_min_max() {
+    use ffx_system::wp5_tree::bridge as tb;
+    for (label, mut t) in Twins::all() {
+        for round in 0..10u32 {
+            let head = t.alloc(&[0; 0x20]);
+            t.write(head + 0xd, &[1]);
+            let mut nodes: Vec<(u32, u32)> = Vec::new();
+            for _ in 0..=t.rng.below(20) {
+                let k = t.rng.below(1000);
+                let node = t.alloc(&[0; 0x20]);
+                let mut n = Vec::new();
+                for _ in 0..3 {
+                    n.extend(head.to_le_bytes());
+                }
+                t.write(node, &n);
+                if let Some(&(root, _)) = nodes.first() {
+                    let mut at = root;
+                    loop {
+                        let ak = nodes.iter().find(|x| x.0 == at).unwrap().1;
+                        let off = if k < ak { 0 } else { 8 };
+                        let next: u32 = Mem::read(&t.b, at + off);
+                        if next == head {
+                            t.w32(at + off, node);
+                            t.w32(node + 4, at);
+                            break;
+                        }
+                        at = next;
+                    }
+                }
+                nodes.push((node, k));
+            }
+            for &(n, _) in &nodes {
+                let w = format!("{label} max {round} {n:#x}");
+                t.run_cdecl(&w, 0x0069_a450, &[n], |g| tb::tree_max(g, n));
+                let w = format!("{label} min {round} {n:#x}");
+                t.run_cdecl(&w, 0x0069_a470, &[n], |g| tb::tree_min(g, n));
+            }
+        }
+    }
+}

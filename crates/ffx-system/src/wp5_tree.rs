@@ -245,4 +245,30 @@ pub mod bridge {
         }
         n
     }
+
+    /// `std::_Tree::_Max(node)` (`0x0069a450`, cdecl): down the right links
+    /// to the last node before a nil one.
+    pub fn tree_max(h: &mut impl Host, node: u32) -> u32 {
+        let mut n = node;
+        loop {
+            let r: u32 = h.read(n.wrapping_add(8));
+            if nil(h, r) {
+                return n;
+            }
+            n = r;
+        }
+    }
+
+    /// `std::_Tree::_Min(node)` (`0x0069a470`, cdecl): the same down the
+    /// left links.
+    pub fn tree_min(h: &mut impl Host, node: u32) -> u32 {
+        let mut n = node;
+        loop {
+            let l: u32 = h.read(n);
+            if nil(h, l) {
+                return n;
+            }
+            n = l;
+        }
+    }
 }
