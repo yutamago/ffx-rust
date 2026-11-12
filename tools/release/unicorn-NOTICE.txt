@@ -1,0 +1,14 @@
+Unicorn (development package only)
+==================================
+
+This package is a DEVELOPMENT build ("-dev-not-for-release"): its
+ffx-rust.exe links the Unicorn CPU emulator (unicorn-engine and
+unicorn-engine-sys 2.1.5, GPL-2.0; https://www.unicorn-engine.org),
+which runs the game code that has no Rust port yet. Its licence, the GNU
+General Public License version 2, is in unicorn-COPYING beside this file;
+the source of the version linked here is the unicorn-engine-sys 2.1.5
+crate on crates.io (https://crates.io/crates/unicorn-engine-sys/2.1.5).
+
+Because of the GPL, this package must not be published as a release of
+ffx-rust (MIT OR Apache-2.0). The release builds without the dev-unicorn
+feature (tools/package-release.sh; docs/rewrite-plan.md, M5 stage 5).

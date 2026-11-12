@@ -601,7 +601,9 @@ slightly differently.
      `ffx-host` (on by default for development builds);
      `tools/check-licences.py` lists the release trees (`cargo tree -e
      normal --no-default-features`) of `ffx-dinput8` (i686) and
-     `ffx-host` (x86_64) and fails on any GPL-family licence, and both
+     `ffx-host` (x86_64, with the package's `swf`) and fails on any
+     licence expression that leaves only a GPL-family choice (Ruffle's
+     `self_cell`, `Apache-2.0 OR GPL-2.0-only`, passes), and both
      crates build with `--no-default-features`. Today `ffx-dinput8`
      builds that way (no overlay runner) and `ffx-host` refuses to (a
      `compile_error!`: its executor still needs Unicorn for code without
@@ -609,6 +611,32 @@ slightly differently.
    - `ffx-launch` starts either program. The release package holds
      `ffx-rust.exe`, `steam_api64.dll` and the licences.
    - Docs: what a player needs and what stays the original's.
+   - As it went (2026-11-12, WP13): `ffx-launch --rust [GAME]` starts
+     `ffx-rust.exe` from its own folder on the player's game folder (the
+     argument, a folder or any file in it, so Steam's `--rust %command%`
+     works; else the current folder; else the launcher's), with the
+     Documents folder `FFX.exe` asks Windows for (saves and settings
+     shared with the original), no run budget, `SteamAppId=359870` when
+     Steam didn't start it, the report in `ffx-rust.log`, and a message
+     box in the player's words for a missing game folder, game file,
+     `ffx-rust.exe` or (a warning; the game starts) `steam_api64.dll`.
+     The default stays `FFX.exe` with ASLR off, as `tools/run-game.sh`
+     uses it; the package's `play-ffx-rust.cmd` passes `--rust`.
+     `tools/package-release.sh` builds both programs with every build
+     path remapped, adds the SDK's `steam_api64.dll`, `ffx.sym`, the
+     player's README (`docs/player.md`), the licences (the project's,
+     a THIRD-PARTY file from the release trees with every package's
+     licence and licence files, zvidlib-vp8, libVorbis, Ruffle, the
+     Steamworks note) and checks the staged tree (only the package's
+     files, no game file, no path or name of the build machine, no
+     Unicorn in a release `ffx-rust.exe`); `--dry-run` runs the checks
+     and their self-test without building. It refuses `dev-unicorn`
+     without `--dev`, which names the zip `-dev-not-for-release`; until
+     the stage 4 gate removes the `compile_error!`, the `--dev` package
+     is the only one that builds (docs/host.md, "The release package").
+     Not measured yet: a player's run outside the harness (the real
+     keyboard, mouse and pads don't reach the game; docs/host.md,
+     "Windows"), the saves round trip on the release build, Steam live.
 
 **Done when** `ffx-rust.exe` (64-bit) plays every replay with the
 original's trace events, passes the scene gates and the audio checks, and

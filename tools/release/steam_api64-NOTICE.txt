@@ -1,0 +1,20 @@
+steam_api64.dll
+===============
+
+steam_api64.dll is Valve Corporation's Steam API library, the 64-bit
+redistributable of the Steamworks SDK (version 1.65,
+sdk/redistributable_bin/win64/steam_api64.dll). It is not part of
+ffx-rust and not under its licence (MIT OR Apache-2.0): it is
+Copyright (c) Valve Corporation, all rights reserved, and is
+redistributed with ffx-rust under the terms of the Steamworks SDK Access
+Agreement (https://partner.steamgames.com/documentation/sdk_access_agreement),
+which allows the SDK's redistributable files to be shipped with an
+application that uses them.
+
+ffx-rust.exe loads it at run time to talk to the Steam client
+(achievements). Without it, or without Steam running, ffx-rust.exe runs
+with Steam off. SteamAPI_RestartAppIfNecessary and ResetAllStats are never
+called through it.
+
+Steam and the Steam logo are trademarks of Valve Corporation. ffx-rust is
+not made, endorsed or supported by Valve.
