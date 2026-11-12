@@ -24,7 +24,7 @@
 pub mod seh;
 pub mod spot;
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, RwLock};
 use std::time::{Duration, Instant};
@@ -110,6 +110,10 @@ pub struct Profile {
     pub blocks: HashMap<u32, u64>,
     /// Clock samples per basic block.
     pub samples: HashMap<u32, u64>,
+    /// Calls from Rust into Unicorn by target (a port or import calling an
+    /// original): where emulated code starts, so what to port next
+    /// (`report::entries_tsv`).
+    pub entries: HashMap<u32, u64>,
 }
 
 impl Profile {
@@ -120,6 +124,9 @@ impl Profile {
         }
         for (k, v) in &other.samples {
             *self.samples.entry(*k).or_default() += v;
+        }
+        for (k, v) in &other.entries {
+            *self.entries.entry(*k).or_default() += v;
         }
     }
 }
@@ -135,6 +142,9 @@ pub struct Stats {
     pub missing_imports: Vec<String>,
     /// Calls from Rust into Unicorn.
     pub unicorn_calls: u64,
+    /// Calls from Rust to a one-instruction function run in Rust instead
+    /// (`crate::leaf`).
+    pub leaf_calls: u64,
     /// Emulator starts (each resume counts).
     pub starts: u64,
     /// Time spent inside the emulator.
@@ -167,6 +177,7 @@ impl Stats {
             }
         }
         self.unicorn_calls += o.unicorn_calls;
+        self.leaf_calls += o.leaf_calls;
         self.starts += o.starts;
         self.emulated += o.emulated;
         self.messages.extend(o.messages.iter().cloned());
@@ -316,6 +327,18 @@ pub struct Shared {
     /// Trampolines to the originals that ports wrap: address → trampoline
     /// ([`Exec::call_original`]).
     originals: HashMap<u32, u32>,
+    /// `FFX.exe`'s import thunks (`jmp [IAT slot]`, `crt_memcpy_thunk`
+    /// and 492 more): thunk → what its slot holds (an import's stub or a
+    /// DLL export). Patched to `int3`; a call or jump to one goes straight
+    /// to the import ([`Shared::thunk`]).
+    thunks: HashMap<u32, u32>,
+    /// `FFX.exe`'s IAT slots, for the thunks [`Shared::thunk`] finds when
+    /// a port calls one the scan left alone.
+    iat: HashSet<u32>,
+    /// The x87 intrinsics with a Rust side (`crate::crt_dll::intrinsic`):
+    /// `FFX.exe`'s import stub → the Rust side and the DLL's export (for
+    /// the arguments the Rust side hands on).
+    x87_imports: HashMap<u32, (crate::crt_dll::X87Fn, Option<u32>)>,
     /// The virtual clock, the frame boundary and the turns
     /// (`crate::clock`).
     pub clock: crate::clock::Clock,
@@ -338,8 +361,9 @@ impl std::fmt::Debug for Shared {
 /// FFX.exe's `MSVCR110` imports that keep their Rust side when the
 /// player's DLLs are loaded: start-up and exit (the run's own), the heap
 /// (the DLL's `malloc` ends on the same heap through `HeapAlloc`), the
-/// copies and `rand` (per thread, MSVC's sequence). Everything else goes to
-/// the DLL (docs/host.md, "The C runtime DLLs").
+/// copies and `rand` (per thread, MSVC's sequence). Those `crate::crt_dll`
+/// has a Rust side for keep it too. Everything else goes to the DLL
+/// (docs/host.md, "The C runtime DLLs").
 pub const RUST_WITH_DLLS: [&str; 26] = [
     "__set_app_type",
     "__setusermatherr",
@@ -419,11 +443,15 @@ impl Shared {
             traps: RwLock::new(HashMap::new()),
             gfx: crate::gfx::Slot::default(),
             originals: HashMap::new(),
+            thunks: HashMap::new(),
+            iat: HashSet::new(),
+            x87_imports: HashMap::new(),
             clock: crate::clock::Clock::default(),
             audio: crate::audio::Audio::default(),
             iggy: crate::iggy::Iggy::default(),
         };
         s.bind_imports(stubs_at);
+        s.find_thunks();
         s.build_trampolines(stubs_at + TRAMPOLINES);
         for addr in s.table.addresses().collect::<Vec<_>>() {
             if s.image.is_code(addr) {
@@ -467,6 +495,82 @@ impl Shared {
             self.originals.insert(addr, at);
             at += 32;
         }
+    }
+
+    /// Finds `FFX.exe`'s import thunks: `ff 25 <slot>` (`jmp [slot]`) in
+    /// `.text` for an IAT slot of the image, at an instruction start: after
+    /// an `int3` pad, at a 16-byte boundary, or right after another thunk
+    /// (the linker's runs of them). Each gets an `int3`, and the executor
+    /// dispatches it as its import, so neither Unicorn code nor a port
+    /// calling one (`crt_memcpy_thunk`, `crt_memset_thunk`: 95 M and 3 M
+    /// calls in gate run 1, almost all from ports) emulates the `jmp`.
+    /// A `jmp [slot]` inside a function (a tail jump) is left alone: its
+    /// start can't be told from the bytes.
+    fn find_thunks(&mut self) {
+        let Some(text) = self.image.text().cloned() else {
+            return;
+        };
+        let slots: HashSet<u32> = self.image.imports.iter().map(|i| i.slot).collect();
+        self.iat.clone_from(&slots);
+        let mem = ArenaMem {
+            arena: Arc::clone(&self.arena),
+        };
+        let mut code = vec![0u8; text.size as usize];
+        ffx_bridge::Mem::read_bytes(&mem, text.start, &mut code);
+        let mut last = None;
+        for i in 0..code.len().saturating_sub(6) {
+            if code[i] != 0xff || code[i + 1] != 0x25 {
+                continue;
+            }
+            let slot = u32::from_le_bytes([code[i + 2], code[i + 3], code[i + 4], code[i + 5]]);
+            if !slots.contains(&slot) {
+                continue;
+            }
+            let at = text.start + u32::try_from(i).unwrap_or(u32::MAX);
+            let start = (i > 0 && code[i - 1] == INT3) || at % 16 == 0 || last == Some(at - 6);
+            if !start {
+                continue;
+            }
+            last = Some(at);
+            if self.table.get(at).is_some() {
+                continue;
+            }
+            let target: u32 = ffx_bridge::Mem::read(&mem, slot);
+            self.thunks.insert(at, target);
+        }
+        for &at in self.thunks.keys() {
+            self.arena.fill(at, &[INT3]);
+        }
+    }
+
+    /// Where the import thunk at `addr` goes (its IAT slot's value), or
+    /// `None` when `addr` is no thunk: one [`Shared::find_thunks`] patched,
+    /// or a `jmp [slot]` the scan left alone (a run after a `jmp`, as
+    /// `alloca_probe_8`'s neighbours), which a call from Rust names as a
+    /// function start.
+    #[must_use]
+    pub fn thunk(&self, addr: u32) -> Option<u32> {
+        if let Some(&to) = self.thunks.get(&addr) {
+            return Some(to);
+        }
+        if !self.image.is_code(addr) {
+            return None;
+        }
+        let mem = ArenaMem {
+            arena: Arc::clone(&self.arena),
+        };
+        let mut b = [0u8; 6];
+        ffx_bridge::Mem::read_bytes(&mem, addr, &mut b);
+        let slot = u32::from_le_bytes([b[2], b[3], b[4], b[5]]);
+        (b[..2] == [0xff, 0x25] && self.iat.contains(&slot))
+            .then(|| ffx_bridge::Mem::read(&mem, slot))
+    }
+
+    /// Whether `addr` is an import thunk patched to `int3`
+    /// ([`Shared::find_thunks`]).
+    #[must_use]
+    pub fn is_patched_thunk(&self, addr: u32) -> bool {
+        self.thunks.contains_key(&addr)
     }
 
     /// Finds the x87 instructions `ffx_fpu` computes in `FFX.exe` and the
@@ -583,6 +687,7 @@ impl Shared {
             }
             if let Some(d) = &dll
                 && !RUST_WITH_DLLS.contains(&imp.name.as_str())
+                && !crate::crt_dll::keeps(&imp.name)
                 && let Some(&x) = d.exports.get(&imp.name)
             {
                 ffx_bridge::Mem::write(&mut mem, imp.slot, x);
@@ -595,6 +700,10 @@ impl Shared {
             } else {
                 Route::Missing
             };
+            if let Some(f) = crate::crt_dll::intrinsic(&full) {
+                let export = dll.as_ref().and_then(|d| d.exports.get(&imp.name).copied());
+                self.x87_imports.insert(at, (f, export));
+            }
             self.routes.push((full, route));
             self.arena.fill(at, &[INT3]);
             self.arena.fill(imp.slot, &at.to_le_bytes());
@@ -828,6 +937,15 @@ pub struct Exec {
     pub(crate) overlay_hooks: usize,
     /// Its host entries, for the harness's `stacks`.
     spot: Arc<spot::Spot>,
+    /// The profile clock's tick when the emulator last started: the
+    /// block hook charges a sample to a block only for ticks after it, so
+    /// the time Rust spent between two emulator runs (a port, an import)
+    /// is not charged to the first block after it (`crt_memcpy_thunk`'s
+    /// 35 minutes in gate run 1 were its callers' Rust time).
+    resumed: Arc<AtomicU64>,
+    /// This thread's live profile (with [`Exec::cover`]), for the entries
+    /// from Rust.
+    profile: Option<Arc<Mutex<Profile>>>,
 }
 
 /// A trap's own return ([`Exec::trap_exit`], set by its Rust side): the
@@ -930,6 +1048,8 @@ impl Exec {
             trap_exit: None,
             overlay_hooks: 0,
             spot: Arc::new(spot::Spot::new(id, (stack_base, stack_base + stack_size))),
+            resumed: Arc::new(AtomicU64::new(0)),
+            profile: None,
         };
         if let Ok(mut l) = exec.shared.emulators.lock() {
             l.push((id, exec.uc.get_handle() as usize));
@@ -1085,6 +1205,8 @@ impl Exec {
         if let Ok(mut l) = self.shared.profiles.lock() {
             l.push(Arc::clone(&live));
         }
+        self.profile = Some(Arc::clone(&live));
+        let resumed = Arc::clone(&self.resumed);
         let mut last_tick = 0;
         self.uc.add_block_hook(1, 0, move |_, addr, _| {
             let t = tick.load(Ordering::Relaxed);
@@ -1092,6 +1214,9 @@ impl Exec {
             let addr = addr as u32;
             let Ok(mut p) = live.lock() else { return };
             *p.blocks.entry(addr).or_default() += 1;
+            // a tick that passed while Rust ran (before this emulator run)
+            // is nobody's here
+            last_tick = last_tick.max(resumed.load(Ordering::Relaxed));
             if t != last_tick {
                 last_tick = t;
                 *p.samples.entry(addr).or_default() += 1;
@@ -1249,6 +1374,7 @@ impl Exec {
         if self.halted() {
             return Err(Error::Stopped);
         }
+        let addr = self.shared.thunk(addr).unwrap_or(addr);
         let esp = self.reg(RegisterX86::ESP).unwrap_or(0);
         let r = if let Some(entry) = self.shared.table.get(addr).copied() {
             *self.stats.ports.entry(addr).or_default() += 1;
@@ -1300,6 +1426,15 @@ impl Exec {
             } else {
                 Ok(ret)
             }
+        } else if let Some(leaf) = self
+            .shared
+            .image
+            .is_code(addr)
+            .then(|| crate::leaf::decode(&self.mem(), addr))
+            .flatten()
+        {
+            self.stats.leaf_calls += 1;
+            Ok(crate::leaf::run(&self.mem(), leaf, args.ecx))
         } else {
             self.call_unicorn(addr, conv, args)
         };
@@ -1379,6 +1514,11 @@ impl Exec {
 
     fn call_unicorn(&mut self, addr: u32, conv: Conv, args: &Args) -> Result<Ret> {
         self.stats.unicorn_calls += 1;
+        if let Some(p) = &self.profile
+            && let Ok(mut p) = p.lock()
+        {
+            *p.entries.entry(addr).or_default() += 1;
+        }
         let saved = self.save_regs()?;
         // below the current frame (a port runs between an original's call
         // and its return; its caller's words sit above esp)
@@ -1501,6 +1641,8 @@ impl Exec {
                 return Err(Error::Stopped);
             }
             self.stats.starts += 1;
+            self.resumed
+                .store(self.shared.tick.load(Ordering::Relaxed), Ordering::Relaxed);
             let t = Instant::now();
             self.spot.emulating.store(true, Ordering::Release);
             let r = self.uc.emu_start(u64::from(pc), 0, 0, 0);
@@ -1520,8 +1662,17 @@ impl Exec {
                     pc = self.handler_returned()?;
                 }
                 Some(Event::Int3(at)) => {
-                    let next = if let Some(&i) = self.shared.stubs.get(&at) {
+                    let next = if let Some(&(f, export)) = self.shared.x87_imports.get(&at) {
+                        self.enter_x87_import(f, export)
+                    } else if let Some(&i) = self.shared.stubs.get(&at) {
                         self.enter_import(i, at)
+                    } else if let Some(&to) = self.shared.thunks.get(&at) {
+                        // an import thunk: its jmp, the stack as it is
+                        match (self.shared.x87_imports.get(&to), self.shared.stubs.get(&to)) {
+                            (Some(&(f, export)), _) => self.enter_x87_import(f, export),
+                            (None, Some(&i)) => self.enter_import(i, to),
+                            (None, None) => Ok(to),
+                        }
                     } else if self.shared.table.get(at).is_some() {
                         self.enter_port(at)
                     } else if let Some(t) = self.shared.trap(at) {
@@ -1879,6 +2030,40 @@ impl Exec {
         mem.read::<f64>(cell)
     }
 
+    /// Runs an x87 intrinsic (`_CIcos`, ...) for Unicorn code that called
+    /// it, its argument in `ST0`: the Rust side replaces `ST0` with the
+    /// result, or the DLL's export runs (a jump: the stack and `ST0` as
+    /// the caller left them) for the arguments the Rust side hands on.
+    fn enter_x87_import(&mut self, f: crate::crt_dll::X87Fn, export: Option<u32>) -> Result<u32> {
+        let x = self.st0()?;
+        if let Some(v) = x.and_then(|x| f(self, x)) {
+            self.stats.leaf_calls += 1;
+            self.pop_st0()?;
+            return self.finish(
+                Ret {
+                    st0: Some(v),
+                    ..Ret::VOID
+                },
+                0,
+            );
+        }
+        export.ok_or_else(|| {
+            Error::UnstubbedImport(
+                "an x87 intrinsic the Rust side hands on, without its DLL".into(),
+            )
+        })
+    }
+
+    /// The emulator's `MXCSR`.
+    pub(crate) fn mxcsr(&self) -> u32 {
+        self.reg(RegisterX86::MXCSR).unwrap_or(0x1f80)
+    }
+
+    /// The emulator's x87 control word.
+    pub(crate) fn fpu_control(&self) -> u32 {
+        self.reg(RegisterX86::FPCW).unwrap_or(0x027f)
+    }
+
     /// Runs import `i` (its stub at `stub`) for Unicorn code that called
     /// it.
     fn enter_import(&mut self, i: usize, stub: u32) -> Result<u32> {
@@ -1996,7 +2181,7 @@ impl Exec {
     }
 
     /// `ST0` as a double, if the x87 stack holds anything.
-    fn st0(&self) -> Result<Option<f64>> {
+    pub(crate) fn st0(&self) -> Result<Option<f64>> {
         let tag = self.uc.reg_read(RegisterX86::FPTAG)?;
         let sw = self.uc.reg_read(RegisterX86::FPSW)?;
         let top = (sw >> 11) & 7;
@@ -2372,10 +2557,38 @@ pub fn f80_to_f64(b: &[u8]) -> f64 {
     if mant == 0 {
         return sign * 0.0;
     }
-    // mant * 2^(exp - 16383 - 63), in two steps to stay in range
-    #[allow(clippy::cast_precision_loss)] // rounds to 53 bits, as fst does
-    let m = mant as f64;
-    sign * m * 2f64.powi((exp - 16383 - 63).clamp(-1100, 1100))
+    // mant · 2^(exp − 16383 − 63), rounded once to the double's 53 bits
+    // (or fewer, a subnormal), nearest even, as `fstp qword` does. The
+    // scaling by powers of two can't be done in doubles: 2^-1060 alone
+    // underflows (an 1e-300 in ST0 read as 0 until 2026-11-12).
+    let lead = exp - 16383 - i32::try_from(mant.leading_zeros()).unwrap_or(0);
+    let mant = mant << mant.leading_zeros();
+    if lead > 1023 {
+        return sign * f64::INFINITY;
+    }
+    // the bits that go: 11 for a normal double, more below 2^-1022
+    let drop = 11 + u32::try_from((-1022 - lead).max(0)).unwrap_or(0);
+    let kept = if drop >= 64 { 0 } else { mant >> drop };
+    let rest = if drop >= 64 {
+        u128::from(mant)
+    } else {
+        u128::from(mant & ((1u64 << drop) - 1))
+    };
+    let half = 1u128 << (drop.min(127) - 1);
+    let up = rest > half || (rest == half && kept & 1 == 1);
+    let kept = kept + u64::from(up);
+    let bits = if lead >= -1022 {
+        // kept is 1.xxx (53 bits) or rounded up to 2.0
+        let e = u64::try_from(lead + 1023).unwrap_or(0);
+        (e << 52) + (kept - (1 << 52))
+    } else {
+        // a subnormal (a carry into bit 52 makes it the smallest normal)
+        kept
+    };
+    if bits >= 0x7ff0_0000_0000_0000 {
+        return sign * f64::INFINITY;
+    }
+    sign * f64::from_bits(bits)
 }
 
 /// Where [`ffx_bridge::route::Router::call_x87`] writes its stubs in the
@@ -2426,9 +2639,12 @@ impl ffx_bridge::route::Router for Exec {
         float: ffx_bridge::route::Float,
     ) -> ffx_bridge::route::Raw {
         use ffx_bridge::route::{Float, Raw};
+        let addr = self.shared.thunk(addr).unwrap_or(addr);
         let emulated = self.shared.table.get(addr).is_none()
             && !self.shared.stubs.contains_key(&addr)
-            && self.shared.trap(addr).is_none();
+            && self.shared.trap(addr).is_none()
+            && !(self.shared.image.is_code(addr)
+                && crate::leaf::decode(&self.mem(), addr).is_some());
         let Ok(ret) = Exec::call(self, addr, conv, args) else {
             halted()
         };
@@ -2454,6 +2670,19 @@ impl ffx_bridge::route::Router for Exec {
     fn call_x87(&mut self, addr: u32, st: &[f64], float: ffx_bridge::route::Float) -> f64 {
         use ffx_bridge::Mem as _;
         use ffx_bridge::route::Float;
+        // an intrinsic with a Rust side (through its thunk or its slot's
+        // stub): no emulator
+        let target = self.shared.thunk(addr).unwrap_or(addr);
+        if let (Some(&(f, _)), [x]) = (self.shared.x87_imports.get(&target), st)
+            && let Some(v) = f(self, *x)
+        {
+            self.stats.leaf_calls += 1;
+            #[allow(clippy::cast_possible_truncation)] // fstp dword
+            return match float {
+                Float::F32 => f64::from(v as f32),
+                Float::F64 | Float::None => v,
+            };
+        }
         if self.x87_depth >= X87_LEVELS || st.len() > 7 {
             return f64::NAN;
         }

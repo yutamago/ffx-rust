@@ -293,6 +293,15 @@ python3 -I tools/unicorn-report.py RUN/rust/*.profile.tsv [--gate] [--top 0] [--
   (`--no-sym` keeps them), so a profile written without `ffx.sym` still
   sums by function. `--gate` exits 1 when an `FFX.exe` function outside
   the movie libraries ran; `--self-test` runs its unit tests.
+- Beside each profile, `<replay>.entries.tsv` (`ffx-rust.entries.tsv`
+  in the slot's folder; module, target, name, calls) lists the calls from
+  Rust into Unicorn by target: the originals that ports and imports still
+  call, where the emulated code starts, so what to port next. A target no
+  `ffx.sym` function starts at is named `<containing>+0x<offset>` (code
+  after a symbol, an unnamed function). Since 2026-11-12 (m5-wp5) a
+  block's clock samples count only time inside the emulator: before, the
+  Rust time between two emulator runs went to the first block after it
+  (gate run 1 charged its ports' time to `crt_memcpy_thunk`).
 - Profiling costs time: a block hook on every thread. The replays' 3,600 s
   (`FFX_REPLAY_TIMEOUT`) leave room for it; nobody has timed a whole list
   with it yet.

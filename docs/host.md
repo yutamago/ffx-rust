@@ -197,6 +197,49 @@ Everything that calls code goes through the table:
   Rust side for an import stub, else Unicorn;
 - later, a mod replaces an entry by address.
 
+**Import thunks** (2026-11-12, m5-wp5). `FFX.exe` calls many imports
+through 6-byte thunks, `jmp [IAT slot]` (`crt_memcpy_thunk` `0x00949256`,
+`crt_memset_thunk` `0x0094964c`, 493 found): the ports name them as
+their callees (`MEMCPY`, `MEMSET`). Until then every such call from a port
+went into Unicorn for the one `jmp`, stopped at the import's `int3` stub,
+ran the Rust side, and resumed for the return: two emulator starts per
+`memcpy`, 95 M calls in gate run 1. Now `Shared::find_thunks` finds them
+in `.text` (`ff 25` + an IAT slot of the image, after an `int3` pad, at
+a 16-byte boundary or right after another thunk) and patches each to
+`int3`; `Exec::call` (and the router and the overlays' calls) goes
+straight to what the slot holds (the import's Rust side, or a DLL export
+in Unicorn), and Unicorn code reaching one enters the import as from its
+stub. A `jmp [slot]` the scan leaves alone (a run after a `jmp`, as
+`alloca_probe_8`'s neighbours at `0x009498bc`) still resolves for a call
+from Rust (`Shared::thunk` reads its bytes). On the boot to 4,000
+presents: emulator starts 492,843 → 196,676, Rust → Unicorn calls 227,716
+→ 79,736.
+
+**Leaf functions** (`src/leaf.rs`, m5-wp5). About 80 of the functions
+gate run 1 saw in Unicorn are one instruction and a `ret`: the PS2
+leftovers and empty debug hooks (`FlushCache`, `sceDmaSend`,
+`sceGsSyncPath`, `FFXVpu0Reset`, `MyProfilerAddMarker`: `ret`, `ret n`,
+`xor eax, eax`, `or eax, -1`, `mov al, imm8`) and accessors (`mov eax,
+[g]`, `mov eax, [ecx + d]`, `mov al, [ecx + d]`), about 1.5 M calls from
+ports. A call from Rust to one (`Exec::call`, after the table, the
+imports and the traps) reads its first bytes and does what the
+instruction does to `eax`, with no emulator start; Unicorn code calling
+one runs it (a block, no stop). `tests/crt.rs` checks each shape on a
+real function against Unicorn.
+
+**C runtime helpers** (`src/crt.rs`, m5-wp5): `FFX.exe`'s statically
+linked `eh_vector_constructor_iterator`/`eh_vector_destructor_iterator`
+(the compiler's array loops: a `thiscall` per element, signed counts) and
+`onexit`/`atexit` (the image's `atexit` table through `__dllonexit`, both
+imports the run's own, the pointer coding the identity: `f` registered and
+returned) are host functions in the table; ports called them about 52 k
+and 19 k times a replay list. `security_check_cookie`, `alloca_probe*`,
+`ftol2_sse` and `SEH_prolog4`/`SEH_epilog4` are not: only emulated code
+calls them (a port's frame needs none), and an entry would add an emulator
+stop to each of their calls. They leave Unicorn with their callers.
+`tests/crt.rs` compares all four with the originals, from Unicorn and from
+Rust.
+
 ### One source of truth
 
 The ports are the hook's `ported!` lists (`crates/ffx-hook/src/ported/*.rs`,
@@ -881,6 +924,30 @@ The DLLs' x87 transcendental instructions run exactly (above, "x87")
 and their C++ exceptions dispatch through the SEH chain (above,
 "Exceptions").
 
+**Rust sides of DLL functions** (`src/crt_dll.rs`, m5-wp5, 2026-11-12).
+The imports `FFX.exe` and the ports call most get Rust sides with the
+DLL's results, derived from the player's DLL's machine code; a case a
+Rust side doesn't cover goes to the DLL's own export (`Shared::dll(..)
+.exports`), which runs in Unicorn as before. `tests/crt_dll.rs` compares
+each with the DLL.
+
+| Import | Rust side | Hands on to the DLL |
+|---|---|---|
+| `MSVCP110!istream::getline(char *, streamsize)` | a stream whose state is not good (the auto-test console thread polls `std::cin` at its end every 5 ms: 1.4 M calls, about 80 emulated blocks each, in gate run 1): `_Chcount` 0, `*str` 0, the state `(state \| failbit \| badbit without a buffer) & 0x17` | a good stream; a state the exception mask throws for |
+| `MSVCR110!_CIsin`, `_CIcos` | the SSE2 paths (`__libm_sse2_sin`/`cos` at `0x1004ba00`/`0x10044aef`: the 64-entry table at the multiples of π/32, three-part reduction, two series side by side), operation for operation in doubles, the DLL's constants and table read from the loaded DLL; 31 M calls and some 250 M emulated blocks in gate run 1 | no SSE2 flag, other `MXCSR`/x87 control settings, \|x\| from about 2^16 (the DLL's x87 `fcos`/`fsin` path), infinities, NaNs |
+| `MSVCR110!_CIsqrt` | the correctly rounded root at 53-bit precision (the processor's `fsqrt`) | negative or non-finite arguments (errno), another precision |
+| `MSVCR110!_stricmp` | the "C" locale's `__ascii_stricmp` (`A`-`Z` lowered, the difference of the first differing bytes) | a NULL argument (errno, the invalid-parameter handler); a changed locale (`__locale_changed`) |
+| `MSVCR110!strstr`, `strchr`, `strncpy`, `memchr` | the standard results (no locale, no errno) | - |
+
+The intrinsics take their argument in `ST0`: Unicorn code calling one
+enters `Exec::enter_x87_import` (the stub's `int3`: `ST0` replaced by the
+result, or a jump to the DLL's export with the stack as it is), a port's
+`route::x87` through the intrinsic's thunk (`0x009498c2` `_CIcos`)
+computes it with no emulator (`call_x87`). `f80_to_f64` now rounds an
+80-bit value once to the double's 53 bits (or a subnormal's fewer): it
+scaled by `2^-1060` in a double before, which is 0, so a tiny `ST0` (an
+`1e-300`) read as 0.
+
 ## Overlays
 
 The spell overlays (`magicFiles/FFX/magic_<nnnn>.dll`,
@@ -1113,8 +1180,10 @@ harness's background mode.
   nothing the layer doesn't answer, and the recorded stream reads back
   with `ffx_gfx::read_all` (three frames, vertex shaders); the heap's
   decommit thread started on the way;
-- `without_the_dlls_the_stl_is_the_wall`: `--no-dlls` still stops at the
-  first `MSVCP110` import.
+- `without_the_dlls_the_c_runtime_is_the_wall`: `--no-dlls` stops at
+  the first C runtime function without a Rust side: `MSVCR110!fwrite` in
+  `Settings_Save` since WP6 (2026-11-12; the first `MSVCP110` import
+  before).
 
 `tests/x87.rs` and `tests/seh.rs` (same conditions): MSVCR110's maths
 against the CPU (above, "x87"), throw, catch, rethrow, faults and the

@@ -17,7 +17,8 @@
 //! `--documents` is the folder the game sees as its documents folder
 //! (`GameSetting.ini`, the saves; written to). `--profile` writes every
 //! function that ran in Unicorn with its calls and time (`--cover`
-//! implied; under the harness the file is written at the test's `quit`,
+//! implied; the calls from Rust into Unicorn by target go beside it,
+//! `x.profile.tsv` → `x.entries.tsv`; under the harness the file is written at the test's `quit`,
 //! which ends the process before this program's report); `--routes` where
 //! each import went (Rust, DLL, missing); `--ports` every port that ran,
 //! with its calls. `--sym` defaults to `FFX_HOST_SYM`, else
@@ -185,6 +186,10 @@ fn main() -> ExitCode {
         let s = ffx_host::report::summary(&exec, &syms);
         if let Err(e) = std::fs::write(&p, ffx_host::report::profile_tsv(&s)) {
             eprintln!("profile: {e}");
+        }
+        let entries = ffx_host::report::entries_tsv(exec.shared(), &exec.all_profile(), &syms);
+        if let Err(e) = std::fs::write(ffx_host::report::entries_path(&p), entries) {
+            eprintln!("profile entries: {e}");
         }
     }
     if let Some(p) = routes

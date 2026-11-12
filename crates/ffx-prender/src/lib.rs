@@ -290,3 +290,4 @@ pub mod texture;
 pub mod thread;
 pub mod visibility;
 pub mod world;
+pub mod wp5_hot;
