@@ -201,6 +201,43 @@ pub fn deterministic_get_timer(on: bool) {
     ruffle_core::DETERMINISTIC_GET_TIMER.store(on, std::sync::atomic::Ordering::Relaxed);
 }
 
+/// Reports `DisplayObject.width` / `height` in floating point, without
+/// rounding to twips, as Iggy does (the fork's `IGGY_FLOAT_BOUNDS`): the
+/// movies lay out bitmap glyphs with `x = int(x + glyph.width)`, and
+/// twips-rounded widths moved text by a pixel here and there.
+pub fn iggy_float_bounds(on: bool) {
+    ruffle_core::IGGY_FLOAT_BOUNDS.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Keeps the sub-pixel position of objects drawn through the bitmap cache
+/// (filters: the labels' glow), as `GDraw` draws them into screen-sized
+/// targets (the fork's `IGGY_FILTER_PHASE`); stock Ruffle snaps them.
+pub fn iggy_filter_phase(on: bool) {
+    ruffle_core::IGGY_FILTER_PHASE.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Every `GDraw`-like switch on: mipmaps, forced smoothing, the
+/// deterministic `getTimer`, float bounds and sub-pixel filter caches.
+pub fn gdraw_like() {
+    gdraw_mipmaps(true);
+    force_bitmap_smoothing(true);
+    deterministic_get_timer(true);
+    iggy_float_bounds(true);
+    iggy_filter_phase(true);
+}
+
+impl Render {
+    /// How `GDraw` draws (WP12 measurements, docs/formats/pc-ui.md
+    /// "Ruffle"): one sample (stage quality `low`; `GDraw` has no MSAA).
+    #[must_use]
+    pub fn gdraw() -> Self {
+        Self {
+            quality: Some("low".to_owned()),
+            ss: 0,
+        }
+    }
+}
+
 /// One movie in a Ruffle player.
 pub struct Stage {
     player: Arc<Mutex<Player>>,

@@ -700,6 +700,30 @@ Mismatches found (round 2, 2026-10-27, measured: `tools/swf-pilot/measure.sh`):
   drops extra ones. Shot 9 offline: 38,712 -> 1,151 pixels off by more than
   24 levels, the three rows and their Get buttons drawn. No other call in
   the iggy-menus, boot and menu-save logs needs fitting.
+- **Text positions** (WP12). `BitmapTextField.text` places each glyph
+  clip at `x = int(x + glyph.width - _offsetX)`; Flash and Ruffle report
+  `width` from bounds rounded to twips, Iggy in floating point, so a
+  truncation flipped here and there and lines drifted by a pixel (shots 7
+  and 8). Fork switch `IGGY_FLOAT_BOUNDS` (getters and the `width` /
+  `height` setters' scale).
+- **Filtered objects** (WP12). Ruffle (like Flash Player) draws an object
+  with filters (the labels' glow) into a cache whose origin is the
+  object's whole-pixel bounds, dropping its sub-pixel position; `GDraw`
+  draws it into a screen-sized target at its exact position. Labels sat
+  0.1-0.4 px lower (measured by sub-pixel correlation). Fork switch
+  `IGGY_FILTER_PHASE` keeps the phase inside the cache.
+- **Stage quality** (WP12): with both switches, `low` (one sample, as
+  `GDraw` has no MSAA) beats Ruffle's 4x MSAA: 9,148 against 12,029
+  pixels off by more than 24 levels over iggy-menus 1-9 and the pilot's
+  nine screens.
+- `stage::gdraw_like()` + `Render::gdraw()` (`ffx-host`, `iggy-replay
+  --gdraw`) turn all of this on. Offline, pixels off by more than 24
+  levels, before (round 2 switches) -> after: iggy-menus 1: 4,053 -> 3;
+  2: 1,456 -> 3; 3: 4,444 -> 2,005; 4: 2,310 -> 288; 5: 1,780 -> 273; 6:
+  1,301 -> 3; 7: 9,797 -> 46; 8: 15,507 -> 51; 9: 38,712 -> 3; the pilot's
+  save list 3,373 -> 179, its pop-up 8,863 -> 3,960. Left: thin outlines
+  (the Audio page's volume bars, the pop-up's frame), `GDraw`'s 1-pixel
+  analytic edge fringe that Ruffle's tessellator has no counterpart for.
 - **The movies' interfaces** (`swf-abc`, an example of `ffx-swf`, lists
   them from the player's archive; "The 19 movies" below).
 

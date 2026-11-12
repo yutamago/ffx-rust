@@ -15,11 +15,12 @@ png = "0.18"
 serde_json.workspace = true
 image = { version = "0.25", default-features = false, features = ["png", "bmp"] }
 # Ruffle (MIT OR Apache-2.0), from the user's fork: upstream rev 07d3e430
-# plus one commit with three opt-in switches (bitmap mipmaps, forced
-# smoothing, a deterministic getTimer) and blur rounding; docs/formats/pc-ui.md
+# plus two commits of opt-in switches (bitmap mipmaps, forced smoothing, a
+# deterministic getTimer, blur rounding; float script bounds and sub-pixel
+# filter caches, WP12); docs/formats/pc-ui.md
 # "Ruffle". A dependency only; no Ruffle code is copied.
-ruffle_core = { git = "https://github.com/yutamago/ruffle", rev = "23dc65800b90050f059cda78b2d6b64dd79976fc" }
-ruffle_render_wgpu = { git = "https://github.com/yutamago/ruffle", rev = "23dc65800b90050f059cda78b2d6b64dd79976fc" }
+ruffle_core = { git = "https://github.com/yutamago/ruffle", rev = "88ad6cf47337648eaac744fb38d87b066c50b27c" }
+ruffle_render_wgpu = { git = "https://github.com/yutamago/ruffle", rev = "88ad6cf47337648eaac744fb38d87b066c50b27c" }
 
 [dev-dependencies]
 # Ruffle's warnings and AS3 errors in the examples (`FFX_SWF_TRACE=1`)
