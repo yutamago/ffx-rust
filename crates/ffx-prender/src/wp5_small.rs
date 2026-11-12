@@ -726,3 +726,28 @@ pub fn physics_body_ctor(h: &mut impl Host, this: u32, frame: u32) -> u32 {
     h.call_sym(BASE_REF_CTOR, Conv::Thiscall(this + 0xd0), &[]);
     this
 }
+
+/// `PPhysicsRigidBodyBase::~PPhysicsRigidBodyBase` (`0x005e2660`,
+/// thiscall) -> its `eax`: `Phyre_PhyreFree([+0xd0])` when that word's
+/// bit 0 is clear; the `PSharray` at `+0xa0` (count, data) has its data
+/// freed when owned (bit 31 clear) and holding more than one element
+/// (one is inline); then `+0xa4` and `+0xa0` 0. `eax`: that free's, else
+/// 0xfe for a borrowed array, 0xff for an owned one of at most one.
+pub fn rigid_body_base_dtor(h: &mut impl Host, this: u32) -> u32 {
+    let name: u32 = h.read(this + 0xd0);
+    if name & 1 == 0 {
+        h.call_sym(PHYRE_FREE, Conv::Cdecl, &[name]);
+    }
+    let count: u32 = h.read(this + 0xa0);
+    let eax = if count & 0x8000_0000 != 0 {
+        BORROWED_EAX
+    } else if count > 1 {
+        let data: u32 = h.read(this + 0xa4);
+        h.call_sym(PHYRE_FREE, Conv::Cdecl, &[data])
+    } else {
+        0xff
+    };
+    h.write(this + 0xa4, 0u32);
+    h.write(this + 0xa0, 0u32);
+    eax
+}

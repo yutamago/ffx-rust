@@ -146,4 +146,8 @@ ported! {
         let mut f = StackFrame::<16>::new();
         s::physics_body_ctor(&mut mem(), this, f.at())
     }
+    /// `Phyre_PPhysics_PPhysicsRigidBodyBase_dtor_005e2660`: the owned name and shared array freed, the array cleared; its `eax`.
+    Phyre_PPhysics_PPhysicsRigidBodyBase_dtor_005e2660 @ 0x005e_2660 => extern "thiscall" fn sm_005e2660(this: u32) -> u32 {
+        s::rigid_body_base_dtor(&mut mem(), this)
+    }
 }

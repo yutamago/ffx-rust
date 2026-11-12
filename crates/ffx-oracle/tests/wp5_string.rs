@@ -2053,3 +2053,36 @@ fn wp5b_physics_body_ctor() {
         t.same(&w);
     }
 }
+
+/// `PPhysicsRigidBodyBase`'s destructor (`0x005e2660`), `Phyre_PhyreFree`
+/// a logging stub: the `+0xd0` word with bit 0 clear and set, the shared
+/// array owned and borrowed with 0, 1, 2 and 5 elements; `eax` and
+/// memory.
+#[test]
+fn wp5b_rigid_body_base_dtor() {
+    use ffx_prender::wp5_small as sm;
+    for (label, mut t) in Twins::all() {
+        let log = t.alloc(&[0; 4 + 8 * 64]);
+        let c = log_stub_plain(&mut t, log, 0, 0x6161_0000, true);
+        jmp_stub(&mut t, sm::PHYRE_FREE, &c);
+        let obj = t.alloc(&[0x6b; 0xe0]);
+        for case in 0..16u32 {
+            let n = [0u32, 1, 2, 5][(case % 4) as usize];
+            let borrowed = if case & 4 != 0 { 0x8000_0000 } else { 0 };
+            t.w32(obj + 0xa0, n | borrowed);
+            t.w32(obj + 0xa4, 0x0055_0000 + case);
+            t.w32(
+                obj + 0xd0,
+                if case & 8 != 0 {
+                    0x0099_0001
+                } else {
+                    0x0099_0000
+                },
+            );
+            let w = format!("{label} rigid body base dtor case {case}");
+            t.run(&w, 0x005e_2660, obj, &[], false, |g| {
+                sm::rigid_body_base_dtor(g, obj)
+            });
+        }
+    }
+}
