@@ -163,6 +163,7 @@ mod wp5_small;
 mod wp5_sort;
 mod wp5_string;
 mod wp5_tree;
+mod wp5d;
 mod wrapped_ports;
 
 pub(crate) use battle::ms_screen_process;
@@ -328,6 +329,7 @@ pub fn hooks() -> Vec<Hook> {
     all.extend(wp5_sort::hooks());
     all.extend(wp5_string::hooks());
     all.extend(wp5_tree::hooks());
+    all.extend(wp5d::hooks());
     all.extend(wrapped_ports::hooks());
     all
 }
