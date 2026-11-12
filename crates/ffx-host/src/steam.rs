@@ -129,7 +129,7 @@ pub struct Method {
 }
 
 /// Every vtable slot `FFX.exe` calls, from its call sites (`call [edx+N]`
-/// after the accessor; docs/formats/platform.md, "steam_api.dll"):
+/// after the accessor; docs/formats/platform.md, "`steam_api.dll`"):
 /// `Steam_Init` `0x006234c1` (Utils +0x28), `0x006234d1` (User +0x04);
 /// `StatsAndAchievements_ctor` `0x006f1296` (Utils +0x24), `0x006f12e8`
 /// (User +0x04), `0x006f12f8` (`UserStats` +0x00);
@@ -548,9 +548,9 @@ impl Bridge {
 /// struct marshalled to the game's layout and size, `Run` from slot 1 of
 /// the object's vtable.
 #[must_use]
-pub fn plan(
+pub fn plan<S: std::hash::BuildHasher>(
     mem: &impl Mem,
-    registered: &HashMap<u32, (i32, u32)>,
+    registered: &HashMap<u32, (i32, u32), S>,
     events: &[Event],
 ) -> Vec<Delivery> {
     events
@@ -742,8 +742,11 @@ pub fn dll_path() -> Option<std::path::PathBuf> {
         .and_then(|e| e.parent().map(|d| d.join("steam_api64.dll")))
 }
 
-/// The real back end, or why there is none.
+/// The real back end, or why there is none (`FFX_NO_STEAM` set: none).
 fn load() -> Result<Box<dyn Backend>, String> {
+    if std::env::var_os("FFX_NO_STEAM").is_some() {
+        return Err("FFX_NO_STEAM is set".into());
+    }
     #[cfg(windows)]
     {
         let path = dll_path().ok_or("no path for steam_api64.dll")?;
@@ -930,7 +933,11 @@ fn register_callback(e: &mut Exec, a: &Args) -> Ret {
         && let Some(b) = s.as_mut()
     {
         #[allow(clippy::cast_possible_wrap)] // `int iCallback`
-        b.register(&mut e.mem(), a.stack[0], a.stack[1] as i32);
+        b.register(
+            &mut e.mem(),
+            a.arg(Conv::Cdecl, 0),
+            a.arg(Conv::Cdecl, 1) as i32,
+        );
     }
     Ret::VOID
 }
@@ -941,7 +948,7 @@ fn unregister_callback(e: &mut Exec, a: &Args) -> Ret {
     if let Ok(mut s) = STEAM.lock()
         && let Some(b) = s.as_mut()
     {
-        b.unregister(&mut e.mem(), a.stack[0]);
+        b.unregister(&mut e.mem(), a.arg(Conv::Cdecl, 0));
     }
     Ret::VOID
 }
@@ -1103,7 +1110,10 @@ pub mod dll {
     // are the DLL's and live for the process.
     unsafe impl Send for Dll {}
 
-    fn export(module: HMODULE, name: &str) -> Result<unsafe extern "system" fn() -> isize, String> {
+    /// `GetProcAddress`'s `FARPROC`.
+    type Farproc = unsafe extern "system" fn() -> isize;
+
+    fn export(module: HMODULE, name: &str) -> Result<Farproc, String> {
         let c = format!("{name}\0");
         // SAFETY: a module handle from LoadLibraryW and a NUL-terminated name.
         unsafe { GetProcAddress(module, c.as_ptr()) }
@@ -1128,23 +1138,27 @@ pub mod dll {
             // (steam_api.h, steam_api_flat.h).
             unsafe {
                 Ok(Self {
-                    init: std::mem::transmute::<_, Init>(f("SteamInternal_SteamAPI_Init")?),
-                    run_callbacks: std::mem::transmute::<_, Void>(f("SteamAPI_RunCallbacks")?),
-                    shutdown: std::mem::transmute::<_, Void>(f("SteamAPI_Shutdown")?),
-                    register: std::mem::transmute::<_, Register>(f("SteamAPI_RegisterCallback")?),
-                    unregister: std::mem::transmute::<_, Unregister>(f(
+                    init: std::mem::transmute::<Farproc, Init>(f("SteamInternal_SteamAPI_Init")?),
+                    run_callbacks: std::mem::transmute::<Farproc, Void>(f(
+                        "SteamAPI_RunCallbacks",
+                    )?),
+                    shutdown: std::mem::transmute::<Farproc, Void>(f("SteamAPI_Shutdown")?),
+                    register: std::mem::transmute::<Farproc, Register>(f(
+                        "SteamAPI_RegisterCallback",
+                    )?),
+                    unregister: std::mem::transmute::<Farproc, Unregister>(f(
                         "SteamAPI_UnregisterCallback",
                     )?),
-                    get_user: std::mem::transmute::<_, Handle>(f("SteamAPI_GetHSteamUser")?),
-                    get_pipe: std::mem::transmute::<_, Handle>(f("SteamAPI_GetHSteamPipe")?),
-                    client: std::mem::transmute::<_, Client>(f("SteamClient")?),
-                    get_user_iface: std::mem::transmute::<_, UserIface>(f(
+                    get_user: std::mem::transmute::<Farproc, Handle>(f("SteamAPI_GetHSteamUser")?),
+                    get_pipe: std::mem::transmute::<Farproc, Handle>(f("SteamAPI_GetHSteamPipe")?),
+                    client: std::mem::transmute::<Farproc, Client>(f("SteamClient")?),
+                    get_user_iface: std::mem::transmute::<Farproc, UserIface>(f(
                         "SteamAPI_ISteamClient_GetISteamUser",
                     )?),
-                    get_utils: std::mem::transmute::<_, PipeIface>(f(
+                    get_utils: std::mem::transmute::<Farproc, PipeIface>(f(
                         "SteamAPI_ISteamClient_GetISteamUtils",
                     )?),
-                    get_user_stats: std::mem::transmute::<_, UserIface>(f(
+                    get_user_stats: std::mem::transmute::<Farproc, UserIface>(f(
                         "SteamAPI_ISteamClient_GetISteamUserStats",
                     )?),
                     ifaces: [std::ptr::null_mut(); 3],
@@ -1231,7 +1245,7 @@ pub mod dll {
                 .or_insert_with(|| HostCallback::new(guest, id, size, flags));
             twin.id = id;
             twin.size = size;
-            let p: *mut HostCallback = &mut **twin;
+            let p: *mut HostCallback = &raw mut **twin;
             // SAFETY: a boxed twin that outlives its registration.
             unsafe { (self.register)(p, id) };
             (twin.flags, twin.id)
@@ -1239,7 +1253,7 @@ pub mod dll {
 
         fn unregister(&mut self, guest: u32) -> Option<u8> {
             let twin = self.twins.get_mut(&guest)?;
-            let p: *mut HostCallback = &mut **twin;
+            let p: *mut HostCallback = &raw mut **twin;
             // SAFETY: a twin the DLL may hold.
             unsafe { (self.unregister)(p) };
             Some(twin.flags)
@@ -1373,12 +1387,14 @@ mod tests {
             match call {
                 Call::GetAppId => Reply::U32(APP_ID),
                 Call::SetOverlayNotificationPosition(_) => Reply::Void,
-                Call::LoggedOn | Call::RequestCurrentStats | Call::StoreStats => Reply::Bool(true),
+                Call::LoggedOn
+                | Call::RequestCurrentStats
+                | Call::StoreStats
+                | Call::SetAchievement(_) => Reply::Bool(true),
                 Call::GetAchievement(n) => {
                     let known = n.as_bytes().starts_with(b"ACH_");
                     Reply::Achievement(known, known.then_some(n.as_bytes().ends_with(b"FFX")))
                 }
-                Call::SetAchievement(_) => Reply::Bool(true),
                 Call::GetAchievementDisplayAttribute(n, k) => Reply::Text(Some(
                     format!("{}:{}", n.to_string_lossy(), k.to_string_lossy()).into_bytes(),
                 )),
@@ -1599,7 +1615,7 @@ mod tests {
             id: 1101,
             data: vec![0; 0x18],
         }];
-        assert!(plan(&m, &b.registered, &ev).is_empty());
+        assert_eq!(plan(&m, &b.registered, &ev), Vec::new());
     }
 
     #[test]
