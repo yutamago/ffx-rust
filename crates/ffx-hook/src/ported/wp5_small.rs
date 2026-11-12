@@ -170,4 +170,9 @@ ported! {
     Phyre_PPhysics_PPhysicsWorld_dtor_005e28d0 @ 0x005e_28d0 => extern "thiscall" fn sm_005e28d0(this: u32) -> u32 {
         s::world_dtor(&mut mem(), this)
     }
+    /// `Phyre_PPhysics_PPhysicsShapeBase_ctor_005e0740`: the vtable, an identity 3x4 at `+0x14` (frame `ebp - 0x40`), the scale 1 and `+0x54` 8; `this`.
+    Phyre_PPhysics_PPhysicsShapeBase_ctor_005e0740 @ 0x005e_0740 => extern "thiscall" fn sm_005e0740(this: u32) -> u32 {
+        let mut f = StackFrame::<16>::new();
+        s::shape_base_ctor(&mut mem(), this, f.at())
+    }
 }

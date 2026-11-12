@@ -2221,3 +2221,25 @@ fn wp5b_world_dtor() {
         }
     }
 }
+
+/// `PPhysicsShapeBase`'s constructor (`0x005e0740`) on junk,
+/// `PMatrix4_toWorldMatrix3x4` a logging stub (its matrix word, each
+/// run's own frame, cleared before the diff).
+#[test]
+fn wp5b_shape_base_ctor() {
+    use ffx_prender::wp5_small as sm;
+    for (label, mut t) in Twins::all() {
+        let log = t.alloc(&[0; 4 + 8 * 64]);
+        let c = log_stub(&mut t, log, 4, 0x5151);
+        jmp_stub(&mut t, sm::TO_WORLD_3X4, &c);
+        let obj = t.alloc(&[0x6b; 0x60]);
+        let frame = t.b.stack_range().start + 0x1000;
+        let w = format!("{label} shape base ctor");
+        let at = t.a.rebase(0x005e_0740);
+        let r = t.a.call(at, Conv::Thiscall(obj), &[]).unwrap();
+        let p = sm::shape_base_ctor(&mut G(&mut t.b), obj, frame);
+        assert_eq!(r.eax, p, "{w}: eax");
+        t.w32(log + 8, 0);
+        t.same(&w);
+    }
+}

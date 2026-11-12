@@ -911,3 +911,28 @@ pub fn world_dtor(h: &mut impl Host, this: u32) -> u32 {
     }
     h.call_sym(WORLD_BULLET_DTOR, Conv::Thiscall(this), &[])
 }
+
+/// `Phyre_PPhysics_PPhysicsShapeBase_vftable`.
+pub const SHAPE_BASE_VTABLE: u32 = 0x00b3_9508;
+
+/// `PPhysicsShapeBase::PPhysicsShapeBase` (`0x005e0740`, thiscall; the
+/// shapes' base constructor, 48 callers) -> `this`: the vtable
+/// ([`SHAPE_BASE_VTABLE`]), the byte `+4` 0, the floats `+8`, `+0xc` 0,
+/// `+0x10` 0; an identity matrix in the 16-word `frame` (the original's
+/// `ebp - 0x40`) made a 3x4 at `+0x14` (`PMatrix4_toWorldMatrix3x4`);
+/// the floats `+0x44..+0x4c` 1 (`+0x50` untouched), `+0x54` 8.
+pub fn shape_base_ctor(h: &mut impl Host, this: u32, frame: u32) -> u32 {
+    h.write(this + 8, 0u32);
+    h.write(this + 0xc, 0u32);
+    let vt = h.rebase(SHAPE_BASE_VTABLE);
+    h.write(this, vt);
+    h.write(this + 4, 0u8);
+    h.write(this + 0x10, 0u32);
+    h.write_bytes(frame, &identity_words());
+    h.call_sym(TO_WORLD_3X4, Conv::Thiscall(this + 0x14), &[frame]);
+    for off in [0x44, 0x48, 0x4c] {
+        h.write(this + off, 1.0f32.to_bits());
+    }
+    h.write(this + 0x54, 8u32);
+    this
+}
