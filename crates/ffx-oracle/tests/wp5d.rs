@@ -1310,3 +1310,41 @@ fn wp5d_tweak_line_texts() {
         }
     }
 }
+
+/// GDraw's frame reset (`0x00a37fe0`): a junk context with a device
+/// context whose vtable slot 110 is a logging stub, two draw lists (also
+/// the same list twice). `eax` and memory.
+#[test]
+fn wp5d_gdraw_reset_frame() {
+    use ffx_prender::wp5d as d;
+    for (label, mut t) in Twins::all() {
+        let log = t.alloc(&[0; 4 + 32 * 32]);
+        let s = wide_stub_plain(log, 0x6e, 1, 4, 0x5150);
+        let clear = t.code(&s);
+        let vt = t.alloc(&[0; 0x200]);
+        t.w32(vt + 0x1b8, clear);
+        for round in 0..3u32 {
+            let bytes: Vec<u8> = (0..0xad0u32).map(|i| (i * 7 + round) as u8).collect();
+            let ctx = t.alloc(&bytes);
+            let dc = t.alloc(&[0; 8]);
+            t.w32(dc, vt);
+            t.w32(ctx + 4, dc);
+            let l1 = t.alloc(
+                &(0..0x1b0u32)
+                    .map(|i| (i * 3 + round) as u8)
+                    .collect::<Vec<_>>(),
+            );
+            let l2 = t.alloc(
+                &(0..0x1b0u32)
+                    .map(|i| (i * 5 + round) as u8)
+                    .collect::<Vec<_>>(),
+            );
+            t.w32(ctx + 0xab0, l1);
+            t.w32(ctx + 0xab4, if round == 2 { l1 } else { l2 });
+            t.w32(t.a.rebase(d::GDRAW_CONTEXT), ctx);
+            t.w32(log, 0);
+            let w = format!("{label} gdraw reset frame {round}");
+            t.run_cdecl(&w, 0x00a3_7fe0, &[], |g| d::gdraw_reset_frame(g));
+        }
+    }
+}

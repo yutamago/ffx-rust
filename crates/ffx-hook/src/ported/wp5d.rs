@@ -230,4 +230,8 @@ ported! {
     SaveData_string_007870d0 @ 0x0078_70d0 => extern "C" fn d_007870d0(i: u32) -> u32 {
         d::save_string(&mut mem(), i)
     }
+    /// `gdraw_resetFrame_00a37fe0`: the device state cleared, the frame counters and draw lists reset.
+    gdraw_resetFrame_00a37fe0 @ 0x00a3_7fe0 => extern "C" fn d_00a37fe0() -> u32 {
+        d::gdraw_reset_frame(&mut mem())
+    }
 }

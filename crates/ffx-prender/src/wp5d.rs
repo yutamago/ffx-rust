@@ -1343,3 +1343,50 @@ pub fn game_param_line<H: Host>(h: &mut H, this: u32, n: u32, buf: u32) -> u32 {
         _ => line(h, buf, FMT_RATE, &[m, label, u32::MAX]),
     }
 }
+
+/// GDraw's context (`gdraw_createContext_00a35780` stores it).
+pub const GDRAW_CONTEXT: u32 = 0x01a8_58b4;
+
+/// The two draw lists' reset in [`gdraw_reset_frame`]: flags `+0xc`
+/// bits 1 and 2 cleared, `+0x198` = the old `+0x1a0`, `+0x19c` = the old
+/// `+0x1a4`, `+0x1a0`/`+0x1a4` the context's two words. The old `+0x1a4`.
+fn gdraw_reset_list(h: &mut impl Host, list: u32, a: u32, b: u32) -> u32 {
+    let old_a: u32 = h.read(list + 0x1a0);
+    let f: u32 = h.read(list + 0xc);
+    h.write(list + 0xc, f & !6);
+    h.write(list + 0x198, old_a);
+    let old_b: u32 = h.read(list + 0x1a4);
+    h.write(list + 0x1a4, b);
+    h.write(list + 0x19c, old_b);
+    h.write(list + 0x1a0, a);
+    old_b
+}
+
+/// GDraw's frame reset (`0x00a37fe0`, cdecl; Iggy's render command run
+/// through `IggyRenderCommand_trampoline_00a34b00` on the render
+/// thread): the device context's `ClearState` (`ID3D11DeviceContext`
+/// slot 110, `[ctx+4]`), then on the context: `+0xab8` 1, `+0x9bc` the
+/// old `+0x9b8`, `+0x9b8`, `+0x9a4`, `+0x9b4` 0, and its two draw lists
+/// (`+0xab0`, then `+0xab4`) reset to the words `+0xac0`/`+0xac4` (read
+/// once, before). `eax`: the second list's old `+0x1a4`.
+pub fn gdraw_reset_frame(h: &mut impl Host) -> u32 {
+    let g = h.rebase(GDRAW_CONTEXT);
+    let ctx: u32 = h.read(g);
+    let dc: u32 = h.read(ctx + 4);
+    let vt: u32 = h.read(dc);
+    let f: u32 = h.read(vt + 0x1b8);
+    h.call(f, Conv::Stdcall, &[dc]);
+    let ctx: u32 = h.read(g);
+    let last: u32 = h.read(ctx + 0x9b8);
+    let first: u32 = h.read(ctx + 0xab0);
+    let b: u32 = h.read(ctx + 0xac4);
+    let a: u32 = h.read(ctx + 0xac0);
+    h.write(ctx + 0xab8, 1u32);
+    h.write(ctx + 0x9bc, last);
+    for off in [0x9b8, 0x9a4, 0x9b4] {
+        h.write(ctx + off, 0u32);
+    }
+    gdraw_reset_list(h, first, a, b);
+    let second: u32 = h.read(ctx + 0xab4);
+    gdraw_reset_list(h, second, a, b)
+}
