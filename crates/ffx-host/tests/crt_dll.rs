@@ -6,7 +6,7 @@
 use std::path::PathBuf;
 
 use ffx_bridge::Mem as _;
-use ffx_bridge::route::{Float, Router as _};
+use ffx_bridge::route::Router as _;
 use ffx_host::exec::Exec;
 
 fn exe() -> Option<PathBuf> {
@@ -80,109 +80,211 @@ fn getline_on_a_stream_at_its_end_matches_the_dll() {
     }
 }
 
-/// The x87 intrinsics: `_CIsin`, `_CIcos` (SSE2 paths) and `_CIsqrt`
-/// through the ports' thunks (`call_x87`, as `ffx_chara`'s `CI_COS`), and
-/// from emulated code through the IAT, against the DLL's exports, bit for
-/// bit, over arguments in every band (tiny, the table's range, the large
-/// ones the DLL computes with x87 `fcos`, signs, zeros, infinities).
-#[test]
-#[allow(clippy::cast_possible_truncation)] // the game's f32 angles
-fn x87_intrinsics_match_the_dll() {
-    let Some(exe) = exe() else { return };
-    let mut e = ffx_host::boot(&exe).unwrap();
-    let mut xs = vec![
-        0.0,
-        -0.0,
-        1e-300,
-        -1e-310,
-        5e-324,
-        1e-80,
-        1e-20,
-        0.5,
-        1.0,
-        -1.0,
-        std::f64::consts::PI,
-        std::f64::consts::FRAC_PI_2,
-        -std::f64::consts::FRAC_PI_4,
-        100.0,
-        -12_345.678,
-        1e8,
-        3e8,
-        1e9,
-        1e15,
-        1e300,
-        f64::INFINITY,
-        f64::NEG_INFINITY,
-        f64::MAX,
-        2.0,
-        4.0,
-    ];
-    // the angles the game feeds them (f32 radians) and a spread
-    let mut s = 0x1234_5678u32;
-    for i in 0..4000 {
-        s ^= s << 13;
-        s ^= s >> 17;
-        s ^= s << 5;
-        let unit = f64::from(s) / f64::from(u32::MAX);
-        let x = match i % 4 {
-            0 => (unit - 0.5) * 20.0,
-            1 => f64::from(((unit - 0.5) * 7.0) as f32),
-            2 => (unit - 0.5) * 2e6,
-            _ => unit * 1e-6,
-        };
-        xs.push(x);
-    }
-    // thunks the ports call (`jmp [slot]`): _CIsin, _CIcos, _CIsqrt
-    for (name, thunk) in [
-        ("_CIsin", 0x0094_98c8u32),
-        ("_CIcos", 0x0094_98c2),
-        ("_CIsqrt", 0x0094_97b8),
-    ] {
-        let dll = export(&e, "MSVCR110.dll", name);
-        let iat = slot(&e, "MSVCR110.dll", name);
-        // emulated code: fld qword [cell]; call [iat]; fstp qword [out]; ret
-        let cell = e.alloc(16);
-        let code = {
-            let mut c = vec![0xdd, 0x05];
-            c.extend_from_slice(&cell.to_le_bytes());
-            c.extend_from_slice(&[0xff, 0x15]);
-            c.extend_from_slice(&iat.to_le_bytes());
-            c.extend_from_slice(&[0xdd, 0x1d]);
-            c.extend_from_slice(&(cell + 8).to_le_bytes());
-            c.push(0xc3);
-            c
-        };
-        let caller = e.alloc_code(&code).unwrap();
-        let mut fast = 0;
-        for &x in &xs {
-            if name == "_CIsqrt" && x < 0.0 {
-                continue; // the DLL's error path (errno, the matherr hook)
-            }
-            let before = e.stats.leaf_calls;
-            let rust = e.call_x87(thunk, &[x], Float::F64);
-            fast += e.stats.leaf_calls - before;
-            let want = e.call_x87(dll, &[x], Float::F64);
-            assert!(
-                rust.to_bits() == want.to_bits() || (rust.is_nan() && want.is_nan()),
-                "{name}({x:e}) = {rust:e}, the DLL's {want:e}"
-            );
-            e.mem().write(cell, x);
-            e.call_cdecl(caller, &[]).unwrap();
-            let from_unicorn: f64 = e.mem().read(cell + 8);
-            assert!(
-                from_unicorn.to_bits() == want.to_bits()
-                    || (from_unicorn.is_nan() && want.is_nan()),
-                "{name}({x:e}) from emulated code = {from_unicorn:e}, the DLL's {want:e}"
-            );
-        }
-        // the SSE2 paths took Rust for |x| under about 2^16 (all but the
-        // quarter around 10^6 and the large ones), sqrt for the
-        // non-negative arguments (about 2,500 here)
-        let floor = if name == "_CIsqrt" { 2400 } else { 2900 };
-        assert!(fast > floor, "{name}: {fast} in Rust");
+/// A xorshift stream of unit values for the argument spreads.
+struct Spread(u32);
+
+impl Spread {
+    fn unit(&mut self) -> f64 {
+        self.0 ^= self.0 << 13;
+        self.0 ^= self.0 >> 17;
+        self.0 ^= self.0 << 5;
+        f64::from(self.0) / f64::from(u32::MAX)
     }
 }
 
+/// Edge arguments every one-operand intrinsic gets: tiny, normal, the
+/// band edges of the SSE2 paths, large, signs, zeros, infinities, a NaN.
+const EDGES: [f64; 30] = [
+    0.0,
+    -0.0,
+    1e-300,
+    -1e-310,
+    5e-324,
+    1e-80,
+    1e-20,
+    1e-9,
+    0.5,
+    1.0,
+    -1.0,
+    std::f64::consts::PI,
+    std::f64::consts::FRAC_PI_2,
+    -std::f64::consts::FRAC_PI_4,
+    100.0,
+    -12_345.678,
+    8191.9,
+    8192.1,
+    1e8,
+    3e8,
+    1e9,
+    1e15,
+    1e19,
+    1e300,
+    f64::INFINITY,
+    f64::NEG_INFINITY,
+    f64::MAX,
+    f64::NAN,
+    2.0,
+    4.0,
+];
+
+/// One-operand arguments: the edges and `n` from a spread (the game's
+/// f32 radians, a wide range, tiny ones, near the poles of tan).
+#[allow(clippy::cast_possible_truncation)] // the game's f32 angles
+fn one_operand(n: usize, seed: u32) -> Vec<Vec<f64>> {
+    let mut s = Spread(seed);
+    let mut xs: Vec<f64> = EDGES.to_vec();
+    for i in 0..n {
+        let u = s.unit();
+        xs.push(match i % 6 {
+            0 => (u - 0.5) * 20.0,
+            1 => f64::from(((u - 0.5) * 7.0) as f32),
+            2 => (u - 0.5) * 2e6,
+            3 => u * 1e-6,
+            4 => std::f64::consts::FRAC_PI_2 * f64::from((u * 40.0) as i32 - 20) + (u - 0.5) * 1e-9,
+            _ => (u - 0.5) * 2.0,
+        });
+    }
+    xs.into_iter().map(|x| vec![x]).collect()
+}
+
+/// Two-operand arguments: every pair of a set of edges (zeros,
+/// denormals, infinities, NaNs, signs) and `n` spread pairs.
+#[allow(clippy::cast_possible_truncation)]
+fn two_operands(n: usize, seed: u32) -> Vec<Vec<f64>> {
+    let edges = [
+        0.0,
+        -0.0,
+        1e-310,
+        -5e-324,
+        1e-300,
+        1.0,
+        -1.0,
+        0.5,
+        3.0,
+        -7.25,
+        1e300,
+        -1e300,
+        f64::INFINITY,
+        f64::NEG_INFINITY,
+        f64::NAN,
+        -f64::NAN,
+    ];
+    let mut out = Vec::new();
+    for &a in &edges {
+        for &b in &edges {
+            out.push(vec![a, b]);
+        }
+    }
+    let mut s = Spread(seed);
+    for i in 0..n {
+        let (u, v) = (s.unit(), s.unit());
+        out.push(match i % 4 {
+            0 => vec![(u - 0.5) * 20.0, (v - 0.5) * 20.0],
+            1 => vec![
+                f64::from(((u - 0.5) * 7.0) as f32),
+                f64::from(((v - 0.5) * 7.0) as f32),
+            ],
+            2 => vec![(u - 0.5) * 1e6, (v - 0.5) * 1e-3],
+            _ => vec![(u - 0.5) * 1e-3, (v - 0.5) * 1e5],
+        });
+    }
+    out
+}
+
+/// The bits a result stores, NaNs compared by their bits too.
+fn same(a: f64, b: f64) -> bool {
+    a.to_bits() == b.to_bits()
+}
+
+/// The x87 intrinsics through the ports' thunks (`call_x87`, as
+/// `ffx_chara`'s `CI_COS`) and from emulated code through the IAT,
+/// against the DLL's exports, bit for bit, stored as doubles and (one
+/// rounding from the 80 bits) as floats: `_CIsin`, `_CIcos`, `_CItan`
+/// (SSE2 paths and the x87 ones for large arguments), `_CIsqrt`,
+/// `_CIatan2` and `_CIfmod` (x87, two operands). `min_rust` is how many
+/// calls each must take in Rust.
+#[test]
+#[allow(clippy::too_many_lines)]
+fn x87_intrinsics_match_the_dll() {
+    use ffx_bridge::route::Float;
+    let Some(exe) = exe() else { return };
+    let mut e = ffx_host::boot(&exe).unwrap();
+    let cases: [(&str, u32, Vec<Vec<f64>>, usize); 6] = [
+        ("_CIsin", 0x0094_98c8, one_operand(3000, 0x1234_5678), 2200),
+        ("_CIcos", 0x0094_98c2, one_operand(3000, 0x2345_6789), 2200),
+        ("_CItan", 0x0094_97be, one_operand(3000, 0x3456_789a), 2900),
+        ("_CIsqrt", 0x0094_97b8, one_operand(3000, 0x4567_89ab), 1500),
+        (
+            "_CIatan2",
+            0x0094_98bc,
+            two_operands(3000, 0x5678_9abc),
+            3100,
+        ),
+        (
+            "_CIfmod",
+            0x0094_98e0,
+            two_operands(3000, 0x6789_abcd),
+            3100,
+        ),
+    ];
+    for (name, thunk, args, min_rust) in cases {
+        let dll = export(&e, "MSVCR110.dll", name);
+        let iat = slot(&e, "MSVCR110.dll", name);
+        let n = args[0].len();
+        // emulated code: fld qword [cell + 8i] for each; call [iat];
+        // fstp qword [out]; ret
+        let cell = e.alloc(32);
+        let out = cell + 16;
+        let caller = {
+            let mut c = Vec::new();
+            for i in 0..u32::try_from(n).unwrap() {
+                c.extend_from_slice(&[0xdd, 0x05]);
+                c.extend_from_slice(&(cell + 8 * i).to_le_bytes());
+            }
+            c.extend_from_slice(&[0xff, 0x15]);
+            c.extend_from_slice(&iat.to_le_bytes());
+            c.extend_from_slice(&[0xdd, 0x1d]);
+            c.extend_from_slice(&out.to_le_bytes());
+            c.push(0xc3);
+            e.alloc_code(&c).unwrap()
+        };
+        let mut fast = 0;
+        for st in &args {
+            if name == "_CIsqrt" && !(st[0] >= 0.0) {
+                continue; // the DLL's error path (errno, the matherr hook)
+            }
+            for float in [Float::F64, Float::F32] {
+                let before = e.stats.leaf_calls;
+                let rust = e.call_x87(thunk, st, float);
+                if float == Float::F64 {
+                    fast += e.stats.leaf_calls - before;
+                }
+                let want = e.call_x87(dll, st, float);
+                assert!(
+                    same(rust, want),
+                    "{name}({st:?}) as {float:?} = {rust:e} ({:#x}), the DLL's {want:e} ({:#x})",
+                    rust.to_bits(),
+                    want.to_bits()
+                );
+            }
+            let want = e.call_x87(dll, st, Float::F64);
+            for (i, &v) in (0u32..).zip(st) {
+                e.mem().write(cell + 8 * i, v);
+            }
+            e.call_cdecl(caller, &[]).unwrap();
+            let from_unicorn: f64 = e.mem().read(out);
+            assert!(
+                same(from_unicorn, want),
+                "{name}({st:?}) from emulated code = {from_unicorn:e}, the DLL's {want:e}"
+            );
+        }
+        assert!(
+            fast >= min_rust as u64,
+            "{name}: {fast} of {} in Rust",
+            args.len()
+        );
+    }
+}
 /// The string functions (`_stricmp`, `strstr`, `strchr`, `strncpy`,
 /// `memchr`) through the import against the DLL's exports: `eax` and the
 /// bytes written, on strings with case, high bytes, empty ones and

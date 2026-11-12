@@ -26,6 +26,7 @@ pub mod com_methods;
 pub mod crt;
 pub mod crt_dll;
 pub mod crt_format;
+pub mod crt_math;
 pub mod crt_start;
 pub mod crt_stdio;
 pub mod crypt;
