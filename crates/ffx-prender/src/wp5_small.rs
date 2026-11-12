@@ -681,3 +681,48 @@ pub fn physics_header_ctor(h: &mut impl Host, this: u32) -> u32 {
     h.write(this + 0x48, 0u16);
     this
 }
+
+/// `PMatrix4_toWorldMatrix3x4` (thiscall `(dst; m)`, `ret 4`).
+pub const TO_WORLD_3X4: u32 = 0x0045_1190;
+/// The image float `0x005e0590` loads for `+0xa8`/`+0xac` (0.5).
+pub const PHYSICS_BODY_HALF: u32 = 0x00b9_2194;
+
+/// `0x005e0590(this)` (thiscall; `Phyre_PPhysics_DestroyCall_005f80b0`'s
+/// callee) -> `this`: `+0` = 0; an identity matrix in the 16-word `frame`
+/// (the original's `ebp - 0x50`) made a 3x4 at `+4`
+/// (`PMatrix4_toWorldMatrix3x4`); then the floats `+0x34..+0x3c`,
+/// `+0x44..+0x4c` 0, `+0x50` 1, `+0x54..+0x5c`, `+0x64..+0x6c`,
+/// `+0x74..+0x7c` 0, `+0x84..+0x8c` 1 (`+0x40`, `+0x60`, `+0x70`, `+0x80`,
+/// `+0x90` untouched); `+0x94..+0xa4` 0; `+0xa8`, `+0xac` the image's 0.5
+/// ([`PHYSICS_BODY_HALF`]); `+0xb0..+0xb8` 0, the byte `+0xbc` 0xf, the
+/// float `+0xc0` 0, the word `+0xc4` 0x100, `+0xc8`, `+0xcc` 0;
+/// `PBaseRef`'s constructor on `+0xd0`.
+pub fn physics_body_ctor(h: &mut impl Host, this: u32, frame: u32) -> u32 {
+    h.write_bytes(frame, &identity_words());
+    h.write(this, 0u32);
+    h.call_sym(TO_WORLD_3X4, Conv::Thiscall(this + 4), &[frame]);
+    let one = 1.0f32.to_bits();
+    for off in [0x34, 0x38, 0x3c, 0x44, 0x48, 0x4c] {
+        h.write(this + off, 0u32);
+    }
+    h.write(this + 0x50, one);
+    for off in [0x54, 0x58, 0x5c, 0x64, 0x68, 0x6c, 0x74, 0x78, 0x7c] {
+        h.write(this + off, 0u32);
+    }
+    for off in [0x84, 0x88, 0x8c] {
+        h.write(this + off, one);
+    }
+    h.write_bytes(this + 0x94, &[0; 0x14]);
+    let half = h.rebase(PHYSICS_BODY_HALF);
+    let half: u32 = h.read(half);
+    h.write(this + 0xa8, half);
+    h.write(this + 0xac, half);
+    h.write_bytes(this + 0xb0, &[0; 0xc]);
+    h.write(this + 0xbc, 0xfu8);
+    h.write(this + 0xc0, 0u32);
+    h.write(this + 0xc4, 0x100u16);
+    h.write(this + 0xc8, 0u32);
+    h.write(this + 0xcc, 0u32);
+    h.call_sym(BASE_REF_CTOR, Conv::Thiscall(this + 0xd0), &[]);
+    this
+}

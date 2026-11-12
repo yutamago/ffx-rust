@@ -141,4 +141,9 @@ ported! {
     PPhysicsHeader_ctor_005e0330 @ 0x005e_0330 => extern "thiscall" fn sm_005e0330(this: u32) -> u32 {
         s::physics_header_ctor(&mut mem(), this)
     }
+    /// `PPhysicsBody_ctor_005e0590`: an identity 3x4 at `+4` and the body defaults (frame `ebp - 0x50`); `this`.
+    PPhysicsBody_ctor_005e0590 @ 0x005e_0590 => extern "thiscall" fn sm_005e0590(this: u32) -> u32 {
+        let mut f = StackFrame::<16>::new();
+        s::physics_body_ctor(&mut mem(), this, f.at())
+    }
 }
