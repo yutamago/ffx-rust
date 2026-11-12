@@ -1403,6 +1403,115 @@ fn asin(e: &Exec, st: &[f64]) -> Option<Ext> {
     sse2_asin(d, ASIN_CI, x).map(ext_of)
 }
 
+// ------------------------------------------------------------------ log
+
+/// `_libm_sse2_log_precise`'s constants (`0x10038f60`) and tables (128
+/// pairs each: the reciprocal r of each mantissa interval, and -log r in
+/// two parts).
+const LOG_K: u32 = 0x1003_8f60;
+const LOG_RECIP: u32 = 0x1003_9020;
+const LOG_NEG_LOG: u32 = 0x1003_9430;
+
+const LOG_MANT: u32 = 0x00;
+const LOG_ROUND: u32 = 0x10;
+const LOG_CUT: u32 = 0x20;
+const LOG_LN2: u32 = 0x30; // (ln 2 high, low)
+const LOG_MASKS: u32 = 0x40; // (0, -1) and (-1, 0)
+const LOG_ONE: u32 = 0x60;
+const LOG_TWO52: u32 = 0x70;
+const LOG_P: [u32; 3] = [0x90, 0xa0, 0xb0];
+
+fn and2(v: P2, m: P2) -> P2 {
+    P2(
+        f64::from_bits(v.0.to_bits() & m.0.to_bits()),
+        f64::from_bits(v.1.to_bits() & m.1.to_bits()),
+    )
+}
+
+fn or2(v: P2, m: P2) -> P2 {
+    P2(
+        f64::from_bits(v.0.to_bits() | m.0.to_bits()),
+        f64::from_bits(v.1.to_bits() | m.1.to_bits()),
+    )
+}
+
+/// The SSE2 `log` of `x` (`0x10038d01`), or `None` for what the DLL's
+/// error handler takes (zero, negative values, NaNs).
+///
+/// `x = 2^e·m` with m in [1, 2); r the table's reciprocal for m's top 7
+/// bits, `u = m·r - 1` (with m split so `m_hi·r` is exact),
+/// `log x = e·ln 2 - log r + log(1 + u)`, the series in u in two lanes;
+/// a denormal x is scaled by 2^52 first. +∞: +∞.
+fn sse2_log(d: &CrtData, x: f64) -> Option<f64> {
+    let kp = |o: u32| d.p(LOG_K + o);
+    let mut x = x;
+    let mut bias = 0i32;
+    loop {
+        let biased = u32::try_from((x.to_bits() >> 52) & 0xfff).unwrap_or(0);
+        let ecx = biased.wrapping_sub(1);
+        let m = or2(and2(P2::dup(x), kp(LOG_MANT)), kp(LOG_ONE));
+        if ecx > 0x7fd {
+            if x == 0.0 {
+                return None; // -∞, a pole error
+            }
+            if ecx == u32::MAX {
+                // a positive denormal: scaled, the exponent corrected
+                x *= d.f(LOG_K + LOG_TWO52);
+                bias = -52;
+                continue;
+            }
+            if ecx == 0x7fe && m.0 == d.f(LOG_K + LOG_ONE) {
+                return Some(f64::INFINITY);
+            }
+            return None; // a NaN or a negative value
+        }
+        let index = u32::try_from((m + kp(LOG_ROUND)).0.to_bits() & 0x7f0).unwrap_or(0);
+        let r = d.p(LOG_RECIP + index);
+        let neg_log = d.p(LOG_NEG_LOG + index);
+        let m_hi = and2(m, kp(LOG_CUT));
+        let m_lo = m - m_hi;
+        let hi_r = m_hi * r - kp(LOG_ONE);
+        let mut acc = P2(neg_log.0 + hi_r.0, neg_log.1);
+        let lo_r = m_lo * r;
+        let u = lo_r + hi_r;
+        let e = i32::try_from(biased).unwrap_or(0) - 0x3ff + bias;
+        let exact = i32::try_from(index).unwrap_or(1).wrapping_add(e << 10) == 0;
+        let mask = d.p(LOG_K + LOG_MASKS + if exact { 0x10 } else { 0 });
+        let p = kp(LOG_P[0]) * u + kp(LOG_P[1]);
+        let u2 = u * u;
+        let u4 = u2.0 * u2.0;
+        acc = acc + P2::dup(f64::from(e)) * kp(LOG_LN2);
+        acc = acc + and2(lo_r, mask);
+        let p = p * u + kp(LOG_P[2]);
+        let u5 = u4 * u.0;
+        let p = p * P2(u5, u2.1);
+        return Some(((p.0 + p.1) + acc.1) + acc.0);
+    }
+}
+
+/// `_libm_sse2_log_precise` (`0x10038cd0`): the SSE2 code; zero (-∞, a
+/// pole error), negative values and NaNs (a domain error, the default
+/// NaN; a NaN quieted) through the DLL's handler.
+fn log_precise(e: &Exec, x: f64) -> Option<f64> {
+    let d = data(e)?;
+    if !sse_controls(e) {
+        return None;
+    }
+    if let Some(v) = sse2_log(d, x) {
+        return Some(v);
+    }
+    if e.shared().dll(CRT_FILE).is_some() {
+        return None;
+    }
+    Some(if x == 0.0 {
+        f64::NEG_INFINITY
+    } else if x.is_nan() {
+        f64::from_bits(x.to_bits() | (1 << 51))
+    } else {
+        f64::from_bits(0xfff8_0000_0000_0000)
+    })
+}
+
 // --------------------------------------------- the SSE2 functions
 
 /// Whether the SSE2 functions take their SSE2 code (`MXCSR` and the x87
@@ -1494,63 +1603,30 @@ pub fn sse_function(name: &str) -> Option<SseFn> {
         "_libm_sse2_atan_precise" => Some(atan_precise),
         "_libm_sse2_acos_precise" => Some(acos_precise),
         "_libm_sse2_asin_precise" => Some(asin_precise),
+        "_libm_sse2_log_precise" => Some(log_precise),
         _ => None,
     }
+}
+
+/// The rows of [`NO_DLL`].
+macro_rules! sse_rows {
+    ($($name:literal),* $(,)?) => {
+        &[$((CRT_FILE, $name, Conv::Cdecl, 0, sse_without_operand as ImportFn)),*]
+    };
 }
 
 /// The SSE2 functions' import entries without the DLLs: the ports call
 /// them through `Exec::call_sse` (`xmm0`); a call through the import's
 /// stub has no operand and stops.
-pub const NO_DLL: &[(&str, &str, Conv, usize, ImportFn)] = &[
-    (
-        CRT_FILE,
-        "_libm_sse2_sin_precise",
-        Conv::Cdecl,
-        0,
-        sse_without_operand,
-    ),
-    (
-        CRT_FILE,
-        "_libm_sse2_cos_precise",
-        Conv::Cdecl,
-        0,
-        sse_without_operand,
-    ),
-    (
-        CRT_FILE,
-        "_libm_sse2_tan_precise",
-        Conv::Cdecl,
-        0,
-        sse_without_operand,
-    ),
-    (
-        CRT_FILE,
-        "_libm_sse2_sqrt_precise",
-        Conv::Cdecl,
-        0,
-        sse_without_operand,
-    ),
-    (
-        CRT_FILE,
-        "_libm_sse2_atan_precise",
-        Conv::Cdecl,
-        0,
-        sse_without_operand,
-    ),
-    (
-        CRT_FILE,
-        "_libm_sse2_acos_precise",
-        Conv::Cdecl,
-        0,
-        sse_without_operand,
-    ),
-    (
-        CRT_FILE,
-        "_libm_sse2_asin_precise",
-        Conv::Cdecl,
-        0,
-        sse_without_operand,
-    ),
+pub const NO_DLL: &[(&str, &str, Conv, usize, ImportFn)] = sse_rows![
+    "_libm_sse2_sin_precise",
+    "_libm_sse2_cos_precise",
+    "_libm_sse2_tan_precise",
+    "_libm_sse2_sqrt_precise",
+    "_libm_sse2_atan_precise",
+    "_libm_sse2_acos_precise",
+    "_libm_sse2_asin_precise",
+    "_libm_sse2_log_precise",
 ];
 
 fn sse_without_operand(e: &mut Exec, _: &Args) -> Ret {
