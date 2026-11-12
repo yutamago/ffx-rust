@@ -1107,3 +1107,258 @@ fn crt_str_doubles_match_the_dll() {
         }
     }
 }
+
+/// A `TypeDescriptor` for the decorated `name`.
+fn type_descriptor(e: &mut Exec, name: &[u8]) -> u32 {
+    let at = e.alloc(8 + u32::try_from(name.len()).unwrap() + 8);
+    let mut v = vec![0x11u8, 0x22, 0x33, 0x44, 0, 0, 0, 0];
+    v.extend_from_slice(name);
+    v.push(0);
+    e.mem().write_bytes(at, &v);
+    at
+}
+
+/// A `BaseClassDescriptor`: (type, contained bases, mdisp, pdisp, vdisp,
+/// attributes).
+fn base_class(e: &mut Exec, td: u32, n: u32, pmd: (u32, i32, u32), attr: u32) -> u32 {
+    let at = e.alloc(0x20);
+    let mut mem = e.mem();
+    for (i, w) in (0u32..).zip([td, n, pmd.0, pmd.1.cast_unsigned(), pmd.2, attr, 0]) {
+        mem.write(at + 4 * i, w);
+    }
+    at
+}
+
+/// An object whose vtable's locator says (`offset`, `cd_offset`, type,
+/// hierarchy attributes, the base descriptors); `vfptr_at` is where the
+/// vtable pointer sits in the object. The object's address and `p`.
+fn rtti_object(e: &mut Exec, offset: u32, attributes: u32, bases: &[u32], td: u32) -> u32 {
+    let array = e.alloc(4 * u32::try_from(bases.len()).unwrap() + 4);
+    for (i, b) in (0u32..).zip(bases) {
+        e.mem().write(array + 4 * i, *b);
+    }
+    let chd = e.alloc(16);
+    let col = e.alloc(20);
+    let vtable = e.alloc(16);
+    let object = e.alloc(0x40);
+    let mut mem = e.mem();
+    for (i, w) in (0u32..).zip([0, attributes, u32::try_from(bases.len()).unwrap(), array]) {
+        mem.write(chd + 4 * i, w);
+    }
+    for (i, w) in (0u32..).zip([0, offset, 0, td, chd]) {
+        mem.write(col + 4 * i, w);
+    }
+    mem.write(vtable, col);
+    mem.write(vtable + 4, 0x0040_1000u32);
+    mem.write_bytes(object, &[0; 0x40]);
+    mem.write(object + offset, vtable + 4);
+    object
+}
+
+/// `__RTDynamicCast` (Rust side) against the DLL's over synthetic RTTI:
+/// a single-inheritance chain C : B : A cast from each type to each, to
+/// an unrelated type, to a type equal only by name, past a base marked
+/// private, through a sub-object pointer (the locator's offset) with
+/// `mdisp` offsets, NULL; and a multiple-inheritance hierarchy (handed
+/// on).
+#[test]
+fn rt_dynamic_cast_matches_the_dll() {
+    let Some(exe) = exe() else { return };
+    let mut e = ffx_host::boot(&exe).unwrap();
+    let (rust, dll) = both(&e, "__RTDynamicCast");
+    let ta = type_descriptor(&mut e, b".?AVA@@");
+    let tb = type_descriptor(&mut e, b".?AVB@@");
+    let tc = type_descriptor(&mut e, b".?AVC@@");
+    let td = type_descriptor(&mut e, b".?AVD@@");
+    let ta2 = type_descriptor(&mut e, b".?AVA@@");
+    let bc = base_class(&mut e, tc, 2, (0, -1, 0), 0);
+    let bb = base_class(&mut e, tb, 1, (0, -1, 0), 0);
+    let ba = base_class(&mut e, ta, 0, (4, -1, 0), 0);
+    let hidden = base_class(&mut e, tb, 0, (8, -1, 0), 4);
+    let mut cases = Vec::new();
+    for (offset, attributes, bases) in [
+        (0u32, 0u32, vec![bc, bb, ba]),
+        (8, 0, vec![bc, bb, ba]),
+        (0, 0, vec![bc, hidden, bb]),
+        (0, 1, vec![bc, bb, ba]),
+    ] {
+        let object = rtti_object(&mut e, offset, attributes, &bases, tc);
+        for source in [ta, tb, tc, ta2] {
+            for target in [ta, tb, tc, td, ta2] {
+                cases.push(vec![object + offset, 0, source, target, 0]);
+            }
+        }
+    }
+    cases.push(vec![0, 0, tc, ta, 0]);
+    for words in cases {
+        let before = e.stats.unicorn_calls;
+        let r = e.call_cdecl(rust, &words).unwrap();
+        let in_rust = e.stats.unicorn_calls == before;
+        assert_eq!(r, e.call_cdecl(dll, &words).unwrap(), "{words:x?}");
+        let multiple = {
+            let vt: u32 = if words[0] == 0 {
+                0
+            } else {
+                e.mem().read(words[0])
+            };
+            vt != 0 && {
+                let col: u32 = e.mem().read(vt - 4);
+                let chd: u32 = e.mem().read(col + 0x10);
+                e.mem().read::<u32>(chd + 4) & 1 != 0
+            }
+        };
+        assert_eq!(in_rust, !multiple, "{words:x?}");
+    }
+}
+
+/// `dll!name`'s slot value with and without the DLLs (two boots): the
+/// no-DLL functions' Rust sides against the DLL's own results.
+fn no_dll_boot(exe: &std::path::Path) -> Exec {
+    let opts = ffx_host::Options {
+        no_dlls: true,
+        ..ffx_host::Options::default()
+    };
+    ffx_host::boot_opts(exe, ffx_host::ports::table(), &opts).unwrap()
+}
+
+/// The no-DLL environment, locale, error-text and time functions
+/// (`crt_os`) against the DLL in a run with it: `strerror` for every
+/// number, `setlocale`'s queries, `getenv`/`_dupenv_s` (and, without the
+/// DLL only, after `_putenv_s`), the
+/// `tm` of `_gmtime64` and `_localtime64` (the run's local time is UTC
+/// in both: the stand-ins give no time zone), `_mktime64`'s
+/// normalization, `strftime` of every conversion, `system(NULL)`.
+#[test]
+#[allow(clippy::too_many_lines)]
+fn crt_os_matches_the_dll() {
+    let Some(exe) = exe() else { return };
+    let mut with = ffx_host::boot(&exe).unwrap();
+    let mut without = no_dll_boot(&exe);
+    assert!(without.shared().dlls.is_empty());
+    let call = |e: &mut Exec, name: &str, words: &[u32]| -> u32 {
+        let f: u32 = e.mem().read(slot(e, "MSVCR110.dll", name));
+        e.call_cdecl(f, words)
+            .unwrap_or_else(|_| panic!("{name}: {:?}", e.stopped()))
+    };
+    let text = |e: &Exec, at: u32| -> Vec<u8> {
+        let mut v = Vec::new();
+        let mut p = at;
+        loop {
+            let b: u8 = e.mem().read(p);
+            if b == 0 || v.len() > 300 {
+                return v;
+            }
+            v.push(b);
+            p += 1;
+        }
+    };
+    for n in (0u32..50).chain([u32::MAX, 0x8000_0000]) {
+        let a = call(&mut with, "strerror", &[n]);
+        let b = call(&mut without, "strerror", &[n]);
+        assert_eq!(text(&with, a), text(&without, b), "strerror({n})");
+    }
+    for e in [&mut with, &mut without] {
+        let c = put(e, b"C");
+        let empty = put(e, b"");
+        let r = call(e, "setlocale", &[0, 0]);
+        assert_eq!(text(e, r), b"C");
+        let r = call(e, "setlocale", &[4, c]);
+        assert_eq!(text(e, r), b"C");
+        let _ = empty;
+        let name = put(e, b"FFX_TEST_VAR");
+        let lower = put(e, b"ffx_test_var");
+        let value = put(e, b"on");
+        assert_eq!(call(e, "getenv", &[name]), 0);
+        let out = e.alloc(8);
+        assert_eq!(call(e, "_dupenv_s", &[out, out + 4, name]), 0);
+        assert_eq!(e.mem().read::<u64>(out), 0);
+        assert_eq!(call(e, "system", &[0]), 0, "system(NULL)");
+        if !e.shared().dlls.is_empty() {
+            // the DLL's _putenv_s needs SetEnvironmentVariableA, which
+            // has no stand-in: the rest runs without the DLLs only
+            continue;
+        }
+        assert_eq!(call(e, "_putenv_s", &[name, value]), 0);
+        let r = call(e, "getenv", &[lower]);
+        assert_eq!(text(e, r), b"on");
+        let out = e.alloc(8);
+        assert_eq!(call(e, "_dupenv_s", &[out, out + 4, name]), 0);
+        let p: u32 = e.mem().read(out);
+        assert_eq!(text(e, p), b"on");
+        assert_eq!(e.mem().read::<u32>(out + 4), 3);
+    }
+    let t_cell = |e: &mut Exec, t: u64| {
+        let at = e.alloc(8);
+        e.mem().write(at, t);
+        at
+    };
+    for t in [
+        0u64,
+        86_399,
+        951_782_400,
+        1_700_000_000,
+        4_102_444_800,
+        32_535_215_999,
+    ] {
+        for name in ["_gmtime64", "_localtime64"] {
+            let mut got = Vec::new();
+            for e in [&mut with, &mut without] {
+                let cell = t_cell(e, t);
+                let r = call(e, name, &[cell]);
+                let mut b = vec![0u8; 36];
+                e.mem().read_bytes(r, &mut b);
+                got.push(b);
+            }
+            assert_eq!(got[0], got[1], "{name}({t})");
+        }
+    }
+    // mktime of out-of-range fields, normalized
+    for fields in [
+        [0i32, 0, 0, 1, 0, 70, 0, 0, 0],
+        [75, 61, 25, 32, 13, 99, 0, 0, 0],
+        [-1, 0, 0, 1, 0, 100, 0, 0, 0],
+        [0, 0, 12, 29, 1, 124, 0, 0, 0],
+    ] {
+        let mut got = Vec::new();
+        for e in [&mut with, &mut without] {
+            let tm = e.alloc(36);
+            for (i, v) in (0u32..).zip(fields) {
+                e.mem().write(tm + 4 * i, v.cast_unsigned());
+            }
+            let f: u32 = e.mem().read(slot(e, "MSVCR110.dll", "_mktime64"));
+            let r = ffx_bridge::route::Router::call(
+                e,
+                f,
+                ffx_host::table::Conv::Cdecl,
+                &ffx_host::table::Args {
+                    stack: vec![tm],
+                    ..Default::default()
+                },
+                ffx_bridge::route::Float::None,
+            );
+            let mut b = vec![0u8; 36];
+            e.mem().read_bytes(tm, &mut b);
+            got.push((r.eax, r.edx, b));
+        }
+        assert_eq!(got[0], got[1], "_mktime64({fields:?})");
+    }
+    for fmt in [
+        "%a %A %b %B %d %H %I %j %m %M %p %S %U %w %W %y %Y %%",
+        "%c|%x|%X",
+        "%#d %#j",
+        "plain",
+        "",
+    ] {
+        let mut got = Vec::new();
+        for e in [&mut with, &mut without] {
+            let cell = t_cell(e, 1_700_000_000);
+            let tm = call(e, "_gmtime64", &[cell]);
+            let f = put(e, fmt.as_bytes());
+            let buf = e.alloc(200);
+            e.mem().write_bytes(buf, &[0xee; 200]);
+            let n = call(e, "strftime", &[buf, 200, f, tm]);
+            got.push((n, text(e, buf)));
+        }
+        assert_eq!(got[0], got[1], "strftime({fmt})");
+    }
+}

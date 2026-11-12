@@ -456,7 +456,7 @@ fn environment_strings(e: &mut Exec, _: &Args) -> Ret {
 }
 
 /// The standard handles (`GetStdHandle(-10/-11/-12)`).
-const STD_HANDLES: [u32; 3] = [0x10, 0x14, 0x18];
+pub(crate) const STD_HANDLES: [u32; 3] = [0x10, 0x14, 0x18];
 
 fn std_handle(_: &mut Exec, args: &Args) -> Ret {
     Ret::eax(match a(args, 0) {

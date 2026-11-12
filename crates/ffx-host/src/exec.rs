@@ -328,7 +328,7 @@ pub struct Shared {
     thread_ids: AtomicU32,
     tls_next: AtomicU32,
     tick: Arc<AtomicU64>,
-    started: Instant,
+    pub(crate) started: Instant,
     /// Every game thread asked for.
     pub threads: Mutex<Vec<ThreadInfo>>,
     /// Every thread's profile (with [`Exec::cover`] on), kept after the
@@ -370,6 +370,8 @@ pub struct Shared {
     /// The player's `MSVCR110.dll` read as data (`crate::crt_math`): the
     /// maths' constant tables, with or without the DLL loaded.
     pub crt_data: Option<crate::crt_math::CrtData>,
+    /// The C runtime's process state without the DLLs (`crate::crt_os`).
+    pub crt_state: Mutex<crate::crt_os::CrtState>,
     /// The virtual clock, the frame boundary and the turns
     /// (`crate::clock`).
     pub clock: crate::clock::Clock,
@@ -481,6 +483,7 @@ impl Shared {
             iat: HashSet::new(),
             x87_imports: HashMap::new(),
             crt_data,
+            crt_state: Mutex::new(crate::crt_os::CrtState::default()),
             clock: crate::clock::Clock::default(),
             audio: crate::audio::Audio::default(),
             iggy: crate::iggy::Iggy::default(),

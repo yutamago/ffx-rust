@@ -96,6 +96,21 @@ impl CrtData {
         f64::from_le_bytes(self.bytes(va))
     }
 
+    /// The 32-bit word at `va` (0 outside the image).
+    #[must_use]
+    pub fn word(&self, va: u32) -> u32 {
+        u32::from_le_bytes(self.bytes(va))
+    }
+
+    /// The NUL-terminated string at `va`, if the image holds it.
+    #[must_use]
+    pub fn c_string(&self, va: u32) -> Option<Vec<u8>> {
+        let at = va.wrapping_sub(DLL_BASE) as usize;
+        let rest = self.image.get(at..)?;
+        let end = rest.iter().position(|&b| b == 0)?;
+        Some(rest[..end].to_vec())
+    }
+
     /// The 16-bit word at `va`, if the image holds it.
     #[must_use]
     pub fn word16(&self, va: u32) -> Option<u16> {

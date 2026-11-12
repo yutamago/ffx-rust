@@ -71,8 +71,12 @@ impl Imports {
             .chain(crate::crt_dll::TABLE)
             .chain(crate::crt_str::TABLE)
             .chain(crate::crt_str::NO_DLL)
+            .chain(crate::crt_cxx::TABLE)
+            .chain(crate::crt_cxx::NO_DLL)
+            .chain(crate::crt_os::NO_DLL)
             .chain(crate::crt_format::TABLE)
             .chain(crate::crt_stdio::TABLE)
+            .chain(crate::crt_stdio::MORE)
             .chain(crate::crt_format::CONSOLE_TABLE)
             .chain(crate::steam::TABLE)
             .find(|(d, n, ..)| d.eq_ignore_ascii_case(dll) && *n == name);
@@ -177,6 +181,10 @@ pub struct ThreadCrt {
     pub errno_at: u32,
     /// `strtok`'s context.
     pub strtok: u32,
+    /// `strerror`'s buffer (`crate::crt_os`).
+    pub strerror_at: u32,
+    /// `_gmtime64`/`_localtime64`'s `tm`.
+    pub tm_at: u32,
 }
 
 impl Default for ThreadCrt {
@@ -186,6 +194,8 @@ impl Default for ThreadCrt {
             last_error: 0,
             errno_at: 0,
             strtok: 0,
+            strerror_at: 0,
+            tm_at: 0,
         }
     }
 }
