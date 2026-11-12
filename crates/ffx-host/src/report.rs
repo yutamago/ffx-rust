@@ -439,10 +439,7 @@ pub fn text(exec: &Exec, syms: &Symbols, outcome: &str) -> String {
         let name = exec.table().get(*addr).map_or("?", |e| e.name);
         let _ = writeln!(out, "  {n:>8}  {name} ({addr:#010x})");
     }
-    let (bad, first) = crate::log::bad_accesses();
-    if bad > 0 {
-        let _ = writeln!(out, "accesses outside the arena: {bad}, first {first:x?}");
-    }
+    let _ = writeln!(out, "{}", crate::log::bad_accesses_line());
     out
 }
 

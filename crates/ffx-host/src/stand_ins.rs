@@ -298,8 +298,189 @@ fn system_time(e: &mut Exec, args: &Args) -> Ret {
     Ret::VOID
 }
 
+// ---- OLEAUT32's BSTRs (WP7, the free play's crash) ----------------------
+
+/// A `BSTR` of `len` UTF-16 units on the arena heap: the byte length in
+/// the word before the pointer, the units (copied from `from` when it
+/// isn't 0, else zeros), a NUL unit after them. 0 when the heap is full
+/// or `len` doesn't fit.
+fn alloc_bstr(e: &mut Exec, from: u32, len: u32) -> u32 {
+    let Some(bytes) = len.checked_mul(2).filter(|&b| b <= 0x7fff_fff0) else {
+        return 0;
+    };
+    let block = e.alloc(4 + bytes + 2);
+    if block == 0 {
+        return 0;
+    }
+    let mut mem = e.mem();
+    let mut units = vec![0u8; bytes as usize];
+    if from != 0 {
+        mem.read_bytes(from, &mut units);
+    }
+    mem.write(block, bytes);
+    mem.write_bytes(block + 4, &units);
+    mem.write(block + 4 + bytes, 0u16);
+    block + 4
+}
+
+/// `SysAllocString(s)` (`OLEAUT32` ordinal 2, stdcall): a `BSTR` copy of
+/// the NUL-terminated `s`; 0 for 0. `Input_IsXInputDevice`'s WMI names.
+fn sys_alloc_string(e: &mut Exec, args: &Args) -> Ret {
+    let s = a(args, 0);
+    if s == 0 {
+        return Ret::eax(0);
+    }
+    let mem = e.mem();
+    let mut len = 0u32;
+    while len < 0x1000_0000 && mem.read::<u16>(s + 2 * len) != 0 {
+        len += 1;
+    }
+    Ret::eax(alloc_bstr(e, s, len))
+}
+
+/// `SysAllocStringLen(s, len)` (`OLEAUT32` ordinal 4, stdcall): a `BSTR`
+/// of `len` units copied from `s` (zeros for 0). The resource strings of
+/// `ComBstr_loadString_0061b330`, `BigFileStream_fileTaskUncompress`'s
+/// and `Game_Main`'s error boxes.
+fn sys_alloc_string_len(e: &mut Exec, args: &Args) -> Ret {
+    Ret::eax(alloc_bstr(e, a(args, 0), a(args, 1)))
+}
+
+/// `SysFreeString(s)` (`OLEAUT32` ordinal 6, stdcall): the block back to
+/// the heap; nothing for 0. The free play's crash (2026-11-11) was the
+/// first one, `BigFileStream_fileTaskUncompress`'s `SysFreeString(0)`
+/// before its error box.
+fn sys_free_string(e: &mut Exec, args: &Args) -> Ret {
+    let s = a(args, 0);
+    if s != 0 {
+        e.release(s - 4);
+    }
+    Ret::VOID
+}
+
+// ---- COM: no WMI here -----------------------------------------------------
+
+/// `CoCreateInstance(clsid, outer, context, iid, &out)`: no class is
+/// registered (`REGDB_E_CLASSNOTREG`, `*out` = 0). The only caller is
+/// `Input_IsXInputDevice` (`CLSID_WbemLocator`), which then answers "not
+/// an `XInput` device"; the host's `EnumDevices` offers no game controller,
+/// so nothing reaches it yet.
+fn co_create_instance(e: &mut Exec, args: &Args) -> Ret {
+    if a(args, 4) != 0 {
+        let mut mem = e.mem();
+        mem.write(a(args, 4), 0u32);
+    }
+    Ret::eax(0x8004_0154)
+}
+
+// ---- resources (crate::rsrc) ----------------------------------------------
+
+/// `FindResourceW(module, name, type)`.
+fn find_resource_w(e: &mut Exec, args: &Args) -> Ret {
+    let mem = e.mem();
+    Ret::eax(crate::rsrc::find(
+        &mem,
+        a(args, 0),
+        a(args, 2),
+        a(args, 1),
+        None,
+    ))
+}
+
+/// `FindResourceExW(module, type, name, language)`.
+fn find_resource_ex_w(e: &mut Exec, args: &Args) -> Ret {
+    let mem = e.mem();
+    let lang = a(args, 3) & 0xffff;
+    Ret::eax(crate::rsrc::find(
+        &mem,
+        a(args, 0),
+        a(args, 1),
+        a(args, 2),
+        Some(lang),
+    ))
+}
+
+/// `LoadResource(module, res)`.
+fn load_resource(e: &mut Exec, args: &Args) -> Ret {
+    let mem = e.mem();
+    Ret::eax(crate::rsrc::load(&mem, a(args, 0), a(args, 1)))
+}
+
+/// `SizeofResource(module, res)`.
+fn sizeof_resource(e: &mut Exec, args: &Args) -> Ret {
+    let mem = e.mem();
+    Ret::eax(crate::rsrc::size(&mem, a(args, 1)))
+}
+
+// ---- the window's last calls ----------------------------------------------
+
+/// `ShellExecuteW(hwnd, verb, file, params, dir, show)`: noted, not run;
+/// "success" (42, above 32). The window's `WM_CLOSE`
+/// (`Phyre_PFramework_PWindowWin32Base_WndProc`) starts the Steam
+/// launcher, `<game folder>\FFX&X-2_LAUNCHER.exe`, before it destroys
+/// the window: from `ffx-rust` that would start `FFX.exe` again.
+fn shell_execute_w(e: &mut Exec, args: &Args) -> Ret {
+    let file = read_wide(e, a(args, 2));
+    crate::log::note(&format!("ShellExecuteW {file:?}: not started (ffx-rust)"));
+    Ret::eax(42)
+}
+
+/// `ChangeDisplaySettingsA(mode, flags)`: noted, `DISP_CHANGE_SUCCESSFUL`.
+/// The display mode is not changed (the harness's games run beside the
+/// user's desktop); "Full Screen Mode" is then a window of that size.
+fn change_display_settings_a(e: &mut Exec, args: &Args) -> Ret {
+    let mode = a(args, 0);
+    let what = if mode == 0 {
+        "the registry's mode".to_string()
+    } else {
+        let mem = e.mem();
+        let (w, h): (u32, u32) = (mem.read(mode + 0x6c), mem.read(mode + 0x70));
+        format!("{w}x{h}")
+    };
+    crate::log::note(&format!(
+        "ChangeDisplaySettingsA({what}, {:#x}): not applied",
+        a(args, 1)
+    ));
+    Ret::eax(0)
+}
+
+/// `IggyGDrawSendWarning(iggy, format, ...)` (cdecl): `GDraw`'s warning
+/// on a failed `D3D11` call or a full pool, noted.
+fn iggy_gdraw_warning(e: &mut Exec, args: &Args) -> Ret {
+    let mem = e.mem();
+    let at = a(args, 1);
+    let mut text = Vec::new();
+    while at != 0 && text.len() < 256 {
+        let c: u8 = mem.read(at + u32::try_from(text.len()).unwrap_or(0));
+        if c == 0 {
+            break;
+        }
+        text.push(c);
+    }
+    crate::log::note(&format!(
+        "iggy: GDraw warning {:?}",
+        String::from_utf8_lossy(&text)
+    ));
+    Ret::VOID
+}
+
+/// A NUL-terminated UTF-16 string (at most 520 units).
+fn read_wide(e: &Exec, at: u32) -> String {
+    let mem = e.mem();
+    let mut s = Vec::new();
+    while at != 0 && s.len() < 520 {
+        let c: u16 = mem.read(at + 2 * u32::try_from(s.len()).unwrap_or(0));
+        if c == 0 {
+            break;
+        }
+        s.push(c);
+    }
+    String::from_utf16_lossy(&s)
+}
+
 const K32: &str = "KERNEL32.dll";
 const U32: &str = "USER32.dll";
+const OLEAUT: &str = "OLEAUT32.dll";
 
 /// The stand-ins: DLL, name, convention, stack words.
 pub const TABLE: &[(&str, &str, Conv, usize, ImportFn)] = &[
@@ -356,4 +537,65 @@ pub const TABLE: &[(&str, &str, Conv, usize, ImportFn)] = &[
     (U32, "wsprintfA", Conv::Cdecl, 2, |e, x| {
         wsprintf(e, x, false)
     }),
+    // WP7 (docs/host.md, "Imports": the triage of the missing imports)
+    (OLEAUT, "ORDINAL 2", Conv::Stdcall, 1, sys_alloc_string),
+    (OLEAUT, "ORDINAL 4", Conv::Stdcall, 2, sys_alloc_string_len),
+    (OLEAUT, "ORDINAL 6", Conv::Stdcall, 1, sys_free_string),
+    (
+        "ole32.dll",
+        "CoCreateInstance",
+        Conv::Stdcall,
+        5,
+        co_create_instance,
+    ),
+    // E_NOTIMPL; only after a CoCreateInstance that succeeded
+    (
+        "ole32.dll",
+        "CoSetProxyBlanket",
+        Conv::Stdcall,
+        8,
+        |_, _| Ret::eax(0x8000_4001),
+    ),
+    ("ole32.dll", "CoUninitialize", Conv::Stdcall, 0, |_, _| {
+        Ret::VOID
+    }),
+    (K32, "FindResourceW", Conv::Stdcall, 3, find_resource_w),
+    (K32, "FindResourceExW", Conv::Stdcall, 4, find_resource_ex_w),
+    (K32, "LoadResource", Conv::Stdcall, 2, load_resource),
+    // the loaded resource is its bytes already
+    (K32, "LockResource", Conv::Stdcall, 1, |_, x| {
+        Ret::eax(a(x, 0))
+    }),
+    (K32, "SizeofResource", Conv::Stdcall, 2, sizeof_resource),
+    (
+        "SHELL32.dll",
+        "ShellExecuteW",
+        Conv::Stdcall,
+        6,
+        shell_execute_w,
+    ),
+    (
+        U32,
+        "ChangeDisplaySettingsA",
+        Conv::Stdcall,
+        2,
+        change_display_settings_a,
+    ),
+    // SetWindowsHookExA is a stand-in (no real hook, so Windows never
+    // calls PWindowWin32_MouseHookProc, the only CallNextHookEx caller)
+    (U32, "UnhookWindowsHookEx", Conv::Stdcall, 1, ret1),
+    (U32, "CallNextHookEx", Conv::Stdcall, 4, ret0),
+    // the embedded mode's parent (PWindowWin32_AttachToHost,
+    // PApplication_InitWindowAndApp_00629ab0); Windows forwards it
+    (U32, "SetParent", Conv::Stdcall, 2, ret0),
+    // the window's WM_CLOSE / WM_DESTROY; Windows forwards both
+    (U32, "DestroyWindow", Conv::Stdcall, 1, ret1),
+    (U32, "PostQuitMessage", Conv::Stdcall, 1, |_, _| Ret::VOID),
+    (
+        "iggy_w32.dll",
+        "IggyGDrawSendWarning",
+        Conv::Cdecl,
+        2,
+        iggy_gdraw_warning,
+    ),
 ];

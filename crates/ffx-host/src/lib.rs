@@ -44,6 +44,7 @@ pub mod log;
 pub mod ports;
 pub mod replay;
 pub mod report;
+pub mod rsrc;
 pub mod stacks;
 pub mod stand_ins;
 pub mod sync;

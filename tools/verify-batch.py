@@ -182,6 +182,9 @@ def main():
         run(["python3", "-I", "tools/check-argslots.py"], env, dry)
         run(["python3", "-I", "tools/check-callconv.py"], env, dry)
         run(["python3", "-I", "tools/check-tailargs.py"], env, dry)
+        # no host pointer narrowed to a game address, no game address
+        # dereferenced without the arena base (M5 stage 4, docs/host.md)
+        run(["python3", "-I", "tools/check-hostptr.py"], env, dry)
         # clippy, host and 32-bit: each branch runs it, but a merge can put
         # together changes that are clean apart (mixer r3's rust_audio broke
         # the host build of ffx-hook unseen, 2026-10-28)

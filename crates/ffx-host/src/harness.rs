@@ -1518,6 +1518,8 @@ fn quit(shared: &Shared) {
         eprintln!("{line}");
     }
     write_profile(shared);
+    // run-all.sh fails a run with any (docs/harness.md)
+    eprintln!("{}", crate::log::bad_accesses_line());
     eprintln!(
         "harness: {} seeded jobs, {} cloth waits",
         SEEDED_JOBS.load(Ordering::Relaxed),

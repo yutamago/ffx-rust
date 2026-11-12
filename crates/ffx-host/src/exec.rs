@@ -640,6 +640,80 @@ impl Shared {
         self.sync.stop();
     }
 
+    /// `TerminateThread(handle, code)` from game thread `me`: `Some(code)`
+    /// when `handle` is `me`'s own (the caller ends itself, as
+    /// `ExitThread`); else the target is ended here and `None`. A thread
+    /// that never started (`CREATE_SUSPENDED`) is marked ended and never
+    /// runs; a running one has its waits ended and its emulator stopped,
+    /// and unwinds at its next block or call ([`Exec::halted`]); one that
+    /// ended already is left alone. False when `handle` is no thread.
+    pub fn terminate(&self, me: u32, handle: u32, code: u32) -> (bool, Option<u32>) {
+        // GetCurrentThread's pseudo handle
+        if handle == 0xffff_fffe {
+            return (true, Some(code));
+        }
+        let Some((id, done)) = self.sync.thread_of(handle) else {
+            return (false, None);
+        };
+        if id == me {
+            return (true, Some(code));
+        }
+        if done {
+            return (true, None);
+        }
+        let waiting = self.threads.lock().is_ok_and(|mut t| {
+            t.iter_mut()
+                .find(|i| i.handle == handle && !i.started && i.outcome.is_none())
+                .map(|i| i.outcome = Some(format!("TerminateThread({code:#x}) before it started")))
+                .is_some()
+        });
+        if waiting {
+            self.sync.thread_done(handle, code);
+            return (true, None);
+        }
+        // its waits end now; its emulator, if it spins, at the watchdog's
+        // next look (`stop_killed`)
+        self.sync.kill(id, code);
+        (true, None)
+    }
+
+    /// Stops the emulator of every terminated thread that is emulating
+    /// now (the watchdog, every [`WATCH`]: a request that falls between
+    /// two `emu_start`s is lost, so it repeats until the thread is gone).
+    /// Only inside `emu_start`: an instance still being set up must not
+    /// be touched from another thread (Unicorn initialises it lazily).
+    fn stop_killed(&self) {
+        if !self.sync.any_killed() {
+            return;
+        }
+        let ids: Vec<u32> = self.spots.lock().map_or_else(
+            |_| Vec::new(),
+            |l| {
+                l.iter()
+                    .filter(|s| s.emulating.load(Ordering::Acquire))
+                    .filter(|s| self.sync.killed(s.id).is_some())
+                    .map(|s| s.id)
+                    .collect()
+            },
+        );
+        if ids.is_empty() {
+            return;
+        }
+        if let Ok(list) = self.emulators.lock() {
+            for &(t, h) in list.iter() {
+                if ids.contains(&t) {
+                    // SAFETY: a live handle (an `Exec` removes its own under
+                    // this lock before its emulator closes), set up (it was
+                    // inside `emu_start` just now); Unicorn's stop request
+                    // may come from another thread.
+                    unsafe {
+                        uc_emu_stop(h as *mut std::ffi::c_void);
+                    }
+                }
+            }
+        }
+    }
+
     /// Why the whole run ended, if it did.
     #[must_use]
     pub fn stopped(&self) -> Option<Stop> {
@@ -694,6 +768,7 @@ fn watchdog(shared: &std::sync::Weak<Shared>) {
     loop {
         std::thread::sleep(WATCH);
         let Some(s) = shared.upgrade() else { return };
+        s.stop_killed();
         if s.overdue()
             && let Ok(list) = s.emulators.lock()
         {
@@ -1140,6 +1215,11 @@ impl Exec {
         if self.stopped.is_some() || self.seh.unwinding.is_some() {
             return true;
         }
+        // another thread's TerminateThread: ends this thread as ExitThread
+        if let Some(code) = self.shared.sync.killed(self.id) {
+            self.end(Stop::ThreadExit(code));
+            return true;
+        }
         if self.shared.sync.stopping() {
             self.stopped = Some(self.shared.stopped().unwrap_or(Stop::Returned));
             // where the main thread was when another thread ended the run
@@ -1422,7 +1502,9 @@ impl Exec {
             }
             self.stats.starts += 1;
             let t = Instant::now();
+            self.spot.emulating.store(true, Ordering::Release);
             let r = self.uc.emu_start(u64::from(pc), 0, 0, 0);
+            self.spot.emulating.store(false, Ordering::Release);
             self.stats.emulated += t.elapsed();
             let event = self.uc.get_data_mut().event.take();
             match event {
@@ -1477,8 +1559,9 @@ impl Exec {
                 None => {
                     r?;
                     let eip = self.reg(RegisterX86::EIP)?;
-                    if self.shared.overdue() {
-                        // the watchdog stopped it: the loop's check ends it
+                    if self.shared.overdue() || self.shared.sync.killed(self.id).is_some() {
+                        // the watchdog stopped it (the run's end, or a
+                        // TerminateThread): the loop's check ends it
                         pc = eip;
                         continue;
                     }

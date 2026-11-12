@@ -105,6 +105,8 @@ struct Inner {
     objects: HashMap<u32, Obj>,
     /// Critical sections by the game address of their `CRITICAL_SECTION`.
     sections: HashMap<u32, Section>,
+    /// Threads `TerminateThread` ended, by game thread id: the exit code.
+    killed: HashMap<u32, u32>,
 }
 
 /// Every object, shared by the game's threads.
@@ -113,6 +115,8 @@ pub struct Objects {
     inner: Mutex<Inner>,
     changed: Condvar,
     stopping: AtomicBool,
+    /// Some thread was terminated ([`Objects::killed`]'s fast path).
+    any_killed: AtomicBool,
 }
 
 impl Objects {
@@ -133,6 +137,42 @@ impl Objects {
     #[must_use]
     pub fn stopping(&self) -> bool {
         self.stopping.load(Ordering::Acquire)
+    }
+
+    /// `TerminateThread` of game thread `id` by another thread: its waits
+    /// end (as at [`Objects::stop`]) and its executor unwinds at its next
+    /// block or call ([`Objects::killed`]), with exit code `code`.
+    pub fn kill(&self, id: u32, code: u32) {
+        // the flag first: a waiter that sees itself in the map must find it
+        // set ([`Objects::killed`]'s fast path)
+        self.any_killed.store(true, Ordering::Release);
+        self.lock().killed.entry(id).or_insert(code);
+        self.changed.notify_all();
+    }
+
+    /// Whether any thread was terminated.
+    #[must_use]
+    pub fn any_killed(&self) -> bool {
+        self.any_killed.load(Ordering::Acquire)
+    }
+
+    /// Whether game thread `id` was terminated: its exit code.
+    #[must_use]
+    pub fn killed(&self, id: u32) -> Option<u32> {
+        if !self.any_killed() {
+            return None;
+        }
+        self.lock().killed.get(&id).copied()
+    }
+
+    /// The game thread id behind thread handle `handle`, and whether it
+    /// ended.
+    #[must_use]
+    pub fn thread_of(&self, handle: u32) -> Option<(u32, bool)> {
+        match self.lock().objects.get(&handle) {
+            Some(Obj::Thread { id, done, .. }) => Some((*id, *done)),
+            _ => None,
+        }
     }
 
     /// Adds `obj` under `handle`.
@@ -251,7 +291,7 @@ impl Objects {
                 }
                 return WAIT_OBJECT_0 + u32::try_from(i).unwrap_or(0);
             }
-            if self.stopping() {
+            if self.stopping() || g.killed.contains_key(&me) {
                 return WAIT_TIMEOUT;
             }
             let slice = match deadline {
@@ -293,7 +333,7 @@ impl Objects {
                 s.count += 1;
                 return true;
             }
-            if self.stopping() {
+            if self.stopping() || g.killed.contains_key(&me) {
                 return false;
             }
             g = self
@@ -393,5 +433,34 @@ mod tests {
         let t = std::thread::spawn(move || o2.wait(3, &[12], false, INFINITE));
         o.stop();
         assert_eq!(t.join().unwrap(), WAIT_TIMEOUT);
+    }
+
+    #[test]
+    fn kill_ends_only_that_threads_waits() {
+        let o = Arc::new(Objects::default());
+        o.insert(
+            16,
+            Obj::Event {
+                manual: true,
+                set: false,
+            },
+        );
+        o.section_init(0x200);
+        assert!(o.section_enter(0x200, 9));
+        assert_eq!(o.killed(5), None);
+        let (o2, o3) = (Arc::clone(&o), Arc::clone(&o));
+        let waiter = std::thread::spawn(move || o2.wait(5, &[16], false, INFINITE));
+        let entering = std::thread::spawn(move || o3.section_enter(0x200, 5));
+        let o4 = Arc::clone(&o);
+        let other = std::thread::spawn(move || o4.wait(6, &[16], false, 300));
+        std::thread::sleep(Duration::from_millis(20));
+        o.kill(5, 0x77);
+        assert_eq!(waiter.join().unwrap(), WAIT_TIMEOUT);
+        assert!(!entering.join().unwrap());
+        assert_eq!(o.killed(5), Some(0x77));
+        assert_eq!(o.killed(6), None);
+        // thread 6 waits its full time out; the section stays thread 9's
+        assert_eq!(other.join().unwrap(), WAIT_TIMEOUT);
+        assert!(!o.section_try(0x200, 6));
     }
 }

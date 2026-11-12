@@ -297,6 +297,37 @@ python3 -I tools/unicorn-report.py RUN/rust/*.profile.tsv [--gate] [--top 0] [--
   (`FFX_REPLAY_TIMEOUT`) leave room for it; nobody has timed a whole list
   with it yet.
 
+### Bad accesses in ffx-rust
+
+M5 stage 4's check (docs/rewrite-plan.md): no code path builds a host
+pointer from an arena address without the arena base. The static half is
+`tools/check-hostptr.py` (docs/host.md, "The arena"); the run-time half is
+`ffx-host`'s counter of accesses outside the arena's regions: a port's
+read or write through `ArenaMem` at an address no region covers (a host
+pointer cut to 32 bits lands there, or a game pointer that is still 0)
+reads zeros, drops the write and counts (`crate::log::bad_access`).
+
+- `ffx-rust.exe` prints the count as one line, `bad_accesses: N` (with the
+  first 16 when there are any: `read 4 at 0x00000010`, ...), at the
+  harness's `quit` (stderr, so `ffx-rust.log`) and in its own report.
+  With `FFX_HOST_NOTES=1` each of the first 16 is a note as it happens
+  (`bad access: read of 4 bytes at ...`).
+- `tools/replays/run-all.sh` with `FFX_HARNESS_EXE=rust` (the main list,
+  `--extra` and `--audio`) reads that line from each replay's
+  `<run>/rust/<replay>.ffx-rust.log` and fails the run when one has
+  `N > 0` (`== <replay>: FAIL, bad_accesses: ...`). A log without the line
+  (the run never got to `quit` or its report) is noted, not failed: that
+  replay has failed already.
+- The harness's own reads (`read`, `readp`, the trace) check the mapping
+  first and never count: the developer saves' trace reads through a
+  pointer still 0 on the field (`replay-compare.py --null-first`) don't
+  fail a run.
+- Last counts before this check (2026-10-29, `~/ffx-work/m5/host-merge`): 4,
+  12 and 27 in three boots of that day, at `0x8`/`0xc`, `0x040dfffa..e`
+  and low addresses; the user's free play of 2026-11-11 (43 s, the report
+  path) had none. The first lists run with the check will say where they
+  stand now.
+
 ## Hook-hit mode
 
 Coverage mode skips every byte a hook owns, so it cannot say which ported
