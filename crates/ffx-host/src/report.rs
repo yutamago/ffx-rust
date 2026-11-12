@@ -403,9 +403,10 @@ pub fn text(exec: &Exec, syms: &Symbols, outcome: &str) -> String {
     };
     let _ = writeln!(
         out,
-        "executor (all threads): {} emulator starts, {} Rust->Unicorn calls, {:.3} s emulated{rate}, {} exact x87 instructions, {} exceptions dispatched",
+        "executor (all threads): {} emulator starts, {} Rust->Unicorn calls ({} more to one-instruction functions run in Rust), {:.3} s emulated{rate}, {} exact x87 instructions, {} exceptions dispatched",
         st.starts,
         st.unicorn_calls,
+        st.leaf_calls,
         st.emulated.as_secs_f64(),
         st.x87,
         st.exceptions

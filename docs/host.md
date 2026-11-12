@@ -191,6 +191,31 @@ from Rust (`Shared::thunk` reads its bytes). On the boot to 4,000
 presents: emulator starts 492,843 → 196,676, Rust → Unicorn calls 227,716
 → 79,736.
 
+**Leaf functions** (`src/leaf.rs`, m5-wp5). About 80 of the functions
+gate run 1 saw in Unicorn are one instruction and a `ret`: the PS2
+leftovers and empty debug hooks (`FlushCache`, `sceDmaSend`,
+`sceGsSyncPath`, `FFXVpu0Reset`, `MyProfilerAddMarker`: `ret`, `ret n`,
+`xor eax, eax`, `or eax, -1`, `mov al, imm8`) and accessors (`mov eax,
+[g]`, `mov eax, [ecx + d]`, `mov al, [ecx + d]`), about 1.5 M calls from
+ports. A call from Rust to one (`Exec::call`, after the table, the
+imports and the traps) reads its first bytes and does what the
+instruction does to `eax`, with no emulator start; Unicorn code calling
+one runs it (a block, no stop). `tests/crt.rs` checks each shape on a
+real function against Unicorn.
+
+**C runtime helpers** (`src/crt.rs`, m5-wp5): `FFX.exe`'s statically
+linked `eh_vector_constructor_iterator`/`eh_vector_destructor_iterator`
+(the compiler's array loops: a `thiscall` per element, signed counts) and
+`onexit`/`atexit` (the image's `atexit` table through `__dllonexit`, both
+imports the run's own, the pointer coding the identity: `f` registered and
+returned) are host functions in the table; ports called them about 52 k
+and 19 k times a replay list. `security_check_cookie`, `alloca_probe*`,
+`ftol2_sse` and `SEH_prolog4`/`SEH_epilog4` are not: only emulated code
+calls them (a port's frame needs none), and an entry would add an emulator
+stop to each of their calls. They leave Unicorn with their callers.
+`tests/crt.rs` compares all four with the originals, from Unicorn and from
+Rust.
+
 ### One source of truth
 
 The ports are the hook's `ported!` lists (`crates/ffx-hook/src/ported/*.rs`,

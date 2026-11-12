@@ -142,6 +142,9 @@ pub struct Stats {
     pub missing_imports: Vec<String>,
     /// Calls from Rust into Unicorn.
     pub unicorn_calls: u64,
+    /// Calls from Rust to a one-instruction function run in Rust instead
+    /// (`crate::leaf`).
+    pub leaf_calls: u64,
     /// Emulator starts (each resume counts).
     pub starts: u64,
     /// Time spent inside the emulator.
@@ -174,6 +177,7 @@ impl Stats {
             }
         }
         self.unicorn_calls += o.unicorn_calls;
+        self.leaf_calls += o.leaf_calls;
         self.starts += o.starts;
         self.emulated += o.emulated;
         self.messages.extend(o.messages.iter().cloned());
@@ -1331,6 +1335,15 @@ impl Exec {
             } else {
                 Ok(ret)
             }
+        } else if let Some(leaf) = self
+            .shared
+            .image
+            .is_code(addr)
+            .then(|| crate::leaf::decode(&self.mem(), addr))
+            .flatten()
+        {
+            self.stats.leaf_calls += 1;
+            Ok(crate::leaf::run(&self.mem(), leaf, args.ecx))
         } else {
             self.call_unicorn(addr, conv, args)
         };
@@ -2470,7 +2483,9 @@ impl ffx_bridge::route::Router for Exec {
         let addr = self.shared.thunk(addr).unwrap_or(addr);
         let emulated = self.shared.table.get(addr).is_none()
             && !self.shared.stubs.contains_key(&addr)
-            && self.shared.trap(addr).is_none();
+            && self.shared.trap(addr).is_none()
+            && !(self.shared.image.is_code(addr)
+                && crate::leaf::decode(&self.mem(), addr).is_some());
         let Ok(ret) = Exec::call(self, addr, conv, args) else {
             halted()
         };

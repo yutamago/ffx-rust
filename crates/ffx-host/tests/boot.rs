@@ -171,8 +171,10 @@ fn boots_past_the_d3d11_device_to_the_first_frames() {
     eprintln!("{report}");
     // the player's C runtime DLLs ran their DllMain and serve the STL
     assert_eq!(exec.shared().dlls.len(), 2, "{report}");
-    // the static initialisers ran (each registers its destructor)
-    assert!(exec.stats.imports["MSVCR110.dll!_onexit"] > 400, "{report}");
+    // the static initialisers ran (each registers its destructor, through
+    // `atexit`'s host port: `ffx_host::crt`)
+    assert!(exec.shared().at_exit.lock().unwrap().len() > 400, "{report}");
+    assert!(exec.stats.ports[&ffx_host::crt::ATEXIT] > 400, "{report}");
     // GameSetting.ini: none at the start, so the game wrote its default
     let ini = opts
         .documents

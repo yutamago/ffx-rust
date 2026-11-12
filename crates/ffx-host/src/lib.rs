@@ -27,6 +27,7 @@ pub mod audio;
 pub mod clock;
 pub mod com;
 pub mod com_methods;
+pub mod crt;
 pub mod crypt;
 #[cfg(windows)]
 pub mod d3d11;
@@ -39,6 +40,7 @@ pub mod harness;
 pub mod iggy;
 pub mod image;
 pub mod imports;
+pub mod leaf;
 pub mod library;
 pub mod log;
 pub mod ports;
