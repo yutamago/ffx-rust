@@ -335,6 +335,10 @@ pub struct Shared {
     /// `FFX.exe`'s IAT slots, for the thunks [`Shared::thunk`] finds when
     /// a port calls one the scan left alone.
     iat: HashSet<u32>,
+    /// The x87 intrinsics with a Rust side (`crate::crt_dll::intrinsic`):
+    /// `FFX.exe`'s import stub → the Rust side and the DLL's export (for
+    /// the arguments the Rust side hands on).
+    x87_imports: HashMap<u32, (crate::crt_dll::X87Fn, Option<u32>)>,
     /// The virtual clock, the frame boundary and the turns
     /// (`crate::clock`).
     pub clock: crate::clock::Clock,
@@ -357,8 +361,9 @@ impl std::fmt::Debug for Shared {
 /// FFX.exe's `MSVCR110` imports that keep their Rust side when the
 /// player's DLLs are loaded: start-up and exit (the run's own), the heap
 /// (the DLL's `malloc` ends on the same heap through `HeapAlloc`), the
-/// copies and `rand` (per thread, MSVC's sequence). Everything else goes to
-/// the DLL (docs/host.md, "The C runtime DLLs").
+/// copies and `rand` (per thread, MSVC's sequence). Those `crate::crt_dll`
+/// has a Rust side for keep it too. Everything else goes to the DLL
+/// (docs/host.md, "The C runtime DLLs").
 pub const RUST_WITH_DLLS: [&str; 26] = [
     "__set_app_type",
     "__setusermatherr",
@@ -440,6 +445,7 @@ impl Shared {
             originals: HashMap::new(),
             thunks: HashMap::new(),
             iat: HashSet::new(),
+            x87_imports: HashMap::new(),
             clock: crate::clock::Clock::default(),
             audio: crate::audio::Audio::default(),
             iggy: crate::iggy::Iggy::default(),
@@ -681,6 +687,7 @@ impl Shared {
             }
             if let Some(d) = &dll
                 && !RUST_WITH_DLLS.contains(&imp.name.as_str())
+                && !crate::crt_dll::keeps(&imp.name)
                 && let Some(&x) = d.exports.get(&imp.name)
             {
                 ffx_bridge::Mem::write(&mut mem, imp.slot, x);
@@ -693,6 +700,10 @@ impl Shared {
             } else {
                 Route::Missing
             };
+            if let Some(f) = crate::crt_dll::intrinsic(&full) {
+                let export = dll.as_ref().and_then(|d| d.exports.get(&imp.name).copied());
+                self.x87_imports.insert(at, (f, export));
+            }
             self.routes.push((full, route));
             self.arena.fill(at, &[INT3]);
             self.arena.fill(imp.slot, &at.to_le_bytes());
@@ -1569,13 +1580,16 @@ impl Exec {
                     pc = self.handler_returned()?;
                 }
                 Some(Event::Int3(at)) => {
-                    let next = if let Some(&i) = self.shared.stubs.get(&at) {
+                    let next = if let Some(&(f, export)) = self.shared.x87_imports.get(&at) {
+                        self.enter_x87_import(f, export)
+                    } else if let Some(&i) = self.shared.stubs.get(&at) {
                         self.enter_import(i, at)
                     } else if let Some(&to) = self.shared.thunks.get(&at) {
                         // an import thunk: its jmp, the stack as it is
-                        match self.shared.stubs.get(&to) {
-                            Some(&i) => self.enter_import(i, to),
-                            None => Ok(to),
+                        match (self.shared.x87_imports.get(&to), self.shared.stubs.get(&to)) {
+                            (Some(&(f, export)), _) => self.enter_x87_import(f, export),
+                            (None, Some(&i)) => self.enter_import(i, to),
+                            (None, None) => Ok(to),
                         }
                     } else if self.shared.table.get(at).is_some() {
                         self.enter_port(at)
@@ -1933,6 +1947,40 @@ impl Exec {
         mem.read::<f64>(cell)
     }
 
+    /// Runs an x87 intrinsic (`_CIcos`, ...) for Unicorn code that called
+    /// it, its argument in `ST0`: the Rust side replaces `ST0` with the
+    /// result, or the DLL's export runs (a jump: the stack and `ST0` as
+    /// the caller left them) for the arguments the Rust side hands on.
+    fn enter_x87_import(&mut self, f: crate::crt_dll::X87Fn, export: Option<u32>) -> Result<u32> {
+        let x = self.st0()?;
+        if let Some(v) = x.and_then(|x| f(self, x)) {
+            self.stats.leaf_calls += 1;
+            self.pop_st0()?;
+            return self.finish(
+                Ret {
+                    st0: Some(v),
+                    ..Ret::VOID
+                },
+                0,
+            );
+        }
+        export.ok_or_else(|| {
+            Error::UnstubbedImport(
+                "an x87 intrinsic the Rust side hands on, without its DLL".into(),
+            )
+        })
+    }
+
+    /// The emulator's `MXCSR`.
+    pub(crate) fn mxcsr(&self) -> u32 {
+        self.reg(RegisterX86::MXCSR).unwrap_or(0x1f80)
+    }
+
+    /// The emulator's x87 control word.
+    pub(crate) fn fpu_control(&self) -> u32 {
+        self.reg(RegisterX86::FPCW).unwrap_or(0x027f)
+    }
+
     /// Runs import `i` (its stub at `stub`) for Unicorn code that called
     /// it.
     fn enter_import(&mut self, i: usize, stub: u32) -> Result<u32> {
@@ -2050,7 +2098,7 @@ impl Exec {
     }
 
     /// `ST0` as a double, if the x87 stack holds anything.
-    fn st0(&self) -> Result<Option<f64>> {
+    pub(crate) fn st0(&self) -> Result<Option<f64>> {
         let tag = self.uc.reg_read(RegisterX86::FPTAG)?;
         let sw = self.uc.reg_read(RegisterX86::FPSW)?;
         let top = (sw >> 11) & 7;
@@ -2426,10 +2474,38 @@ pub fn f80_to_f64(b: &[u8]) -> f64 {
     if mant == 0 {
         return sign * 0.0;
     }
-    // mant * 2^(exp - 16383 - 63), in two steps to stay in range
-    #[allow(clippy::cast_precision_loss)] // rounds to 53 bits, as fst does
-    let m = mant as f64;
-    sign * m * 2f64.powi((exp - 16383 - 63).clamp(-1100, 1100))
+    // mant · 2^(exp − 16383 − 63), rounded once to the double's 53 bits
+    // (or fewer, a subnormal), nearest even, as `fstp qword` does. The
+    // scaling by powers of two can't be done in doubles: 2^-1060 alone
+    // underflows (an 1e-300 in ST0 read as 0 until 2026-11-12).
+    let lead = exp - 16383 - i32::try_from(mant.leading_zeros()).unwrap_or(0);
+    let mant = mant << mant.leading_zeros();
+    if lead > 1023 {
+        return sign * f64::INFINITY;
+    }
+    // the bits that go: 11 for a normal double, more below 2^-1022
+    let drop = 11 + u32::try_from((-1022 - lead).max(0)).unwrap_or(0);
+    let kept = if drop >= 64 { 0 } else { mant >> drop };
+    let rest = if drop >= 64 {
+        u128::from(mant)
+    } else {
+        u128::from(mant & ((1u64 << drop) - 1))
+    };
+    let half = 1u128 << (drop.min(127) - 1);
+    let up = rest > half || (rest == half && kept & 1 == 1);
+    let kept = kept + u64::from(up);
+    let bits = if lead >= -1022 {
+        // kept is 1.xxx (53 bits) or rounded up to 2.0
+        let e = u64::try_from(lead + 1023).unwrap_or(0);
+        (e << 52) + (kept - (1 << 52))
+    } else {
+        // a subnormal (a carry into bit 52 makes it the smallest normal)
+        kept
+    };
+    if bits >= 0x7ff0_0000_0000_0000 {
+        return sign * f64::INFINITY;
+    }
+    sign * f64::from_bits(bits)
 }
 
 /// Where [`ffx_bridge::route::Router::call_x87`] writes its stubs in the
@@ -2511,6 +2587,19 @@ impl ffx_bridge::route::Router for Exec {
     fn call_x87(&mut self, addr: u32, st: &[f64], float: ffx_bridge::route::Float) -> f64 {
         use ffx_bridge::Mem as _;
         use ffx_bridge::route::Float;
+        // an intrinsic with a Rust side (through its thunk or its slot's
+        // stub): no emulator
+        let target = self.shared.thunk(addr).unwrap_or(addr);
+        if let (Some(&(f, _)), [x]) = (self.shared.x87_imports.get(&target), st)
+            && let Some(v) = f(self, *x)
+        {
+            self.stats.leaf_calls += 1;
+            #[allow(clippy::cast_possible_truncation)] // fstp dword
+            return match float {
+                Float::F32 => f64::from(v as f32),
+                Float::F64 | Float::None => v,
+            };
+        }
         if self.x87_depth >= X87_LEVELS || st.len() > 7 {
             return f64::NAN;
         }

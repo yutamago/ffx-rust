@@ -832,6 +832,28 @@ The DLLs' x87 transcendental instructions run exactly (above, "x87")
 and their C++ exceptions dispatch through the SEH chain (above,
 "Exceptions").
 
+**Rust sides of DLL functions** (`src/crt_dll.rs`, m5-wp5, 2026-11-12).
+The imports `FFX.exe` and the ports call most get Rust sides with the
+DLL's results, derived from the player's DLL's machine code; a case a
+Rust side doesn't cover goes to the DLL's own export (`Shared::dll(..)
+.exports`), which runs in Unicorn as before. `tests/crt_dll.rs` compares
+each with the DLL.
+
+| Import | Rust side | Hands on to the DLL |
+|---|---|---|
+| `MSVCP110!istream::getline(char *, streamsize)` | a stream whose state is not good (the auto-test console thread polls `std::cin` at its end every 5 ms: 1.4 M calls, about 80 emulated blocks each, in gate run 1): `_Chcount` 0, `*str` 0, the state `(state \| failbit \| badbit without a buffer) & 0x17` | a good stream; a state the exception mask throws for |
+| `MSVCR110!_CIsin`, `_CIcos` | the SSE2 paths (`__libm_sse2_sin`/`cos` at `0x1004ba00`/`0x10044aef`: the 64-entry table at the multiples of π/32, three-part reduction, two series side by side), operation for operation in doubles, the DLL's constants and table read from the loaded DLL; 31 M calls and some 250 M emulated blocks in gate run 1 | no SSE2 flag, other `MXCSR`/x87 control settings, \|x\| from about 2^16 (the DLL's x87 `fcos`/`fsin` path), infinities, NaNs |
+| `MSVCR110!_CIsqrt` | the correctly rounded root at 53-bit precision (the processor's `fsqrt`) | negative or non-finite arguments (errno), another precision |
+
+The intrinsics take their argument in `ST0`: Unicorn code calling one
+enters `Exec::enter_x87_import` (the stub's `int3`: `ST0` replaced by the
+result, or a jump to the DLL's export with the stack as it is), a port's
+`route::x87` through the intrinsic's thunk (`0x009498c2` `_CIcos`)
+computes it with no emulator (`call_x87`). `f80_to_f64` now rounds an
+80-bit value once to the double's 53 bits (or a subnormal's fewer): it
+scaled by `2^-1060` in a double before, which is 0, so a tiny `ST0` (an
+`1e-300`) read as 0.
+
 ## Overlays
 
 The spell overlays (`magicFiles/FFX/magic_<nnnn>.dll`,
@@ -1064,8 +1086,10 @@ harness's background mode.
   nothing the layer doesn't answer, and the recorded stream reads back
   with `ffx_gfx::read_all` (three frames, vertex shaders); the heap's
   decommit thread started on the way;
-- `without_the_dlls_the_stl_is_the_wall`: `--no-dlls` still stops at the
-  first `MSVCP110` import.
+- `without_the_dlls_the_c_runtime_is_the_wall`: `--no-dlls` stops at
+  the first C runtime function without a Rust side: `MSVCR110!fwrite` in
+  `Settings_Save` since WP6 (2026-11-12; the first `MSVCP110` import
+  before).
 
 `tests/x87.rs` and `tests/seh.rs` (same conditions): MSVCR110's maths
 against the CPU (above, "x87"), throw, catch, rethrow, faults and the

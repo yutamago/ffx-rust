@@ -68,6 +68,7 @@ impl Imports {
             .chain(crate::stand_ins::TABLE)
             .chain(crate::iggy::TABLE)
             .chain(crate::audio::TABLE)
+            .chain(crate::crt_dll::TABLE)
             .find(|(d, n, ..)| d.eq_ignore_ascii_case(dll) && *n == name);
         let b = match found {
             Some(&(_, _, conv, words, run)) => Bound {

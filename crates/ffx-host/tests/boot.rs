@@ -173,7 +173,10 @@ fn boots_past_the_d3d11_device_to_the_first_frames() {
     assert_eq!(exec.shared().dlls.len(), 2, "{report}");
     // the static initialisers ran (each registers its destructor, through
     // `atexit`'s host port: `ffx_host::crt`)
-    assert!(exec.shared().at_exit.lock().unwrap().len() > 400, "{report}");
+    assert!(
+        exec.shared().at_exit.lock().unwrap().len() > 400,
+        "{report}"
+    );
     assert!(exec.stats.ports[&ffx_host::crt::ATEXIT] > 400, "{report}");
     // GameSetting.ini: none at the start, so the game wrote its default
     let ini = opts
@@ -256,8 +259,13 @@ fn boots_past_the_d3d11_device_to_the_first_frames() {
     );
 }
 
+/// Without the player's C runtime DLLs the run stops at the first C
+/// runtime function with no Rust side yet: since the STL's users were
+/// ported (WP6, 2026-11-12) that is `MSVCR110!fwrite` in `Settings_Save`
+/// (the default `GameSetting.ini`), no longer an `MSVCP110` import. The
+/// wall moves as `crate::crt_dll` grows (WP5).
 #[test]
-fn without_the_dlls_the_stl_is_the_wall() {
+fn without_the_dlls_the_c_runtime_is_the_wall() {
     let Some(exe) = exe() else { return };
     let opts = ffx_host::Options {
         no_dlls: true,
@@ -268,7 +276,10 @@ fn without_the_dlls_the_stl_is_the_wall() {
     exec.set_budget(Duration::from_secs(60));
     let stop = exec.run_entry().unwrap();
     match &stop {
-        Stop::Failed(why, _) => assert!(why.starts_with("unstubbed import MSVCP110.dll!"), "{why}"),
+        Stop::Failed(why, _) => assert!(
+            why.starts_with("unstubbed import MSVCR110.dll!fwrite "),
+            "{why}"
+        ),
         other => panic!("unexpected stop {other:?}"),
     }
 }
