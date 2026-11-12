@@ -5659,6 +5659,12 @@ fn round8_containers(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
         c::map_head_new(b, b_new, |_| unreachable!("allocated"))
     );
     same_memory("map head", a, b);
+    // its copy (0x00806b20; wp5b)
+    assert_eq!(
+        eax(a, 0x0080_6b20, &[]),
+        c::map_head_new(b, b_new, |_| unreachable!("allocated"))
+    );
+    same_memory("map head copy", a, b);
     // Phyre array appends into new buffers
     for f in [0x0062_9b90, 0x0069_b530, 0x0069_b5c0, 0x0069_b650] {
         for _ in 0..4 {

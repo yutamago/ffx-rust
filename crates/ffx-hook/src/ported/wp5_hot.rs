@@ -34,4 +34,12 @@ ported! {
     IsCharacterCancleLoad @ 0x0063_5a70 => extern "C" fn w_00635a70(id: u32) -> u32 {
         hot::is_character_cancel_load(&mut mem(), id)
     }
+    /// `PageManager_threadMain_00947e30`: the page manager's decommit thread; 0.
+    PageManager_threadMain_00947e30 @ 0x0094_7e30 => extern "C" fn w_00947e30(_param: u32) -> u32 {
+        hot::page_thread(&mut mem())
+    }
+    /// `FmodManager_threadMain`: the FMOD manager's thread; the exit call's `eax`.
+    FmodManager_threadMain @ 0x006f_a1b0 => extern "C" fn w_006fa1b0() -> u32 {
+        hot::fmod_thread(&mut mem())
+    }
 }

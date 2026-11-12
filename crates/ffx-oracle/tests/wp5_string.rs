@@ -855,3 +855,109 @@ fn wp5b_video_buy_node() {
         }
     }
 }
+
+/// A stub at `sym` in both (a `jmp` there): `code`.
+fn jmp_stub(t: &mut Twins, sym: u32, code: &[u8]) {
+    let to = t.code(code);
+    let at = t.a.rebase(sym);
+    let mut j = vec![0xe9];
+    j.extend(to.wrapping_sub(at + 5).to_le_bytes());
+    t.write(at, &j);
+}
+
+/// A logging stub: `inc dword [count]`, its `ecx` and (when `pops` is not
+/// 0, or for `arg`) its first stack word appended to `log` (pairs), `ret
+/// pops`; `eax` = `ret`.
+fn log_stub(t: &mut Twins, log: u32, pops: u16, ret: u32) -> Vec<u8> {
+    log_stub_arg(t, log, pops, ret, pops != 0)
+}
+
+fn log_stub_arg(_t: &mut Twins, log: u32, pops: u16, ret: u32, arg: bool) -> Vec<u8> {
+    let mut c = vec![0xa1];
+    c.extend(log.to_le_bytes()); // mov eax, [log]
+    c.extend([0x83, 0xe0, 0x3f]); // and eax, 63
+    c.extend([0x89, 0x0c, 0xc5]);
+    c.extend((log + 4).to_le_bytes()); // mov [log+4+eax*8], ecx
+    if arg {
+        c.extend([0x8b, 0x54, 0x24, 0x04]); // mov edx, [esp+4]
+    } else {
+        c.extend([0x31, 0xd2, 0x90, 0x90]); // xor edx, edx
+    }
+    c.extend([0x89, 0x14, 0xc5]);
+    c.extend((log + 8).to_le_bytes()); // mov [log+8+eax*8], edx
+    c.extend([0xff, 0x05]);
+    c.extend(log.to_le_bytes()); // inc dword [log]
+    c.push(0xb8);
+    c.extend(ret.to_le_bytes()); // mov eax, ret
+    if pops == 0 {
+        c.push(0xc3);
+    } else {
+        c.push(0xc2);
+        c.extend(pops.to_le_bytes());
+    }
+    c
+}
+
+/// The page manager thread (`0x00947e30`) and the FMOD manager thread
+/// (`0x006fa1b0`): their callees logging stubs; the wait (and the tick)
+/// clear the run flag after a few turns.
+#[test]
+fn wp5b_thread_bodies() {
+    use ffx_prender::wp5_hot as hot;
+    for (label, mut t) in Twins::all() {
+        let log = t.alloc(&[0; 4 + 8 * 64]);
+        let left = t.alloc(&[0; 4]);
+        let mgr = t.alloc(&[0x21; 0x1d00]);
+        let run = t.a.rebase(hot::PAGE_THREAD_RUN);
+        t.w32(t.a.rebase(hot::PAGE_MANAGER), mgr);
+        // the wait: logs, counts `left` down, clears the run flag at 0
+        let mut w = log_stub_arg(&mut t, log, 0, 0, true);
+        w.truncate(w.len() - 6); // drop `mov eax, ret; ret`
+        w.extend([0xff, 0x0d]);
+        w.extend(left.to_le_bytes()); // dec dword [left]
+        w.extend([0x75, 0x07]); // jnz +7
+        w.extend([0xc6, 0x05]);
+        w.extend(run.to_le_bytes());
+        w.push(0); // mov byte [run], 0
+        w.extend([0x31, 0xc0, 0xc2, 0x08, 0x00]); // xor eax, eax; ret 8
+        let wait = t.code(&w);
+        t.w32(t.a.rebase(hot::WAIT_IAT), wait);
+        let flush = log_stub(&mut t, log, 4, 7);
+        jmp_stub(&mut t, hot::PAGE_FLUSH, &flush);
+        for turns in [0u32, 1, 3] {
+            t.write(run, &[u8::from(turns != 0)]);
+            t.w32(left, turns);
+            t.w32(log, 0);
+            let w = format!("{label} page thread {turns}");
+            t.run_cdecl(&w, 0x0094_7e30, &[0], |g| hot::page_thread(g));
+        }
+        // the FMOD thread: the tick clears +0x4c after `left` turns
+        let fm = t.alloc(&[0x31; 0x50]);
+        t.w32(t.a.rebase(hot::FMOD_MANAGER), fm);
+        let mut c = log_stub(&mut t, log, 0, 0);
+        c.truncate(c.len() - 6);
+        c.extend([0xff, 0x0d]);
+        c.extend(left.to_le_bytes()); // dec dword [left]
+        c.extend([0x75, 0x04]); // jnz +4
+        c.extend([0xc6, 0x41, 0x4c, 0x00]); // mov byte [ecx+0x4c], 0
+        c.extend([0xb8, 0x11, 0, 0, 0, 0xc3]); // mov eax, 0x11; ret
+        jmp_stub(&mut t, hot::FMOD_TICK, &c);
+        for (sym, ret) in [
+            (hot::FMOD_DRAIN, 0x22),
+            (hot::FMOD_SHUTDOWN, 0x33),
+            (hot::FMOD_THREAD_EXIT, 0x44),
+        ] {
+            let s = log_stub_arg(&mut t, log, 0, ret, sym == hot::FMOD_THREAD_EXIT);
+            jmp_stub(&mut t, sym, &s);
+        }
+        for turns in [0u32, 2] {
+            t.write(fm + 0x4c, &[u8::from(turns != 0), 0]);
+            t.w32(fm + 8, 0x0808_0000 + turns);
+            t.w32(fm + 0xc, 0x0c0c_0000 + turns);
+            t.w32(left, turns);
+            t.w32(log, 0);
+            let w = format!("{label} fmod thread {turns}");
+            t.run_cdecl(&w, 0x006f_a1b0, &[], |g| hot::fmod_thread(g));
+        }
+    }
+}

@@ -328,3 +328,64 @@ pub fn is_character_cancel_load(h: &mut impl ffx_graphic::host::Host, id: u32) -
     let below = (e as i32) < 0x4000;
     e | u32::from(below)
 }
+
+/// The page manager's decommit thread: its run flag (`u8`), `g_PageManager`,
+/// `KERNEL32!WaitForSingleObject`'s import slot and `PageManager_Flush`
+/// (thiscall, `ret 4`).
+pub const PAGE_THREAD_RUN: u32 = 0x00c6_13ac;
+pub const PAGE_MANAGER: u32 = 0x00c6_13b0;
+pub const WAIT_IAT: u32 = 0x00b0_c0f8;
+pub const PAGE_FLUSH: u32 = 0x0094_78e0;
+
+/// The page manager thread's body (`0x00947e30`, after
+/// `PtrArray_isSet_00947da0`; cdecl, the thread parameter unused): while
+/// the run flag is set, a wait of 1000 ms on the manager's event
+/// (`+0x1c74`), `PageManager_Flush(0)` and the pass counter (`+0x1c6c`)
+/// up. The manager is read once. Returns 0.
+pub fn page_thread(h: &mut impl ffx_graphic::host::Host) -> u32 {
+    use ffx_graphic::host::Conv;
+    let mgr: u32 = h.read(h.rebase(PAGE_MANAGER));
+    let wait: u32 = h.read(h.rebase(WAIT_IAT));
+    while h.read::<u8>(h.rebase(PAGE_THREAD_RUN)) != 0 {
+        let event: u32 = h.read(mgr.wrapping_add(0x1c74));
+        h.call(wait, Conv::Stdcall, &[event, 1000]);
+        h.call_sym(PAGE_FLUSH, Conv::Thiscall(mgr), &[0]);
+        let n: u32 = h.read(mgr.wrapping_add(0x1c6c));
+        h.write(mgr.wrapping_add(0x1c6c), n.wrapping_add(1));
+    }
+    0
+}
+
+/// `g_FmodManager` and the calls its thread makes: the tick and the queue
+/// drain (thiscall on the manager), the `FfxFmod` shutdown (thiscall on
+/// `+8`), the thread's exit (cdecl, `+0xc`).
+pub const FMOD_MANAGER: u32 = 0x00ce_9010;
+pub const FMOD_TICK: u32 = 0x006f_a700;
+pub const FMOD_DRAIN: u32 = 0x006f_a7e0;
+pub const FMOD_SHUTDOWN: u32 = 0x0070_6ff0;
+pub const FMOD_THREAD_EXIT: u32 = 0x006f_2f00;
+
+/// `FmodManager_threadMain` (`0x006fa1b0`, cdecl): while the manager's run
+/// byte (`+0x4c`) is set, a tick (the manager read again each time); then
+/// the drain, the `FfxFmod` (`+8`) shut down, the done byte (`+0x4d`) set
+/// and the exit call with `+0xc` (read before the shutdown). Its `eax`.
+pub fn fmod_thread(h: &mut impl ffx_graphic::host::Host) -> u32 {
+    use ffx_graphic::host::Conv;
+    let at = h.rebase(FMOD_MANAGER);
+    loop {
+        let mgr: u32 = h.read(at);
+        if h.read::<u8>(mgr.wrapping_add(0x4c)) == 0 {
+            break;
+        }
+        h.call_sym(FMOD_TICK, Conv::Thiscall(mgr), &[]);
+    }
+    let mgr: u32 = h.read(at);
+    h.call_sym(FMOD_DRAIN, Conv::Thiscall(mgr), &[]);
+    let mgr: u32 = h.read(at);
+    let exit_arg: u32 = h.read(mgr.wrapping_add(0xc));
+    let fmod: u32 = h.read(mgr.wrapping_add(8));
+    h.call_sym(FMOD_SHUTDOWN, Conv::Thiscall(fmod), &[]);
+    let mgr: u32 = h.read(at);
+    h.write(mgr.wrapping_add(0x4d), 1u8);
+    h.call_sym(FMOD_THREAD_EXIT, Conv::Cdecl, &[exit_arg])
+}
