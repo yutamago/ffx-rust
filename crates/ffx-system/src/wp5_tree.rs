@@ -179,7 +179,12 @@ pub mod bridge {
     /// cdecl): its left, parent and right itself, black and nil
     /// (`+0xc` = `0x0101`). The node.
     pub fn buy_head_node(h: &mut impl Host) -> u32 {
-        let n = new_node(h, 0x20);
+        buy_head_node_sized(h, 0x20)
+    }
+
+    /// [`buy_head_node`] of a `size`-byte node (`0x00806af0`: 0x60).
+    pub fn buy_head_node_sized(h: &mut impl Host, size: u32) -> u32 {
+        let n = new_node(h, size);
         if n == 0 {
             return 0;
         }

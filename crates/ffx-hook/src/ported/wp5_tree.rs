@@ -100,4 +100,8 @@ ported! {
         let mut frame = StackFrame::<1>::new();
         b::vfx_erase_range(&mut mem(), this, out, first, last, frame.at())
     }
+    /// `std_Tree_buyHeadNode60_00806af0`: a 0x60-byte head node.
+    std_Tree_buyHeadNode60_00806af0 @ 0x0080_6af0 => extern "C" fn wtr_00806af0() -> u32 {
+        b::buy_head_node_sized(&mut mem(), 0x60)
+    }
 }

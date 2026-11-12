@@ -15878,6 +15878,7 @@
 0x008069d0 function opusIterNe_008069d0       # thiscall (other) -> *this != *other as 1/0 (an MSVC iterator compare)
 0x00806a50 function opusTree_Next             # thiscall (it) -> it: *it = in-order successor (node +0 left, +4 parent, +8 right, byte +0xd nil), nothing at the header (MSVC tree iterator ++)
 0x00806aa0 function opusTree_Next2            # the opusTree_Next body again
+0x00806af0 function std_Tree_buyHeadNode60_00806af0 # cdecl() -> node: std_Tree_buyHeadNode_006a0390 with 0x60 bytes (operator new, _Xbad_alloc tail jump on NULL, links itself, +0xc = 0x0101); StaticInit_CtorStore_00af1250, 6 refs; name ours; ported M5 wp5b (ffx_system::wp5_tree)
 0x00806b20 function StdMap_NewHead_copy_00806b20 # the same code as StdMap_NewHead_0069a1b0 (0x0069a1b0; call targets equal), a copy the compiler kept; own name; ported M5 wp5b (ffx_system::container)
 0x00806b50 function opusPlus0c                # (p) -> p + 0xc
 0x00806b70 function opusTree_FreeSubtree_00806b70 # structure: as opusTree_FreeSubtree_00806bb0, for the other opus container instance; name ours

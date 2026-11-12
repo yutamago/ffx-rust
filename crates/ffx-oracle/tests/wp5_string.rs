@@ -829,6 +829,8 @@ fn wp5b_tree_node_makers() {
             t.w32(tree, head);
             let w = format!("{label} head node {round}");
             t.run_cdecl(&w, 0x006a_0390, &[], |g| tb::buy_head_node(g));
+            let w = format!("{label} head node 0x60 {round}");
+            t.run_cdecl(&w, 0x0080_6af0, &[], |g| tb::buy_head_node_sized(g, 0x60));
             for (sym, size) in [(0x006a_03c0u32, 0x2cu32), (0x006a_0400, 0x20)] {
                 let w = format!("{label} node {sym:#x} {round}");
                 t.run(&w, sym, tree, &[], false, |g| tb::buy_node(g, tree, size));
