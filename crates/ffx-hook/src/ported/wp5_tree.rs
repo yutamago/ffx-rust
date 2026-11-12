@@ -87,4 +87,17 @@ ported! {
         let mut frame = StackFrame::<1>::new();
         b::video_insert_node(&mut mem(), this, out, leftish, value, node, frame.at())
     }
+    /// `std_TreeIterator_dec_006d7060`: a copy of `std_TreeIterator_dec_0069eca0`; `it`.
+    std_TreeIterator_dec_006d7060 @ 0x006d_7060 => extern "thiscall" fn wtr_006d7060(it: u32) -> u32 {
+        gv::tree_iterator_dec(&mut mem(), it)
+    }
+    /// `VfxRenderDataTable_erase_006a1a70(&out, where)`: the same code as `ClusterMap_erase_0069b010`; advances its own `where` slot.
+    VfxRenderDataTable_erase_006a1a70 @ 0x006a_1a70 => extern "thiscall" fn wtr_006a1a70(this: u32, out: u32, _at: u32; slots: u32) -> u32 {
+        ffx_system::m5b_stl::bridge::tree_erase(&mut mem(), this, out, slots.wrapping_add(4))
+    }
+    /// `std_Tree_erase_range_006a19d0(&out, first, last)`: the range erased; `out`.
+    std_Tree_erase_range_006a19d0 @ 0x006a_19d0 => extern "thiscall" fn wtr_006a19d0(this: u32, out: u32, first: u32, last: u32) -> u32 {
+        let mut frame = StackFrame::<1>::new();
+        b::vfx_erase_range(&mut mem(), this, out, first, last, frame.at())
+    }
 }

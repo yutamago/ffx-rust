@@ -1558,3 +1558,107 @@ fn wp5b_video_insert_node() {
         }
     }
 }
+
+/// A red-black tree of `n` random `u32` keys grown by the original
+/// `_Insert_nohint` (`0x006995e0`) on both sides; (tree, head, nodes in
+/// key order).
+fn grown_tree(t: &mut Twins, n: u32) -> (u32, u32, Vec<u32>) {
+    let head = t.alloc(&[0; 0x20]);
+    let mut h = Vec::new();
+    for _ in 0..3 {
+        h.extend(head.to_le_bytes());
+    }
+    h.extend([1, 1, 0, 0]);
+    t.write(head, &h);
+    let tree = t.alloc(&[0; 8]);
+    t.w32(tree, head);
+    let out = t.alloc(&[0; 8]);
+    let at = t.a.rebase(0x0069_95e0);
+    for _ in 0..n {
+        let k = t.rng.below(100_000);
+        let node = t.alloc(&[0x5c; 0x20]);
+        let mut v = Vec::new();
+        for _ in 0..3 {
+            v.extend(head.to_le_bytes());
+        }
+        v.extend([0, 0, 0x5c, 0x5c]);
+        v.extend(k.to_le_bytes());
+        t.write(node, &v);
+        let value = t.alloc(&k.to_le_bytes());
+        for o in [&mut t.a, &mut t.b] {
+            o.call(at, Conv::Thiscall(tree), &[out, 0, value, node])
+                .unwrap();
+        }
+    }
+    t.a.clear_dirty();
+    t.b.clear_dirty();
+    // in order: from the leftmost by the successor links
+    let mut nodes = Vec::new();
+    let mut nd: u32 = Mem::read(&t.b, head);
+    while nd != head {
+        nodes.push(nd);
+        let r: u32 = Mem::read(&t.b, nd + 8);
+        if Mem::read::<u8>(&t.b, r + 0xd) == 0 {
+            nd = r;
+            while Mem::read::<u8>(&t.b, Mem::read::<u32>(&t.b, nd) + 0xd) == 0 {
+                nd = Mem::read(&t.b, nd);
+            }
+        } else {
+            let mut cur = nd;
+            let mut p: u32 = Mem::read(&t.b, nd + 4);
+            while Mem::read::<u8>(&t.b, p + 0xd) == 0 && cur == Mem::read::<u32>(&t.b, p + 8) {
+                cur = p;
+                p = Mem::read(&t.b, p + 4);
+            }
+            nd = p;
+        }
+    }
+    (tree, head, nodes)
+}
+
+/// The VFX table's range erase (`0x006a19d0`: the whole tree, a middle
+/// run, one node, an empty range) and its one-node erase `0x006a1a70`
+/// against `m5b_stl`'s, on grown red-black trees.
+#[test]
+fn wp5b_tree_erase_range() {
+    use ffx_system::m5b_stl::bridge as st;
+    use ffx_system::wp5_tree::bridge as tb;
+    for (label, mut t) in Twins::all() {
+        let frame = t.b.stack_range().start + 0x1000;
+        for round in 0..12u32 {
+            let n = 1 + t.rng.below(25);
+            let (tree, head, nodes) = grown_tree(&mut t, n);
+            let out = t.alloc(&[0x33; 8]);
+            let (first, last) = match round % 4 {
+                0 => (nodes[0], head),
+                1 => {
+                    let i = t.rng.below(n);
+                    let j = i + t.rng.below(n - i + 1);
+                    (
+                        nodes[i as usize],
+                        nodes.get(j as usize).copied().unwrap_or(head),
+                    )
+                }
+                2 => (
+                    nodes[(n / 2) as usize],
+                    nodes.get((n / 2 + 1) as usize).copied().unwrap_or(head),
+                ),
+                _ => (nodes[(n - 1) as usize], nodes[(n - 1) as usize]),
+            };
+            let w = format!("{label} erase range {round} ({n})");
+            t.run(&w, 0x006a_19d0, tree, &[out, first, last], false, |g| {
+                tb::vfx_erase_range(g, tree, out, first, last, frame)
+            });
+            // the one-node erase, a node at random
+            let n = 1 + t.rng.below(20);
+            let (tree, _, nodes) = grown_tree(&mut t, n);
+            let wh = nodes[t.rng.below(n) as usize];
+            let slot = frame + 0x10;
+            t.b.write(slot, &wh.to_le_bytes()).unwrap();
+            let w = format!("{label} erase one {round} ({n})");
+            t.run(&w, 0x006a_1a70, tree, &[out, wh], false, |g| {
+                st::tree_erase(g, tree, out, slot)
+            });
+        }
+    }
+}

@@ -33,6 +33,12 @@ pub const PROTOTYPE_COPY: u32 = 0x0069_c200;
 pub const VIDEO_INSERT_AT: u32 = 0x006d_5dc0;
 pub const VIDEO_ITERATOR_DEC: u32 = 0x006d_7060;
 
+/// The VFX render data table's clear (`VfxRenderDataTable_clearTree`,
+/// thiscall) and erase of one node (`0x006a1a70`, thiscall `(&out,
+/// where)`, `ret 8`; the same code as `ClusterMap_erase_0069b010`).
+pub const VFX_TABLE_CLEAR: u32 = 0x006a_0fe0;
+pub const VFX_TABLE_ERASE: u32 = 0x006a_1a70;
+
 pub mod bridge {
     //! The ports over game memory.
 
@@ -345,6 +351,67 @@ pub mod bridge {
         h.call_sym(OPERATOR_DELETE, Conv::Cdecl, &[node]);
         h.write(out, before);
         h.write(out.wrapping_add(4), 0u8);
+        out
+    }
+
+    /// The in-order successor of `n` (MSVC's inlined `++`): the head stays;
+    /// else the leftmost node right of it, or the first ancestor it is left
+    /// of.
+    #[allow(clippy::many_single_char_names)]
+    fn successor(h: &impl Host, n: u32) -> u32 {
+        if nil(h, n) {
+            return n;
+        }
+        let r: u32 = h.read(n.wrapping_add(8));
+        if !nil(h, r) {
+            let mut m = r;
+            loop {
+                let l: u32 = h.read(m);
+                if nil(h, l) {
+                    return m;
+                }
+                m = l;
+            }
+        }
+        let mut cur = n;
+        let mut p: u32 = h.read(n.wrapping_add(4));
+        while !nil(h, p) && cur == h.read::<u32>(p.wrapping_add(8)) {
+            cur = p;
+            p = h.read(p.wrapping_add(4));
+        }
+        p
+    }
+
+    /// `std_Tree_erase_range_006a19d0(this; &out, first, last)` (thiscall,
+    /// `ret 0xc`): the whole tree (`first` the leftmost, `last` the head)
+    /// cleared at once ([`super::VFX_TABLE_CLEAR`]) and `out` = the head's
+    /// left link; else node by node ([`super::VFX_TABLE_ERASE`], `frame`
+    /// one word for its result), each successor taken first; `out` =
+    /// `last`. Returns `out`.
+    pub fn vfx_erase_range(
+        h: &mut impl Host,
+        this: u32,
+        out: u32,
+        first: u32,
+        last: u32,
+        frame: u32,
+    ) -> u32 {
+        let head: u32 = h.read(this);
+        let leftmost: u32 = h.read(head);
+        if first == leftmost && last == head {
+            h.call_sym(super::VFX_TABLE_CLEAR, Conv::Thiscall(this), &[]);
+            let head: u32 = h.read(this);
+            let l: u32 = h.read(head);
+            h.write(out, l);
+            return out;
+        }
+        let mut at = first;
+        while at != last {
+            let next = successor(h, at);
+            h.call_sym(super::VFX_TABLE_ERASE, Conv::Thiscall(this), &[frame, at]);
+            at = next;
+        }
+        h.write(out, at);
         out
     }
 }
