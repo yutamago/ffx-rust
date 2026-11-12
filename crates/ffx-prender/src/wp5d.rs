@@ -1153,7 +1153,7 @@ fn line(h: &mut impl Host, buf: u32, fmt: u32, rest: &[u32]) -> u32 {
     let f: u32 = h.read(h.rebase(SPRINTF_S_IAT));
     let mut words = vec![buf, 0x100, h.rebase(fmt)];
     words.extend_from_slice(rest);
-    h.call(f, Conv::Cdecl, &words)
+    h.call(f, Conv::Cdecl, &words) // call width: 8 at most (buf, 0x100, fmt, five words)
 }
 
 /// `"true"`/`"false"` (or the capitalised pair) by `on`.
@@ -1231,7 +1231,7 @@ pub fn basic_debug_line<H: Host>(h: &mut H, this: u32, n: u32, buf: u32) -> u32 
     };
     let mut words = vec![m];
     words.extend(rest);
-    line(h, buf, fmt, &words)
+    line(h, buf, fmt, &words) // call width: 8 (with line's three)
 }
 
 /// The save data's string for `i` (`0x007870d0`, cdecl): the word at
@@ -1578,7 +1578,7 @@ pub fn remap_set_layout(h: &mut impl Host, this: u32, a: [u32; 4], b: [u32; 4]) 
         let mat: u32 = h.read(this + slot);
         let mut w: Vec<u32> = q.iter().map(|&x| quiet(x)).collect();
         w.extend([this + slot + 0x14, this + slot + 0x18, this + slot + 4, mat]);
-        r = h.call_sym(BUILD_QUAD, Conv::Stdcall, &w);
+        r = h.call_sym(BUILD_QUAD, Conv::Stdcall, &w); // call width: 8
     }
     r
 }
