@@ -1087,3 +1087,259 @@ pub fn string_insert_nohint<H: Host>(
     h.write(out.wrapping_add(4), 0u8);
     out
 }
+
+/// Iggy's render-thread command trampoline (`0x00a34b00`, cdecl `(p)`;
+/// the callback of `PRenderThread::processRenderCommands`' command 0x2c,
+/// `p` the frame pair (context, routine)): a tail jump to the routine
+/// `[p + 4]` with the caller's stack, so the routine gets `p` as its one
+/// word (its caller pushed only it). The routine's `eax`.
+pub fn render_command_trampoline(h: &mut impl Host, p: u32) -> u32 {
+    let routine: u32 = h.read(p.wrapping_add(4));
+    h.call(routine, Conv::Cdecl, &[p])
+}
+
+/// The tweak tools' line texts (`.rdata`): `"init failed"`, the cursor
+/// marks `">"`/`" "`, the formats and the words they print.
+pub const TXT_INIT_FAILED: u32 = 0x00b4_8244;
+pub const TXT_CURSOR: u32 = 0x00b4_8250;
+pub const TXT_NO_CURSOR: u32 = 0x00b2_0b30;
+pub const FMT_SSS: u32 = 0x00b4_2a3c; // "%s%s%s"
+pub const FMT_SSD: u32 = 0x00b4_88e0; // "%s%s%d"
+pub const FMT_SS_D: u32 = 0x00b4_8ad0; // "%s%s %d"
+pub const FMT_SS_S: u32 = 0x00b4_8de4; // "%s%s %s"
+pub const FMT_SS: u32 = 0x00b4_0eb0; // "%s%s"
+pub const FMT_S: u32 = 0x00b0_e160; // "%s"
+pub const FMT_SECTION: u32 = 0x00b4_8a98; // "%s%s GameSection: %d, EventID: %d, ScenarioFlag: %d, "
+pub const FMT_TIME: u32 = 0x00b4_8dec; // "%s%s%03d:%02d:%02d"
+pub const FMT_RATE: u32 = 0x00b4_8e00; // "%s%s%d B/s"
+pub const TXT_TRUE: u32 = 0x00b3_9230;
+pub const TXT_FALSE: u32 = 0x00b3_9238;
+pub const TXT_TRUE_CAP: u32 = 0x00b4_8260;
+pub const TXT_FALSE_CAP: u32 = 0x00b4_8268;
+pub const TXT_KEEP: u32 = 0x00b4_8ddc;
+pub const TXT_OFF: u32 = 0x00b4_88dc;
+pub const TXT_ON: u32 = 0x00b4_88d8;
+pub const TXT_ZOOM: u32 = 0x00b4_8a8c;
+pub const TXT_DONT_CHECK: u32 = 0x00b4_8ad8;
+pub const TXT_NEED_CHECK: u32 = 0x00b4_8ae4;
+pub const TXT_DASHES: u32 = 0x00b4_8c7c;
+/// Globals the lines show: `g_ViewerManager`, the battle camera mode,
+/// `g_SaveData_CrcCheckOff`, two `GameParamConfig` flags, the string
+/// table the first battle line indexes.
+pub const VIEWER_MANAGER: u32 = 0x00cc_cac0;
+pub const CAMERA_MODE: u32 = 0x0113_6fc0;
+pub const CRC_CHECK_OFF: u32 = 0x00cc_b9a4;
+pub const PARAM_FLAG_CC: u32 = 0x00cc_cacc;
+pub const PARAM_FLAG_B8: u32 = 0x00cc_cab8;
+pub const BATTLE_NAMES: u32 = 0x00c3_432c;
+/// `GetU32_018763e0`, `GetFullArenaLocalization` (cdecl getters) and
+/// the save data's address getter `MsGetSaveEventAddress`.
+pub const GET_U32_018763E0: u32 = 0x0090_6730;
+pub const GET_FULL_ARENA_LOCALIZATION: u32 = 0x00a4_2fa0;
+pub const SAVE_EVENT_ADDRESS: u32 = 0x0078_5240;
+
+/// `sprintf_s(buf, 0x100, fmt, rest..)` through its import; its `eax`.
+fn line(h: &mut impl Host, buf: u32, fmt: u32, rest: &[u32]) -> u32 {
+    let f: u32 = h.read(h.rebase(SPRINTF_S_IAT));
+    let mut words = vec![buf, 0x100, h.rebase(fmt)];
+    words.extend_from_slice(rest);
+    h.call(f, Conv::Cdecl, &words)
+}
+
+/// `"true"`/`"false"` (or the capitalised pair) by `on`.
+fn yes_no(h: &impl Host, on: bool, caps: bool) -> u32 {
+    let t = match (on, caps) {
+        (true, false) => TXT_TRUE,
+        (false, false) => TXT_FALSE,
+        (true, true) => TXT_TRUE_CAP,
+        (false, true) => TXT_FALSE_CAP,
+    };
+    h.rebase(t)
+}
+
+/// The cursor mark of line `n`: `">"` when the tool's cursor (`+cursor`)
+/// is on it, else `" "`.
+fn mark(h: &impl Host, this: u32, cursor: u32, n: u32) -> u32 {
+    let on = h.read::<u32>(this + cursor) == n;
+    h.rebase(if on { TXT_CURSOR } else { TXT_NO_CURSOR })
+}
+
+/// `BasicDebugTweakUtil::getLineText(this; n, buf)` (`0x006b69a0`,
+/// thiscall, `ret 8`): the tool's line `n` into `buf` (`sprintf_s`, 256
+/// bytes): `"init failed"` before its initialisation (the byte `+0x28`
+/// 0); else the cursor mark, the line's label (`+0xc4 + 4 n`) and its
+/// value: the viewer manager's map names (lines 0 and 2), 0 (line 1),
+/// the flags `+0`, `+8`, the viewer's byte `+0x50`, `+4`, the camera mode
+/// (off/on/zoom), `+0xc`, the game section (`+0x10`, two 0s), `+0x18`,
+/// the CRC check, `+0x14`; lines past 12 write nothing. `eax`:
+/// `sprintf_s`'s, `n` for those.
+pub fn basic_debug_line<H: Host>(h: &mut H, this: u32, n: u32, buf: u32) -> u32 {
+    if h.read::<u8>(this + 0x28) == 0 {
+        let t = h.rebase(TXT_INIT_FAILED);
+        let f: u32 = h.read(h.rebase(SPRINTF_S_IAT));
+        return h.call(f, Conv::Cdecl, &[buf, 0x100, t]);
+    }
+    let m = mark(h, this, 0xfc, n);
+    let label = |h: &H, off: u32| -> u32 { h.read(this + off) };
+    let flag = |h: &H, off: u32| -> u32 { yes_no(h, h.read::<u32>(this + off) != 0, false) };
+    let viewer: u32 = h.read(h.rebase(VIEWER_MANAGER));
+    let (fmt, rest): (u32, Vec<u32>) = match n {
+        0 => (FMT_SSS, vec![label(h, 0xc4), viewer.wrapping_add(0x1c)]),
+        1 => (FMT_SSD, vec![label(h, 0xc8), 0]),
+        2 => (FMT_SSS, vec![label(h, 0xcc), viewer.wrapping_add(0x30)]),
+        3 => (FMT_SSS, vec![label(h, 0xd0), flag(h, 0)]),
+        4 => (FMT_SSS, vec![label(h, 0xd4), flag(h, 8)]),
+        5 => {
+            let on = h.read::<u8>(viewer.wrapping_add(0x50)) != 0;
+            (FMT_SSS, vec![label(h, 0xd8), yes_no(h, on, false)])
+        }
+        6 => (FMT_SSS, vec![label(h, 0xdc), flag(h, 4)]),
+        7 => {
+            let t = match h.read::<u32>(h.rebase(CAMERA_MODE)) {
+                0 => TXT_OFF,
+                1 => TXT_ON,
+                _ => TXT_ZOOM,
+            };
+            (FMT_SSS, vec![label(h, 0xe0), h.rebase(t)])
+        }
+        8 => (FMT_SSS, vec![label(h, 0xe4), flag(h, 0xc)]),
+        9 => {
+            let section: u32 = h.read(this + 0x10);
+            (FMT_SECTION, vec![label(h, 0xe8), section, 0, 0])
+        }
+        10 => {
+            let v: u32 = h.read(this + 0x18);
+            (FMT_SS_D, vec![label(h, 0xec), v])
+        }
+        11 => {
+            let off = h.read::<u32>(h.rebase(CRC_CHECK_OFF)) != 0;
+            let t = h.rebase(if off { TXT_DONT_CHECK } else { TXT_NEED_CHECK });
+            (FMT_SSS, vec![label(h, 0xf0), t])
+        }
+        12 => (FMT_SSS, vec![label(h, 0xf4), flag(h, 0x14)]),
+        _ => return n,
+    };
+    let mut words = vec![m];
+    words.extend(rest);
+    line(h, buf, fmt, &words)
+}
+
+/// The save data's string for `i` (`0x007870d0`, cdecl): `[save + 0x2c
+/// + 4 i]`, `i` clamped to 0..7 (signed), `save` from
+/// `MsGetSaveEventAddress`.
+pub fn save_string(h: &mut impl Host, i: u32) -> u32 {
+    let save = h.call_sym(SAVE_EVENT_ADDRESS, Conv::Cdecl, &[]);
+    let k = i.cast_signed().clamp(0, 7).cast_unsigned();
+    h.read(save.wrapping_add(0x2c + 4 * k))
+}
+
+/// `BtlChrParamConfigTweakUitl::getLineText(this; n, buf)` (`0x006b6bb0`,
+/// thiscall, `ret 8`): `"init failed"` before the initialisation (the
+/// byte `+0x1c` 0); else the cursor mark (`+0xf8`), the label (`+0xb0 +
+/// 4 n`) and: the battle string `BATTLE_NAMES[[+0]]` (line 0), the
+/// bytes `+4..+7` as true/false (1..4), the words `+0xc`, `+0x10` and the
+/// bytes `+8`, `+0x14..+0x1b` as numbers (5..15), the save data's string
+/// for `[+0]` printed with `%d` (16; its pointer, as the original);
+/// other lines `"------------"`. `sprintf_s`'s `eax`.
+pub fn battle_param_line(h: &mut impl Host, this: u32, n: u32, buf: u32) -> u32 {
+    if h.read::<u8>(this + 0x1c) == 0 {
+        let t = h.rebase(TXT_INIT_FAILED);
+        let f: u32 = h.read(h.rebase(SPRINTF_S_IAT));
+        return h.call(f, Conv::Cdecl, &[buf, 0x100, t]);
+    }
+    let m = mark(h, this, 0xf8, n);
+    let (fmt, value) = match n {
+        0 => {
+            let i: u32 = h.read(this);
+            let names = h.rebase(BATTLE_NAMES);
+            (FMT_SSS, h.read(names.wrapping_add(i.wrapping_mul(4))))
+        }
+        1..=4 => {
+            let on = h.read::<u8>(this + 3 + n) != 0;
+            (FMT_SSS, yes_no(h, on, false))
+        }
+        5 => (FMT_SSD, h.read(this + 0xc)),
+        6 => (FMT_SSD, h.read(this + 0x10)),
+        7 => (FMT_SSD, u32::from(h.read::<u8>(this + 8))),
+        8..=15 => (FMT_SSD, u32::from(h.read::<u8>(this + 0x14 + (n - 8)))),
+        16 => {
+            let i: u32 = h.read(this);
+            (FMT_SSD, save_string(h, i))
+        }
+        _ => {
+            let d = h.rebase(TXT_DASHES);
+            return line(h, buf, FMT_S, &[d]);
+        }
+    };
+    let label: u32 = h.read(this + 0xb0 + 4 * n);
+    line(h, buf, fmt, &[m, label, value])
+}
+
+/// `GameParamConfigTweakUitl::getLineText(this; n, buf)` (`0x006b72e0`,
+/// thiscall, `ret 8`): `"init failed"` before the initialisation (the
+/// byte `+0x10` 0); else the cursor mark (`+0xe4`), the label (`+0xa4 +
+/// 4 n`) and: the bytes `+8`, `+7`, `+5`, `+6`, `+0xa`, `+9` and the
+/// word `0x00cccacc` as true/false (0..6), `GetU32_018763e0()`'s
+/// -1/0/1 as false/keep/true (7), `GetFullArenaLocalization()` and the
+/// byte `0x00cccab8` as True/False (8, 13), `[+0]` (9), the play time
+/// `+0xc` as hours:minutes:seconds (10), nothing (11, 12), -1 B/s (14);
+/// other lines `"------------"`. `sprintf_s`'s `eax`. Line 7 with any
+/// other value read a word of the original's frame beside its
+/// three-entry table (no setting holds one: the getter's word is the
+/// tri-state); the port shows `"keep"` then.
+pub fn game_param_line<H: Host>(h: &mut H, this: u32, n: u32, buf: u32) -> u32 {
+    if h.read::<u8>(this + 0x10) == 0 {
+        let t = h.rebase(TXT_INIT_FAILED);
+        let f: u32 = h.read(h.rebase(SPRINTF_S_IAT));
+        return h.call(f, Conv::Cdecl, &[buf, 0x100, t]);
+    }
+    let m = mark(h, this, 0xe4, n);
+    if n > 14 {
+        let d = h.rebase(TXT_DASHES);
+        return line(h, buf, FMT_S, &[d]);
+    }
+    let label: u32 = h.read(this + 0xa4 + 4 * n);
+    let flag = |h: &H, off: u32| -> u32 { yes_no(h, h.read::<u8>(this + off) != 0, false) };
+    match n {
+        0..=5 => {
+            let v = flag(h, [8, 7, 5, 6, 0xa, 9][n as usize]);
+            line(h, buf, FMT_SSS, &[m, label, v])
+        }
+        6 => {
+            let on = h.read::<u32>(h.rebase(PARAM_FLAG_CC)) != 0;
+            let v = yes_no(h, on, false);
+            line(h, buf, FMT_SSS, &[m, label, v])
+        }
+        7 => {
+            let v = h.call_sym(GET_U32_018763E0, Conv::Cdecl, &[]);
+            let t = match v.cast_signed() {
+                -1 => TXT_FALSE,
+                1 => TXT_TRUE,
+                _ => TXT_KEEP,
+            };
+            let t = h.rebase(t);
+            line(h, buf, FMT_SSS, &[m, label, t])
+        }
+        8 => {
+            let on = h.call_sym(GET_FULL_ARENA_LOCALIZATION, Conv::Cdecl, &[]) != 0;
+            let v = yes_no(h, on, true);
+            line(h, buf, FMT_SS_S, &[m, label, v])
+        }
+        9 => {
+            let v: u32 = h.read(this);
+            line(h, buf, FMT_SSD, &[m, label, v])
+        }
+        10 => {
+            let t: u32 = h.read(this + 0xc);
+            let (s, minutes) = (t % 60, t / 60);
+            line(h, buf, FMT_TIME, &[m, label, minutes / 60, minutes % 60, s])
+        }
+        11 | 12 => line(h, buf, FMT_SS, &[m, label]),
+        13 => {
+            let on = h.read::<u8>(h.rebase(PARAM_FLAG_B8)) != 0;
+            let v = yes_no(h, on, true);
+            line(h, buf, FMT_SS_S, &[m, label, v])
+        }
+        _ => line(h, buf, FMT_RATE, &[m, label, u32::MAX]),
+    }
+}

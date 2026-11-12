@@ -1199,3 +1199,114 @@ fn wp5d_string_map_insert() {
         }
     }
 }
+
+/// Iggy's render command trampoline (`0x00a34b00`): the routine a
+/// logging stub that logs its first word (and a second, which must be
+/// the caller's next word: nothing here). `eax` and memory.
+#[test]
+fn wp5d_render_command_trampoline() {
+    use ffx_prender::wp5d as d;
+    for (label, mut t) in Twins::all() {
+        let log = t.alloc(&[0; 4 + 32 * 32]);
+        for round in 0..4u32 {
+            let s = wide_stub_plain(log, round, 1, 0, 0x4440 + round);
+            let routine = t.code(&s);
+            let p = t.alloc(&[0; 8]);
+            t.w32(p, 0x00c9_0000 + round);
+            t.w32(p + 4, routine);
+            t.w32(log, 0);
+            let w = format!("{label} trampoline {round}");
+            t.run_cdecl(&w, 0x00a3_4b00, &[p], |g| {
+                d::render_command_trampoline(g, p)
+            });
+        }
+    }
+}
+
+/// A tool object of `size` bytes: random bytes, label pointers (a short
+/// string each) at `labels..labels + 4 * count`.
+fn tool(t: &mut Twins, size: u32, labels: u32, count: u32) -> u32 {
+    let bytes: Vec<u8> = (0..size).map(|_| t.rng.below(3) as u8).collect();
+    let obj = t.alloc(&bytes);
+    for k in 0..count {
+        let mut s = format!("L{k}:").into_bytes();
+        s.push(0);
+        let p = t.alloc(&s);
+        t.w32(obj + labels + 4 * k, p);
+    }
+    obj
+}
+
+/// The three tweak tools' `getLineText` (`0x006b69a0`, `0x006b6bb0`,
+/// `0x006b72e0`) and the save string getter (`0x007870d0`), every line
+/// (and a few past the last), the cursor on it or not, before the
+/// initialisation, random flags and globals; `sprintf_s` the real one on
+/// both sides, the two `GameParamConfig` getters stubs. `eax` and memory
+/// (the text).
+#[test]
+fn wp5d_tweak_line_texts() {
+    use ffx_prender::wp5d as d;
+    for (label, mut t) in Twins::all() {
+        let viewer = t.alloc(&[0x41; 0x60]);
+        t.write(viewer + 0x1c, b"bsil0000\0");
+        t.write(viewer + 0x30, b"grid00\0");
+        t.w32(t.a.rebase(d::VIEWER_MANAGER), viewer);
+        let cells = t.alloc(&[0; 8]);
+        for (f, c) in [
+            (d::GET_U32_018763E0, cells),
+            (d::GET_FULL_ARENA_LOCALIZATION, cells + 4),
+        ] {
+            let mut s = vec![0xa1];
+            s.extend(c.to_le_bytes());
+            s.push(0xc3);
+            jmp_stub(&mut t, f, &s);
+        }
+        let buf = t.alloc(&[0x2e; 0x100]);
+        for round in 0..6u32 {
+            t.write(viewer + 0x50, &[(round & 1) as u8]);
+            t.w32(t.a.rebase(d::CAMERA_MODE), round % 3);
+            t.w32(t.a.rebase(d::CRC_CHECK_OFF), round & 2);
+            t.w32(t.a.rebase(d::PARAM_FLAG_CC), round & 1);
+            t.write(t.a.rebase(d::PARAM_FLAG_B8), &[(round & 2) as u8]);
+            t.w32(cells, [u32::MAX, 0, 1][(round % 3) as usize]);
+            t.w32(cells + 4, round & 1);
+            // BasicDebugTweakUtil
+            let obj = tool(&mut t, 0x100, 0xc4, 13);
+            t.write(obj + 0x28, &[u8::from(round != 0)]);
+            t.w32(obj + 0xfc, round + 2);
+            for n in 0..15u32 {
+                let w = format!("{label} basic debug line {n} round {round}");
+                t.run(&w, 0x006b_69a0, obj, &[n, buf], false, |g| {
+                    d::basic_debug_line(g, obj, n, buf)
+                });
+            }
+            // BtlChrParamConfigTweakUitl
+            let obj = tool(&mut t, 0x100, 0xb0, 17);
+            t.write(obj + 0x1c, &[u8::from(round != 0)]);
+            t.w32(obj + 0xf8, round * 3);
+            t.w32(obj, round % 5);
+            for n in 0..19u32 {
+                let w = format!("{label} battle param line {n} round {round}");
+                t.run(&w, 0x006b_6bb0, obj, &[n, buf], false, |g| {
+                    d::battle_param_line(g, obj, n, buf)
+                });
+            }
+            // GameParamConfigTweakUitl
+            let obj = tool(&mut t, 0x100, 0xa4, 15);
+            t.write(obj + 0x10, &[u8::from(round != 0)]);
+            t.w32(obj + 0xe4, round * 2);
+            t.w32(obj, 0x1234 + round);
+            t.w32(obj + 0xc, 3600 * round + 61 * round + 7);
+            for n in 0..17u32 {
+                let w = format!("{label} game param line {n} round {round}");
+                t.run(&w, 0x006b_72e0, obj, &[n, buf], false, |g| {
+                    d::game_param_line(g, obj, n, buf)
+                });
+            }
+        }
+        for i in [0u32, 3, 7, 8, 0xffff_fffe, 0x8000_0000] {
+            let w = format!("{label} save string {i:#x}");
+            t.run_cdecl(&w, 0x0078_70d0, &[i], |g| d::save_string(g, i));
+        }
+    }
+}

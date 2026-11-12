@@ -210,4 +210,24 @@ ported! {
         let (_, ins, dec) = d::STRING_INSERT_NOHINT[2];
         d::string_insert_nohint(&mut mem(), this, out, leftish, value, node, frame.at(), ins, dec)
     }
+    /// `IggyRenderCommand_trampoline_00a34b00`: a jump to `[p + 4]` with `p`; its `eax`.
+    IggyRenderCommand_trampoline_00a34b00 @ 0x00a3_4b00 => extern "C" fn d_00a34b00(p: u32) -> u32 {
+        d::render_command_trampoline(&mut mem(), p)
+    }
+    /// `BasicDebugTweakUtil_getLineText`: a tool line into `buf`; `sprintf_s`'s `eax`.
+    BasicDebugTweakUtil_getLineText @ 0x006b_69a0 => extern "thiscall" fn d_006b69a0(this: u32, n: u32, buf: u32) -> u32 {
+        d::basic_debug_line(&mut mem(), this, n, buf)
+    }
+    /// `BtlChrParamConfigTweakUitl_getLineText_006b6bb0`: a tool line into `buf`.
+    BtlChrParamConfigTweakUitl_getLineText_006b6bb0 @ 0x006b_6bb0 => extern "thiscall" fn d_006b6bb0(this: u32, n: u32, buf: u32) -> u32 {
+        d::battle_param_line(&mut mem(), this, n, buf)
+    }
+    /// `GameParamConfigTweakUitl_getLineText`: a tool line into `buf`.
+    GameParamConfigTweakUitl_getLineText @ 0x006b_72e0 => extern "thiscall" fn d_006b72e0(this: u32, n: u32, buf: u32) -> u32 {
+        d::game_param_line(&mut mem(), this, n, buf)
+    }
+    /// `SaveData_string_007870d0`: the save data's string `i` (clamped 0..7).
+    SaveData_string_007870d0 @ 0x0078_70d0 => extern "C" fn d_007870d0(i: u32) -> u32 {
+        d::save_string(&mut mem(), i)
+    }
 }
