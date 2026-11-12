@@ -191,6 +191,40 @@ fn two_operands(n: usize, seed: u32) -> Vec<Vec<f64>> {
     out
 }
 
+/// Arguments for the inverse sines and cosines: the edges and `n` spread
+/// over [-1, 1] (denser near ±1 and 0), the band edges' neighbours.
+#[allow(clippy::cast_possible_truncation)]
+fn unit_operand(n: usize, seed: u32) -> Vec<Vec<f64>> {
+    let mut s = Spread(seed);
+    let mut xs: Vec<f64> = EDGES.to_vec();
+    xs.extend([
+        1.0,
+        -1.0,
+        0.0625,
+        -0.0625,
+        0.8649,
+        0.8651,
+        0.9922,
+        -0.9922,
+        1.0 - 1e-16,
+        -1.0 + 1e-16,
+        1e-18,
+        -8.6e-19,
+        1.000_000_1,
+    ]);
+    for i in 0..n {
+        let u = s.unit();
+        xs.push(match i % 5 {
+            0 => (u - 0.5) * 2.0,
+            1 => 1.0 - u * 0.02,
+            2 => -(1.0 - u * 0.2),
+            3 => (u - 0.5) * 0.15,
+            _ => f64::from(((u - 0.5) * 2.0) as f32),
+        });
+    }
+    xs.into_iter().map(|x| vec![x]).collect()
+}
+
 /// The bits a result stores, NaNs compared by their bits too.
 fn same(a: f64, b: f64) -> bool {
     a.to_bits() == b.to_bits()
@@ -209,7 +243,13 @@ fn x87_intrinsics_match_the_dll() {
     use ffx_bridge::route::Float;
     let Some(exe) = exe() else { return };
     let mut e = ffx_host::boot(&exe).unwrap();
-    let cases: [(&str, u32, Vec<Vec<f64>>, usize); 7] = [
+    let cases: [(&str, u32, Vec<Vec<f64>>, usize); 8] = [
+        (
+            "_CIacos",
+            0x0094_98da,
+            unit_operand(3000, 0x89ab_cdef),
+            2900,
+        ),
         ("_CIatan", 0x0094_9d5c, one_operand(3000, 0x789a_bcde), 2900),
         ("_CIsin", 0x0094_98c8, one_operand(3000, 0x1234_5678), 2200),
         ("_CIcos", 0x0094_98c2, one_operand(3000, 0x2345_6789), 2200),
@@ -1593,7 +1633,8 @@ fn cin_getline_without_the_dlls_matches_the_dll() {
 fn sse2_functions_match_the_dll() {
     let Some(exe) = exe() else { return };
     let mut e = ffx_host::boot(&exe).unwrap();
-    let cases: [(&str, u32, usize); 5] = [
+    let cases: [(&str, u32, usize); 6] = [
+        ("_libm_sse2_acos_precise", 0x9100_0006, 3000),
         ("_libm_sse2_atan_precise", 0x9100_0005, 3000),
         ("_libm_sse2_sin_precise", 0x9100_0001, 3000),
         ("_libm_sse2_cos_precise", 0x9100_0002, 3000),
@@ -1603,7 +1644,12 @@ fn sse2_functions_match_the_dll() {
     for (name, seed, min_rust) in cases {
         let at = export(&e, "MSVCR110.dll", name);
         let mut fast = 0;
-        for st in one_operand(3000, seed) {
+        let args = if name.contains("acos") || name.contains("asin") {
+            unit_operand(3000, seed)
+        } else {
+            one_operand(3000, seed)
+        };
+        for st in args {
             let x = st[0];
             let before = e.stats.leaf_calls;
             let rust = e.call_sse(at, x);

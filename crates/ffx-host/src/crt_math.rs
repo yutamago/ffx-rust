@@ -1024,6 +1024,215 @@ fn atan(e: &Exec, st: &[f64]) -> Option<Ext> {
     sse2_atan(d, ATAN_CI, x).map(ext_of)
 }
 
+// ----------------------------------------------------------------- acos
+
+/// `acos`'s constants (`_libm_sse2_acos_precise`'s block at `0x10034d80`;
+/// `_CIacos`'s copy: [`ACOS_CI`]) and its two tables: per interval c of
+/// |x| a word `√(1 - c²)` (`T1`) and a pair (`T2`: acos c's low and high
+/// parts).
+#[derive(Clone, Copy)]
+struct AcosK {
+    k: u32,
+    t1: u32,
+    t2: u32,
+}
+
+const ACOS_PRECISE: AcosK = AcosK {
+    k: 0x1003_4d80,
+    t1: 0x1003_4580,
+    t2: 0x1003_3680,
+};
+
+const ACOS_CI: AcosK = AcosK {
+    k: 0x1004_2200,
+    t1: 0x1004_1a00,
+    t2: 0x1004_0b00,
+};
+
+/// Offsets in the block.
+const AC_PI_2: u32 = 0x00; // (6.1e-17, π/2)
+const AC_MINUS_PI: u32 = 0x10; // (-1.2e-16, -π)
+const AC_PI: u32 = 0x20; // (1.2e-16, π)
+const AC_CUT27: u32 = 0x30;
+const AC_C3: u32 = 0x48; // -1/6
+const AC_C5: u32 = 0x50; // -3/40
+const AC_C7: u32 = 0x58; // -5/112
+const AC_SMALL_A: u32 = 0x60; // pairs: (x⁹ terms, x³ terms)
+const AC_SMALL_B: u32 = 0x70;
+const AC_SMALL_C: u32 = 0x80;
+const AC_ABS: u32 = 0xa0;
+const AC_CUT18: u32 = 0xa8;
+const AC_ONE: u32 = 0xb0;
+const AC_HALF: u32 = 0xb8;
+
+/// The bit that makes a cut value its interval's midpoint.
+const AC_MID: u64 = 0x0000_2000_0000_0000;
+const SIGN: u64 = 1 << 63;
+
+fn with_sign_of(v: f64, x: f64) -> f64 {
+    f64::from_bits(v.to_bits() ^ (x.to_bits() & SIGN))
+}
+
+/// The odd series `C3·w³ + (C7·w² + C5)·w⁵` of the bands with a table,
+/// in the DLL's order: (the w⁵ part, the w³ part).
+fn ac_series(d: &CrtData, c: AcosK, w: f64) -> (f64, f64) {
+    let k = |o: u32| d.f(c.k + o);
+    let w2 = w * w;
+    let w3 = w * w2;
+    let w5 = w3 * w2;
+    ((k(AC_C7) * w2 + k(AC_C5)) * w5, k(AC_C3) * w3)
+}
+
+/// The SSE2 `acos` of `x` (`0x1003318b`, `_CIacos`'s `0x100405be`), or
+/// `None` for the arguments the DLL's error handler takes (|x| > 1, NaN).
+///
+/// The bands by |x|'s exponent and top mantissa bits:
+/// - 1/16 to about 0.865: c = |x| cut to 6 mantissa bits plus half an
+///   interval (x's sign), w = x·√(1-c²) - c·√(1-x²) = sin(asin x - asin c),
+///   the table's acos c (sign-adjusted) minus asin w by its series, with
+///   the division `(x+c)(x-c) / (x·T1 + c·√(1-x²))` correcting w;
+/// - about 0.865 to 0.992: the same with the roles of x and √(1-x²)
+///   swapped (s = √(1-x²) cut, its table entry), x's sign at the end;
+/// - 2^-60 to 1/16: `π/2 - x` minus `x³·Q(x²)` in two parts;
+/// - 0.992 to 1: `2·√((1-|x|)/2)` times a series in y = (1-|x|)/2, with
+///   π - ... for negative x;
+/// - below 2^-60: π/2; ±1: 0 or π.
+#[allow(clippy::too_many_lines, clippy::similar_names)]
+fn sse2_acos(d: &CrtData, c: AcosK, x: f64) -> Option<f64> {
+    let k = |o: u32| d.f(c.k + o);
+    let kp = |o: u32| d.p(c.k + o);
+    let bits = x.to_bits();
+    let top = u32::try_from(bits >> 44).unwrap_or(0);
+    let e0 = top & 0x7ffff;
+    let one = k(AC_ONE);
+    if e0.wrapping_sub(0x3fb00) < 0x3bb {
+        // 1/16 ≤ |x| < 0.865
+        let s = (one - x * x).sqrt();
+        let cut = f64::from_bits((bits & d.q(c.k + AC_CUT18)) | AC_MID);
+        let i = ((top & 0xffff) & !3).wrapping_sub(0xfb00);
+        let t1 = d.f(c.t1.wrapping_add(i.wrapping_mul(2)));
+        let t2 = d.p(c.t2.wrapping_add(i.wrapping_mul(4)));
+        let num = (x + cut) * (x - cut);
+        let x_t1 = x * t1;
+        let s_c = s * cut;
+        let corr = num / (x_t1 + s_c);
+        let w = x_t1 - s_c;
+        let sign = bits & SIGN;
+        let t2 = P2(
+            f64::from_bits(t2.0.to_bits() ^ sign),
+            f64::from_bits(t2.1.to_bits() ^ sign),
+        ) - kp(AC_PI_2);
+        let (w5, w3) = ac_series(d, c, w);
+        return Some(((w5 + (w3 - t2.0)) - corr) - t2.1);
+    }
+    if e0.wrapping_sub(0x3fb00 + 0x3bb) < 0x41 {
+        // 0.865 ≤ |x| < 0.992
+        let xt = f64::from_bits(bits >> 38 << 38);
+        let x_lo = x - xt;
+        let one_m = one - xt * xt;
+        let tail = (x + xt) * x_lo;
+        let s = (one_m - tail).sqrt();
+        let st = f64::from_bits((s.to_bits() & d.q(c.k + AC_CUT18)) | AC_MID | (bits & SIGN));
+        let i = u32::try_from(((s.to_bits() << 2) >> 48) & 0xffff)
+            .unwrap_or(0)
+            .wrapping_sub(0xfec0)
+            .wrapping_mul(2);
+        let t1 = d.f(c.t1.wrapping_add(i.wrapping_mul(4)));
+        let negative = bits & SIGN != 0;
+        let base = if negative {
+            kp(AC_MINUS_PI)
+        } else {
+            P2(0.0, 0.0)
+        };
+        let base = base + d.p(c.t2.wrapping_add(i.wrapping_mul(8)));
+        let s_t1 = s * t1;
+        let w = (xt * st - s_t1) + x_lo * st;
+        let den = (s_t1 + s_t1) + w;
+        let corr = ((one_m - st * st) - tail) / den;
+        let (w5, w3) = ac_series(d, c, w);
+        let head = corr + base.1;
+        let head_tail = corr + (base.1 - head);
+        let r = (w5 + (w3 + base.0)) + head_tail + head;
+        return Some(if negative { -r } else { r });
+    }
+    if e0.wrapping_sub(0x3c300) < 0x3800 {
+        // 2^-60 ≤ |x| < 1/16
+        let (pa, pb, pc) = (kp(AC_SMALL_A), kp(AC_SMALL_B), kp(AC_SMALL_C));
+        let xx = P2::dup(x);
+        let x2 = xx * xx;
+        let x3 = xx * x2;
+        let x4 = x2 * x2;
+        let x9 = (x3.0 * x3.0) * x3.0;
+        let q = (pa * x2 + pb) + pc * x4;
+        let parts = P2(x9, x3.1) * q;
+        let pi_2 = kp(AC_PI_2);
+        let head = pi_2.1 - x;
+        let lost = x - (pi_2.1 - head);
+        let low = ((pi_2.0 - parts.0) - parts.1) - lost;
+        return Some(head + low);
+    }
+    if e0.wrapping_sub(0x3fefc) < 4 {
+        // 0.992 ≤ |x| < 1
+        let a = x.abs();
+        let y = k(AC_HALF) - a * k(AC_HALF);
+        let r = y.sqrt();
+        let yy = P2::dup(y);
+        let y2 = yy * yy;
+        let q = (kp(AC_SMALL_B) + kp(AC_SMALL_A) * yy) + kp(AC_SMALL_C) * y2;
+        let y3 = y2.0 * y;
+        let q = P2(q.0 * y3, q.1) * yy;
+        let rt = f64::from_bits(r.to_bits() & d.q(c.k + AC_CUT27));
+        let r_lo = r - rt;
+        let corr = ((y - rt * rt) - r_lo * ((r + r) - r_lo)) / r;
+        let q = q * P2::dup(r + r);
+        let negative = bits & SIGN != 0;
+        let base = if negative {
+            kp(AC_MINUS_PI)
+        } else {
+            P2(0.0, 0.0)
+        };
+        let sum = (((q.0 + base.0) + q.1) + corr) + (r + r);
+        let v = base.1 + sum;
+        return Some(if negative { -v } else { v });
+    }
+    if e0 < 0x3ff00 {
+        // below 2^-60
+        let pi_2 = kp(AC_PI_2);
+        return Some(pi_2.0 + pi_2.1);
+    }
+    if x.abs() == 1.0 {
+        let pi = kp(AC_PI);
+        return Some(if x < 0.0 { pi.0 + pi.1 } else { 0.0 + 0.0 });
+    }
+    let _ = k(AC_ABS);
+    None
+}
+
+/// `_libm_sse2_acos_precise` (`0x10033155`): the SSE2 code; |x| > 1
+/// (the indefinite NaN, a domain error) and NaNs through the DLL's
+/// handler.
+fn acos_precise(e: &Exec, x: f64) -> Option<f64> {
+    let d = data(e)?;
+    if !sse_controls(e) {
+        return None;
+    }
+    if let Some(v) = sse2_acos(d, ACOS_PRECISE, x) {
+        return Some(v);
+    }
+    non_finite(e, if x.is_nan() { x } else { f64::INFINITY })
+}
+
+/// `_CIacos` (`0x10032375`): the SSE2 code (`0x100405be`) on the SSE2
+/// path; |x| > 1, NaNs and the x87 path: `None`.
+fn acos(e: &Exec, st: &[f64]) -> Option<Ext> {
+    let &[x] = st else { return None };
+    let d = data(e)?;
+    if !sse2_path(e) {
+        return None;
+    }
+    sse2_acos(d, ACOS_CI, x).map(ext_of)
+}
+
 // --------------------------------------------- the SSE2 functions
 
 /// Whether the SSE2 functions take their SSE2 code (`MXCSR` and the x87
@@ -1113,6 +1322,7 @@ pub fn sse_function(name: &str) -> Option<SseFn> {
         "_libm_sse2_tan_precise" => Some(tan_precise),
         "_libm_sse2_sqrt_precise" => Some(sqrt_precise),
         "_libm_sse2_atan_precise" => Some(atan_precise),
+        "_libm_sse2_acos_precise" => Some(acos_precise),
         _ => None,
     }
 }
@@ -1145,13 +1355,20 @@ pub const NO_DLL: &[(&str, &str, Conv, usize, ImportFn)] = &[
     (
         CRT_FILE,
         "_libm_sse2_sqrt_precise",
-        crate::table::Conv::Cdecl,
+        Conv::Cdecl,
         0,
         sse_without_operand,
     ),
     (
         CRT_FILE,
         "_libm_sse2_atan_precise",
+        Conv::Cdecl,
+        0,
+        sse_without_operand,
+    ),
+    (
+        CRT_FILE,
+        "_libm_sse2_acos_precise",
         Conv::Cdecl,
         0,
         sse_without_operand,
@@ -1172,7 +1389,8 @@ pub type X87Fn = fn(&Exec, &[f64]) -> Option<Ext>;
 
 /// The `_CI*` intrinsics with a Rust side ([`intrinsic`]), with the
 /// operands each takes from the x87 stack.
-pub const INTRINSICS: [(&str, usize); 7] = [
+pub const INTRINSICS: [(&str, usize); 8] = [
+    ("_CIacos", 1),
     ("_CIatan", 1),
     ("_CIsin", 1),
     ("_CIcos", 1),
@@ -1202,6 +1420,7 @@ pub fn intrinsic(name: &str) -> Option<X87Fn> {
         "_CIsqrt" => Some(sqrt),
         "_CItan" => Some(tan),
         "_CIatan" => Some(atan),
+        "_CIacos" => Some(acos),
         "_CIatan2" => Some(atan2),
         "_CIfmod" => Some(fmod),
         _ => None,
