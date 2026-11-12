@@ -107,4 +107,8 @@ ported! {
     Table256_ctor_009f2510 @ 0x009f_2510 => extern "thiscall" fn sm_009f2510(this: u32) -> u32 {
         s::table256_ctor(&mut mem(), this)
     }
+    /// `PSceneRenderPassType_assignIndices_004e62c0()`: the pass types indexed, the effect variants' over-allocation; 0x12 once the slots were assigned, else 0.
+    PSceneRenderPassType_assignIndices_004e62c0 @ 0x004e_62c0 => extern "C" fn sm_004e62c0() -> u32 {
+        s::pass_assign_indices(&mut mem())
+    }
 }

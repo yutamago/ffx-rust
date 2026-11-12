@@ -439,3 +439,48 @@ pub fn table256_ctor(h: &mut impl Host, this: u32) -> u32 {
     h.write(this, 0u32);
     this
 }
+
+/// The byte set once the parameter blocks got their slots
+/// (`PParameterBlocks_assignSlots_004e4ec0`).
+pub const SLOTS_ASSIGNED: u32 = 0x00ca_5fe8;
+/// The list of scene render pass types (link at `+4`).
+pub const PASS_TYPES: u32 = 0x00ca_54f8;
+/// The number of pass types, written by [`pass_assign_indices`].
+pub const PASS_COUNT: u32 = 0x00ca_5fec;
+/// `PEffectVariant`'s class descriptor.
+pub const EFFECT_VARIANT_CLASS: u32 = 0x00ca_5ff0;
+/// `PSceneRenderPassType::InvalidateLookupIndices` (cdecl).
+pub const INVALIDATE_LOOKUP_INDICES: u32 = 0x004d_f2d0;
+/// `PClassDescriptor::setOverallocation` (thiscall, two stack words).
+pub const SET_OVERALLOCATION: u32 = 0x0043_d590;
+
+/// `PSceneRenderPassType_assignIndices_004e62c0()` (cdecl; the tail of
+/// `PUtilityRendering::initialize`) -> 0x12 once the slots were assigned,
+/// else 0: `InvalidateLookupIndices()`, each pass type's `+0xc` = its
+/// position in the list, the count stored, and `PEffectVariant`'s
+/// descriptor over-allocated by four bytes per pass type
+/// (`setOverallocation(count * 4, 4)`).
+pub fn pass_assign_indices(h: &mut impl Host) -> u32 {
+    let assigned = h.rebase(SLOTS_ASSIGNED);
+    if h.read::<u8>(assigned) != 0 {
+        return 0x12;
+    }
+    h.call_sym(INVALIDATE_LOOKUP_INDICES, Conv::Cdecl, &[]);
+    let list = h.rebase(PASS_TYPES);
+    let mut node: u32 = h.read(list);
+    let mut n = 0u32;
+    while node != 0 {
+        h.write(node + 0xc, n);
+        node = h.read(node + 4);
+        n = n.wrapping_add(1);
+    }
+    let count = h.rebase(PASS_COUNT);
+    h.write(count, n);
+    let class = h.rebase(EFFECT_VARIANT_CLASS);
+    h.call_sym(
+        SET_OVERALLOCATION,
+        Conv::Thiscall(class),
+        &[n.wrapping_mul(4), 4],
+    );
+    0
+}

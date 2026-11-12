@@ -1837,3 +1837,33 @@ fn wp5b_table256_ctor() {
         });
     }
 }
+
+/// `PSceneRenderPassType_assignIndices_004e62c0` with both callees logging
+/// stubs (`ecx` and the first stack word), over the slots-assigned byte
+/// set and clear and lists of 0 to 5 pass types (junk in their index
+/// words).
+#[test]
+fn wp5b_pass_assign_indices() {
+    use ffx_prender::wp5_small as sm;
+    for (label, mut t) in Twins::all() {
+        let log = t.alloc(&[0; 4 + 8 * 64]);
+        let c = log_stub_plain(&mut t, log, 0, 0x5151, false);
+        jmp_stub(&mut t, sm::INVALIDATE_LOOKUP_INDICES, &c);
+        let c = log_stub(&mut t, log, 8, 0x6161);
+        jmp_stub(&mut t, sm::SET_OVERALLOCATION, &c);
+        let nodes = t.alloc(&[0x6b; 5 * 0x10]);
+        let (assigned, list) = (t.a.rebase(sm::SLOTS_ASSIGNED), t.a.rebase(sm::PASS_TYPES));
+        for n in 0..6u32 {
+            for set in [0u8, 1, 0x80] {
+                t.write(assigned, &[set]);
+                for i in 0..n {
+                    let next = if i + 1 < n { nodes + 0x10 * (i + 1) } else { 0 };
+                    t.w32(nodes + 0x10 * i + 4, next);
+                }
+                t.w32(list, if n == 0 { 0 } else { nodes });
+                let w = format!("{label} pass indices n {n} assigned {set}");
+                t.run_cdecl(&w, 0x004e_62c0, &[], |g| sm::pass_assign_indices(g));
+            }
+        }
+    }
+}

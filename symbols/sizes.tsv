@@ -3,6 +3,7 @@
 0x004320c0	8	0	Phyre_PArray_count_004320c0
 0x00432820	531	603	Phyre_PRendering_PUtilityRendering_initialize
 0x00440ea0	5	0	RenderTarget_release_00440ea0
+0x004e62c0	72	0	PSceneRenderPassType_assignIndices_004e62c0
 0x005c8930	1367	0	Phyre_PDynamicGeometry_skin4Bones_005c8930
 0x005c8e90	1623	0	Phyre_PDynamicGeometry_skin4BonesTangents_005c8e90
 0x005ca0d0	366	0	Phyre_PDynamicGeometry_PMorphModifier_blend2x3_005ca0d0
