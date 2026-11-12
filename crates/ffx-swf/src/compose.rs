@@ -69,7 +69,7 @@ pub fn over_opaque(base: &RgbImage, top: &RgbaImage) -> RgbImage {
 
 /// Per-pixel difference of two images of one size: the image (the largest
 /// channel difference, amplified 4x, red over a dimmed copy of `a`) and the
-/// counts of pixels differing by more than 8 and 32, and the mean absolute
+/// counts of pixels differing by more than 8, 24 and 32, and the mean absolute
 /// channel difference.
 #[must_use]
 #[allow(clippy::many_single_char_names)]
@@ -88,6 +88,9 @@ pub fn difference(a: &RgbImage, b: &RgbImage) -> (RgbImage, Diff) {
         }
         if m > 8 {
             d.over8 += 1;
+        }
+        if m > 24 {
+            d.over24 += 1;
         }
         if m > 32 {
             d.over32 += 1;
@@ -112,6 +115,8 @@ pub fn difference(a: &RgbImage, b: &RgbImage) -> (RgbImage, Diff) {
 pub struct Diff {
     pub pixels: u64,
     pub over8: u64,
+    /// More than 24 levels: the replays' "pixels off" (docs/host.md).
+    pub over24: u64,
     pub over32: u64,
     /// Mean absolute channel difference, in thousandths.
     pub mean_milli: u64,
@@ -141,6 +146,9 @@ mod tests {
         let a = RgbImage::from_pixel(2, 1, Rgb([100, 100, 100]));
         let b = over_opaque(&a, &RgbaImage::from_pixel(2, 1, Rgba([200, 100, 100, 255])));
         let (_, d) = difference(&a, &b);
-        assert_eq!((d.over8, d.over32, d.mean_milli), (2, 2, 33_333));
+        assert_eq!(
+            (d.over8, d.over24, d.over32, d.mean_milli),
+            (2, 2, 2, 33_333)
+        );
     }
 }

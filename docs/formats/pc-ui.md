@@ -573,6 +573,29 @@ update (3,001 ticks over 3,000 updates of the PC menu in the pilot);
 hidden menus are not drawn and do not tick. `GotoFrameRS` is never called
 on these screens.
 
+## The 19 movies
+
+`ffx_data/gamedata/ps3data/flash/` (WP12, 2026-11-12). "Offers" are the
+`addCallback` names with their argument counts (`swf-abc`), "calls" the
+`ExternalInterface.call` names. Replays: which ones open the movie.
+
+| Movie | Opened by | Offers / calls | Replays |
+|---|---|---|---|
+| `escmenu.swf` | `PhyreScene_initScene` | 38 (pages, items, keys, pop-ups) / 10 `EscMenu*`, `playEscSound`, `ExitAudioMenu` | iggy-menus (all pages), iggy-lang-kr/ch |
+| `pausemenu.swf` | `PhyreScene_initScene`; shown by `Pause_Update` (`showPause("pause"/"pausa")`) | `SetLanguage`, `showPause/1`, `hidePause` / `playEscSound` | created in every replay, shown by none (the pause: `TkMenuStart` -> `Pause_Request`; a replay for it is left open) |
+| `saveload_jp.swf` (every language but kr, ch) | `SaveLoadMenu_open_00702a80` | 12 / `playEscSound` | menu-save, iggy-menus 11-12 |
+| `saveload_kr.swf`, `saveload_ch.swf` | the same, languages 9, 10 | the same | iggy-lang-kr, iggy-lang-ch |
+| `box.swf` (`BOX%s.swf`; the font) | `0x006e85f0` (TipSystem) | `OnPlay/2` / `Hide` | created everywhere; a tip played by iggy-hud |
+| `box_kr.swf`, `box_ch.swf` | the same, kr, ch | the same | iggy-lang-kr, iggy-lang-ch |
+| `openingscreen.swf` | `PhyreScene_beginRenderOpeningScreen` | - / `Finish`, `getLocByStr`, `getFontBitmapSuffix` | boot, menu-browse |
+| `chocobo.swf` (autosave, 50x50 at 1220,660) | `IggyPlayerOpenScaled_006e9250` | - | event-besaid, event-agency |
+| `speed_2.swf`, `speed_4.swf` | `IconPanel_showIcon` 0, 1 (`SpdCtrl_Tick`, F1) | `OnEnable`, `OnDisable` | iggy-hud |
+| `invincible.swf` | icon 2 (F2) | - | iggy-hud |
+| `enemy_0.swf`, `enemy_1.swf` | icons 3, 4 (F3) | - | iggy-hud |
+| `autobattle.swf` | icon 5 (F4) | - | iggy-hud |
+| `autobattle_disable.swf` | icon 6: never (no `IconPanel_showIcon(6)`, `refs.py` lists 7 calls with 5, 2, 3/4, 0, 1, 9, 8) | - | none: dead |
+| `freecamera.swf`, `time_stop.swf` | never: `SetFields_006f7700` stores their paths at `+0x3c`/`+0x40` and overwrites both with the icons' position bytes; `FreeCamera_handleInput` asks for icons 8 and 9, which `IconPanel_showIcon` refuses (`i < 7`) | - | none: dead |
+
 ## How Iggy draws
 
 GDraw, Iggy's D3D11 back end, is game code in `FFX.exe`
@@ -683,6 +706,49 @@ Mismatches found (round 2, 2026-10-27, measured: `tools/swf-pilot/measure.sh`):
   Ruffle one tick later.
 - Ruffle needs `ExternalInterface` available (a provider set), or the
   movies' `addCallback` calls do nothing.
+- **Argument counts** (WP12, 2026-11-12). Iggy runs an AS3 function the
+  game calls with whatever it passes; Ruffle, like Flash Player, throws
+  `ArgumentError` #1063 when a required argument is missing or one too
+  many arrives. `FFEscMenu` calls `addChangeParaPageItem` with 4
+  arguments (index, kind `spinnerButton`, label, button text) and
+  `escmenu.swf`'s `EscPage.addChangeParaPageItem(int, String, String,
+  String, initData:Array)` declares 5 without defaults: under Ruffle every
+  call threw, and the Change parameters page drew no rows (iggy-menus shot
+  9). `ffx_swf::abc` reads each movie's `DoABC` with Ruffle's `swf` crate
+  and finds the method each `ExternalInterface.addCallback("name", f)`
+  hands over (the class whose method makes the call, `f`'s name; two
+  classes have a `confirmSelect`, the offered one is `EscPage`'s with no
+  parameters); `Stage::call_values` fills missing required arguments with
+  `undefined` (the parameter type coerces it: `null` for the `Array`) and
+  drops extra ones. Shot 9 offline: 38,712 -> 1,151 pixels off by more than
+  24 levels, the three rows and their Get buttons drawn. No other call in
+  the iggy-menus, boot and menu-save logs needs fitting.
+- **Text positions** (WP12). `BitmapTextField.text` places each glyph
+  clip at `x = int(x + glyph.width - _offsetX)`; Flash and Ruffle report
+  `width` from bounds rounded to twips, Iggy in floating point, so a
+  truncation flipped here and there and lines drifted by a pixel (shots 7
+  and 8). Fork switch `IGGY_FLOAT_BOUNDS` (getters and the `width` /
+  `height` setters' scale).
+- **Filtered objects** (WP12). Ruffle (like Flash Player) draws an object
+  with filters (the labels' glow) into a cache whose origin is the
+  object's whole-pixel bounds, dropping its sub-pixel position; `GDraw`
+  draws it into a screen-sized target at its exact position. Labels sat
+  0.1-0.4 px lower (measured by sub-pixel correlation). Fork switch
+  `IGGY_FILTER_PHASE` keeps the phase inside the cache.
+- **Stage quality** (WP12): with both switches, `low` (one sample, as
+  `GDraw` has no MSAA) beats Ruffle's 4x MSAA: 9,148 against 12,029
+  pixels off by more than 24 levels over iggy-menus 1-9 and the pilot's
+  nine screens.
+- `stage::gdraw_like()` + `Render::gdraw()` (`ffx-host`, `iggy-replay
+  --gdraw`) turn all of this on. Offline, pixels off by more than 24
+  levels, before (round 2 switches) -> after: iggy-menus 1: 4,053 -> 3;
+  2: 1,456 -> 3; 3: 4,444 -> 2,005; 4: 2,310 -> 288; 5: 1,780 -> 273; 6:
+  1,301 -> 3; 7: 9,797 -> 46; 8: 15,507 -> 51; 9: 38,712 -> 3; the pilot's
+  save list 3,373 -> 179, its pop-up 8,863 -> 3,960. Left: thin outlines
+  (the Audio page's volume bars, the pop-up's frame), `GDraw`'s 1-pixel
+  analytic edge fringe that Ruffle's tessellator has no counterpart for.
+- **The movies' interfaces** (`swf-abc`, an example of `ffx-swf`, lists
+  them from the player's archive; "The 19 movies" below).
 
 `ffx-swf` depends on the user's Ruffle fork (github.com/yutamago/ruffle,
 branch `ffx`, user decision 2026-10-28): upstream rev `07d3e430` plus one

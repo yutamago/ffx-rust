@@ -1,0 +1,47 @@
+# Iggy (Flash) HUD icons and tips (WP12, docs/formats/pc-ui.md "The 19
+# movies"): the special features' keys on the deck (save ffx_001,
+# cdsp0000), lockstep, fast mode. No replay reached these movies before.
+#
+# Keys (DirectInput, the game's default keyboard bindings, the Esc menu's
+# Special features page): F1 3b Turbo (SpdCtrl_Tick, button 0x10000: speed
+# x2 -> speed_2.swf, x4 -> speed_4.swf, off; tips 0x2fd/0x2fe/0x2ff in
+# box.swf, TipSystem OnPlay), F2 3c Supercharge (CheckInvincibleKey:
+# invincible.swf, tips 0x2f6/0x2f7), F3 3d encounters (CheckEncounterKey,
+# g_EncountMode 1 -> 2 enemy_1.swf, -> 0 enemy_0.swf, -> 1 none; tips
+# 0x2fb/0x2fa/0x2f9), F4 3e auto battle (CheckAutobtlKey: autobattle.swf,
+# tips 0x37f/0x380). Icons are IconPanel_showIcon's slots 0-5
+# (IggyPlayerOpenScaled_006e9250, 43x43 at 10 + 53 i, 10).
+# Every feature is switched off again before the end. The tips fade with
+# their own tweens, so the shots come 30 frames after each key.
+#
+# Shots (iggy-hud-<n>.bmp): 1 the deck, 2 x2 and its tip, 3 x4, 4 off,
+# 5 Supercharge on, 6 off, 7 encounters x10 (enemy_1), 8 no encounters
+# (enemy_0), 9 normal, 10 auto battle on, 11 off.
+load direct 1 cdsp0000 lockstep
+lockstep on
+pin
+waitfor 0x01325d94:4 40000000 c0ffffff 1500
+wait 37
+trace 0x0112ca90:4 0x00c42200:4 0x00c421d8:4 0x00ce82b4:4 0x0133d6e0:4 0x012fb7cc:4
+shot $OUT\iggy-hud-1.bmp
+key 3b 4 30
+shot $OUT\iggy-hud-2.bmp
+key 3b 4 30
+shot $OUT\iggy-hud-3.bmp
+key 3b 4 30
+shot $OUT\iggy-hud-4.bmp
+key 3c 4 30
+shot $OUT\iggy-hud-5.bmp
+key 3c 4 30
+shot $OUT\iggy-hud-6.bmp
+key 3d 4 30
+shot $OUT\iggy-hud-7.bmp
+key 3d 4 30
+shot $OUT\iggy-hud-8.bmp
+key 3d 4 30
+shot $OUT\iggy-hud-9.bmp
+key 3e 4 30
+shot $OUT\iggy-hud-10.bmp
+key 3e 4 30
+shot $OUT\iggy-hud-11.bmp
+wait 120

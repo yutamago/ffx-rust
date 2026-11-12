@@ -294,7 +294,7 @@ impl Stages {
         // registers keeps it for the others
         let own = GameFont::from_swf(swf).ok();
         let url = format!("file:///{p:08x}.swf");
-        let render = Render::default();
+        let render = Render::gdraw();
         let made = [own.as_ref(), self.font.as_ref(), None]
             .into_iter()
             .enumerate()
@@ -344,9 +344,7 @@ fn stage_thread(inbox: Receiver<ToStage>) {
             None
         }
     };
-    ffx_swf::stage::gdraw_mipmaps(true);
-    ffx_swf::stage::force_bitmap_smoothing(true);
-    ffx_swf::stage::deterministic_get_timer(true);
+    ffx_swf::stage::gdraw_like();
     let mut st = Stages {
         gpu,
         font: None,
