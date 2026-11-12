@@ -561,7 +561,15 @@ slightly differently.
    - Iggy: the Ruffle pilot on the title, settings and save/load
      screens, for the user to judge. Then the other screens, either on
      Ruffle or rebuilt natively.
-   - Steam: our calls into `steam_api.dll`.
+   - Steam: our calls into `steam_api.dll`. (As it went, 2026-11-12,
+     WP10: in the 64-bit `ffx-rust.exe` the game's nine imports, the
+     interfaces' vtable slots it calls and its three callbacks go to the
+     Steamworks SDK 1.65 `steam_api64.dll`, loaded at run time, at the
+     game's old interface versions; `ResetAllStats` and
+     `RestartAppIfNecessary` are never forwarded; without the DLL or a
+     running Steam it is absent as before. The game's Steam code passes
+     on a stand-in, ported and original alike; the live read on the
+     account is `steam-probe` (docs/host.md, "Steam").)
    - Gate: the in-process build runs no code from `FFX.exe` and loads none
      of the game's DLLs except `steam_api.dll`. Every replay, scene gate
      and audio check passes.
