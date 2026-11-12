@@ -1603,3 +1603,48 @@ fn wp5d_report_map_unload() {
         }
     }
 }
+
+/// The Phyre tree's release (`0x00636970`): `remove` a stub that pops the
+/// first node (writes its `+0` link to the tree's `+0xc`) and logs it,
+/// `PhyreFree` and the free list's reset logging stubs; trees of 0..4
+/// nodes with owned and borrowed (bit 0) buffers, the empty tree as
+/// itself or 0. `eax` and memory.
+#[test]
+fn wp5d_rb_tree_release() {
+    use ffx_prender::wp5d as d;
+    for (label, mut t) in Twins::all() {
+        let log = t.alloc(&[0; 4 + 32 * 64]);
+        // remove: mov eax,[esp+4]; mov edx,[eax]; mov [ecx+0xc],edx; then log
+        let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0x8b, 0x10, 0x89, 0x51, 0x0c];
+        c.extend(wide_stub(log, 1, 1, 4, 0x1111));
+        jmp_stub(&mut t, d::RB_TREE_REMOVE, &c);
+        let s = wide_stub_plain(log, 2, 1, 0, 0x2222);
+        jmp_stub(&mut t, d::PHYRE_FREE, &s);
+        let s = wide_stub(log, 3, 0, 0, 0x3333);
+        jmp_stub(&mut t, d::FREE_LIST_RESET, &s);
+        for case in 0..10u32 {
+            let tree = t.alloc(&[0x29; 0x30]);
+            let n = case % 5;
+            let nodes: Vec<u32> = (0..n).map(|_| t.alloc(&[0x30; 0x18])).collect();
+            for (k, &node) in nodes.iter().enumerate() {
+                let next = nodes
+                    .get(k + 1)
+                    .copied()
+                    .unwrap_or(if case < 5 { tree } else { 0 });
+                t.w32(node, next);
+                t.w32(node + 0xc, 0x0100_0000 + 0x10 * k as u32 + (case & 1));
+                t.w32(
+                    node + 0x10,
+                    0x0200_0000 + 0x10 * k as u32 + u32::from(k % 2 == 1),
+                );
+            }
+            let empty = if case < 5 { tree } else { 0 };
+            t.w32(tree + 0xc, nodes.first().copied().unwrap_or(empty));
+            t.w32(log, 0);
+            let w = format!("{label} rb tree release {case}");
+            t.run(&w, 0x0063_6970, tree, &[], false, |g| {
+                d::rb_tree_release(g, tree)
+            });
+        }
+    }
+}

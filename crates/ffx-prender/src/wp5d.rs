@@ -1601,3 +1601,32 @@ pub fn report_map_unload(h: &mut impl Host, this: u32, frame: u32) -> u32 {
         h.call(f, Conv::Cdecl, &[frame, 0x100, t, this + 0xc])
     }
 }
+
+/// `Phyre_PRedBlackTree_remove` (thiscall `(tree; node)`) and
+/// `Phyre_PFreeList_reset` (thiscall).
+pub const RB_TREE_REMOVE: u32 = 0x0057_5000;
+pub const FREE_LIST_RESET: u32 = 0x0049_cc10;
+
+/// A Phyre red-black tree of owned buffers emptied (`0x00636970`,
+/// thiscall; `PhyreScene_releaseVFXMeshes`, `TreeSet_dtor_00633f70` and
+/// three more): while the tree's first node (`+0xc`; none when it is the
+/// tree itself) exists, it is removed (`PRedBlackTree::remove`) and its
+/// two buffers `+0x10` and `+0xc` freed (`PhyreFree`) unless their bit 0
+/// (borrowed) is set; then the node free list at `+0x18` reset. `eax`:
+/// the reset's.
+pub fn rb_tree_release(h: &mut impl Host, this: u32) -> u32 {
+    loop {
+        let first: u32 = h.read(this + 0xc);
+        if first == this || first == 0 {
+            break;
+        }
+        h.call_sym(RB_TREE_REMOVE, Conv::Thiscall(this), &[first]);
+        for off in [0x10u32, 0xc] {
+            let p: u32 = h.read(first + off);
+            if p & 1 == 0 {
+                h.call_sym(PHYRE_FREE, Conv::Cdecl, &[p]);
+            }
+        }
+    }
+    h.call_sym(FREE_LIST_RESET, Conv::Thiscall(this + 0x18), &[])
+}

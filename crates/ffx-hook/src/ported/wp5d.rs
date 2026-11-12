@@ -254,6 +254,10 @@ ported! {
         let mut frame = StackFrame::<0x40>::new();
         d::report_map_unload(&mut mem(), this, frame.at())
     }
+    /// `PRedBlackTree_releaseAll_00636970`: every node removed and its buffers freed; the free list reset.
+    PRedBlackTree_releaseAll_00636970 @ 0x0063_6970 => extern "thiscall" fn d_00636970(this: u32) -> u32 {
+        d::rb_tree_release(&mut mem(), this)
+    }
 }
 
 /// `ffx-host` only: `Rng_ClockSeed` (`0x00798950`) as a table entry. In
