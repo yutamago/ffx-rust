@@ -256,6 +256,7 @@ pub fn keeps(name: &str) -> bool {
         .chain(crate::crt_str::TABLE)
         .chain(crate::crt_cxx::TABLE)
         .chain(crate::crt_cpp::TABLE)
+        .chain(crate::crt_scan::TABLE)
         .any(|(_, n, ..)| *n == name)
 }
 

@@ -3,6 +3,13 @@
 //! it, and the DLL's own export called directly. Needs `FFX_GAME_DIR`;
 //! skips without it.
 
+// test data: the C names, the spreads' casts
+#![allow(
+    clippy::many_single_char_names,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss
+)]
+
 use std::path::PathBuf;
 
 use ffx_bridge::Mem as _;
@@ -1721,5 +1728,226 @@ fn sse2_functions_match_the_dll() {
             );
         }
         assert!(fast >= min_rust as u64, "{name}: {fast} in Rust");
+    }
+}
+
+/// Decimal texts for the conversions: short ones as the game's files and
+/// `%f` write them, signs, exponents (`e`, `E`, `d`), leading spaces,
+/// junk after, no digits, and over- and underflow.
+fn decimal_texts(n: usize, seed: u32) -> Vec<String> {
+    let mut v: Vec<String> = [
+        "0",
+        "1",
+        "-1",
+        "+2.5",
+        "  3.25x",
+        ".5",
+        "5.",
+        "-.0",
+        "1e10",
+        "1E-5",
+        "2d3",
+        "-7.5D-2",
+        "1e",
+        "1e+",
+        "abc",
+        "",
+        "-",
+        ".",
+        "1.7976931348623157e308",
+        "1e309",
+        "-1e400",
+        "4.9e-324",
+        "1e-330",
+        "2.2250738585072014e-308",
+        "0.1",
+        "0.2",
+        "0.3",
+        "123456789",
+        "3.14159265358979",
+        "\t\n 42",
+        "0x10",
+        "1,5",
+        "1..2",
+        "nan",
+        "inf",
+    ]
+    .iter()
+    .map(ToString::to_string)
+    .collect();
+    let mut s = Spread(seed);
+    for i in 0..n {
+        let u = s.unit();
+        let w = s.unit();
+        #[allow(clippy::cast_possible_truncation)]
+        let t = match i % 5 {
+            0 => format!("{:.6}", (u - 0.5) * 2000.0),
+            1 => format!("{}", ((u - 0.5) * 100.0) as f32),
+            2 => format!("{:e}", (u - 0.3) * 10f64.powi((w * 40.0) as i32 - 20)),
+            3 => format!("{:.3}", u * 10.0),
+            _ => format!("{}.{:05}", (u * 1e6) as u32, (w * 99999.0) as u32),
+        };
+        v.push(t);
+    }
+    v
+}
+
+/// `strtod` and `atof` (Rust sides) against the DLL's: `ST0`'s bits and
+/// the end pointer over the decimal texts.
+#[test]
+fn strtod_and_atof_match_the_dll() {
+    use ffx_bridge::route::Float;
+    let Some(exe) = exe() else { return };
+    let mut e = ffx_host::boot(&exe).unwrap();
+    let end = e.alloc(8);
+    let mut fast = 0;
+    let texts = decimal_texts(6000, 0x1357_9bdf);
+    for t in &texts {
+        let s = put(&mut e, t.as_bytes());
+        for name in ["strtod", "atof"] {
+            let (rust, dll) = both(&e, name);
+            let mut got = Vec::new();
+            for f in [rust, dll] {
+                e.mem().write(end, 0x5a5a_5a5au32);
+                let words = if name == "strtod" {
+                    vec![s, end]
+                } else {
+                    vec![s]
+                };
+                let before = e.stats.unicorn_calls;
+                let r = ffx_bridge::route::Router::call(
+                    &mut e,
+                    f,
+                    ffx_host::table::Conv::Cdecl,
+                    &ffx_host::table::Args {
+                        stack: words,
+                        ..Default::default()
+                    },
+                    Float::F64,
+                );
+                if f == rust && e.stats.unicorn_calls == before {
+                    fast += 1;
+                }
+                let stop: u32 = e.mem().read(end);
+                got.push((r.st0.to_bits(), stop.wrapping_sub(s)));
+            }
+            assert_eq!(got[0], got[1], "{name}({t:?})");
+        }
+    }
+    // the long mantissas (most of the `{:e}` ones) are handed on
+    assert!(fast > texts.len() * 3 / 2, "{fast} in Rust");
+}
+
+/// The `sscanf` family (Rust sides) against the DLL's: the game's formats
+/// over matching, partly matching and empty inputs, `%f` into floats and
+/// `%lf` into doubles from the decimal texts, `%s` into buffers, `_s`
+/// sizes, `swscanf_s`'s `VID_%4X`; the count and every output byte.
+#[test]
+#[allow(clippy::too_many_lines)]
+fn sscanf_family_matches_the_dll() {
+    let Some(exe) = exe() else { return };
+    let mut e = ffx_host::boot(&exe).unwrap();
+    let out = e.alloc(0x100);
+    let mut cases: Vec<(&str, String, String)> = Vec::new();
+    for (fmt, inputs) in [
+        (
+            "%d",
+            vec!["42", " -17", "+8x", "", "abc", "2147483648", "  "],
+        ),
+        ("%03d", vec!["7", "12345", "-1"]),
+        ("%d %d %d %d %d %d", vec!["1 2 3 4 5 6", "1 2 3", "1 2 x 4"]),
+        ("%d,%d", vec!["3,4", "3 ,4", "3,", ",4"]),
+        ("%d:", vec!["5:", "5", "5;"]),
+        ("%d:%d:%d", vec!["12:34:56", "1:2"]),
+        ("%d_%d_%d_%d_%d_%d", vec!["1_2_3_4_5_6", "1_2_3"]),
+        (
+            "%x",
+            vec!["ff", "0x1A", "-10", "g", "FFFFFFFF", "123456789"],
+        ),
+        (":%d", vec![":9", "9", " :9"]),
+        (
+            "JumpMap %s",
+            vec!["JumpMap bsil0300", "JumpMap", "Jump bsil", "JumpMap  a b"],
+        ),
+        ("SetBattle %s", vec!["SetBattle btl01 x"]),
+        (
+            "scene%dlayer%dShape",
+            vec![
+                "scene3layer12Shape",
+                "scene3layerShape",
+                "scene-1layer0Shape",
+            ],
+        ),
+        ("%i %i %i", vec!["010 0x10 10", "-0x7f +07 9"]),
+        ("%u %o %X", vec!["4294967295 777 aBc"]),
+        ("%*d %d", vec!["1 2", "1"]),
+        ("%2d%3d", vec!["12345678"]),
+        ("%c%c", vec!["ab", " a", "a"]),
+        ("%5c", vec!["abcdefg", "abc"]),
+        ("%lld %I64d %hd", vec!["-5000000000 77 70000"]),
+        ("%% %d", vec!["% 5", "%5", "5"]),
+    ] {
+        for i in inputs {
+            cases.push(("sscanf", fmt.to_string(), i.to_string()));
+        }
+    }
+    for t in decimal_texts(600, 0x2468_1357) {
+        cases.push(("sscanf", "%f".to_string(), t.clone()));
+        cases.push(("sscanf", "%lf".to_string(), t));
+    }
+    for (fmt, input) in [("%d", "5"), ("%d %d", "6 7"), ("%f", "2.5"), ("%s", "word")] {
+        cases.push(("sscanf_s", fmt.to_string(), input.to_string()));
+    }
+    let mut fast = 0;
+    for (name, fmt, input) in &cases {
+        let (rust, dll) = both(&e, name);
+        let s = put(&mut e, input.as_bytes());
+        let f = put(&mut e, fmt.as_bytes());
+        // up to six outputs 0x20 apart (and a size word 0x20 for `_s`)
+        let mut words = vec![s, f];
+        for k in 0..6 {
+            words.push(out + 0x20 * k);
+            if *name == "sscanf_s" && fmt.contains("%s") {
+                words.push(0x20);
+            }
+        }
+        let mut got = Vec::new();
+        for g in [rust, dll] {
+            e.mem().write_bytes(out, &[0xee; 0x100]);
+            let before = e.stats.unicorn_calls;
+            let r = e.call_cdecl(g, &words).unwrap();
+            if g == rust && e.stats.unicorn_calls == before {
+                fast += 1;
+            }
+            let mut b = vec![0u8; 0x100];
+            e.mem().read_bytes(out, &mut b);
+            got.push((r, b));
+        }
+        assert!(
+            got[0] == got[1],
+            "{name}({input:?}, {fmt:?}): {} vs {}",
+            got[0].0,
+            got[1].0
+        );
+    }
+    assert!(
+        fast + 300 >= cases.len(),
+        "{fast} of {} in Rust",
+        cases.len()
+    );
+    // the wide one, as Input_IsXInputDevice reads a device path
+    let (rust, dll) = both(&e, "swscanf_s");
+    for input in ["VID_045E&PID_028E", "VID_12", "VID_ZZ", "vid_045E"] {
+        let s = put_w(&mut e, input);
+        let f = put_w(&mut e, "VID_%4X");
+        let mut got = Vec::new();
+        for g in [rust, dll] {
+            e.mem().write_bytes(out, &[0xee; 16]);
+            let r = e.call_cdecl(g, &[s, f, out]).unwrap();
+            let mut b = vec![0u8; 16];
+            e.mem().read_bytes(out, &mut b);
+            got.push((r, b));
+        }
+        assert_eq!(got[0], got[1], "swscanf_s({input:?})");
     }
 }

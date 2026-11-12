@@ -375,6 +375,24 @@ fn write_to(e: &mut Exec, f: u32, data: &[u8]) -> bool {
     e.files().write(h, &data).is_some()
 }
 
+/// The bytes of `f` up to and with the next newline (at most `limit`),
+/// consumed (`fscanf`'s input).
+pub(crate) fn read_line(e: &mut Exec, f: u32, limit: usize) -> Vec<u8> {
+    let mut out = Vec::new();
+    while out.len() < limit {
+        match next_byte(e, f) {
+            Some(b) => {
+                out.push(b);
+                if b == b'\n' {
+                    break;
+                }
+            }
+            None => break,
+        }
+    }
+    out
+}
+
 /// `__iob_func()`: `stdin`, `stdout`, `stderr` (three 0x20-byte `FILE`s).
 fn iob_func(e: &mut Exec, _: &Args) -> Ret {
     if let Some(at) = crate::crt_os::cell(e, "_iob") {

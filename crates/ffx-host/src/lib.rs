@@ -30,6 +30,7 @@ pub mod crt_dll;
 pub mod crt_format;
 pub mod crt_math;
 pub mod crt_os;
+pub mod crt_scan;
 pub mod crt_start;
 pub mod crt_stdio;
 pub mod crt_str;
