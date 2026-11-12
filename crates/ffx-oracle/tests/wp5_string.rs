@@ -566,3 +566,44 @@ fn wp5b_vsync_handler() {
         }
     }
 }
+
+/// `canUseAutoBattle` (`0x00786f50`) over every story flag it tests (with
+/// junk above the flag's 16 bits), each with its battles, their
+/// neighbours and others; the two callees stubbed to return words from
+/// memory.
+#[test]
+fn wp5b_can_use_auto_battle() {
+    use ffx_prender::wp5_hot as hot;
+    for (label, mut t) in Twins::all() {
+        let cells = t.alloc(&[0; 8]);
+        for (i, sym) in [hot::GET_SCENARIO_FLAG, hot::MS_BATTLE_GET_NUM]
+            .into_iter()
+            .enumerate()
+        {
+            let mut c = vec![0xa1];
+            c.extend((cells + 4 * i as u32).to_le_bytes()); // mov eax, [cell]
+            c.push(0xc3);
+            let to = t.code(&c);
+            let at = t.a.rebase(sym);
+            let mut j = vec![0xe9];
+            j.extend(to.wrapping_sub(at + 5).to_le_bytes());
+            t.write(at, &j);
+        }
+        let mut cases: Vec<(u32, u32)> = Vec::new();
+        for &(f, b) in &hot::NO_AUTO_BATTLE {
+            for battle in [b, b + 1, b.wrapping_sub(1), 0x0022_0000] {
+                cases.push((u32::from(f), battle));
+            }
+        }
+        for f in [0xfu32, 0xd20, 0, 1, 0x36, 0xffff, 0x1_0037] {
+            cases.push((f, 0x0022_0000));
+        }
+        for (k, (f, battle)) in cases.into_iter().enumerate() {
+            let junk = if k % 2 == 0 { 0 } else { 0x5a5a_0000 };
+            t.w32(cells, f | junk);
+            t.w32(cells + 4, battle);
+            let w = format!("{label} canUseAutoBattle flag {f:#x} battle {battle:#x}");
+            t.run_cdecl(&w, 0x0078_6f50, &[], |g| hot::can_use_auto_battle(g));
+        }
+    }
+}

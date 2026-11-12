@@ -257,3 +257,44 @@ fn run(h: &mut impl ffx_graphic::host::Host, i: u32) -> u32 {
         h.call(f, ffx_graphic::host::Conv::Cdecl, &[])
     }
 }
+
+/// `getScenerioFlag` and `MsBattleGetNum` (cdecl, no arguments).
+pub const GET_SCENARIO_FLAG: u32 = 0x0078_7360;
+pub const MS_BATTLE_GET_NUM: u32 = 0x0078_16b0;
+
+/// The battles where auto battle is off, by the story flag:
+/// (flag, battle number) pairs; the flags 15 and 0xd20 rule it out for
+/// every battle.
+pub const NO_AUTO_BATTLE: [(u16, u32); 19] = [
+    (0x37, 0x0022_0000),
+    (0x37, 0x0022_0001),
+    (0x4c, 0x0039_0000),
+    (0xd2, 0x0048_0032),
+    (0xd2, 0x0048_0033),
+    (0xd8, 0x0046_0032),
+    (0xd9, 0x0046_0033),
+    (0x104, 0x0061_0000),
+    (0x138, 0x0083_0032),
+    (0x359, 0x00de_0000),
+    (0x424, 0x00fe_0000),
+    (0x43d, 0x0105_0032),
+    (0x5cd, 0x014c_0000),
+    (0x604, 0x0159_0000),
+    (0x7f8, 0x018b_0000),
+    (0x8e8, 0x0196_000a),
+    (0x9e2, 0x01e7_0000),
+    (0xc85, 0x0247_0000),
+    (0xce4, 0x024a_0000),
+];
+
+/// `canUseAutoBattle()` (`0x00786f50`, cdecl): 0 for the story flag 15
+/// or 0xd20 and for the pairs of [`NO_AUTO_BATTLE`]; else 1. Both callees
+/// are called first, as the original does.
+pub fn can_use_auto_battle(h: &mut impl ffx_graphic::host::Host) -> u32 {
+    use ffx_graphic::host::Conv;
+    #[allow(clippy::cast_possible_truncation)] // the original's movzx of ax
+    let flag = h.call_sym(GET_SCENARIO_FLAG, Conv::Cdecl, &[]) as u16;
+    let battle = h.call_sym(MS_BATTLE_GET_NUM, Conv::Cdecl, &[]);
+    let off = flag == 0xf || flag == 0xd20 || NO_AUTO_BATTLE.contains(&(flag, battle));
+    u32::from(!off)
+}

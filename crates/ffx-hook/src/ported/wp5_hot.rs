@@ -26,4 +26,8 @@ ported! {
     VsyncHandler @ 0x0088_7d60 => extern "C" fn w_00887d60() -> u32 {
         hot::vsync_handler(&mut mem())
     }
+    /// `canUseAutoBattle`: 0 in the story's battles without auto battle, else 1.
+    canUseAutoBattle @ 0x0078_6f50 => extern "C" fn w_00786f50() -> u32 {
+        hot::can_use_auto_battle(&mut mem())
+    }
 }
