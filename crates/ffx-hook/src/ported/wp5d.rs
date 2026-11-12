@@ -6,7 +6,7 @@
 
 use ffx_prender::wp5d as d;
 
-use super::{mem, ported};
+use super::{StackFrame, mem, ported};
 
 ported! {
     /// `PPhysicsCharacterCamera_ctor_005dff30`: the camera's defaults; `this`.
@@ -76,5 +76,22 @@ ported! {
     /// `ViewerManager_ctor_006b5870`: the viewer manager's constructor; `this`.
     ViewerManager_ctor_006b5870 @ 0x006b_5870 => extern "thiscall" fn d_006b5870(this: u32) -> u32 {
         d::viewer_manager_ctor(&mut mem(), this)
+    }
+    /// `Phyre_PThreadWin32_start_004300b0`: `CreateThread` and the priority; 0 (the debugger's thread name left out).
+    Phyre_PThreadWin32_start_004300b0 @ 0x0043_00b0 => extern "thiscall" fn d_004300b0(this: u32, desc: u32) -> u32 {
+        let mut frame = StackFrame::<1>::new();
+        d::thread_start(&mut mem(), this, desc, frame.at())
+    }
+    /// `MemoryPanel_ctor_006dc450`: the memory report's panel; `this`.
+    MemoryPanel_ctor_006dc450 @ 0x006d_c450 => extern "thiscall" fn d_006dc450(this: u32) -> u32 {
+        d::memory_panel_ctor(&mut mem(), this)
+    }
+    /// `BacktraceOutput_CreateInstance_00630870`: the crash reporter's output; the mutex.
+    BacktraceOutput_CreateInstance_00630870 @ 0x0063_0870 => extern "C" fn d_00630870() -> u32 {
+        d::backtrace_create(&mut mem())
+    }
+    /// `MemoryReport_CreateInstance_006dc800`: the memory report made once.
+    MemoryReport_CreateInstance_006dc800 @ 0x006d_c800 => extern "C" fn d_006dc800() -> u32 {
+        d::memory_report_create(&mut mem())
     }
 }

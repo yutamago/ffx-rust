@@ -396,3 +396,218 @@ fn wp5d_debug_tools() {
         }
     }
 }
+
+/// A stub that appends `tag` and its first `n` stack words to `log` (a
+/// count, then 8-word entries; `ecx` not logged), writes `[cells + 4]`
+/// to the word its stack word `out` points at (when `out` is set and the
+/// pointer not 0), returns `[cells]` and pops `pops` bytes.
+fn import_stub(
+    t: &mut Twins,
+    log: u32,
+    tag: u32,
+    n: u8,
+    out: Option<u8>,
+    cells: u32,
+    pops: u16,
+) -> u32 {
+    let mut c = Vec::new();
+    if let Some(i) = out {
+        c.extend([0x8b, 0x44, 0x24, 4 + 4 * i]); // mov eax, [esp+4+4i]
+        c.extend([0x85, 0xc0, 0x74, 0x08]); // test eax, eax; jz +8
+        c.extend([0x8b, 0x0d]);
+        c.extend((cells + 4).to_le_bytes()); // mov ecx, [cells+4]
+        c.extend([0x89, 0x08]); // mov [eax], ecx
+    }
+    c.push(0xa1);
+    c.extend(log.to_le_bytes()); // mov eax, [log]
+    c.extend([0x83, 0xe0, 0x1f, 0xc1, 0xe0, 0x05]); // and eax, 31; shl eax, 5
+    c.push(0x05);
+    c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+    c.extend([0xc7, 0x00]);
+    c.extend(tag.to_le_bytes()); // mov [eax], tag
+    for i in 0..n {
+        c.extend([0x8b, 0x54, 0x24, 4 + 4 * i]); // mov edx, [esp+4+4i]
+        c.extend([0x89, 0x50, 4 + 4 * i]); // mov [eax+4+4i], edx
+    }
+    c.extend([0xff, 0x05]);
+    c.extend(log.to_le_bytes()); // inc dword [log]
+    c.push(0xa1);
+    c.extend(cells.to_le_bytes()); // mov eax, [cells]
+    if pops == 0 {
+        c.push(0xc3);
+    } else {
+        c.push(0xc2);
+        c.extend(pops.to_le_bytes());
+    }
+    t.code(&c)
+}
+
+/// The import slot `slot` pointed at `code` in both.
+fn set_import(t: &mut Twins, slot: u32, code: u32) {
+    let s = t.a.rebase(slot);
+    t.w32(s, code);
+}
+
+/// `PThreadWin32`'s start (`0x004300b0`): `CreateThread` a logging stub
+/// that writes a thread id (or 0) and returns a handle (or 0),
+/// `SetThreadPriority` a logging stub, `RaiseException` (the debugger's
+/// thread name) a stub that only returns; the priority classes 0..3, the
+/// name set or not. `eax` and memory (the logs).
+#[test]
+fn wp5d_thread_start() {
+    use ffx_prender::wp5d as d;
+    const RAISE_EXCEPTION_IAT: u32 = 0x00b0_c0e0;
+    for (label, mut t) in Twins::all() {
+        let log = t.alloc(&[0; 4 + 32 * 32]);
+        let cells = t.alloc(&[0; 8]);
+        let none = t.alloc(&[0; 4]);
+        let create = import_stub(&mut t, log, 0xc7, 5, Some(5), cells, 0x18);
+        let prio = import_stub(&mut t, log, 0x9e, 2, None, none, 8);
+        let raise = t.code(&[0xc2, 0x10, 0x00]);
+        set_import(&mut t, d::CREATE_THREAD_IAT, create);
+        set_import(&mut t, d::SET_THREAD_PRIORITY_IAT, prio);
+        set_import(&mut t, RAISE_EXCEPTION_IAT, raise);
+        // the port's id word: on the stack, which the diff leaves out
+        // (the original's is in its frame); the id's pointer isn't logged
+        let frame = t.b.stack_range().start + 0x1000;
+        for case in 0..32u32 {
+            let handle = if case & 1 == 0 { 0x1234 + case } else { 0 };
+            let id = if case & 2 == 0 { 0x40 + case } else { 0 };
+            let name = if case & 4 == 0 { 0x00b0_e060 } else { 0 };
+            let class = (case >> 3) & 3;
+            t.w32(cells, handle);
+            t.w32(cells + 4, id);
+            let desc = t.alloc(&[0; 0x14]);
+            for (off, v) in [
+                (0, 0x0040_1000),
+                (4, 0x8000),
+                (8, 0x77 + case),
+                (0xc, class),
+                (0x10, name),
+            ] {
+                t.w32(desc + off, v);
+            }
+            let this = t.alloc(&[0x5a; 4]);
+            t.w32(log, 0);
+            let w = format!("{label} thread start case {case}");
+            t.run(&w, 0x0043_00b0, this, &[desc], false, |g| {
+                d::thread_start(g, this, desc, frame)
+            });
+        }
+    }
+}
+
+/// A stub that appends `tag`, `ecx` and `n` stack words to `log` (a
+/// count, then 8-word entries), returns `ret` and pops `pops` bytes.
+fn wide_stub(log: u32, tag: u32, n: u8, pops: u16, ret: u32) -> Vec<u8> {
+    let mut c = vec![0xa1];
+    c.extend(log.to_le_bytes()); // mov eax, [log]
+    c.extend([0x83, 0xe0, 0x1f, 0xc1, 0xe0, 0x05]); // and eax, 31; shl eax, 5
+    c.push(0x05);
+    c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+    c.extend([0xc7, 0x00]);
+    c.extend(tag.to_le_bytes()); // mov [eax], tag
+    c.extend([0x89, 0x48, 0x04]); // mov [eax+4], ecx
+    for i in 0..n {
+        c.extend([0x8b, 0x54, 0x24, 4 + 4 * i]); // mov edx, [esp+4+4i]
+        c.extend([0x89, 0x50, 8 + 4 * i]); // mov [eax+8+4i], edx
+    }
+    c.extend([0xff, 0x05]);
+    c.extend(log.to_le_bytes()); // inc dword [log]
+    c.push(0xb8);
+    c.extend(ret.to_le_bytes()); // mov eax, ret
+    if pops == 0 {
+        c.push(0xc3);
+    } else {
+        c.push(0xc2);
+        c.extend(pops.to_le_bytes());
+    }
+    c
+}
+
+/// [`wide_stub`] for a callee that takes no `ecx`: the logged `ecx` is 0
+/// (the caller's is junk).
+fn wide_stub_plain(log: u32, tag: u32, n: u8, pops: u16, ret: u32) -> Vec<u8> {
+    let mut c = vec![0x31, 0xc9]; // xor ecx, ecx
+    c.extend(wide_stub(log, tag, n, pops, ret));
+    c
+}
+
+/// The memory report (`0x006dc800`), its panel (`0x006dc450`) and the
+/// backtrace output (`0x00630870`): the allocators and every callee
+/// logging stubs (an allocation, or NULL), the global set or not. `eax`
+/// (but the original's leftover when the report exists) and memory.
+#[test]
+fn wp5d_memory_report() {
+    use ffx_prender::wp5d as d;
+    for (label, mut t) in Twins::all() {
+        let log = t.alloc(&[0; 4 + 32 * 32]);
+        for round in 0..2u8 {
+            let obj = t.alloc(&[0x41 + round; 0x190]);
+            t.w32(log, 0);
+            let w = format!("{label} memory panel {round}");
+            t.run(&w, 0x006d_c450, obj, &[], false, |g| {
+                d::memory_panel_ctor(g, obj)
+            });
+        }
+        for case in 0..2u32 {
+            let block = if case == 0 { t.alloc(&[0x2d; 0xb0]) } else { 0 };
+            let s = wide_stub_plain(log, 4, 1, 0, block);
+            jmp_stub(&mut t, d::USER_MALLOC, &s);
+            let s = wide_stub(log, 5, 4, 0x10, 0x99);
+            jmp_stub(&mut t, d::STACK_WALKER_CTOR, &s);
+            for (k, slot) in [
+                d::GET_CURRENT_PROCESS_IAT,
+                d::GET_CURRENT_PROCESS_ID_IAT,
+                d::CREATE_MUTEX_W_IAT,
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let n = if k == 2 { 3 } else { 0 };
+                let c = wide_stub_plain(log, 6 + k as u32, n, 4 * u16::from(n), 0x7000 + k as u32);
+                let c = t.code(&c);
+                set_import(&mut t, slot, c);
+            }
+            t.w32(t.a.rebase(d::BACKTRACE), 0x4444);
+            t.w32(log, 0);
+            t.run_cdecl(
+                &format!("{label} backtrace {case}"),
+                0x0063_0870,
+                &[],
+                |h| d::backtrace_create(h),
+            );
+        }
+        for case in 0..4u32 {
+            let block = if case & 1 == 0 {
+                t.alloc(&[0x33; 0x290])
+            } else {
+                0
+            };
+            let s = wide_stub_plain(log, 1, 2, 0, block);
+            jmp_stub(&mut t, d::PHYRE_MALLOC, &s);
+            let s = wide_stub(log, 2, 0, 0, 0x5150);
+            jmp_stub(&mut t, 0x006d_c450, &s);
+            let s = wide_stub_plain(log, 3, 0, 0, 0x6160 + case);
+            jmp_stub(&mut t, 0x0063_0870, &s);
+            let g = t.a.rebase(d::MEMORY_REPORT);
+            t.w32(log, 0);
+            t.w32(t.a.rebase(d::MEMORY_REPORT_MADE), 7);
+            if case & 2 == 0 {
+                t.w32(g, 0);
+                t.run_cdecl(
+                    &format!("{label} memory report {case}"),
+                    0x006d_c800,
+                    &[],
+                    |h| d::memory_report_create(h),
+                );
+            } else {
+                t.w32(g, 0x1234);
+                let entry = t.a.rebase(0x006d_c800);
+                t.a.call(entry, Conv::Cdecl, &[]).unwrap();
+                d::memory_report_create(&mut G(&mut t.b));
+                t.same(&format!("{label} memory report exists {case}"));
+            }
+        }
+    }
+}

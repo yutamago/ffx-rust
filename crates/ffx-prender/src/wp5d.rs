@@ -225,3 +225,150 @@ pub fn viewer_manager_ctor(h: &mut impl Host, this: u32) -> u32 {
     }
     this
 }
+
+/// `KERNEL32` import slots: `CreateThread`, `SetThreadPriority`.
+pub const CREATE_THREAD_IAT: u32 = 0x00b0_c104;
+pub const SET_THREAD_PRIORITY_IAT: u32 = 0x00b0_c10c;
+
+/// `Phyre::PThreadWin32`'s start (`0x004300b0`, thiscall `(this; desc)`,
+/// `ret 4`) -> 0. `desc`: `+0` the routine, `+4` the stack size, `+8` the
+/// parameter, `+0xc` the priority class, `+0x10` the name. The handle
+/// of `CreateThread(0, [desc+4], [desc], [desc+8], 0, &id)` goes to
+/// `[this]` (`id` the word at `frame`, game memory, zeroed first). With a
+/// handle: priority class 0 is `SetThreadPriority(handle, 1)`, 2 is
+/// `SetThreadPriority(handle, -1)`, others leave it. Left out: with a
+/// thread id, the original names the thread for a debugger
+/// (`RaiseException(0x406d1388, 0, 4, info)` with the name, `[desc+0x10]`
+/// or `GetDefaultThreadName`'s, inside `__try`/`__except` that swallows
+/// it): without a debugger attached nothing changes.
+pub fn thread_start(h: &mut impl Host, this: u32, desc: u32, frame: u32) -> u32 {
+    h.write(frame, 0u32);
+    let routine: u32 = h.read(desc);
+    let stack: u32 = h.read(desc + 4);
+    let param: u32 = h.read(desc + 8);
+    let f: u32 = h.read(h.rebase(CREATE_THREAD_IAT));
+    let handle = h.call(f, Conv::Stdcall, &[0, stack, routine, param, 0, frame]);
+    h.write(this, handle);
+    if handle == 0 {
+        return 0;
+    }
+    let priority = match h.read::<u32>(desc + 0xc) {
+        0 => 1,
+        2 => u32::MAX,
+        _ => return 0,
+    };
+    let f: u32 = h.read(h.rebase(SET_THREAD_PRIORITY_IAT));
+    let handle: u32 = h.read(this);
+    h.call(f, Conv::Stdcall, &[handle, priority]);
+    0
+}
+
+/// `Phyre_PhyreMalloc_0042fb80` (cdecl `(size, align)`).
+pub const PHYRE_MALLOC: u32 = 0x0042_fb80;
+/// The memory report object's global (`Instance_006dc800_Get` reads it)
+/// and the flag `0x006dc800` sets.
+pub const MEMORY_REPORT: u32 = 0x00cd_ede8;
+pub const MEMORY_REPORT_MADE: u32 = 0x00c3_1e98;
+/// The panel's format, `"RAM=%s - VRAM=%s - HOST=%s - SRAM=%s -
+/// FMOD=%s"` (47 bytes with the NUL, `.rdata`).
+pub const MEMORY_FORMAT: u32 = 0x00b4_a390;
+
+/// The memory report panel's constructor (`0x006dc450`, thiscall; at
+/// `+0x110` of the object `0x006dc800` makes) -> `this`: `+0x160`,
+/// `+0x164` 0.0, `+0` 0, the half-word `+4` 0, the 1280 x 720 area at
+/// `+0x158`, `+0x17c` 0, the 0x80 bytes at `+6` cleared, `+0x168..+0x178`
+/// 0, the 0x50 bytes at `+0x86` cleared, and the format's 47 bytes
+/// copied to `+0xd6` (through a frame copy: the same bytes).
+pub fn memory_panel_ctor(h: &mut impl Host, this: u32) -> u32 {
+    h.write(this + 0x160, 0u32);
+    h.write(this + 0x164, 0u32);
+    h.write(this, 0u32);
+    h.write(this + 4, 0u16);
+    h.write(this + 0x158, 0x500u32);
+    h.write(this + 0x15c, 0x2d0u32);
+    h.write(this + 0x17c, 0u32);
+    h.call_sym(MEMSET, Conv::Cdecl, &[this + 6, 0, 0x80]);
+    for off in (0x168..0x17c).step_by(4) {
+        h.write(this + off, 0u32);
+    }
+    h.call_sym(MEMSET, Conv::Cdecl, &[this + 0x86, 0, 0x50]);
+    let mut text = [0u8; 47];
+    h.read_bytes(h.rebase(MEMORY_FORMAT), &mut text);
+    h.write_bytes(this + 0xd6, &text);
+    this
+}
+
+/// `user_malloc` (`0x00687020`, cdecl).
+pub const USER_MALLOC: u32 = 0x0068_7020;
+/// `StackWalker::StackWalker` (`0x006870b0`, thiscall, 4 stack words).
+pub const STACK_WALKER_CTOR: u32 = 0x0068_70b0;
+/// `BacktraceOutputWin32`'s vtable and the global its instance goes to.
+pub const BACKTRACE_VTABLE: u32 = 0x00b4_1358;
+pub const BACKTRACE: u32 = 0x00cc_b15c;
+/// `KERNEL32` import slots: `GetCurrentProcess`, `GetCurrentProcessId`,
+/// `CreateMutexW`.
+pub const GET_CURRENT_PROCESS_IAT: u32 = 0x00b0_c19c;
+pub const GET_CURRENT_PROCESS_ID_IAT: u32 = 0x00b0_c1c4;
+pub const CREATE_MUTEX_W_IAT: u32 = 0x00b0_c198;
+
+fn import(h: &mut impl Host, slot: u32, args: &[u32]) -> u32 {
+    let f: u32 = h.read(h.rebase(slot));
+    h.call(f, Conv::Stdcall, args)
+}
+
+/// The crash reporter's `BacktraceOutputWin32` made (`0x00630870`,
+/// cdecl; called by `0x006dc800`): `user_malloc(0xac)`; NULL: the global
+/// `0x00ccb15c` 0, `eax` 0. Else the `StackWalker` constructed on it
+/// (options 0x3f, no symbol path, `GetCurrentProcessId()`,
+/// `GetCurrentProcess()`, the process asked first), its vtable
+/// `BacktraceOutputWin32`'s, `+0xa8` a new mutex (`CreateMutexW(0, 0,
+/// 0)`), the global it; `eax` the mutex handle.
+pub fn backtrace_create(h: &mut impl Host) -> u32 {
+    let n = h.call_sym(USER_MALLOC, Conv::Cdecl, &[0xac]);
+    let g = h.rebase(BACKTRACE);
+    if n == 0 {
+        h.write(g, 0u32);
+        return 0;
+    }
+    let process = import(h, GET_CURRENT_PROCESS_IAT, &[]);
+    let id = import(h, GET_CURRENT_PROCESS_ID_IAT, &[]);
+    h.call_sym(
+        STACK_WALKER_CTOR,
+        Conv::Thiscall(n),
+        &[0x3f, 0, id, process],
+    );
+    let vt = h.rebase(BACKTRACE_VTABLE);
+    h.write(n, vt);
+    let m = import(h, CREATE_MUTEX_W_IAT, &[0, 0, 0]);
+    h.write(n + 0xa8, m);
+    h.write(g, n);
+    m
+}
+
+/// The memory report object made once (`0x006dc800`, cdecl; from
+/// `graphicInitialize`): when the global `0x00cdede8` is 0,
+/// `Phyre_PhyreMalloc(0x290, 4)` goes there; when not NULL its half-word
+/// `+0`, `+8` and `+0x10c` are 0 and the panel at `+0x110` is
+/// constructed (`0x006dc450`); the global is written again (0 when the
+/// allocation failed), the backtrace output made (`0x00630870`) and
+/// `0x00c31e98` set to 1. `eax` the last call's; when the object exists
+/// the original leaves the caller's (`cmp`, `jne` to `ret`), for which
+/// this returns 0 (`graphicInitialize` ignores it).
+pub fn memory_report_create(h: &mut impl Host) -> u32 {
+    let g = h.rebase(MEMORY_REPORT);
+    if h.read::<u32>(g) != 0 {
+        return 0;
+    }
+    let p = h.call_sym(PHYRE_MALLOC, Conv::Cdecl, &[0x290, 4]);
+    h.write(g, p);
+    if p != 0 {
+        h.write(p, 0u16);
+        h.write(p + 8, 0u32);
+        h.write(p + 0x10c, 0u32);
+        h.call_sym(0x006d_c450, Conv::Thiscall(p + 0x110), &[]);
+    }
+    h.write(g, p);
+    let r = h.call_sym(0x0063_0870, Conv::Cdecl, &[]);
+    h.write(h.rebase(MEMORY_REPORT_MADE), 1u32);
+    r
+}
