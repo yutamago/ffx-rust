@@ -99,4 +99,8 @@ ported! {
     ComCriticalSection_Init_009d9dfe @ 0x009d_9dfe => extern "thiscall" fn sm_009d9dfe(this: u32) -> u32 {
         s::atl_cs_init(&mut mem(), this)
     }
+    /// `PtrArray_reserve_00638240(n)`: room for `n` words.
+    PtrArray_reserve_00638240 @ 0x0063_8240 => extern "thiscall" fn sm_00638240(this: u32, n: u32) -> u32 {
+        s::ptr_array_reserve(&mut mem(), this, n)
+    }
 }

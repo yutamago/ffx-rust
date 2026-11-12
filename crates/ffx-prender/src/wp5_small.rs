@@ -391,3 +391,35 @@ pub fn atl_base_module_ctor(h: &mut impl Host, this: u32) -> u32 {
     }
     this
 }
+
+/// `user_malloc(size)`, `user_free_thunk(p)` (cdecl).
+pub const USER_MALLOC: u32 = 0x0068_7020;
+pub const USER_FREE: u32 = 0x0068_7010;
+
+/// `PtrArray_reserve_00638240(this; n)` (thiscall, `ret 4`; `+0` the count,
+/// `+4` the capacity, `+8` the words): without words a block of `n` words
+/// (`user_malloc`); else a new block (for `n > 0`, signed) with the
+/// `count` words copied (the `memcpy` thunk; none when the block is
+/// NULL), the old block freed (`user_free_thunk`); the capacity `n`. `eax`:
+/// the first path's block, else the free's.
+pub fn ptr_array_reserve(h: &mut impl Host, this: u32, n: u32) -> u32 {
+    let old: u32 = h.read(this + 8);
+    if old == 0 {
+        let p = h.call_sym(USER_MALLOC, Conv::Cdecl, &[n.wrapping_mul(4)]);
+        h.write(this + 4, n);
+        h.write(this + 8, p);
+        return p;
+    }
+    let mut p = 0;
+    if n.cast_signed() > 0 {
+        p = h.call_sym(USER_MALLOC, Conv::Cdecl, &[n.wrapping_mul(4)]);
+        if p != 0 {
+            let count: u32 = h.read(this);
+            h.call_sym(MEMCPY, Conv::Cdecl, &[p, old, count.wrapping_mul(4)]);
+        }
+    }
+    let r = h.call_sym(USER_FREE, Conv::Cdecl, &[old]);
+    h.write(this + 4, n);
+    h.write(this + 8, p);
+    r
+}

@@ -1773,3 +1773,52 @@ fn wp5b_descriptor_ctors() {
         }
     }
 }
+
+/// `PtrArray_reserve_00638240`: without a block, with one (counts 0 to 3,
+/// `n` 0, negative and growing), the allocator a bump stub that fails
+/// once, the free a logging stub.
+#[test]
+fn wp5b_ptr_array_reserve() {
+    use ffx_prender::wp5_small as sm;
+    for (label, mut t) in Twins::all() {
+        let log = t.alloc(&[0; 4 + 8 * 64]);
+        let heap = t.alloc(&[0x66; 0x1000]);
+        let next = t.alloc(&heap.to_le_bytes());
+        // mov eax,[next]; mov ecx,[esp+4]; add ecx,eax; mov [next],ecx; ret
+        let mut c = vec![0xa1];
+        c.extend(next.to_le_bytes());
+        c.extend([0x8b, 0x4c, 0x24, 0x04, 0x01, 0xc1, 0x89, 0x0d]);
+        c.extend(next.to_le_bytes());
+        c.push(0xc3);
+        jmp_stub(&mut t, sm::USER_MALLOC, &c);
+        let s = log_stub_plain(&mut t, log, 0, 0x77, true);
+        jmp_stub(&mut t, sm::USER_FREE, &s);
+        for (k, (count, n, with)) in [
+            (0u32, 4u32, false),
+            (2, 8, true),
+            (3, 2, true),
+            (1, 0, true),
+            (2, 0xffff_fffe, true),
+            (0, 5, false),
+            (3, 6, true),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let words: Vec<u8> = (0..4u32).flat_map(|i| (0x4400 + i).to_le_bytes()).collect();
+            let old = if with { t.alloc(&words) } else { 0 };
+            let arr = t.alloc(&[0; 12]);
+            t.w32(arr, count);
+            t.w32(arr + 4, 4);
+            t.w32(arr + 8, old);
+            if k == 6 {
+                t.w32(next, 0); // the allocator fails
+            }
+            t.w32(log, 0);
+            let w = format!("{label} ptr array reserve {k}");
+            t.run(&w, 0x0063_8240, arr, &[n], false, |g| {
+                sm::ptr_array_reserve(g, arr, n)
+            });
+        }
+    }
+}
