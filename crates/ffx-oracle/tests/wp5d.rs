@@ -1348,3 +1348,178 @@ fn wp5d_gdraw_reset_frame() {
         }
     }
 }
+
+/// The name list's node maker (`0x00680490`): the node maker and
+/// `std::string`'s assign run as the original on both sides; values of
+/// 0..40 characters (inline and heap), `next`/`prev` NULL or not. `eax`
+/// and memory.
+#[test]
+fn wp5d_name_list_buy_node() {
+    use ffx_prender::wp5d as d;
+    for (label, mut t) in Twins::all() {
+        for round in 0..30u32 {
+            let value = t.alloc(&[0; 0x1c]);
+            let n = t.rng.below(41);
+            put_string(&mut t, value, n);
+            t.w32(value + 0x18, 0x5100 + round);
+            let (next, prev) = if round % 3 == 0 {
+                (0, 0)
+            } else {
+                (t.alloc(&[0; 0x24]), t.alloc(&[0; 0x24]))
+            };
+            let list = t.alloc(&[0; 8]);
+            let w = format!("{label} name list node {round} (n {n})");
+            t.run(&w, 0x0068_0490, list, &[next, prev, value], false, |g| {
+                d::name_list_buy_node(g, next, prev, value)
+            });
+        }
+    }
+}
+
+/// A cursor stub (thiscall on the cursor, no stack words): logs `tag`
+/// and the cursor's list, first object and descriptor (`+0x14..+0x1c`),
+/// then writes `[cells]` to `+0xc` (found), `[cells+4]` to `+0x10`
+/// (offset) and `[cells+8]` to `+0` (base).
+fn cursor_stub(log: u32, tag: u32, cells: u32) -> Vec<u8> {
+    let mut c = vec![0xa1];
+    c.extend(log.to_le_bytes()); // mov eax, [log]
+    c.extend([0x83, 0xe0, 0x1f, 0xc1, 0xe0, 0x05]); // and eax, 31; shl eax, 5
+    c.push(0x05);
+    c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+    c.extend([0xc7, 0x00]);
+    c.extend(tag.to_le_bytes()); // mov [eax], tag
+    for (i, off) in [0x14u8, 0x18, 0x1c].into_iter().enumerate() {
+        c.extend([0x8b, 0x51, off]); // mov edx, [ecx+off]
+        c.extend([0x89, 0x50, 4 + 4 * i as u8]); // mov [eax+4+4i], edx
+    }
+    c.extend([0xff, 0x05]);
+    c.extend(log.to_le_bytes()); // inc dword [log]
+    for (cell, off) in [(cells, 0xcu8), (cells + 4, 0x10), (cells + 8, 0)] {
+        c.extend([0x8b, 0x15]);
+        c.extend(cell.to_le_bytes()); // mov edx, [cell]
+        c.extend([0x89, 0x51, off]); // mov [ecx+off], edx
+    }
+    c.push(0xc3);
+    c
+}
+
+/// A stub for `setTextureChecked` (thiscall `(p, &desc)`, `ret 8`): logs
+/// `tag`, `ecx`, `p` and the descriptor's four words.
+fn desc_stub(log: u32, tag: u32) -> Vec<u8> {
+    let mut c = vec![0xa1];
+    c.extend(log.to_le_bytes()); // mov eax, [log]
+    c.extend([0x83, 0xe0, 0x1f, 0xc1, 0xe0, 0x05]); // and eax, 31; shl eax, 5
+    c.push(0x05);
+    c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+    c.extend([0xc7, 0x00]);
+    c.extend(tag.to_le_bytes()); // mov [eax], tag
+    c.extend([0x89, 0x48, 0x04]); // mov [eax+4], ecx
+    c.extend([0x8b, 0x54, 0x24, 0x04, 0x89, 0x50, 0x08]); // mov edx, [esp+4]; mov [eax+8], edx
+    c.extend([0x8b, 0x4c, 0x24, 0x08]); // mov ecx, [esp+8]
+    for i in 0..4u8 {
+        c.extend([0x8b, 0x51, 4 * i]); // mov edx, [ecx+4i]
+        c.extend([0x89, 0x50, 0xc + 4 * i]); // mov [eax+0xc+4i], edx
+    }
+    c.extend([0xff, 0x05]);
+    c.extend(log.to_le_bytes()); // inc dword [log]
+    c.extend([0xc2, 0x08, 0x00]);
+    c
+}
+
+/// The remap button icon's button material (`0x006e8390`) with every
+/// callee a stub (logging stubs; the cursors write their found flag,
+/// offset and base; the parameter lookup returns a parameter with an
+/// offset and size that fit, or don't); the cluster loaded or not, the
+/// texture found or not, the material there already or made. `eax` and
+/// memory (`memcpy` the real one into the material's buffer).
+#[test]
+fn wp5d_button_material() {
+    use ffx_prender::wp5d as d;
+    for (label, mut t) in Twins::all() {
+        let log = t.alloc(&[0; 4 + 32 * 32]);
+        let cells = t.alloc(&[0; 0x20]);
+        let effect = t.alloc(&[0x61; 0x10]);
+        let fx_table = t.alloc(&[0; 0x40]);
+        t.w32(fx_table + 0x18, effect);
+        let scene = t.alloc(&[0x13; 0xfa90]);
+        let effects = t.alloc(&[0x26; 0x40]);
+        t.w32(scene + 0xfa84, effects);
+        t.w32(t.a.rebase(d::PHYRE_SCENE), scene);
+        let buffer = t.alloc(&[0x5a; 0x60]);
+        t.w32(buffer, 0x40);
+        let mat = t.alloc(&[0x22; 0x10]);
+        t.w32(mat, 0x7e7e);
+        t.w32(mat + 4, buffer);
+        let param = t.alloc(&[0; 0x10]);
+        for &(f, tag, n, pops, ret, this) in &[
+            (d::CLUSTER_MANAGER_GET, 1u32, 0u8, 0u16, 0xc0c0u32, false),
+            (d::GET_APPLICATION, 3, 0, 0, 0xa9a9, false),
+            (d::FIXUP_CLUSTERS, 4, 2, 0, 0, false),
+            (d::CREATE_MATERIAL, 5, 3, 0xc, mat, true),
+            (d::LINEAR_SAMPLER, 6, 1, 4, 0x5a5a, true),
+            (d::PARAM_BY_NAME, 7, 1, 4, param, true),
+        ] {
+            let s = if this {
+                wide_stub(log, tag, n, pops, ret)
+            } else {
+                wide_stub_plain(log, tag, n, pops, ret)
+            };
+            jmp_stub(&mut t, f, &s);
+        }
+        let s = cursor_stub(log, 8, cells);
+        jmp_stub(&mut t, d::CLUSTER_ITER_SEEK, &s);
+        let s = cursor_stub(log, 9, cells + 0xc);
+        jmp_stub(&mut t, d::SCENE_CURSOR_SEEK4, &s);
+        let s = desc_stub(log, 10);
+        jmp_stub(&mut t, d::SET_TEXTURE_CHECKED, &s);
+        for case in 0..16u32 {
+            let cluster = if case & 1 == 0 {
+                let c = t.alloc(&[0; 0x40]);
+                let list = c + 0x1c;
+                // an empty list (the head points at itself) or one object
+                t.w32(list, if case & 8 == 0 { 0x3333 } else { list });
+                c
+            } else {
+                0
+            };
+            let s = wide_stub(log, 2, 1, 4, cluster);
+            jmp_stub(&mut t, d::CLUSTER_LOAD, &s);
+            t.w32(
+                effects + 0x1c,
+                if case & 8 == 0 {
+                    0x4444
+                } else {
+                    effects + 0x1c
+                },
+            );
+            t.w32(cells, u32::from(case & 2 == 0));
+            t.w32(cells + 4, 0x10);
+            t.w32(cells + 8, 0x0100_0000);
+            t.w32(cells + 0xc, 1);
+            t.w32(cells + 0x10, 8);
+            t.w32(cells + 0x14, fx_table + 0x10);
+            // the parameter: offset 8 or 2 (too small), size 16 or 0x3f
+            let off = if case & 4 == 0 { 8 } else { 2 };
+            let size = if case < 12 { 16 } else { 0x3f } | 0xe000;
+            t.write(param + 8, &(off as u16).to_le_bytes());
+            t.write(param + 0xa, &(size as u16).to_le_bytes());
+            let slots = t.alloc(&[0; 16]);
+            if case % 3 == 0 {
+                t.w32(slots + 8, mat);
+                t.w32(slots + 12, effect);
+            }
+            let name = t.alloc(b"button\0");
+            t.w32(log, 0);
+            let (cl, tx, ma, inst) = (slots, slots + 4, slots + 8, slots + 12);
+            let frame = t.b.stack_range().start + 0x1000;
+            let w = format!("{label} button material case {case}");
+            let at = t.a.rebase(0x006e_8390);
+            let r =
+                t.a.call(at, Conv::Thiscall(0x1234), &[name, cl, tx, ma, inst])
+                    .unwrap_or_else(|e| panic!("{w}: {e}"));
+            let p = d::button_material(&mut G(&mut t.b), frame, name, cl, tx, ma, inst);
+            assert_eq!(r.eax, p, "{w}: eax");
+            t.same(&w);
+        }
+    }
+}

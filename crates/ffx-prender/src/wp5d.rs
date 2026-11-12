@@ -1390,3 +1390,163 @@ pub fn gdraw_reset_frame(h: &mut impl Host) -> u32 {
     let second: u32 = h.read(ctx + 0xab4);
     gdraw_reset_list(h, second, a, b)
 }
+
+/// `StdList_buyNode_00686bb0` (stdcall `(next, prev)`): a 0x24-byte list
+/// node; `StdString_assignSubstr_00403a10` (thiscall `(src, pos, n)`).
+pub const LIST_BUY_NODE_24: u32 = 0x0068_6bb0;
+pub const STRING_ASSIGN_SUBSTR: u32 = 0x0040_3a10;
+
+/// `std::list<{std::string, u32}>::_Buynode(this; next, prev, &value)`
+/// (`0x00680490`, thiscall, `ret 0xc`; `NameList_pushBack_00681ad0` and
+/// two more): a node from `StdList_buyNode_00686bb0(next, prev)`, its
+/// value at `+8` copy-constructed from `value` (an empty string assigned
+/// all of `value`'s, then the word `+0x18`). The node.
+pub fn name_list_buy_node(h: &mut impl Host, next: u32, prev: u32, value: u32) -> u32 {
+    let node = h.call_sym(LIST_BUY_NODE_24, Conv::Stdcall, &[next, prev]);
+    let s = node.wrapping_add(8);
+    if s == 0 {
+        return node;
+    }
+    h.write(s + 0x14, 0xfu32);
+    h.write(s + 0x10, 0u32);
+    h.write(s, 0u8);
+    h.call_sym(
+        STRING_ASSIGN_SUBSTR,
+        Conv::Thiscall(s),
+        &[value, 0, u32::MAX],
+    );
+    let w: u32 = h.read(value + 0x18);
+    h.write(s + 0x18, w);
+    node
+}
+
+/// The callees of [`button_material`].
+pub const CLUSTER_MANAGER_GET: u32 = 0x0069_a1a0;
+pub const CLUSTER_LOAD: u32 = 0x0069_b940;
+pub const GET_APPLICATION: u32 = 0x0062_3b90;
+pub const FIXUP_CLUSTERS: u32 = 0x0062_3580;
+pub const CLUSTER_ITER_SEEK: u32 = 0x0046_4f30;
+pub const SCENE_CURSOR_SEEK4: u32 = 0x0065_ecb0;
+pub const CREATE_MATERIAL: u32 = 0x004e_6a40;
+pub const LINEAR_SAMPLER: u32 = 0x0065_e050;
+pub const PARAM_BY_NAME: u32 = 0x0056_cbf0;
+pub const SET_TEXTURE_CHECKED: u32 = 0x0056_e670;
+pub const MEMCPY: u32 = 0x0094_9256;
+/// The class descriptors the two cursors look for (`PTexture2D`, the
+/// effect), the parameter names (`.rdata`).
+pub const TEXTURE_2D_DESCRIPTOR: u32 = 0x00ca_37d0;
+pub const EFFECT_DESCRIPTOR: u32 = 0x00ca_5268;
+pub const PARAM_TEXTURE: u32 = 0x00b3_017c;
+pub const PARAM_COLOUR: u32 = 0x00b4_7a48;
+
+/// A cluster cursor in the frame at `at` (8 words): five 0s, the list
+/// head `list`, its first object (0 when the list is empty: the head
+/// points at itself), the class descriptor `desc`.
+fn cursor(h: &mut impl Host, at: u32, list: u32, desc: u32) {
+    let first: u32 = h.read(list);
+    let first = if first == list { 0 } else { first };
+    for k in 0..5 {
+        h.write(at + 4 * k, 0u32);
+    }
+    h.write(at + 0x14, list);
+    h.write(at + 0x18, first);
+    h.write(at + 0x1c, h.rebase(desc));
+}
+
+/// `RemapButtonIcon`'s button material (`0x006e8390`, `(name, &cluster,
+/// &texture, &material, &instance)` callee pops 0x14, `ecx` unread; from
+/// `RemapButtonIcon_setButtons_006e78e0`). `frame`: 0x30 bytes of game
+/// memory, the original's `ebp - 0x30` (its cursor and texture
+/// descriptor live there; the callees get pointers into it). The cluster
+/// `name` loaded (`ClusterManager::loadPCluster`) into `*cluster` and,
+/// when there is one, the clusters fixed up (the application asked
+/// first); `*texture` 0, then the cluster's first `PTexture2D` (a cursor
+/// over its list `+0x1c`) when found. Without a material yet: a cursor
+/// over the scene's effect cluster (`[g_PhyreScene + 0xfa84]`) finds the
+/// effect, whose `createMaterial(cluster, 0, 0)` gives `*material`, and
+/// `*instance` its first word. Then the texture descriptor (0x42, 0, the
+/// scene's linear sampler 2, the texture) is set on the material's
+/// parameter buffer (`+4`) for the shader parameter named at
+/// `0x00b3017c`, and the four floats 1.0 copied into the buffer at the
+/// parameter named at `0x00b47a48` when it fits (its offset `+8` at
+/// least 4, offset plus size `+0xa & 0x1fff` within the buffer's size).
+/// `eax`: `memcpy`'s, or offset plus size when it doesn't fit.
+pub fn button_material(
+    h: &mut impl Host,
+    frame: u32,
+    name: u32,
+    cluster: u32,
+    texture: u32,
+    material: u32,
+    instance: u32,
+) -> u32 {
+    let ebp = frame + 0x30;
+    let cm = h.call_sym(CLUSTER_MANAGER_GET, Conv::Cdecl, &[]);
+    let cl = h.call_sym(CLUSTER_LOAD, Conv::Thiscall(cm), &[name]);
+    h.write(cluster, cl);
+    if cl != 0 {
+        h.call_sym(GET_APPLICATION, Conv::Cdecl, &[]);
+        h.call_sym(FIXUP_CLUSTERS, Conv::Cdecl, &[cluster, 1]);
+    }
+    h.write(texture, 0u32);
+    let cl: u32 = h.read(cluster);
+    let it = ebp - 0x20;
+    if cl != 0 {
+        cursor(h, it, cl.wrapping_add(0x1c), TEXTURE_2D_DESCRIPTOR);
+        h.call_sym(CLUSTER_ITER_SEEK, Conv::Thiscall(it), &[]);
+        if h.read::<u32>(ebp - 0x14) != 0 {
+            let a: u32 = h.read(ebp - 0x10);
+            let b: u32 = h.read(ebp - 0x20);
+            h.write(texture, a.wrapping_add(b));
+        }
+    }
+    let scene_at = h.rebase(PHYRE_SCENE);
+    if h.read::<u32>(material) == 0 {
+        let scene: u32 = h.read(scene_at);
+        let effects: u32 = h.read(scene + 0xfa84);
+        cursor(h, it, effects.wrapping_add(0x1c), EFFECT_DESCRIPTOR);
+        h.call_sym(SCENE_CURSOR_SEEK4, Conv::Thiscall(it), &[]);
+        let a: u32 = h.read(ebp - 0x20);
+        let b: u32 = h.read(ebp - 0x10);
+        let effect: u32 = h.read(b.wrapping_add(a));
+        let scene: u32 = h.read(scene_at);
+        let effects: u32 = h.read(scene + 0xfa84);
+        let mat = h.call_sym(CREATE_MATERIAL, Conv::Thiscall(effect), &[effects, 0, 0]);
+        h.write(material, mat);
+        let first: u32 = h.read(mat);
+        h.write(instance, first);
+    }
+    let tex: u32 = h.read(texture);
+    let scene: u32 = h.read(scene_at);
+    let desc = ebp - 0x10;
+    h.write(desc, 0x42u32);
+    h.write(ebp - 4, tex);
+    let sampler = h.call_sym(LINEAR_SAMPLER, Conv::Thiscall(scene), &[2]);
+    for k in 0..4 {
+        h.write(frame + 4 * k, 1.0f32.to_bits());
+    }
+    h.write(ebp - 8, sampler);
+    h.write(ebp - 0xc, 0u32);
+    let shader: u32 = h.read(instance);
+    let n = h.rebase(PARAM_TEXTURE);
+    let p = h.call_sym(PARAM_BY_NAME, Conv::Thiscall(shader), &[n]);
+    let mat: u32 = h.read(material);
+    let buffer: u32 = h.read(mat + 4);
+    h.call_sym(SET_TEXTURE_CHECKED, Conv::Thiscall(buffer), &[p, desc]);
+    let mat: u32 = h.read(material);
+    let shader: u32 = h.read(instance);
+    let buffer: u32 = h.read(mat + 4);
+    let n = h.rebase(PARAM_COLOUR);
+    let q = h.call_sym(PARAM_BY_NAME, Conv::Thiscall(shader), &[n]);
+    let off = u32::from(h.read::<u16>(q + 8));
+    let size = u32::from(h.read::<u16>(q + 0xa) & 0x1fff);
+    let end = off + size;
+    if end > h.read::<u32>(buffer) || off < 4 {
+        return end;
+    }
+    h.call_sym(
+        MEMCPY,
+        Conv::Cdecl,
+        &[buffer.wrapping_add(off), frame, size],
+    )
+}

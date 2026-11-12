@@ -234,4 +234,15 @@ ported! {
     gdraw_resetFrame_00a37fe0 @ 0x00a3_7fe0 => extern "C" fn d_00a37fe0() -> u32 {
         d::gdraw_reset_frame(&mut mem())
     }
+    /// `NameList_buyNode_00680490`: a list node holding a copy of `{string, word}`.
+    NameList_buyNode_00680490 @ 0x0068_0490 => extern "thiscall" fn d_00680490(this: u32, next: u32, prev: u32, value: u32) -> u32 {
+        let _ = this;
+        d::name_list_buy_node(&mut mem(), next, prev, value)
+    }
+    /// `RemapButtonIcon_buttonMaterial_006e8390`: a button's cluster, texture and material set up.
+    RemapButtonIcon_buttonMaterial_006e8390 @ 0x006e_8390 => extern "thiscall" fn d_006e8390(this: u32, name: u32, cluster: u32, texture: u32, material: u32, instance: u32) -> u32 {
+        let _ = this;
+        let mut frame = StackFrame::<12>::new();
+        d::button_material(&mut mem(), frame.at(), name, cluster, texture, material, instance)
+    }
 }
