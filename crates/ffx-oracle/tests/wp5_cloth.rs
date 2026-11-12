@@ -192,6 +192,7 @@ impl Log {
 /// without the cloth semantic; the instance list's count (1) sending
 /// instance 0 to the buffer path and instance 1 to the mapped copy; views
 /// found or not and unmaps done or not by the variant's parity.
+#[allow(clippy::too_many_lines)] // one scene, every stub in the order the original calls them
 fn cloth_scene(a: &mut Oracle, b: &mut Oracle, log: &Log, variant: u32) -> (u32, u32) {
     let semantic = a.rebase(c::CLOTH_SEMANTIC);
     let array = zeros(a, b, 0x40);
@@ -204,7 +205,7 @@ fn cloth_scene(a: &mut Oracle, b: &mut Oracle, log: &Log, variant: u32) -> (u32,
         c::FIND_VIEW,
         1,
         1,
-        if variant % 2 == 0 { 0x5150 } else { 0 },
+        if variant.is_multiple_of(2) { 0x5150 } else { 0 },
         None,
     );
     log.stub(a, b, c::BIND_VIEW, 2, 2, 0, None);

@@ -38,6 +38,7 @@ fn twins() -> Vec<(&'static str, Oracle, Oracle)> {
 }
 
 /// `len` bytes of junk at the same address in both (a fresh block of each).
+#[allow(clippy::cast_possible_truncation)] // the pattern wraps every 256 bytes on purpose
 fn junk(a: &mut Oracle, b: &mut Oracle, len: usize, seed: u8) -> u32 {
     let bytes: Vec<u8> = (0..len)
         .map(|i| {
