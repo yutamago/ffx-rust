@@ -734,6 +734,14 @@ impl Shared {
         for imp in &exe {
             let full = format!("{}!{}", imp.dll, imp.name);
             let dll = self.dll(&imp.dll).cloned();
+            // MSVCP110's objects without the DLL: built in the arena
+            if dll.is_none() && crate::crt_cpp::DATA.contains(&full.as_str()) {
+                let at = crate::crt_cpp::build_data(self, &mut mem, &full, cells);
+                cells += 0x80;
+                ffx_bridge::Mem::write(&mut mem, imp.slot, at);
+                self.routes.push((full, Route::Rust));
+                continue;
+            }
             // a data import: the DLL's own variable, else a cell
             if let Some(&(_, v)) = crate::imports::DATA.iter().find(|(n, _)| *n == full) {
                 let target = if let Some(x) = dll.as_ref().and_then(|d| d.exports.get(&imp.name)) {

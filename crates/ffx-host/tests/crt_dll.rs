@@ -250,7 +250,7 @@ fn x87_intrinsics_match_the_dll() {
         };
         let mut fast = 0;
         for st in &args {
-            if name == "_CIsqrt" && st[0].is_nan() || st[0] < 0.0 {
+            if name == "_CIsqrt" && (st[0].is_nan() || st[0] < 0.0) {
                 continue; // the DLL's error path (errno, the matherr hook)
             }
             for float in [Float::F64, Float::F32] {
@@ -1287,7 +1287,7 @@ fn crt_os_matches_the_dll() {
         assert_eq!(text(e, p), b"on");
         assert_eq!(e.mem().read::<u32>(out + 4), 3);
     }
-    let t_cell = |e: &mut Exec, t: u64| {
+    let time_at = |e: &mut Exec, t: u64| {
         let at = e.alloc(8);
         e.mem().write(at, t);
         at
@@ -1303,8 +1303,8 @@ fn crt_os_matches_the_dll() {
         for name in ["_gmtime64", "_localtime64"] {
             let mut got = Vec::new();
             for e in [&mut with, &mut without] {
-                let cell = t_cell(e, t);
-                let r = call(e, name, &[cell]);
+                let when = time_at(e, t);
+                let r = call(e, name, &[when]);
                 let mut b = vec![0u8; 36];
                 e.mem().read_bytes(r, &mut b);
                 got.push(b);
@@ -1351,8 +1351,8 @@ fn crt_os_matches_the_dll() {
     ] {
         let mut got = Vec::new();
         for e in [&mut with, &mut without] {
-            let cell = t_cell(e, 1_700_000_000);
-            let tm = call(e, "_gmtime64", &[cell]);
+            let when = time_at(e, 1_700_000_000);
+            let tm = call(e, "_gmtime64", &[when]);
             let f = put(e, fmt.as_bytes());
             let buf = e.alloc(200);
             e.mem().write_bytes(buf, &[0xee; 200]);
@@ -1361,4 +1361,225 @@ fn crt_os_matches_the_dll() {
         }
         assert_eq!(got[0], got[1], "strftime({fmt})");
     }
+}
+
+/// A `basic_streambuf<char>` with its six pointer cells, a 16-byte
+/// buffer and a vtable whose `overflow`/`underflow`/`uflow`/`xsputn` are
+/// x86 stubs returning 0x77, 0x66, 0x55 and 9 (`ret 4`, `ret`, `ret`,
+/// `ret 0xc`).
+fn streambuf(e: &mut Exec) -> (u32, u32) {
+    let this = e.alloc(0x40);
+    let cells = e.alloc(0x20);
+    let buf = e.alloc(16);
+    e.mem().write_bytes(buf, b"abcdefghijklmnop");
+    let stubs = e
+        .alloc_code(&[
+            0xb8, 0x77, 0, 0, 0, 0xc2, 4, 0, // overflow
+            0xb8, 0x66, 0, 0, 0, 0xc3, 0x90, 0x90, // underflow
+            0xb8, 0x55, 0, 0, 0, 0xc3, 0x90, 0x90, // uflow
+            0xb8, 9, 0, 0, 0, 0x31, 0xd2, 0xc2, 0xc, 0, // xsputn: eax 9, edx 0
+        ])
+        .unwrap();
+    let vt = e.alloc(0x40);
+    let mut mem = e.mem();
+    mem.write_bytes(this, &[0; 0x40]);
+    mem.write(this, vt);
+    for (i, off) in (0u32..).zip([0xc, 0x10, 0x1c, 0x20, 0x2c, 0x30]) {
+        mem.write(this + off, cells + 4 * i);
+    }
+    mem.write(vt + 0xc, stubs);
+    mem.write(vt + 0x18, stubs + 8);
+    mem.write(vt + 0x1c, stubs + 16);
+    mem.write(vt + 0x24, stubs + 24);
+    (this, buf)
+}
+
+/// `MSVCP110`'s stream buffer and `ios_base` accessors (`crt_cpp`)
+/// against the DLL's: the same object, its cells set the same way, each
+/// accessor through the import and the DLL's export: `eax` (and `edx`)
+/// and all six cells after, for full, partial, empty and missing buffers
+/// (the virtuals' stubs cover the slow paths).
+#[test]
+#[allow(clippy::too_many_lines)]
+fn crt_cpp_accessors_match_the_dll() {
+    let Some(exe) = exe() else { return };
+    let mut e = ffx_host::boot(&exe).unwrap();
+    let (sb, buf) = streambuf(&mut e);
+    let sbn =
+        |m: &str, sig: &str| format!("?{m}@?$basic_streambuf@DU?$char_traits@D@std@@@std@@{sig}");
+    let calls: Vec<(String, Vec<u32>)> = vec![
+        (sbn("eback", "IBEPADXZ"), vec![]),
+        (sbn("gptr", "IBEPADXZ"), vec![]),
+        (sbn("egptr", "IBEPADXZ"), vec![]),
+        (sbn("pbase", "IBEPADXZ"), vec![]),
+        (sbn("pptr", "IBEPADXZ"), vec![]),
+        (sbn("epptr", "IBEPADXZ"), vec![]),
+        (sbn("setg", "IAEXPAD00@Z"), vec![buf, buf + 3, buf + 9]),
+        (sbn("setp", "IAEXPAD0@Z"), vec![buf + 1, buf + 12]),
+        (sbn("setp", "IAEXPAD00@Z"), vec![buf, buf + 5, buf + 6]),
+        (sbn("pbump", "IAEXH@Z"), vec![3]),
+        (sbn("gbump", "IAEXH@Z"), vec![(-2i32).cast_unsigned()]),
+        (sbn("_Pninc", "IAEPADXZ"), vec![]),
+        (sbn("sputc", "QAEHD@Z"), vec![0x1e9]),
+        (sbn("sgetc", "QAEHXZ"), vec![]),
+        (sbn("snextc", "QAEHXZ"), vec![]),
+        (sbn("sputn", "QAE_JPBD_J@Z"), vec![buf, 5, 0]),
+    ];
+    // the cells' starting states: a buffer of 16, one with 1 left, none
+    let states: [[u32; 6]; 5] = [
+        [buf, buf, buf + 2, buf + 4, 14, 12],
+        [buf, buf, buf + 15, buf + 15, 1, 1],
+        [buf, buf, buf + 16, buf + 16, 0, 0],
+        [0, 0, 0, 0, 0, 0],
+        [buf, buf, buf + 3, buf + 3, 2, 0],
+    ];
+    let ptrs: u32 = e.mem().read(sb + 0xc);
+    let mut checked = 0;
+    for (name, words) in &calls {
+        let (rust, dll) = both_cpp(&e, name);
+        for st in states {
+            let mut got = Vec::new();
+            for f in [rust, dll] {
+                for (i, v) in (0u32..).zip(st) {
+                    e.mem().write(ptrs + 4 * i, v);
+                }
+                e.mem().write_bytes(buf, b"abcdefghijklmnop");
+                let args = ffx_host::table::Args {
+                    ecx: sb,
+                    stack: words.clone(),
+                    ..Default::default()
+                };
+                let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    e.call(f, ffx_host::table::Conv::Thiscall, &args)
+                }));
+                let Ok(Ok(r)) = caught else {
+                    panic!("{name} {f:#x} {st:x?}: {:?}", e.stopped());
+                };
+                let r = (r.eax, r.edx.unwrap_or(0));
+                let r = Raw { eax: r.0, edx: r.1 };
+                let mut after = vec![0u8; 0x20 + 16];
+                e.mem().read_bytes(ptrs, &mut after[..0x18]);
+                e.mem().read_bytes(buf, &mut after[0x20..]);
+                let edx = if name.contains("_J") { r.edx } else { 0 };
+                got.push((r.eax, edx, after));
+            }
+            assert_eq!(got[0], got[1], "{name} {st:x?}");
+            checked += 1;
+        }
+    }
+    // ios_base / basic_ios fields
+    let ios = e.alloc(0x50);
+    let pattern: Vec<u8> = (0..0x50u8).map(|i| i.wrapping_mul(37) ^ 0x5a).collect();
+    let iosn = |m: &str, sig: &str| format!("?{m}@?$basic_ios@DU?$char_traits@D@std@@@std@@{sig}");
+    for (name, words) in [
+        ("?rdstate@ios_base@std@@QBEHXZ".to_string(), vec![]),
+        ("?good@ios_base@std@@QBE_NXZ".to_string(), vec![]),
+        ("?eof@ios_base@std@@QBE_NXZ".to_string(), vec![]),
+        ("?flags@ios_base@std@@QBEHXZ".to_string(), vec![]),
+        ("?width@ios_base@std@@QBE_JXZ".to_string(), vec![]),
+        ("?width@ios_base@std@@QAE_J_J@Z".to_string(), vec![7, 0]),
+        (iosn("fill", "QBEDXZ"), vec![]),
+        (
+            iosn("tie", "QBEPAV?$basic_ostream@DU?$char_traits@D@std@@@2@XZ"),
+            vec![],
+        ),
+        (
+            iosn(
+                "rdbuf",
+                "QBEPAV?$basic_streambuf@DU?$char_traits@D@std@@@2@XZ",
+            ),
+            vec![],
+        ),
+        (iosn("setstate", "QAEXH_N@Z"), vec![2, 0]),
+        (iosn("setstate", "QAEXH_N@Z"), vec![0, 0]),
+    ] {
+        let (rust, dll) = both_cpp(&e, &name);
+        for (state, except, strbuf) in [(0u32, 0u32, 1u32), (1, 0, 1), (6, 0, 0), (0, 0, 0)] {
+            let mut got = Vec::new();
+            for f in [rust, dll] {
+                e.mem().write_bytes(ios, &pattern);
+                e.mem().write(ios + 0xc, state);
+                e.mem().write(ios + 0x10, except);
+                e.mem().write(ios + 0x38, strbuf);
+                let r = ffx_bridge::route::Router::call(
+                    &mut e,
+                    f,
+                    ffx_host::table::Conv::Thiscall,
+                    &ffx_host::table::Args {
+                        ecx: ios,
+                        stack: words.clone(),
+                        ..Default::default()
+                    },
+                    ffx_bridge::route::Float::None,
+                );
+                let mut after = vec![0u8; 0x50];
+                e.mem().read_bytes(ios, &mut after);
+                let eax = if name.contains("fill") {
+                    r.eax & 0xff
+                } else {
+                    r.eax
+                };
+                let edx = if name.contains("_J") { r.edx } else { 0 };
+                got.push((eax, edx, after));
+            }
+            assert_eq!(got[0], got[1], "{name} state {state}");
+            checked += 1;
+        }
+    }
+    assert!(checked > 100, "{checked}");
+}
+
+/// A call's registers.
+struct Raw {
+    eax: u32,
+    edx: u32,
+}
+
+/// `MSVCP110`'s import (Rust side) and export.
+fn both_cpp(e: &Exec, name: &str) -> (u32, u32) {
+    (
+        e.mem().read(slot(e, "MSVCP110.dll", name)),
+        export(e, "MSVCP110.dll", name),
+    )
+}
+
+/// Without the DLLs `std::cin.getline` (the auto-test console thread's
+/// poll) finds the end of input as the DLL does with the run's empty
+/// console: `eax`, the buffer, `_Chcount` and the stream state after one
+/// and after a second call, against the DLL's run.
+#[test]
+fn cin_getline_without_the_dlls_matches_the_dll() {
+    const CIN_SLOT: u32 = 0x00b0_c200;
+    let Some(exe) = exe() else { return };
+    let mut got = Vec::new();
+    for dlls in [true, false] {
+        let mut e = if dlls {
+            ffx_host::boot(&exe).unwrap()
+        } else {
+            no_dll_boot(&exe)
+        };
+        let cin: u32 = e.mem().read(CIN_SLOT);
+        let at: u32 = e
+            .mem()
+            .read(slot(&e, "MSVCP110.dll", ffx_host::crt_dll::GETLINE));
+        let buffer = e.alloc(100);
+        let mut runs = Vec::new();
+        for _ in 0..2 {
+            e.mem().write_bytes(buffer, &[0x55; 100]);
+            let args = ffx_host::table::Args {
+                ecx: cin,
+                stack: vec![buffer, 99, 0],
+                ..Default::default()
+            };
+            let r = e.call(at, ffx_host::table::Conv::Thiscall, &args).unwrap();
+            let vbtable: u32 = e.mem().read(cin);
+            let ios = cin + e.mem().read::<u32>(vbtable + 4);
+            let state: u32 = e.mem().read(ios + 0xc);
+            let count: u64 = e.mem().read(cin + 8);
+            let first: u8 = e.mem().read(buffer);
+            runs.push((r.eax == cin, state, count, first));
+        }
+        got.push(runs);
+    }
+    assert_eq!(got[0], got[1]);
 }

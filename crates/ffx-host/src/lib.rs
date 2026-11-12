@@ -24,6 +24,7 @@ pub mod clock;
 pub mod com;
 pub mod com_methods;
 pub mod crt;
+pub mod crt_cpp;
 pub mod crt_cxx;
 pub mod crt_dll;
 pub mod crt_format;

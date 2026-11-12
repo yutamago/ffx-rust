@@ -252,6 +252,7 @@ pub fn keeps(name: &str) -> bool {
         .chain(crate::crt_format::TABLE)
         .chain(crate::crt_str::TABLE)
         .chain(crate::crt_cxx::TABLE)
+        .chain(crate::crt_cpp::TABLE)
         .any(|(_, n, ..)| *n == name)
 }
 
@@ -314,6 +315,9 @@ fn getline(e: &mut Exec, args: &Args) -> Ret {
     let except: u32 = mem.read(ios + EXCEPT);
     let strbuf: u32 = mem.read(ios + MYSTRBUF);
     let failed = (state | FAILBIT | if strbuf == 0 { BADBIT } else { 0 }) & STATMASK;
+    if state == 0 && e.shared().dll(CPP).is_none() {
+        return crate::crt_cpp::getline_at_end(e, this, ios, str_at);
+    }
     if state == 0 || except & failed != 0 {
         return dll_export(e, CPP, GETLINE, Conv::Thiscall, args);
     }
