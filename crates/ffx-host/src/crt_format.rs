@@ -340,7 +340,7 @@ fn a(args: &Args, i: usize) -> u32 {
 
 /// The output of the format at `fmt` with the variable arguments from
 /// `va` on, when the Rust side covers it.
-fn formatted(e: &Exec, fmt: u32, va: u32) -> Option<Vec<u8>> {
+pub(crate) fn formatted(e: &Exec, fmt: u32, va: u32) -> Option<Vec<u8>> {
     if fmt == 0 || !c_locale(e) {
         return None;
     }
@@ -480,14 +480,14 @@ fn approx_va(e: &mut Exec, args: &Args, fmt: usize, va: usize, cap: Option<usize
 /// The console output of `printf`/`vprintf`/`puts` without the DLLs: the
 /// host process's standard output (the game's console, when it has one,
 /// shows the same).
-fn console(text: &[u8]) {
+pub(crate) fn console(text: &[u8]) {
     use std::io::Write as _;
     let mut out = std::io::stdout().lock();
     let _ = out.write_all(text);
 }
 
 /// The approximate formatter's text for the cases the exact one hands on.
-fn approx_text(e: &Exec, fmt: u32, va: u32) -> Vec<u8> {
+pub(crate) fn approx_text(e: &Exec, fmt: u32, va: u32) -> Vec<u8> {
     let mem = e.mem();
     let text = crate::imports::read_str(&mem, fmt, false);
     let list = Args {

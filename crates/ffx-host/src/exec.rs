@@ -328,7 +328,7 @@ pub struct Shared {
     thread_ids: AtomicU32,
     tls_next: AtomicU32,
     tick: Arc<AtomicU64>,
-    started: Instant,
+    pub(crate) started: Instant,
     /// Every game thread asked for.
     pub threads: Mutex<Vec<ThreadInfo>>,
     /// Every thread's profile (with [`Exec::cover`] on), kept after the
@@ -363,10 +363,21 @@ pub struct Shared {
     /// `FFX.exe`'s IAT slots, for the thunks [`Shared::thunk`] finds when
     /// a port calls one the scan left alone.
     iat: HashSet<u32>,
-    /// The x87 intrinsics with a Rust side (`crate::crt_dll::intrinsic`):
-    /// `FFX.exe`'s import stub → the Rust side and the DLL's export (for
-    /// the arguments the Rust side hands on).
-    x87_imports: HashMap<u32, (crate::crt_dll::X87Fn, Option<u32>)>,
+    /// The x87 intrinsics with a Rust side (`crate::crt_math::intrinsic`):
+    /// `FFX.exe`'s import stub → the Rust side, its x87 operands and the
+    /// DLL's export (for the arguments the Rust side hands on).
+    x87_imports: HashMap<u32, (crate::crt_math::X87Fn, usize, Option<u32>)>,
+    /// The player's `MSVCR110.dll` read as data (`crate::crt_math`): the
+    /// maths' constant tables, with or without the DLL loaded.
+    pub crt_data: Option<crate::crt_math::CrtData>,
+    /// The SSE maths functions with a Rust side
+    /// (`crate::crt_math::sse_function`): what their IAT slots hold (the
+    /// DLL's export, or without it the import's stub) → the Rust side.
+    sse_imports: HashMap<u32, crate::crt_math::SseFn>,
+    /// The two-operand ones (`crate::crt_math::sse2_function`).
+    sse2_imports: HashMap<u32, crate::crt_math::Sse2Fn>,
+    /// The C runtime's process state without the DLLs (`crate::crt_os`).
+    pub crt_state: Mutex<crate::crt_os::CrtState>,
     /// The virtual clock, the frame boundary and the turns
     /// (`crate::clock`).
     pub clock: crate::clock::Clock,
@@ -436,6 +447,7 @@ impl Shared {
     ) -> Result<Arc<Self>> {
         let stubs_at = arena.map_anywhere(REGION_HINT, STUB_SIZE, "import stubs")?;
         let heap = Heap::new(&arena)?;
+        let crt_data = crate::crt_math::CrtData::load(files.root());
         let mut s = Self {
             arena,
             image,
@@ -476,6 +488,10 @@ impl Shared {
             thunks: HashMap::new(),
             iat: HashSet::new(),
             x87_imports: HashMap::new(),
+            crt_data,
+            sse_imports: HashMap::new(),
+            sse2_imports: HashMap::new(),
+            crt_state: Mutex::new(crate::crt_os::CrtState::default()),
             clock: crate::clock::Clock::default(),
             audio: crate::audio::Audio::default(),
             iggy: crate::iggy::Iggy::default(),
@@ -709,6 +725,18 @@ impl Shared {
         self.dlls.iter().find(|d| d.name.eq_ignore_ascii_case(name))
     }
 
+    /// Records the Rust side of the SSE maths import `full` (`DLL!name`)
+    /// for what its IAT slot holds (`target`: the DLL's export or the
+    /// stub).
+    fn note_sse(&mut self, full: &str, target: u32) {
+        if let Some(f) = crate::crt_math::sse_function(full) {
+            self.sse_imports.insert(target, f);
+        }
+        if let Some(f) = crate::crt_math::sse2_function(full) {
+            self.sse2_imports.insert(target, f);
+        }
+    }
+
     /// Points every IAT slot of `FFX.exe` and the DLLs at its own `int3`
     /// stub (the Rust side), at a DLL's export, or (data imports) at a cell.
     fn bind_imports(&mut self, stubs_at: u32) {
@@ -726,6 +754,14 @@ impl Shared {
         for imp in &exe {
             let full = format!("{}!{}", imp.dll, imp.name);
             let dll = self.dll(&imp.dll).cloned();
+            // MSVCP110's objects without the DLL: built in the arena
+            if dll.is_none() && crate::crt_cpp::DATA.contains(&full.as_str()) {
+                let at = crate::crt_cpp::build_data(self, &mut mem, &full, cells);
+                cells += 0x80;
+                ffx_bridge::Mem::write(&mut mem, imp.slot, at);
+                self.routes.push((full, Route::Rust));
+                continue;
+            }
             // a data import: the DLL's own variable, else a cell
             if let Some(&(_, v)) = crate::imports::DATA.iter().find(|(n, _)| *n == full) {
                 let target = if let Some(x) = dll.as_ref().and_then(|d| d.exports.get(&imp.name)) {
@@ -750,18 +786,21 @@ impl Shared {
                 && let Some(&x) = d.exports.get(&imp.name)
             {
                 ffx_bridge::Mem::write(&mut mem, imp.slot, x);
+                self.note_sse(&full, x);
                 self.routes.push((full, Route::Dll));
                 continue;
             }
+            self.note_sse(&full, at);
             self.imports.bind(index, &imp.dll, &imp.name, None);
             let route = if self.imports.bound(index).is_some_and(|b| b.run.is_some()) {
                 Route::Rust
             } else {
                 Route::Missing
             };
-            if let Some(f) = crate::crt_dll::intrinsic(&full) {
+            if let Some(f) = crate::crt_math::intrinsic(&full) {
                 let export = dll.as_ref().and_then(|d| d.exports.get(&imp.name).copied());
-                self.x87_imports.insert(at, (f, export));
+                let n = crate::crt_math::operands(&full);
+                self.x87_imports.insert(at, (f, n, export));
             }
             self.routes.push((full, route));
             self.arena.fill(at, &[INT3]);
@@ -1916,14 +1955,14 @@ impl Exec {
                     pc = self.handler_returned()?;
                 }
                 Some(Event::Int3(at)) => {
-                    let next = if let Some(&(f, export)) = self.shared.x87_imports.get(&at) {
-                        self.enter_x87_import(f, export)
+                    let next = if let Some(&(f, n, export)) = self.shared.x87_imports.get(&at) {
+                        self.enter_x87_import(f, n, export)
                     } else if let Some(&i) = self.shared.stubs.get(&at) {
                         self.enter_import(i, at)
                     } else if let Some(&to) = self.shared.thunks.get(&at) {
                         // an import thunk: its jmp, the stack as it is
                         match (self.shared.x87_imports.get(&to), self.shared.stubs.get(&to)) {
-                            (Some(&(f, export)), _) => self.enter_x87_import(f, export),
+                            (Some(&(f, n, export)), _) => self.enter_x87_import(f, n, export),
                             (None, Some(&i)) => self.enter_import(i, to),
                             (None, None) => Ok(to),
                         }
@@ -2269,11 +2308,80 @@ impl Exec {
         Ok(())
     }
 
-    /// [`Exec::call_sse`] without the emulator: the SSE maths functions
-    /// have no Rust side (their `xmm0` doesn't fit an import's `Args`), so
-    /// the thread stops there, naming the import; NaN.
+    /// The Rust side of the SSE maths function at `addr` (an IAT slot's
+    /// value or a thunk to one) for `x`, if it has one and covers `x`.
+    fn sse_rust(&mut self, addr: u32, x: f64) -> Option<f64> {
+        let target = self.shared.thunk(addr).unwrap_or(addr);
+        let f = *self.shared.sse_imports.get(&target)?;
+        let v = f(self, x)?;
+        self.stats.leaf_calls += 1;
+        Some(v)
+    }
+
+    /// Calls `addr` (a two-operand SSE maths function: `pow`, `xmm0` and
+    /// `xmm1` in, `xmm0` out): its Rust side, else (with the emulator) the
+    /// DLL's code, else the thread stops there; NaN when it fails.
+    pub fn call_sse2(&mut self, addr: u32, x: f64, y: f64) -> f64 {
+        let target = self.shared.thunk(addr).unwrap_or(addr);
+        if let Some(&f) = self.shared.sse2_imports.get(&target)
+            && let Some(v) = f(self, x, y)
+        {
+            self.stats.leaf_calls += 1;
+            return v;
+        }
+        #[cfg(feature = "dev-unicorn")]
+        {
+            self.call_sse2_emulated(addr, x, y)
+        }
+        #[cfg(not(feature = "dev-unicorn"))]
+        {
+            self.stop_unported(addr);
+            f64::NAN
+        }
+    }
+
+    /// [`Exec::call_sse2`] in Unicorn only (the DLL's own code, for the
+    /// parity tests).
+    #[cfg(feature = "dev-unicorn")]
+    pub fn call_sse2_emulated(&mut self, addr: u32, x: f64, y: f64) -> f64 {
+        use ffx_bridge::Mem as _;
+        if self.x87_depth >= X87_LEVELS {
+            return f64::NAN;
+        }
+        // movsd xmm0, [cell]; movsd xmm1, [cell + 8]; mov eax, addr;
+        // call eax; movsd [cell], xmm0; ret
+        let at = self.sentinel + X87_STUBS + X87_STUB * self.x87_depth;
+        let cell = at + 0x40;
+        let mut mem = self.mem();
+        mem.write(cell, x);
+        mem.write(cell + 8, y);
+        let mut code = vec![0xf2, 0x0f, 0x10, 0x05];
+        code.extend_from_slice(&cell.to_le_bytes());
+        code.extend_from_slice(&[0xf2, 0x0f, 0x10, 0x0d]);
+        code.extend_from_slice(&(cell + 8).to_le_bytes());
+        code.push(0xb8);
+        code.extend_from_slice(&addr.to_le_bytes());
+        code.extend_from_slice(&[0xff, 0xd0, 0xf2, 0x0f, 0x11, 0x05]);
+        code.extend_from_slice(&cell.to_le_bytes());
+        code.push(0xc3);
+        self.write_code(at, &code);
+        self.x87_depth += 1;
+        let r = Exec::call(self, at, Conv::Cdecl, &Args::default());
+        self.x87_depth -= 1;
+        if r.is_err() {
+            return f64::NAN;
+        }
+        mem.read::<f64>(cell)
+    }
+
+    /// [`Exec::call_sse`] without the emulator: the Rust side
+    /// (`crate::crt_math`), or (a case it doesn't cover, a function without
+    /// one) the thread stops there, naming the import; NaN.
     #[cfg(not(feature = "dev-unicorn"))]
-    pub(crate) fn call_sse(&mut self, addr: u32, _: f64) -> f64 {
+    pub fn call_sse(&mut self, addr: u32, x: f64) -> f64 {
+        if let Some(v) = self.sse_rust(addr, x) {
+            return v;
+        }
         self.stop_unported(addr);
         f64::NAN
     }
@@ -2282,7 +2390,17 @@ impl Exec {
     /// `_libm_sse2_*_precise`, `xmm0` in and out) with `x` in `xmm0`;
     /// its `xmm0` result. NaN when the call fails or nests too deep.
     #[cfg(feature = "dev-unicorn")]
-    pub(crate) fn call_sse(&mut self, addr: u32, x: f64) -> f64 {
+    pub fn call_sse(&mut self, addr: u32, x: f64) -> f64 {
+        if let Some(v) = self.sse_rust(addr, x) {
+            return v;
+        }
+        self.call_sse_emulated(addr, x)
+    }
+
+    /// [`Exec::call_sse`] in Unicorn only (the DLL's own code, for the
+    /// parity tests).
+    #[cfg(feature = "dev-unicorn")]
+    pub fn call_sse_emulated(&mut self, addr: u32, x: f64) -> f64 {
         use ffx_bridge::Mem as _;
         if self.x87_depth >= X87_LEVELS {
             return f64::NAN;
@@ -2310,15 +2428,32 @@ impl Exec {
     }
 
     /// Runs an x87 intrinsic (`_CIcos`, ...) for Unicorn code that called
-    /// it, its argument in `ST0`: the Rust side replaces `ST0` with the
-    /// result, or the DLL's export runs (a jump: the stack and `ST0` as
-    /// the caller left them) for the arguments the Rust side hands on.
+    /// it, its `n` operands on the x87 stack (the last in `ST0`): the Rust
+    /// side replaces them with the result, or the DLL's export runs (a
+    /// jump: the stack and the x87 registers as the caller left them) for
+    /// the arguments the Rust side hands on, and for a result a double
+    /// can't carry (the float cell's `fld qword` would round it).
     #[cfg(feature = "dev-unicorn")]
-    fn enter_x87_import(&mut self, f: crate::crt_dll::X87Fn, export: Option<u32>) -> Result<u32> {
-        let x = self.st0()?;
-        if let Some(v) = x.and_then(|x| f(self, x)) {
+    fn enter_x87_import(
+        &mut self,
+        f: crate::crt_math::X87Fn,
+        n: usize,
+        export: Option<u32>,
+    ) -> Result<u32> {
+        let mut st = Vec::with_capacity(n);
+        for i in (0..n).rev() {
+            st.push(self.st_n(i)?);
+        }
+        let st: Option<Vec<f64>> = st.into_iter().collect();
+        let r = st
+            .and_then(|st| f(self, &st))
+            .filter(|&r| crate::crt_math::is_double(r));
+        if let Some(r) = r {
+            let v = crate::crt_math::ext_to_f64(r);
             self.stats.leaf_calls += 1;
-            self.pop_st0()?;
+            for _ in 0..n {
+                self.pop_st0()?;
+            }
             return self.finish(
                 Ret {
                     st0: Some(v),
@@ -2462,6 +2597,33 @@ impl Exec {
             self.uc.reg_write(r, v)?;
         }
         Ok(())
+    }
+
+    /// `ST(i)` as a double, if that register holds one exactly.
+    #[cfg(feature = "dev-unicorn")]
+    pub(crate) fn st_n(&self, i: usize) -> Result<Option<f64>> {
+        const ST: [RegisterX86; 8] = [
+            RegisterX86::ST0,
+            RegisterX86::ST1,
+            RegisterX86::ST2,
+            RegisterX86::ST3,
+            RegisterX86::ST4,
+            RegisterX86::ST5,
+            RegisterX86::ST6,
+            RegisterX86::ST7,
+        ];
+        let tag = self.uc.reg_read(RegisterX86::FPTAG)?;
+        let sw = self.uc.reg_read(RegisterX86::FPSW)?;
+        let phys = (((sw >> 11) & 7) + (i as u64 & 7)) & 7;
+        if (tag >> (2 * phys)) & 3 == 3 {
+            return Ok(None);
+        }
+        let raw = self.uc.reg_read_long(ST[i & 7])?;
+        let b: [u8; 10] = raw[..10].try_into().unwrap_or([0; 10]);
+        // only a value a double holds exactly (NaN payloads included):
+        // the Rust sides take doubles
+        let x = ffx_fpu::x87::Ext::from_bytes(&b);
+        Ok(crate::crt_math::is_double(x).then(|| crate::crt_math::ext_to_f64(x)))
     }
 
     /// `ST0` as a double, if the x87 stack holds anything.
@@ -3009,14 +3171,15 @@ impl ffx_bridge::route::Router for Exec {
         // an intrinsic with a Rust side (through its thunk or its slot's
         // stub): no emulator
         let target = self.shared.thunk(addr).unwrap_or(addr);
-        if let (Some(&(f, _)), [x]) = (self.shared.x87_imports.get(&target), st)
-            && let Some(v) = f(self, *x)
+        if let Some(&(f, n, _)) = self.shared.x87_imports.get(&target)
+            && n == st.len()
+            && let Some(v) = f(self, st)
         {
             self.stats.leaf_calls += 1;
-            #[allow(clippy::cast_possible_truncation)] // fstp dword
+            // the caller's store rounds the 80-bit result once
             return match float {
-                Float::F32 => f64::from(v as f32),
-                Float::F64 | Float::None => v,
+                Float::F32 => f64::from(crate::crt_math::ext_to_f32(v)),
+                Float::F64 | Float::None => crate::crt_math::ext_to_f64(v),
             };
         }
         self.x87_call(addr, target, st, float)

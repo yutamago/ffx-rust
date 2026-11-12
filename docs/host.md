@@ -438,12 +438,17 @@ FFX_HOST_FEATURES=swf tools/build-host.sh build --no-default-features           
 python3 -I tools/check-licences.py                                                 # 0 GPL in the release trees
 ```
 
-On 2026-11-12 the boot stops at once: `FFX.exe`'s entry point
+On 2026-11-12 the boot stopped at once: `FFX.exe`'s entry point
 `0x009493c1` (the CRT start-up's wrapper, `__security_init_cookie` then
-`__tmainCRTStartup`) has no port, and 210 of `FFX.exe`'s C runtime
-imports have no Rust side. The list WP5 closes, with the Unicorn build's
+`__tmainCRTStartup`) had no port, and 210 of `FFX.exe`'s C runtime
+imports had no Rust side. The list WP5 closes, with the Unicorn build's
 Rust → Unicorn entries of a headless boot (the next addresses the
 no-emulator boot will meet), is `~/ffx-work/m5/finish/wp9/unported.tsv`.
+After m5-wp5b (the start-up) and m5-wp5c (the C runtime, "The C runtime
+DLLs" below) the boot runs into `InitializeGlobalClassDescriptors` and
+stops at `FFX.exe` functions without a port (`0x005dff30`, a
+`PGameplay` component constructor's callee); every C runtime import has
+a Rust side (`tests/no_unicorn.rs`' TSV lists none).
 
 ## x87
 
@@ -1098,6 +1103,54 @@ each with the DLL.
 | `MSVCR110!atoi`, `atol` | `strtol(s, NULL, 10)` in the "C" locale (spaces, a sign, digits) | NULL; a value past `long` (errno `ERANGE`, the clamp); another locale |
 | `MSVCR110`'s own `memcpy`, `memmove` entries (traps on the DLL's code, m5-wp5b) | the DLL's code calls them directly (`fread`'s buffer copies, the `_s` functions, 13 M emulated blocks in gate run 1, filed under `wcsnlen`/`wcscpy_s`): an `int3` at each export's entry runs a `memmove` in Rust (64 KB chunks, backwards over an overlap) and returns `dst` | - |
 | `MSVCR110!sprintf`, `sprintf_s`, `_snprintf`, `vsprintf`, `_vsnprintf`, `_vsnprintf_s` (`src/crt_format.rs`, m5-wp5b) | VS2012 `_output_l`'s integer, character and string conversions (`%d %i %u %o %x %X %p %c %s %%`, flags `-+ #0`, width and precision as digits or `*`, sizes `h l ll I I32 I64`) in the "C" locale, when the output and its NUL fit (`_vsnprintf_s` with a count that doesn't limit also zeroes `buf[size - 1]`, as the DLL does); 137 k `sprintf` calls in gate run 1, a few hundred emulated blocks each (the profile files the DLL's formatter under nearby exports, `type_info::operator!=` and `_wstat64i32`) | floats, wide characters and strings, `%n`, positional `%1$d`, unknown or unfinished conversions, another locale, NULL buffers, output that doesn't fit (the truncation and invalid-parameter paths): the DLL's export with the caller's stack words; with no DLLs `imports`' approximate formatter |
+
+**Without the DLLs** (m5-wp5c, 2026-11-12). Every `MSVCR110`/`MSVCP110`
+import of `FFX.exe` and the overlays has a Rust side except the ones
+listed at the end; `tests/crt_dll.rs` compares the kept ones with the
+DLL in Unicorn (16 tests, a few thousand inputs each), the no-DLL ones
+with a run that has the DLL where they are observable. Three kinds:
+
+- **Kept** (`keeps`): Rust sides with the DLLs loaded too, bit for bit
+  as the DLL's code path the game takes, handing the uncovered cases to
+  the DLL's export (and without it finishing them as the DLL would, or
+  stopping where the DLL would end the process);
+- **No-DLL only**: plain `imports` entries (with the DLLs their own
+  run), for functions with state the DLL keeps for itself (`errno`, the
+  environment, the streams, the locale objects);
+- **Stops**: functions whose DLL code unwinds frames or ends the process
+  (`_CxxThrowException`, `longjmp`, the SEH handlers, `_purecall`,
+  `terminate`, `_invoke_watson`, `_wassert`, MSVCP110's `_X*` throws):
+  without the emulator nothing can unwind a Rust port's frames, so the
+  thread stops with what the DLL would have reported (the exception's
+  type, the assertion's text).
+
+| Module | Functions | How |
+|---|---|---|
+| `src/crt_math.rs` | `_CIsin _CIcos _CItan _CIatan _CIacos _CIasin _CIsqrt _CIatan2 _CIfmod _CIpow _CIsinh _CIcosh _CItanh`; `_libm_sse2_{sin,cos,tan,sqrt,atan,acos,asin,log,log10,exp,pow}_precise` | The DLL's SSE2 code, operation for operation (each `mulpd`/`addsd` one IEEE double operation, lanes as `P2`), the constants and tables read from the player's `MSVCR110.dll` as data (`CrtData`: the file's sections, the known build only; no code of it runs, nothing of it in git). The `_CI*` copies and the `_precise` ones are the same code with their own constant blocks. The SSE2 path is the one `FFX.exe`'s process takes: `__use_sse2_mathfcns` set (no DLL: counts as set), `MXCSR` and the x87 control word at their defaults; the x87 code for what the SSE2 code hands on (large arguments: `fsin`/`fcos`/`fptan` with `fprem1`; `_CIatan2` and `_CIfmod`'s dispatcher, precision 64 bits, classes, NaN rules; `exp`'s scaling in two halves at 64 bits) with `ffx_fpu`. The x87 results are 80-bit (`Ext`): `call_x87` rounds once to the caller's `F32`/`F64`; Unicorn code gets a Rust result only when a double carries it exactly. The SSE2 functions run through `Exec::call_sse` (`sse_imports`: the slot's value, DLL export or stub, to the Rust side). |
+| `src/crt_str.rs` | `strrchr strncat strncmp _strnicmp strspn strpbrk strcoll _strlwr strtok strcpy_s strcat_s strncpy_s memcpy_s memmove_s wmemcpy_s wcscat_s wcsstr toupper tolower is*` (10), `abs ldiv strtol strtoul realloc _finite _isnan floor ceil modf frexp ldexp`; `_errno` (no DLL) | The "C" locale's paths of the DLL (`strncmp`/`_strnicmp` give -1/0/1; `_strnicmp` compares a NUL raw; the class table `_pctype` read from `CrtData` where the DLL reads it); `strtok`'s context and `errno`'s cell per thread (`ThreadCrt`); the `_s` failures and other locales to the DLL. |
+| `src/crt_scan.rs` | `strtod atof sscanf sscanf_s swscanf_s`; `fscanf` (no DLL) | The game's formats (`%d %i %u %x %X %o %c %s %f %e %g`, widths, `*`, `h l ll L I64`, literals), EOF where the input ends inside the first field. Decimal → binary is the correctly rounded value, the DLL's for every text up to 15 significant digits tested; longer ones (where VS2012's 96-bit `__strgtold12` differs, e.g. `3.450085329462328e17`) go to the DLL, or without it stay correctly rounded. `strtod`/`scanf` differ in the exponent letters (`d`/`D` only for `strtod`). |
+| `src/crt_cxx.rs` | `__RTDynamicCast` (kept); `std::exception`/`bad_cast` constructors and destructors, `type_info::~type_info`, the stops, `_setjmp3` (no DLL) | `__RTDynamicCast` as the DLL's single-inheritance search (`0x10099bd7`: the target's base descriptor, then the source after it with no private base between); multiple and virtual inheritance to the DLL, or without it the same search. The exception objects get a vtable of traps (`what`, the deleting destructor). |
+| `src/crt_os.rs` | `getenv _dupenv_s _putenv_s setlocale localeconv strerror clock _gmtime64 _localtime64 _mktime64 _difftime64 strftime system _beginthreadex` (no DLL) | The run's world as the DLL sees it: an environment that starts empty (the stand-in `GetEnvironmentStringsW`), the "C" locale (`lconv` of `"."`), `strerror`'s texts from `CrtData` (`_sys_errlist`), local time = UTC (no time zone), no command processor; `_beginthreadex` is a game thread. `strerror`, the `tm`s, `strftime` and `_mktime64` match the DLL's (tested). |
+| `src/crt_stdio.rs` | `__iob_func _open_osfhandle _fdopen setvbuf fprintf clearerr freopen remove rename tmpfile tmpnam _popen _pclose` (no DLL, with part 2's streams) | The standard streams (`_file` 0, 1, 2; writes to the console like `printf`); `fprintf` through `crt_format`; files only in the documents folder; no temporary files or pipes (NULL). |
+| `src/crt_cpp.rs` | `MSVCP110`: the `basic_streambuf<char>` accessors, `setg setp pbump gbump _Pninc sputc sgetc snextc sputn`, `ios_base`/`basic_ios` `rdstate good eof flags width fill tie rdbuf setstate`, `_Orphan_all`, `locale::id` (kept); `std::cin` and the stream vtables as objects, the locks, `_X*` throws, the stream constructors (stops: their callers, `Settings_Format`'s and `Settings_JoinBindings`' `std::stringstream`, are ported) (no DLL) | MSVCP110's layouts from its code (the six pointer cells of a stream buffer, `ios_base`'s fields); the virtuals the slow paths call at the DLL's slots (`overflow` `+0xc`, `underflow` `+0x18`, `uflow` `+0x1c`, `xsputn` `+0x24`); `std::cin.getline` without the DLL finds the end of input (the run has no console input), as the DLL with the run's console does. |
+
+`pow` (`_CIpow`, `_libm_sse2_pow_precise`: `Exec::call_sse2`, `xmm0`
+and `xmm1`) is the DLL's main path (three reciprocal stages for log2 x,
+the 2^(k/128) table), re-entered as the DLL does for negative bases with
+integer exponents (|x|, the sign for an odd one) and denormal bases
+(scaled by 2^64); zeros, y = 0 directly; the infinite, NaN, pole,
+domain, overflow and underflow cases go to the DLL (without it: Rust's
+`powf`, the IEEE values the handler returns).
+
+Counts: of `FFX.exe`'s 188 `MSVCR110` and 75 `MSVCP110` imports, all
+have a Rust side without the DLLs; with them 83 and 27 more than
+before stay Rust (`keeps`: the maths, strings, scanning, `dynamic_cast`
+and the stream accessors), the rest goes to the DLL as before. The
+overlays import nothing else of the C runtime but their start-up's
+three (see "Without Unicorn"). `_CIsinh`, `_CIcosh`, `_CItanh` (Lua's
+`math` only) are the x87 dispatcher's `exp` core at precision 64 bits
+(`fldl2e`, `frndint`, `f2xm1`, `fscale`, the quotient for `tanh`), their
+overflow through the handler.
 
 The intrinsics take their argument in `ST0`: Unicorn code calling one
 enters `Exec::enter_x87_import` (the stub's `int3`: `ST0` replaced by the

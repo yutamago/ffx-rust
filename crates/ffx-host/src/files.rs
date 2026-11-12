@@ -40,6 +40,12 @@ impl Files {
         }
     }
 
+    /// The game folder.
+    #[must_use]
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
+
     /// The host path of a game path, and whether it is in the documents
     /// folder (writable); `None` outside both folders.
     #[must_use]

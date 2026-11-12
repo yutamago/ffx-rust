@@ -130,32 +130,19 @@ fn fwrite(e: &mut Exec, args: &Args) -> Ret {
     }
     let mut data = vec![0u8; n as usize];
     e.mem().read_bytes(buf, &mut data);
-    let v = flags(e, f);
-    if v & TEXT_BIT != 0 {
-        let mut t = Vec::with_capacity(data.len() + data.len() / 8);
-        for &b in &data {
-            if b == b'\n' {
-                t.push(b'\r');
-            }
-            t.push(b);
-        }
-        data = t;
-    }
-    let h = handle(e, f);
-    if v & APPEND_BIT != 0 {
-        e.files().seek(h, 0, 2);
-    }
-    if e.files().write(h, &data).is_some() {
+    if write_to(e, f, &data) {
         Ret::eax(count)
     } else {
+        let v = flags(e, f);
         set_flags(e, f, v | ERR_BIT);
         Ret::eax(0)
     }
 }
 
-/// One byte of the stream (a pushed-back one first; text mode: `\r\n` as
-/// `\n`, `^Z` as the end); `None` at the end.
 fn next_byte(e: &mut Exec, f: u32) -> Option<u8> {
+    if handle(e, f) <= STDERR {
+        return None; // no console input in the run
+    }
     let v = flags(e, f);
     if v & PUSHED_BIT != 0 {
         set_flags(e, f, v & !PUSHED_BIT);
@@ -340,3 +327,268 @@ fn ungetc(e: &mut Exec, args: &Args) -> Ret {
     set_flags(e, f, (v | PUSHED_BIT) & !EOF_BIT);
     Ret::eax(c & 0xff)
 }
+
+// ---- the standard streams and the rest (m5-wp5c) --------------------------
+
+/// `_file` of the standard streams: their descriptors (the files' own
+/// handles start at 0x1000). Writes to 1 and 2 go to the console (as
+/// `printf`'s), reads from 0 find the end of input.
+const STDIN: u32 = 0;
+const STDOUT: u32 = 1;
+const STDERR: u32 = 2;
+/// The real CRT's `_flag` for the standard streams (`_IOREAD`,
+/// `_IOWRT`): the game copies a `FILE` over `*stdout`, so the bits it sees
+/// are the DLL's.
+const IOREAD: u32 = 0x1;
+const IOWRT: u32 = 0x2;
+
+fn is_console(h: u32) -> bool {
+    h == STDOUT || h == STDERR
+}
+
+/// The bytes `data` to stream `f` (a file, or the console for
+/// stdout/stderr); whether all were written.
+fn write_to(e: &mut Exec, f: u32, data: &[u8]) -> bool {
+    let h = handle(e, f);
+    if is_console(h) {
+        crate::crt_format::console(data);
+        return true;
+    }
+    if h == STDIN {
+        return false;
+    }
+    let v = flags(e, f);
+    let mut data = data.to_vec();
+    if v & TEXT_BIT != 0 {
+        let mut t = Vec::with_capacity(data.len() + data.len() / 8);
+        for &b in &data {
+            if b == b'\n' {
+                t.push(b'\r');
+            }
+            t.push(b);
+        }
+        data = t;
+    }
+    if v & APPEND_BIT != 0 {
+        e.files().seek(h, 0, 2);
+    }
+    e.files().write(h, &data).is_some()
+}
+
+/// The bytes of `f` up to and with the next newline (at most `limit`),
+/// consumed (`fscanf`'s input).
+pub(crate) fn read_line(e: &mut Exec, f: u32, limit: usize) -> Vec<u8> {
+    let mut out = Vec::new();
+    while out.len() < limit {
+        match next_byte(e, f) {
+            Some(b) => {
+                out.push(b);
+                if b == b'\n' {
+                    break;
+                }
+            }
+            None => break,
+        }
+    }
+    out
+}
+
+/// `__iob_func()`: `stdin`, `stdout`, `stderr` (three 0x20-byte `FILE`s).
+fn iob_func(e: &mut Exec, _: &Args) -> Ret {
+    if let Some(at) = crate::crt_os::cell(e, "_iob") {
+        return Ret::eax(at);
+    }
+    let at = e.alloc(0x60);
+    let mut mem = e.mem();
+    mem.write_bytes(at, &[0; 0x60]);
+    for (i, (fd, flag)) in (0u32..).zip([(STDIN, IOREAD), (STDOUT, IOWRT), (STDERR, IOWRT)]) {
+        mem.write(at + 0x20 * i + 0xc, flag);
+        mem.write(at + 0x20 * i + 0x10, fd);
+    }
+    crate::crt_os::set_cell(e, "_iob", at);
+    Ret::eax(at)
+}
+
+/// `_open_osfhandle(handle, flags)`: a descriptor for an OS handle: the
+/// standard handles' (`GetStdHandle`'s stand-ins) are 0, 1 and 2, any
+/// other is its own handle (the files' handles).
+fn open_osfhandle(_: &mut Exec, args: &Args) -> Ret {
+    let h = a(args, 0);
+    let fd = crate::win32::STD_HANDLES
+        .iter()
+        .position(|&s| s == h)
+        .map_or(h, |i| u32::try_from(i).unwrap_or(0));
+    Ret::eax(fd)
+}
+
+/// `_fdopen(fd, mode)`: a `FILE` on the descriptor (text mode without
+/// `b`); NULL for a mode that is none.
+fn fdopen(e: &mut Exec, args: &Args) -> Ret {
+    let (fd, mode) = (a(args, 0), a(args, 1));
+    let mode = read_str(&e.mem(), mode, false);
+    let flag = match mode.chars().next() {
+        Some('r') => IOREAD,
+        Some('w' | 'a') => IOWRT,
+        _ => return Ret::eax(0),
+    };
+    let f = e.alloc(0x20);
+    let mut v = flag;
+    if !mode.contains('b') && fd > STDERR {
+        v |= TEXT_BIT;
+    }
+    let mut mem = e.mem();
+    mem.write_bytes(f, &[0; 0x20]);
+    mem.write(f + 0xc, v);
+    mem.write(f + 0x10, fd);
+    Ret::eax(f)
+}
+
+/// `setvbuf(f, buf, mode, size)`: the streams here are unbuffered, so
+/// any mode is accepted: 0; -1 for a NULL stream or an unknown mode
+/// (`_IOFBF` 0, `_IOLBF` 0x40, `_IONBF` 4).
+fn setvbuf(_: &mut Exec, args: &Args) -> Ret {
+    let (f, mode) = (a(args, 0), a(args, 2));
+    if f == 0 || ![0, 0x40, 4].contains(&mode) {
+        return Ret::eax(u32::MAX);
+    }
+    Ret::eax(0)
+}
+
+/// `fprintf(f, fmt, ...)`: the formatted text (`crt_format`'s exact
+/// formatter, or the approximate one for what it hands on) to the
+/// stream; its length, or -1 when the write fails.
+fn fprintf(e: &mut Exec, args: &Args) -> Ret {
+    let (f, fmt) = (a(args, 0), a(args, 1));
+    if f == 0 || fmt == 0 {
+        return Ret::eax(u32::MAX);
+    }
+    let va = args.slots.wrapping_add(8);
+    let text = crate::crt_format::formatted(e, fmt, va)
+        .unwrap_or_else(|| crate::crt_format::approx_text(e, fmt, va));
+    if write_to(e, f, &text) {
+        Ret::eax(u32::try_from(text.len()).unwrap_or(u32::MAX))
+    } else {
+        let v = flags(e, f);
+        set_flags(e, f, v | ERR_BIT);
+        Ret::eax(u32::MAX)
+    }
+}
+
+/// `clearerr(f)`: the end-of-file and error bits cleared.
+fn clearerr(e: &mut Exec, args: &Args) -> Ret {
+    let f = a(args, 0);
+    if f != 0 {
+        let v = flags(e, f);
+        set_flags(e, f, v & !(EOF_BIT | ERR_BIT));
+    }
+    Ret::VOID
+}
+
+/// `freopen(name, mode, f)`: `f`'s file closed and `name` opened into
+/// the same `FILE`; `f`, or NULL when the open fails (the stream closed).
+fn freopen(e: &mut Exec, args: &Args) -> Ret {
+    let f = a(args, 2);
+    if f == 0 {
+        return Ret::eax(0);
+    }
+    let h = handle(e, f);
+    if h > STDERR {
+        e.files().close(h);
+    }
+    let fresh = open(
+        e,
+        &Args {
+            stack: vec![a(args, 0), a(args, 1)],
+            ..args.clone()
+        },
+        false,
+    )
+    .eax;
+    if fresh == 0 {
+        set_flags(e, f, 0);
+        return Ret::eax(0);
+    }
+    let mut block = [0u8; 0x20];
+    e.mem().read_bytes(fresh, &mut block);
+    e.mem().write_bytes(f, &block);
+    e.release(fresh);
+    Ret::eax(f)
+}
+
+/// `_popen(command, mode)`: no command processor in the run: NULL.
+fn popen(_: &mut Exec, _: &Args) -> Ret {
+    Ret::eax(0)
+}
+
+/// `_pclose(f)`: -1 (no stream of `_popen`'s exists).
+fn pclose(_: &mut Exec, _: &Args) -> Ret {
+    Ret::eax(u32::MAX)
+}
+
+/// `tmpfile()`: the run writes only to the documents folder; no
+/// temporary file: NULL.
+fn tmpfile(_: &mut Exec, _: &Args) -> Ret {
+    Ret::eax(0)
+}
+
+/// `tmpnam(buf)`: no temporary name: NULL.
+fn tmpnam(_: &mut Exec, _: &Args) -> Ret {
+    Ret::eax(0)
+}
+
+/// `remove(name)`: deletes a file in the documents folder (the only
+/// writable one); 0, or -1 (`ENOENT`/`EACCES`).
+fn remove(e: &mut Exec, args: &Args) -> Ret {
+    let name = read_str(&e.mem(), a(args, 0), false);
+    let target = e.files().resolve(&name);
+    match target {
+        Some((path, true)) if std::fs::remove_file(&path).is_ok() => Ret::eax(0),
+        Some((_, false)) => {
+            crate::crt_str::set_errno(e, 13);
+            Ret::eax(u32::MAX)
+        }
+        _ => {
+            crate::crt_str::set_errno(e, 2);
+            Ret::eax(u32::MAX)
+        }
+    }
+}
+
+/// `rename(old, new)`: within the documents folder; 0 or -1.
+fn rename(e: &mut Exec, args: &Args) -> Ret {
+    let (old, new) = {
+        let mem = e.mem();
+        (
+            read_str(&mem, a(args, 0), false),
+            read_str(&mem, a(args, 1), false),
+        )
+    };
+    let (from, to) = {
+        let files = e.files();
+        (files.resolve(&old), files.resolve(&new))
+    };
+    match (from, to) {
+        (Some((f, true)), Some((t, true))) if std::fs::rename(&f, &t).is_ok() => Ret::eax(0),
+        _ => {
+            crate::crt_str::set_errno(e, 13);
+            Ret::eax(u32::MAX)
+        }
+    }
+}
+
+/// The streams' additions (no-DLL entries, like the rest of the family).
+pub const MORE: &[(&str, &str, Conv, usize, ImportFn)] = &[
+    (CRT, "__iob_func", Conv::Cdecl, 0, iob_func),
+    (CRT, "_open_osfhandle", Conv::Cdecl, 2, open_osfhandle),
+    (CRT, "_fdopen", Conv::Cdecl, 2, fdopen),
+    (CRT, "setvbuf", Conv::Cdecl, 4, setvbuf),
+    (CRT, "fprintf", Conv::Cdecl, 2, fprintf),
+    (CRT, "clearerr", Conv::Cdecl, 1, clearerr),
+    (CRT, "freopen", Conv::Cdecl, 3, freopen),
+    (CRT, "_popen", Conv::Cdecl, 2, popen),
+    (CRT, "_pclose", Conv::Cdecl, 1, pclose),
+    (CRT, "tmpfile", Conv::Cdecl, 0, tmpfile),
+    (CRT, "tmpnam", Conv::Cdecl, 1, tmpnam),
+    (CRT, "remove", Conv::Cdecl, 1, remove),
+    (CRT, "rename", Conv::Cdecl, 2, rename),
+];

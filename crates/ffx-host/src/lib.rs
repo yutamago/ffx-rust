@@ -24,10 +24,16 @@ pub mod clock;
 pub mod com;
 pub mod com_methods;
 pub mod crt;
+pub mod crt_cpp;
+pub mod crt_cxx;
 pub mod crt_dll;
 pub mod crt_format;
+pub mod crt_math;
+pub mod crt_os;
+pub mod crt_scan;
 pub mod crt_start;
 pub mod crt_stdio;
+pub mod crt_str;
 pub mod crypt;
 #[cfg(windows)]
 pub mod d3d11;
