@@ -481,4 +481,42 @@ pub mod bridge {
         }
         this
     }
+
+    /// `std::vector<std::string>::_Reserve(1)` (`0x00655de0`, thiscall,
+    /// `ret 4`).
+    pub const VECTOR_STRING_GROW: u32 = 0x0065_5de0;
+
+    /// `std::vector<std::string>::push_back(&s)` (`0x00667770`, thiscall,
+    /// `ret 4`; vector `+0` begin, `+4` end, `+8` capacity end, 0x18-byte
+    /// elements): grown by one when full ([`VECTOR_STRING_GROW`]; a source
+    /// inside the vector is found again by its index after that), the new
+    /// last element made empty and assigned the whole source
+    /// ([`assign_substr`] from 0, `npos`). `eax`: the new element.
+    pub fn vector_string_push_back(h: &mut impl Host, this: u32, s: u32) -> u32 {
+        let begin: u32 = h.read(this);
+        let end: u32 = h.read(this + 4);
+        let inside = s < end && begin <= s;
+        #[allow(clippy::cast_possible_wrap, clippy::cast_sign_loss)] // imul/sar
+        let index = (s.wrapping_sub(begin) as i32 / 0x18) as u32;
+        let cap: u32 = h.read(this + 8);
+        if end == cap {
+            h.call_sym(VECTOR_STRING_GROW, Conv::Thiscall(this), &[1]);
+        }
+        let src = if inside {
+            let begin: u32 = h.read(this);
+            begin.wrapping_add(index.wrapping_mul(0x18))
+        } else {
+            s
+        };
+        let dst: u32 = h.read(this + 4);
+        if dst != 0 {
+            h.write(dst + 0x14, 0xfu32);
+            h.write(dst + 0x10, 0u32);
+            h.write(dst, 0u8);
+            assign_substr(h, dst, src, 0, u32::MAX);
+        }
+        let end: u32 = h.read(this + 4);
+        h.write(this + 4, end.wrapping_add(0x18));
+        dst
+    }
 }

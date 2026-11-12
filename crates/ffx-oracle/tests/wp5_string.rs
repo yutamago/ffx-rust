@@ -961,3 +961,42 @@ fn wp5b_thread_bodies() {
         }
     }
 }
+
+/// `std::vector<std::string>::push_back` (`0x00667770`): vectors of 0 to
+/// 6 strings, full or with room (the original growth `0x00655de0` on both
+/// sides), the source outside or one of the vector's own elements.
+#[test]
+fn wp5b_vector_string_push_back() {
+    for (label, mut t) in Twins::all() {
+        for round in 0..60u32 {
+            let n = t.rng.below(7);
+            let cap = n + if round % 2 == 0 {
+                0
+            } else {
+                1 + t.rng.below(2)
+            };
+            let buf = t.alloc(&vec![0x3c; (0x18 * cap.max(1)) as usize]);
+            for i in 0..n {
+                let l = t.rng.len();
+                let s = t.string(l);
+                let mut b = vec![0u8; 0x18];
+                t.b.read_bytes(s, &mut b);
+                t.write(buf + 0x18 * i, &b);
+            }
+            let v = t.alloc(&[0; 12]);
+            t.w32(v, buf);
+            t.w32(v + 4, buf + 0x18 * n);
+            t.w32(v + 8, buf + 0x18 * cap);
+            let src = if n > 0 && round % 3 == 0 {
+                buf + 0x18 * t.rng.below(n)
+            } else {
+                let l = t.rng.len();
+                t.string(l)
+            };
+            let w = format!("{label} vector push_back {round} ({n} of {cap})");
+            t.run(&w, 0x0066_7770, v, &[src], false, |g| {
+                b::vector_string_push_back(g, v, src)
+            });
+        }
+    }
+}

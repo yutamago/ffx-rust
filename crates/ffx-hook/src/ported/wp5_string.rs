@@ -82,4 +82,8 @@ ported! {
     std_string_assign_move @ 0x0040_2d60 => extern "thiscall" fn wst_00402d60(this: u32, from: u32) -> u32 {
         b::assign_move(&mut mem(), this, from)
     }
+    /// `std_vectorString_pushBack_00667770`: `push_back(s)` of a `std::vector<std::string>`; the new element.
+    std_vectorString_pushBack_00667770 @ 0x0066_7770 => extern "thiscall" fn wst_00667770(this: u32, s: u32) -> u32 {
+        b::vector_string_push_back(&mut mem(), this, s)
+    }
 }
