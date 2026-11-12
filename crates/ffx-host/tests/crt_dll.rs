@@ -513,3 +513,45 @@ fn the_dlls_copies_are_memmove() {
         }
     }
 }
+
+/// `atoi` and `atol` through the imports against the DLL's exports: signs,
+/// spaces of every kind, junk after the digits, no digits, the edges of
+/// `long` (the overflowing ones are handed on: compared too).
+#[test]
+fn atoi_matches_the_dll() {
+    let Some(exe) = exe() else { return };
+    let mut e = ffx_host::boot(&exe).unwrap();
+    let cases: [&[u8]; 18] = [
+        b"0",
+        b"42",
+        b"-17",
+        b"+8x",
+        b"  \t\n\x0b\x0c\r123",
+        b"",
+        b"abc",
+        b"-",
+        b"+-3",
+        b" - 5",
+        b"2147483647",
+        b"-2147483648",
+        b"2147483648",
+        b"-2147483649",
+        b"99999999999999",
+        b"007",
+        b"12 34",
+        b"\xa012",
+    ];
+    for name in ["atoi", "atol"] {
+        let rust: u32 = e.mem().read(slot(&e, "MSVCR110.dll", name));
+        let dll = export(&e, "MSVCR110.dll", name);
+        for c in cases {
+            let at = e.alloc(32);
+            let mut v = c.to_vec();
+            v.push(0);
+            e.mem().write_bytes(at, &v);
+            let r = e.call_cdecl(rust, &[at]).unwrap();
+            let d = e.call_cdecl(dll, &[at]).unwrap();
+            assert_eq!(r, d, "{name}({:?})", String::from_utf8_lossy(c));
+        }
+    }
+}

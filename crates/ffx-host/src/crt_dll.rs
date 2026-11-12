@@ -42,6 +42,8 @@ pub const TABLE: &[(&str, &str, Conv, usize, ImportFn)] = &[
     (CRT, "strchr", Conv::Cdecl, 2, strchr),
     (CRT, "strncpy", Conv::Cdecl, 3, strncpy),
     (CRT, "memchr", Conv::Cdecl, 3, memchr),
+    (CRT, "atoi", Conv::Cdecl, 1, atol),
+    (CRT, "atol", Conv::Cdecl, 1, atol),
 ];
 
 fn a(args: &Args, i: usize) -> u32 {
@@ -192,6 +194,47 @@ pub fn dll_copy(e: &mut Exec, _: u32, args: &Args) -> Ret {
         done += len;
     }
     Ret::eax(dst)
+}
+
+/// `atoi(s)` / `atol(s)` (`strtol(s, NULL, 10)` in VS2012's `atox.c`) in
+/// the "C" locale: spaces (`\t`..`\r`, ` `) skipped, a sign, decimal
+/// digits; none: 0. A NULL argument and a value past `long`'s range (errno
+/// `ERANGE`, the clamp) go to the DLL, as does another locale.
+#[allow(clippy::many_single_char_names)] // the C names
+fn atol(e: &mut Exec, args: &Args) -> Ret {
+    let s = a(args, 0);
+    // atoi is (int) atol: one export for both cases handed on
+    let name = "atol";
+    if s == 0 || !c_locale(e) {
+        return dll_export(e, CRT, name, Conv::Cdecl, args);
+    }
+    let mem = e.mem();
+    let mut at = s;
+    let mut b: u8 = mem.read(at);
+    while b == b' ' || (0x09..=0x0d).contains(&b) {
+        at = at.wrapping_add(1);
+        b = mem.read(at);
+    }
+    let negative = b == b'-';
+    if b == b'-' || b == b'+' {
+        at = at.wrapping_add(1);
+        b = mem.read(at);
+    }
+    let mut n: u64 = 0;
+    while b.is_ascii_digit() {
+        n = n * 10 + u64::from(b - b'0');
+        if n > 0x8000_0000 {
+            return dll_export(e, CRT, name, Conv::Cdecl, args);
+        }
+        at = at.wrapping_add(1);
+        b = mem.read(at);
+    }
+    if n == 0x8000_0000 && !negative {
+        return dll_export(e, CRT, name, Conv::Cdecl, args);
+    }
+    #[allow(clippy::cast_possible_truncation)] // within long's range
+    let v = n as u32;
+    Ret::eax(if negative { v.wrapping_neg() } else { v })
 }
 
 /// Whether `name` (an import of `FFX.exe`) has a Rust side here even when
