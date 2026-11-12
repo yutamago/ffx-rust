@@ -451,3 +451,65 @@ fn wp5b_string_find_compare_grow() {
         }
     }
 }
+
+/// `std::_Tree::_Insert_nohint` (`0x006995e0`) growing trees of `u32`
+/// keys from empty (keys from a small range, so equal ones take the
+/// freeing path; `leftish` 0 and 1, the high bytes of its word junk), and
+/// the iterator's `--` (`0x00699f50`) from every node and the head.
+#[test]
+fn wp5b_tree_insert_nohint_and_iterator_dec() {
+    use ffx_system::wp5_tree::bridge as tb;
+    for (label, mut t) in Twins::all() {
+        for round in 0..12u32 {
+            // the head: left, parent, right itself, black, nil
+            let head = t.alloc(&[0; 0x20]);
+            let mut h = Vec::new();
+            for _ in 0..3 {
+                h.extend(head.to_le_bytes());
+            }
+            h.extend([1, 1, 0, 0]);
+            t.write(head, &h);
+            let tree = t.alloc(&[0; 8]);
+            t.w32(tree, head);
+            let out = t.alloc(&[0x33; 8]);
+            // the port's frame on the stack, as the original's slot
+            let frame = t.b.stack_range().start + 0x1000;
+            let mut nodes = vec![head];
+            let keys = if round % 2 == 0 { 8 } else { 1000 };
+            for i in 0..40u32 {
+                let k = t.rng.below(keys);
+                let node = t.alloc(&[0x5c; 0x20]);
+                let mut n = Vec::new();
+                for _ in 0..3 {
+                    n.extend(head.to_le_bytes());
+                }
+                n.extend([0, 0, 0x5c, 0x5c]);
+                n.extend(k.to_le_bytes());
+                t.write(node, &n);
+                let value = t.alloc(&k.to_le_bytes());
+                let leftish = [0u32, 1, 0x100, 0xab01][t.rng.below(4) as usize];
+                let w =
+                    format!("{label} insert_nohint {round}.{i} (key {k}, leftish {leftish:#x})");
+                t.run(
+                    &w,
+                    0x0069_95e0,
+                    tree,
+                    &[out, leftish, value, node],
+                    false,
+                    |g| tb::insert_nohint(g, tree, out, leftish, value, node, frame),
+                );
+                if Mem::read::<u8>(&t.b, out + 4) != 0 {
+                    nodes.push(node);
+                }
+            }
+            let it = t.alloc(&[0; 4]);
+            for &n in &nodes {
+                t.w32(it, n);
+                let w = format!("{label} iterator dec {round} from {n:#x}");
+                t.run(&w, 0x0069_9f50, it, &[], false, |g| {
+                    ffx_glue_other::m5v_a::bridge::tree_iterator_dec(g, it)
+                });
+            }
+        }
+    }
+}
