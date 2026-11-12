@@ -26,11 +26,13 @@
 //! counts are noted at `FreeLibrary` and in [`summary`].
 
 use std::collections::{BTreeSet, HashMap};
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+#[cfg(feature = "dev-unicorn")]
+use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, RwLock};
 
+use crate::exec::RegisterX86;
 use ffx_bridge::Mem;
-use unicorn_engine::RegisterX86;
 
 use crate::arena::ArenaMem;
 use crate::dll::Dll;
@@ -86,7 +88,12 @@ fn load(e: &mut Exec, name: &str) -> Option<u32> {
     }
     let mut mem = e.mem();
     for imp in &dll.imports {
-        let Some(target) = import_target(e, &imp.dll, &imp.name) else {
+        #[cfg(not(feature = "dev-unicorn"))]
+        let target = import_target(e, &imp.dll, &imp.name)
+            .or_else(|| missing_import(e, &imp.dll, &imp.name, file));
+        #[cfg(feature = "dev-unicorn")]
+        let target = import_target(e, &imp.dll, &imp.name);
+        let Some(target) = target else {
             crate::log::note(&format!(
                 "LoadLibraryA({file}): import {}!{} not bound; the load fails",
                 imp.dll, imp.name
@@ -126,6 +133,65 @@ fn import_target(e: &Exec, dll: &str, name: &str) -> Option<u32> {
         }
     }
     e.shared().dll(dll)?.exports.get(name).copied()
+}
+
+/// The overlays' imports without a target (no C runtime DLL without the
+/// emulator), by trap tag: `DLL!name (from file)`.
+#[cfg(not(feature = "dev-unicorn"))]
+static MISSING: Mutex<Vec<(String, u32)>> = Mutex::new(Vec::new());
+
+/// Without the emulator there is no C runtime DLL, so an overlay import
+/// that `FFX.exe` doesn't have (the overlay CRT's own start-up imports,
+/// `__clean_type_info_names_internal`, which the ported `DllMain` never
+/// calls) gets a trap that stops the thread when called, as a missing
+/// import of `FFX.exe` does; the load goes on. One trap per import.
+#[cfg(not(feature = "dev-unicorn"))]
+fn missing_import(e: &mut Exec, dll: &str, name: &str, file: &str) -> Option<u32> {
+    let full = format!("{dll}!{name}");
+    let mut m = MISSING.lock().ok()?;
+    if let Some((_, at)) = m.iter().find(|(n, _)| n.starts_with(&format!("{full} ("))) {
+        return Some(*at);
+    }
+    let at = e.alloc_code(&[0xcc]).ok()?;
+    let tag = u32::try_from(m.len()).ok()?;
+    m.push((format!("{full} (from {file})"), at));
+    e.shared().add_trap(
+        at,
+        Trap {
+            run: missing_import_trap,
+            tag,
+            conv: Conv::Cdecl,
+            words: 0,
+        },
+    );
+    crate::log::note(&format!(
+        "LoadLibraryA({file}): import {full} has no Rust side; a call stops the thread"
+    ));
+    Some(at)
+}
+
+/// A call to an overlay import without a Rust side ([`missing_import`]):
+/// the thread stops, naming it.
+#[cfg(not(feature = "dev-unicorn"))]
+fn missing_import_trap(e: &mut Exec, tag: u32, args: &Args) -> Ret {
+    let name = MISSING
+        .lock()
+        .ok()
+        .and_then(|m| m.get(tag as usize).map(|(n, _)| n.clone()))
+        .unwrap_or_default();
+    if !e.stats.missing_imports.contains(&name) {
+        e.stats.missing_imports.push(name.clone());
+    }
+    let caller = if args.slots == 0 {
+        0
+    } else {
+        e.mem().read::<u32>(args.slots - 4)
+    };
+    e.end(Stop::Failed(
+        format!("unstubbed import {name} (called from {caller:#010x})"),
+        caller,
+    ));
+    Ret::VOID
 }
 
 fn forget(base: u32) {
@@ -283,6 +349,7 @@ struct Counted {
     name: String,
     base: u32,
     /// Its code, `begin..end`.
+    #[cfg(feature = "dev-unicorn")]
     code: (u32, u32),
     /// Indices into [`BOUND`].
     rust: Vec<usize>,
@@ -296,10 +363,12 @@ type EntryCounts = HashMap<u32, AtomicU64>;
 
 static COUNTED: RwLock<Vec<Counted>> = RwLock::new(Vec::new());
 /// `COUNTED.len()`, read without the lock by [`sync_hooks`].
+#[cfg(feature = "dev-unicorn")]
 static COUNTED_LEN: AtomicUsize = AtomicUsize::new(0);
 
 /// Gives this thread's emulator the counting hooks of overlays loaded
 /// since it last looked (from [`Exec::sync_regions`]).
+#[cfg(feature = "dev-unicorn")]
 pub(crate) fn sync_hooks(e: &mut Exec) -> crate::Result<()> {
     let n = COUNTED_LEN.load(Ordering::Acquire);
     if e.overlay_hooks >= n {
@@ -389,6 +458,7 @@ fn bind_ports(e: &mut Exec, dll: &Dll, bytes: &[u8], file: &str) {
             }
         }
     }
+    #[cfg(feature = "dev-unicorn")]
     let code = (img.at(img.text.0), img.at(img.text.1));
     crate::log::note(&format!(
         "{file}: {} entries, {} bound to Rust ports, {} in Unicorn",
@@ -400,11 +470,13 @@ fn bind_ports(e: &mut Exec, dll: &Dll, bytes: &[u8], file: &str) {
         c.push(Counted {
             name: file.to_string(),
             base: dll.base,
+            #[cfg(feature = "dev-unicorn")]
             code,
             rust: bound,
             unicorn: Arc::new(unicorn),
             reported: std::sync::atomic::AtomicBool::new(false),
         });
+        #[cfg(feature = "dev-unicorn")]
         COUNTED_LEN.store(c.len(), Ordering::Release);
     }
 }
@@ -534,6 +606,7 @@ impl ffx_magic::Game for HostGame<'_> {
     fn call(&mut self, target: u32, ecx: u32, args: &[u32]) -> ffx_magic::Out {
         // g_MagicImports holds import thunks too (crt_memset_thunk, rand)
         let target = self.e.shared().thunk(target).unwrap_or(target);
+        #[cfg(feature = "dev-unicorn")]
         let emulated = self.e.table().get(target).is_none()
             && self.e.shared().trap(target).is_none()
             && !self.e.is_import_stub(target);
@@ -548,6 +621,7 @@ impl ffx_magic::Game for HostGame<'_> {
         let Ok(r) = self.e.call(target, Conv::Thiscall, &a) else {
             crate::exec::halted()
         };
+        #[cfg(feature = "dev-unicorn")]
         if emulated && r.st0.is_some() {
             // the original's fstp takes it off Unicorn's x87 stack
             let _ = self.e.pop_st0();

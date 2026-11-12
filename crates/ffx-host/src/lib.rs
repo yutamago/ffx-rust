@@ -4,17 +4,13 @@
 //! - [`arena`]: the game's 32-bit address space, one block on `x86_64`;
 //! - [`image`]: the player's `FFX.exe` mapped into it, read as data;
 //! - [`table`]: the function table, every port under its original address;
-//! - [`exec`]: the executor, ports in Rust and (development only) the rest
-//!   from `FFX.exe`'s `.text` in Unicorn, on the same memory;
+//! - [`exec`]: the executor, ports in Rust and (development only, feature
+//!   `dev-unicorn`) the rest from `FFX.exe`'s `.text` in Unicorn, on the
+//!   same memory; without the feature a call to an address with no Rust
+//!   side is a hard stop that names it ([`Error::Unported`]);
 //! - [`imports`]: the original's imports, their Rust sides;
 //! - [`ports`]: what this crate registers in the table;
 //! - [`report`]: what a run reached, for the log and the tests.
-
-#[cfg(not(feature = "dev-unicorn"))]
-compile_error!(
-    "ffx-host's executor still needs Unicorn (feature `dev-unicorn`): the release build \
-     without it is the stage 4 gate (docs/rewrite-plan.md, M5)"
-);
 
 #[cfg(not(target_pointer_width = "64"))]
 compile_error!(
@@ -53,7 +49,7 @@ pub mod stand_ins;
 pub mod steam;
 pub mod sync;
 pub mod table;
-#[cfg(windows)]
+#[cfg(all(windows, feature = "dev-unicorn"))]
 pub mod tcg_commit;
 pub mod win32;
 #[cfg(windows)]
@@ -78,8 +74,19 @@ pub enum Error {
     #[error("map {0:#010x}+{1:#x}: {2}")]
     Map(u32, u32, String),
     /// Unicorn refused something.
+    #[cfg(feature = "dev-unicorn")]
     #[error("unicorn: {0:?}")]
     Unicorn(unicorn_engine::uc_error),
+    /// A call reached an address with no Rust side (no port, import,
+    /// trap or one-instruction leaf) in a build without the emulator: the
+    /// address, then its name and the callers (`exec`'s chain).
+    #[error("unported address {addr:#010x}{what}")]
+    Unported {
+        /// The address called.
+        addr: u32,
+        /// ` (name) from caller <- caller ...`.
+        what: String,
+    },
     /// Emulated code called an import without a Rust side.
     #[error("unstubbed import {0}")]
     UnstubbedImport(String),
@@ -108,6 +115,7 @@ pub enum Error {
     Stopped,
 }
 
+#[cfg(feature = "dev-unicorn")]
 impl From<unicorn_engine::uc_error> for Error {
     fn from(e: unicorn_engine::uc_error) -> Self {
         Self::Unicorn(e)
@@ -139,7 +147,8 @@ pub fn boot_with(exe: &Path, table: table::Table) -> Result<exec::Exec> {
 #[derive(Debug, Clone, Default)]
 pub struct Options {
     /// Leave the player's `MSVCR110.dll` and `MSVCP110.dll` out (Rust
-    /// stand-ins only, as the first round ran).
+    /// stand-ins only, as the first round ran). Always so without
+    /// `dev-unicorn`.
     pub no_dlls: bool,
     /// The folder the game sees as its documents folder
     /// (`SHGetFolderPathW`), for `GameSetting.ini` and the saves; `None`:
@@ -160,7 +169,9 @@ pub fn boot_opts(exe: &Path, table: table::Table, opts: &Options) -> Result<exec
     let arena = Arc::new(arena::Arena::new()?);
     let image = image::load(&arena, &bytes)?;
     let dir = exe.parent().unwrap_or(Path::new("."));
-    let dlls = if opts.no_dlls {
+    // Without the emulator the DLLs' code can't run: every C runtime
+    // import is its Rust side or missing (a hard stop when called).
+    let dlls = if opts.no_dlls || cfg!(not(feature = "dev-unicorn")) {
         Vec::new()
     } else {
         dll::load_runtime(&arena, dir)?
