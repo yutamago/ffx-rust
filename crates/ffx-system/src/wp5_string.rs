@@ -443,4 +443,42 @@ pub mod bridge {
         }
         u32::from(new_size != 0)
     }
+
+    /// The string made empty (capacity 15, size 0, the 0).
+    fn tidy(h: &mut impl Host, s: u32) {
+        h.write(s + 0x14, 0xfu32);
+        h.write(s + 0x10, 0u32);
+        h.write(s, 0u8);
+    }
+
+    /// `std::basic_string(const char *)` (`0x00402c90`, `ret 4`): empty,
+    /// then [`assign_cstr`]. `this`.
+    pub fn ctor_cstr(h: &mut impl Host, this: u32, p: u32) -> u32 {
+        tidy(h, this);
+        assign_cstr(h, this, p);
+        this
+    }
+
+    /// `std::basic_string(basic_string &&)` (`0x00402cf0`, `ret 4`): empty,
+    /// then [`move_from`]. `this`.
+    pub fn ctor_move(h: &mut impl Host, this: u32, from: u32) -> u32 {
+        tidy(h, this);
+        move_from(h, this, from);
+        this
+    }
+
+    /// `operator=(basic_string &&)` (`0x00402d60`, `ret 4`): unless `from`
+    /// is this string, its heap buffer freed, emptied, then [`move_from`].
+    /// `this`.
+    pub fn assign_move(h: &mut impl Host, this: u32, from: u32) -> u32 {
+        if this != from {
+            if cap(h, this) >= 16 {
+                let p: u32 = h.read(this);
+                h.call_sym(OPERATOR_DELETE, Conv::Cdecl, &[p]);
+            }
+            tidy(h, this);
+            move_from(h, this, from);
+        }
+        this
+    }
 }

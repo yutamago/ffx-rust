@@ -7,6 +7,7 @@
 //! frame word is its own `StackFrame`.
 
 use ffx_glue_other::m5v_a::bridge as gv;
+use ffx_system::stl::bridge as stl;
 use ffx_system::wp5_tree::bridge as b;
 
 use super::{StackFrame, mem, ported};
@@ -20,5 +21,13 @@ ported! {
     /// `std_TreeIterator_dec_00699f50`: `--it`; `it`.
     std_TreeIterator_dec_00699f50 @ 0x0069_9f50 => extern "thiscall" fn wtr_00699f50(it: u32) -> u32 {
         gv::tree_iterator_dec(&mut mem(), it)
+    }
+    /// `std_Tree_Lrotate_copy_006a0890`: a copy of `std_Tree_Lrotate_00a41930`.
+    std_Tree_Lrotate_copy_006a0890 @ 0x006a_0890 => extern "thiscall" fn wtr_006a0890(this: u32, node: u32) {
+        stl::tree_rotate_left(&mut mem(), this, node);
+    }
+    /// `std_Tree_Rrotate_copy_006a0b50`: a copy of `std_Tree_Rrotate_00a41b40`.
+    std_Tree_Rrotate_copy_006a0b50 @ 0x006a_0b50 => extern "thiscall" fn wtr_006a0b50(this: u32, node: u32) {
+        stl::tree_rotate_right(&mut mem(), this, node);
     }
 }

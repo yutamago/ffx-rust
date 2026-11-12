@@ -4811,15 +4811,21 @@ fn round6c(a: &mut Oracle, b: &mut Oracle, rng: &mut Xorshift) {
     put(a, b, head + 4, nodes[3]);
     let tree = alloc(a, b, 4);
     put(a, b, tree, head);
-    for _ in 0..30 {
+    for i in 0..30 {
         let n = nodes[(rng.next() % 7) as usize];
         let right: u32 = Mem::read(a, n + 8);
         let left: u32 = Mem::read(a, n);
+        // the originals and their copies (0x006a0890, 0x006a0b50; wp5b)
+        let (lrot, rrot) = if i % 2 == 0 {
+            (0x00a4_1930, 0x00a4_1b40)
+        } else {
+            (0x006a_0890, 0x006a_0b50)
+        };
         if rng.next().is_multiple_of(2) && right != head {
-            call(a, 0x00a4_1930, Conv::Thiscall(tree), &[n]);
+            call(a, lrot, Conv::Thiscall(tree), &[n]);
             stl::bridge::tree_rotate_left(b, tree, n);
         } else if left != head {
-            call(a, 0x00a4_1b40, Conv::Thiscall(tree), &[n]);
+            call(a, rrot, Conv::Thiscall(tree), &[n]);
             stl::bridge::tree_rotate_right(b, tree, n);
         }
         same_memory("tree rotations", a, b);

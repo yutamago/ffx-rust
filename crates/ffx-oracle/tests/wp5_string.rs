@@ -607,3 +607,33 @@ fn wp5b_can_use_auto_battle() {
         }
     }
 }
+
+#[test]
+fn wp5b_string_ctors_and_move_assign() {
+    for (label, mut t) in Twins::all() {
+        for round in 0..100u32 {
+            let s = t.alloc(&[0x5a; 0x18]);
+            let l = t.rng.len();
+            let mut text = t.text(l);
+            text.push(0);
+            let p = t.alloc(&text);
+            let w = format!("{label} ctor_cstr {round} ({l})");
+            t.run(&w, 0x0040_2c90, s, &[p], false, |g| b::ctor_cstr(g, s, p));
+            let l = t.rng.len();
+            let from = t.string(l);
+            let to = t.alloc(&[0x44; 0x18]);
+            let w = format!("{label} ctor_move {round} ({l})");
+            t.run(&w, 0x0040_2cf0, to, &[from], false, |g| {
+                b::ctor_move(g, to, from)
+            });
+            let l = t.rng.len();
+            let to = t.string(l);
+            let l2 = t.rng.len();
+            let from = if round % 5 == 0 { to } else { t.string(l2) };
+            let w = format!("{label} assign_move {round} ({l} <- {l2})");
+            t.run(&w, 0x0040_2d60, to, &[from], false, |g| {
+                b::assign_move(g, to, from)
+            });
+        }
+    }
+}

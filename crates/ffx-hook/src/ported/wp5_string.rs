@@ -70,4 +70,16 @@ ported! {
     std_string_compare_006590d0 @ 0x0065_90d0 => extern "thiscall" fn wst_006590d0(this: u32, pos: u32, n: u32, s: u32, len: u32) -> u32 {
         b::compare(&mut mem(), this, pos, n, s, len)
     }
+    /// `std_string_ctor_cstr`: `basic_string(const char *)`; `this`.
+    std_string_ctor_cstr @ 0x0040_2c90 => extern "thiscall" fn wst_00402c90(this: u32, p: u32) -> u32 {
+        b::ctor_cstr(&mut mem(), this, p)
+    }
+    /// `std_string_ctor_move`: `basic_string(basic_string &&)`; `this`.
+    std_string_ctor_move @ 0x0040_2cf0 => extern "thiscall" fn wst_00402cf0(this: u32, from: u32) -> u32 {
+        b::ctor_move(&mut mem(), this, from)
+    }
+    /// `std_string_assign_move`: `operator=(basic_string &&)`; `this`.
+    std_string_assign_move @ 0x0040_2d60 => extern "thiscall" fn wst_00402d60(this: u32, from: u32) -> u32 {
+        b::assign_move(&mut mem(), this, from)
+    }
 }
