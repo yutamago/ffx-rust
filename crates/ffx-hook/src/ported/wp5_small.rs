@@ -162,4 +162,8 @@ ported! {
     PPhysicsWorldSettings_ctor_005e0970 @ 0x005e_0970 => extern "thiscall" fn sm_005e0970(this: u32) -> u32 {
         s::world_settings_ctor_b(&mut mem(), this)
     }
+    /// `Phyre_PPhysics_PPhysicsWorldBullet_dtor_005e2950`: the parts released, four arrays freed and cleared; its `eax`.
+    Phyre_PPhysics_PPhysicsWorldBullet_dtor_005e2950 @ 0x005e_2950 => extern "thiscall" fn sm_005e2950(this: u32) -> u32 {
+        s::world_bullet_dtor(&mut mem(), this)
+    }
 }

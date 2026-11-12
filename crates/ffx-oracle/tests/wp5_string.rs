@@ -2149,3 +2149,36 @@ fn wp5b_world_settings_ctors() {
         });
     }
 }
+
+/// `PPhysicsWorldBullet`'s destructor (`0x005e2950`), `Phyre_releaseParts`
+/// and `Phyre_PhyreFree` logging stubs: each of the four arrays owned,
+/// borrowed or null (all 81 mixes); `eax` and memory.
+#[test]
+fn wp5b_world_bullet_dtor() {
+    use ffx_prender::wp5_small as sm;
+    for (label, mut t) in Twins::all() {
+        let log = t.alloc(&[0; 4 + 8 * 64]);
+        let c = log_stub(&mut t, log, 0, 0x5151);
+        jmp_stub(&mut t, sm::RELEASE_PARTS, &c);
+        let c = log_stub_plain(&mut t, log, 0, 0x6161_0000, true);
+        jmp_stub(&mut t, sm::PHYRE_FREE, &c);
+        let obj = t.alloc(&[0x6b; 0xb0]);
+        for case in 0..81u32 {
+            let mut k = case;
+            for (i, off) in [0x80u32, 0x88, 0x94, 0x9c].into_iter().enumerate() {
+                let (count, data) = match k % 3 {
+                    0 => (3, 0x0044_0000 + i as u32),
+                    1 => (0x8000_0003, 0x0044_0000 + i as u32),
+                    _ => (3, 0),
+                };
+                k /= 3;
+                t.w32(obj + off, count);
+                t.w32(obj + off + 4, data);
+            }
+            let w = format!("{label} world bullet dtor case {case}");
+            t.run(&w, 0x005e_2950, obj, &[], false, |g| {
+                sm::world_bullet_dtor(g, obj)
+            });
+        }
+    }
+}

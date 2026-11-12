@@ -854,3 +854,32 @@ pub fn world_settings_ctor_b(h: &mut impl Host, this: u32) -> u32 {
     h.write(this + 0x64, 3u16);
     this
 }
+
+/// `Phyre_releaseParts_00605660` (thiscall).
+pub const RELEASE_PARTS: u32 = 0x0060_5660;
+
+/// `PPhysicsWorldBullet::~PPhysicsWorldBullet` (`0x005e2950`, thiscall)
+/// -> its `eax`: `Phyre_releaseParts(this)`, then the arrays (count,
+/// data) at `+0x9c`, `+0x94`, `+0x88`, `+0x80` in that order: data freed
+/// when owned (count bit 31 clear) and not null, both words 0. `eax`: the
+/// last array's free, else 0xfe (borrowed) or 0 (null data).
+pub fn world_bullet_dtor(h: &mut impl Host, this: u32) -> u32 {
+    h.call_sym(RELEASE_PARTS, Conv::Thiscall(this), &[]);
+    let mut eax = 0;
+    for off in [0x9c, 0x94, 0x88, 0x80] {
+        let count: u32 = h.read(this + off);
+        eax = if count & 0x8000_0000 != 0 {
+            BORROWED_EAX
+        } else {
+            let data: u32 = h.read(this + off + 4);
+            if data == 0 {
+                0
+            } else {
+                h.call_sym(PHYRE_FREE, Conv::Cdecl, &[data])
+            }
+        };
+        h.write(this + off + 4, 0u32);
+        h.write(this + off, 0u32);
+    }
+    eax
+}
