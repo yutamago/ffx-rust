@@ -388,8 +388,35 @@ impl Abc {
             if n != name || !(o == owner || o.ends_with(&format!(".{owner}"))) {
                 continue;
             }
+            s.push_str(&self.listing(&o, &n, method));
+        }
+        s
+    }
+
+    /// Every method whose listing has a line containing `needle`: `Class/name`
+    /// and those lines.
+    #[must_use]
+    pub fn find(&self, needle: &str) -> String {
+        let mut s = String::new();
+        for (o, n, method) in self.all_methods() {
+            let hits: Vec<String> = self
+                .ops(method)
+                .iter()
+                .map(|op| self.op_text(op))
+                .filter(|t| t.contains(needle))
+                .collect();
+            if !hits.is_empty() {
+                let _ = writeln!(s, "{o}/{n}: {}", hits.join("; "));
+            }
+        }
+        s
+    }
+
+    fn listing(&self, o: &str, n: &str, method: Index<Method>) -> String {
+        let mut s = String::new();
+        {
             if let Some(m) = self.method(method) {
-                let sig = self.signature(&o, n.clone(), m);
+                let sig = self.signature(o, n.to_owned(), m);
                 let _ = writeln!(
                     s,
                     "{o}/{n}({}) required {}{}",

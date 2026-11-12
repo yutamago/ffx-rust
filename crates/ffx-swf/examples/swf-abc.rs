@@ -1,7 +1,7 @@
 //! The game's movies' AS3 interface (`ffx_swf::abc`):
 //!
 //! ```text
-//! swf-abc [--vbf <FFX_Data.vbf>] [<movie.swf> [<Class> <method>]]
+//! swf-abc [--vbf <FFX_Data.vbf>] [<movie.swf> [<Class> <method> | --find <text>]]
 //! ```
 //!
 //! Without a movie: for each `.swf` of the player's `FFX_Data.vbf`
@@ -9,7 +9,8 @@
 //! game (`ExternalInterface.addCallback`, with their argument counts:
 //! `name/n`, or `name/required-most`) and the ones it calls in the game (`ExternalInterface.call`).
 //! With a movie name: the same for that movie and every class method's
-//! signature. With a class and a method: that method's instructions.
+//! signature. With a class and a method: that method's instructions; with
+//! `--find <text>`, every method with an instruction containing the text.
 
 use std::path::PathBuf;
 
@@ -29,6 +30,13 @@ fn main() -> Result<()> {
     let pick = args.first().map(|s| s.to_ascii_lowercase());
     for (name, data) in &movies {
         if pick.as_ref().is_some_and(|p| p != name) {
+            continue;
+        }
+        if args.get(1).is_some_and(|a| a == "--find") {
+            let needle = args.get(2).map_or("", String::as_str);
+            for abc in blocks(data)? {
+                print!("{}", abc.find(needle));
+            }
             continue;
         }
         if let (Some(class), Some(method)) = (args.get(1), args.get(2)) {
