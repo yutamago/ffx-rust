@@ -29,6 +29,7 @@ pub mod crt_format;
 pub mod crt_math;
 pub mod crt_start;
 pub mod crt_stdio;
+pub mod crt_str;
 pub mod crypt;
 #[cfg(windows)]
 pub mod d3d11;

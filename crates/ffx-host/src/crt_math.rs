@@ -25,6 +25,8 @@
 //! instructions ignore the precision control); a Rust side returns it as
 //! an [`Ext`] and the caller's store rounds once (`call_x87`'s `Float`).
 
+#![allow(clippy::many_single_char_names)] // the formulas' x, y, k, r
+
 use std::path::Path;
 
 use ffx_fpu::x87::{Ext, Op, execute};
@@ -92,6 +94,14 @@ impl CrtData {
     #[must_use]
     pub fn f(&self, va: u32) -> f64 {
         f64::from_le_bytes(self.bytes(va))
+    }
+
+    /// The 16-bit word at `va`, if the image holds it.
+    #[must_use]
+    pub fn word16(&self, va: u32) -> Option<u16> {
+        let at = va.wrapping_sub(DLL_BASE) as usize;
+        let b = self.image.get(at..at + 2)?;
+        Some(u16::from_le_bytes([b[0], b[1]]))
     }
 
     /// The double's bits at `va`.

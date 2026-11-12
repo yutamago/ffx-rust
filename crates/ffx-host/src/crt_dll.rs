@@ -250,12 +250,13 @@ pub fn keeps(name: &str) -> bool {
     TABLE
         .iter()
         .chain(crate::crt_format::TABLE)
+        .chain(crate::crt_str::TABLE)
         .any(|(_, n, ..)| *n == name)
 }
 
 /// Calls the DLL's own export `name` with the import's arguments (the case
 /// the Rust side doesn't cover); ends the run when there is no DLL.
-fn dll_export(e: &mut Exec, dll: &str, name: &str, conv: Conv, args: &Args) -> Ret {
+pub(crate) fn dll_export(e: &mut Exec, dll: &str, name: &str, conv: Conv, args: &Args) -> Ret {
     let at = e
         .shared()
         .dll(dll)

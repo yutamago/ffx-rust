@@ -69,6 +69,8 @@ impl Imports {
             .chain(crate::iggy::TABLE)
             .chain(crate::audio::TABLE)
             .chain(crate::crt_dll::TABLE)
+            .chain(crate::crt_str::TABLE)
+            .chain(crate::crt_str::NO_DLL)
             .chain(crate::crt_format::TABLE)
             .chain(crate::crt_stdio::TABLE)
             .chain(crate::crt_format::CONSOLE_TABLE)
@@ -170,6 +172,11 @@ pub struct ThreadCrt {
     pub rand: u32,
     /// `GetLastError`.
     pub last_error: u32,
+    /// `errno`'s cell in the arena (0 until `_errno` first asks;
+    /// `crate::crt_str::errno_cell`).
+    pub errno_at: u32,
+    /// `strtok`'s context.
+    pub strtok: u32,
 }
 
 impl Default for ThreadCrt {
@@ -177,6 +184,8 @@ impl Default for ThreadCrt {
         Self {
             rand: 1,
             last_error: 0,
+            errno_at: 0,
+            strtok: 0,
         }
     }
 }
@@ -340,7 +349,7 @@ fn free(e: &mut Exec, args: &Args) -> Ret {
 }
 
 /// `_recalloc(p, n, size)` / `realloc(p, size)` share this.
-fn resize(e: &mut Exec, p: u32, size: u32, zero: bool) -> u32 {
+pub(crate) fn resize(e: &mut Exec, p: u32, size: u32, zero: bool) -> u32 {
     let mut mem = e.mem();
     let old = e.size_of(p);
     let q = e.alloc(size);

@@ -250,7 +250,7 @@ fn x87_intrinsics_match_the_dll() {
         };
         let mut fast = 0;
         for st in &args {
-            if name == "_CIsqrt" && !(st[0] >= 0.0) {
+            if name == "_CIsqrt" && st[0].is_nan() || st[0] < 0.0 {
                 continue; // the DLL's error path (errno, the matherr hook)
             }
             for float in [Float::F64, Float::F32] {
@@ -724,5 +724,386 @@ fn qsort_matches_the_dll() {
             out[0] == out[1],
             "qsort round {round} ({n} x {width}, {keys} keys)"
         );
+    }
+}
+
+/// `dll!name`'s Rust side (the IAT slot's stub) and the DLL's export.
+fn both(e: &Exec, name: &str) -> (u32, u32) {
+    (
+        e.mem().read(slot(e, "MSVCR110.dll", name)),
+        export(e, "MSVCR110.dll", name),
+    )
+}
+
+/// `s` and a NUL (and junk after it) in fresh memory.
+fn put(e: &mut Exec, s: &[u8]) -> u32 {
+    let at = e.alloc(u32::try_from(s.len()).unwrap() + 16);
+    let mut v = s.to_vec();
+    v.extend_from_slice(&[0, 0x5a, 0x5a, 0x5a]);
+    e.mem().write_bytes(at, &v);
+    at
+}
+
+/// The wide string `s` and a NUL in fresh memory.
+fn put_w(e: &mut Exec, s: &str) -> u32 {
+    let mut v: Vec<u8> = s.encode_utf16().flat_map(u16::to_le_bytes).collect();
+    v.extend_from_slice(&[0, 0, 0x5a, 0x5a]);
+    let at = e.alloc(u32::try_from(v.len()).unwrap() + 8);
+    e.mem().write_bytes(at, &v);
+    at
+}
+
+const TEXTS: [&[u8]; 12] = [
+    b"",
+    b"a",
+    b"Hello World",
+    b"hello world",
+    b"HELLO",
+    b"world",
+    b"\xe9t\xc9\x80z",
+    b"abcabcabd",
+    b"abd",
+    b"  -0x1Fz",
+    b"12,34;;56",
+    b";,lead",
+];
+
+/// The string functions of `crt_str` through the imports against the
+/// DLL's exports: `eax` and every byte of a destination buffer (junk
+/// around it), over strings with case, high bytes, empty ones, matches at
+/// the start, the end and nowhere, and the sized functions at their
+/// limits. Each call through the import must stay in Rust.
+#[test]
+#[allow(clippy::too_many_lines)]
+fn crt_str_strings_match_the_dll() {
+    let Some(exe) = exe() else { return };
+    let mut e = ffx_host::boot(&exe).unwrap();
+    let at: Vec<u32> = TEXTS.iter().map(|s| put(&mut e, s)).collect();
+    let buf = e.alloc(0x100);
+    let mut checked = 0;
+    // one call each way: eax and the buffer
+    let mut run = |e: &mut Exec, name: &str, words: &dyn Fn(u32) -> Vec<u32>, fill: &[u8]| {
+        let (rust, dll) = both(e, name);
+        let mut out = Vec::new();
+        for f in [rust, dll] {
+            let mut b = vec![0xeeu8; 0x100];
+            b[..fill.len()].copy_from_slice(fill);
+            e.mem().write_bytes(buf, &b);
+            let before = e.stats.unicorn_calls;
+            let r = e.call_cdecl(f, &words(buf)).unwrap();
+            if f == rust {
+                assert_eq!(e.stats.unicorn_calls, before, "{name} ran in Unicorn");
+            }
+            let mut got = vec![0u8; 0x100];
+            e.mem().read_bytes(buf, &mut got);
+            out.push((r.wrapping_sub(buf), got));
+        }
+        assert_eq!(out[0], out[1], "{name}");
+        checked += 1;
+    };
+    for &x in &at {
+        for &y in &at {
+            for name in ["strspn", "strpbrk", "strcoll"] {
+                run(&mut e, name, &|_| vec![x, y], &[]);
+            }
+            for n in [0u32, 1, 3, 5, 100] {
+                run(&mut e, "strncmp", &|_| vec![x, y, n], &[]);
+                run(&mut e, "_strnicmp", &|_| vec![x, y, n], &[]);
+                run(&mut e, "strncat", &|b| vec![b, y, n], b"start\0");
+            }
+        }
+        for c in [
+            0u32,
+            u32::from(b'o'),
+            u32::from(b'l'),
+            0xc9,
+            0x1_0000 + u32::from(b'd'),
+        ] {
+            run(&mut e, "strrchr", &|_| vec![x, c], &[]);
+        }
+        // copies into the buffer: sizes that fit and the exact fit
+        let len = u32::try_from(TEXTS[at.iter().position(|&a| a == x).unwrap()].len()).unwrap();
+        for size in [len + 1, len + 5, 0x100] {
+            run(&mut e, "strcpy_s", &|b| vec![b, size, x], &[]);
+            run(&mut e, "strcat_s", &|b| vec![b, size + 4, x], b"abc\0");
+        }
+        for (size, count) in [
+            (0x100, 0),
+            (0x100, 3),
+            (len + 1, len),
+            (0x100, u32::MAX),
+            (4, u32::MAX),
+            (len + 1, 99),
+        ] {
+            run(&mut e, "strncpy_s", &|b| vec![b, size, x, count], &[]);
+        }
+        for (size, count) in [(0x100, 0), (0x100, 5), (8, 8)] {
+            run(&mut e, "memcpy_s", &|b| vec![b, size, x, count], &[]);
+            run(&mut e, "memmove_s", &|b| vec![b, size, x, count], &[]);
+            run(&mut e, "wmemcpy_s", &|b| vec![b, size, x, count / 2], &[]);
+        }
+        // in place: a copy of the text in the buffer
+        let mut text = TEXTS[at.iter().position(|&a| a == x).unwrap()].to_vec();
+        text.push(0);
+        run(&mut e, "_strlwr", &|b| vec![b], &text);
+    }
+    // overlapping moves
+    run(
+        &mut e,
+        "memmove_s",
+        &|b| vec![b + 3, 0x80, b, 40],
+        b"0123456789abcdefghijklmnopqrstuvwxyz0123456789",
+    );
+    run(
+        &mut e,
+        "memmove_s",
+        &|b| vec![b, 0x80, b + 3, 40],
+        b"0123456789abcdefghijklmnopqrstuvwxyz0123456789",
+    );
+    // strtok over a buffer: the same sequence of tokens, then NULL
+    for (text, delims) in [
+        (&b"12,34;;56\0"[..], &b",;\0"[..]),
+        (b";,lead,x;\0", b";,\0"),
+        (b"\0", b",\0"),
+        (b",,,\0", b",\0"),
+        (b"one\0", b"\0"),
+    ] {
+        let d = put(&mut e, delims);
+        let (rust, dll) = both(&e, "strtok");
+        let mut out = Vec::new();
+        for f in [rust, dll] {
+            e.mem().write_bytes(buf, text);
+            let mut seq = Vec::new();
+            let mut s = buf;
+            for _ in 0..6 {
+                let r = e.call_cdecl(f, &[s, d]).unwrap();
+                seq.push(r.wrapping_sub(buf));
+                s = 0;
+            }
+            let mut got = vec![0u8; 16];
+            e.mem().read_bytes(buf, &mut got);
+            out.push((seq, got));
+        }
+        assert_eq!(out[0], out[1], "strtok {text:?}");
+    }
+    // the wide ones
+    let wide: Vec<u32> = ["", "a", "Hello", "lo", "\u{e9}x\u{3042}", "xyz"]
+        .iter()
+        .map(|s| put_w(&mut e, s))
+        .collect();
+    let (rust, dll) = both(&e, "wcsstr");
+    for &x in &wide {
+        for &y in &wide {
+            assert_eq!(
+                e.call_cdecl(rust, &[x, y]).unwrap(),
+                e.call_cdecl(dll, &[x, y]).unwrap(),
+                "wcsstr"
+            );
+        }
+        for size in [12u32, 40] {
+            run(
+                &mut e,
+                "wcscat_s",
+                &|b| vec![b, size, x],
+                &[b'a', 0, b'b', 0, 0, 0],
+            );
+        }
+    }
+    assert!(checked > 2000, "{checked}");
+}
+
+/// The character classes (`isalpha` ... `iscntrl`), `toupper`/`tolower`,
+/// `abs`, `ldiv`, `strtol`/`strtoul` and `realloc` through the imports
+/// against the DLL: every `c` from -128 to 511, numbers in every base
+/// with prefixes, signs, junk and overflows.
+#[test]
+#[allow(clippy::too_many_lines)]
+fn crt_str_numbers_and_classes_match_the_dll() {
+    let Some(exe) = exe() else { return };
+    let mut e = ffx_host::boot(&exe).unwrap();
+    for name in [
+        "isalpha", "isupper", "islower", "isdigit", "isxdigit", "isspace", "ispunct", "isalnum",
+        "isgraph", "iscntrl", "toupper", "tolower", "abs",
+    ] {
+        let (rust, dll) = both(&e, name);
+        for c in (-128i32..512).chain([i32::MIN + 1, -77_777, 70_000, i32::MAX]) {
+            if name.starts_with("is") && !(-128..512).contains(&c) {
+                continue; // the DLL reads outside its table
+            }
+            let c = c.cast_unsigned();
+            let before = e.stats.unicorn_calls;
+            let r = e.call_cdecl(rust, &[c]).unwrap();
+            assert_eq!(e.stats.unicorn_calls, before, "{name} ran in Unicorn");
+            assert_eq!(r, e.call_cdecl(dll, &[c]).unwrap(), "{name}({c:#x})");
+        }
+    }
+    let (rust, dll) = both(&e, "ldiv");
+    for (n, d) in [
+        (7i32, 2i32),
+        (-7, 2),
+        (7, -2),
+        (-7, -2),
+        (0, 5),
+        (i32::MIN, 3),
+        (i32::MAX, -1),
+    ] {
+        let call = |e: &mut Exec, f: u32| {
+            let r = ffx_bridge::route::Router::call(
+                e,
+                f,
+                ffx_host::table::Conv::Cdecl,
+                &ffx_host::table::Args {
+                    stack: vec![n.cast_unsigned(), d.cast_unsigned()],
+                    ..Default::default()
+                },
+                ffx_bridge::route::Float::None,
+            );
+            (r.eax, r.edx)
+        };
+        assert_eq!(call(&mut e, rust), call(&mut e, dll), "ldiv({n}, {d})");
+    }
+    let texts: [&[u8]; 22] = [
+        b"0",
+        b"42",
+        b"-17",
+        b"+8x",
+        b"  \t\n123",
+        b"",
+        b"abc",
+        b"-",
+        b"0x1A",
+        b"0X",
+        b"0x",
+        b"017",
+        b"09",
+        b"z",
+        b"Zz9",
+        b"2147483647",
+        b"-2147483648",
+        b"4294967295",
+        b"1y",
+        b"  -0x7fffffff",
+        b"0b101",
+        b"7fffffff",
+    ];
+    let end = e.alloc(8);
+    for name in ["strtol", "strtoul"] {
+        let (rust, dll) = both(&e, name);
+        for t in texts {
+            let s = put(&mut e, t);
+            for base in [0u32, 2, 8, 10, 16, 36] {
+                let mut out = Vec::new();
+                for f in [rust, dll] {
+                    e.mem().write(end, 0x1234_5678u32);
+                    let r = e.call_cdecl(f, &[s, end, base]).unwrap();
+                    let stop: u32 = e.mem().read(end);
+                    out.push((r, stop.wrapping_sub(s)));
+                }
+                assert_eq!(
+                    out[0],
+                    out[1],
+                    "{name}({:?}, {base})",
+                    String::from_utf8_lossy(t)
+                );
+            }
+        }
+    }
+    // realloc: grow, shrink, from NULL, to 0; the bytes kept
+    let (rust, _) = both(&e, "realloc");
+    let p = e.call_cdecl(rust, &[0, 16]).unwrap();
+    e.mem().write_bytes(p, b"0123456789abcdef");
+    let q = e.call_cdecl(rust, &[p, 64]).unwrap();
+    let mut got = [0u8; 16];
+    e.mem().read_bytes(q, &mut got);
+    assert_eq!(&got, b"0123456789abcdef");
+    let r = e.call_cdecl(rust, &[q, 4]).unwrap();
+    let mut got = [0u8; 4];
+    e.mem().read_bytes(r, &mut got);
+    assert_eq!(&got, b"0123");
+    assert_eq!(e.call_cdecl(rust, &[r, 0]).unwrap(), 0);
+}
+
+/// The double functions (`floor`, `ceil`, `modf`, `frexp`, `ldexp`,
+/// `_finite`, `_isnan`) through the imports against the DLL: `ST0`, `eax`
+/// and the output word, over zeros, denormals, halves, large and
+/// infinite values (NaNs are handed on: compared too).
+#[test]
+fn crt_str_doubles_match_the_dll() {
+    use ffx_bridge::route::Float;
+    let Some(exe) = exe() else { return };
+    let mut e = ffx_host::boot(&exe).unwrap();
+    let out = e.alloc(16);
+    let xs = [
+        0.0,
+        -0.0,
+        5e-324,
+        -1e-310,
+        0.25,
+        0.5,
+        -0.5,
+        1.5,
+        -1.5,
+        2.5,
+        -2.5,
+        3.0,
+        -7.99,
+        1e15 + 0.5,
+        4.5e15,
+        -9.1e18,
+        1e300,
+        f64::MAX,
+        f64::INFINITY,
+        f64::NEG_INFINITY,
+        f64::NAN,
+        123.456,
+        -0.001,
+    ];
+    let call = |e: &mut Exec, f: u32, words: Vec<u32>, float: Float| {
+        let r = ffx_bridge::route::Router::call(
+            e,
+            f,
+            ffx_host::table::Conv::Cdecl,
+            &ffx_host::table::Args {
+                stack: words,
+                ..Default::default()
+            },
+            float,
+        );
+        (r.eax, r.st0.to_bits())
+    };
+    #[allow(clippy::cast_possible_truncation)]
+    let words = |x: f64| vec![x.to_bits() as u32, (x.to_bits() >> 32) as u32];
+    for name in [
+        "floor", "ceil", "modf", "frexp", "ldexp", "_finite", "_isnan",
+    ] {
+        let (rust, dll) = both(&e, name);
+        for &x in &xs {
+            let extras: Vec<Vec<u32>> = match name {
+                "modf" | "frexp" => vec![vec![out]],
+                "ldexp" => [0i32, 1, -1, 10, -1074, -1080, 1024, 2000, -2000]
+                    .iter()
+                    .map(|n| vec![n.cast_unsigned()])
+                    .collect(),
+                _ => vec![vec![]],
+            };
+            let float = if name.starts_with('_') {
+                Float::None
+            } else {
+                Float::F64
+            };
+            for extra in extras {
+                let mut w = words(x);
+                w.extend(&extra);
+                let mut got = Vec::new();
+                for f in [rust, dll] {
+                    e.mem().write(out, 0x5a5a_5a5a_5a5a_5a5au64);
+                    let r = call(&mut e, f, w.clone(), float);
+                    let side: u64 = e.mem().read(out);
+                    let none = float == Float::None;
+                    got.push((if none { r.0 } else { 0 }, if none { 0 } else { r.1 }, side));
+                }
+                assert_eq!(got[0], got[1], "{name}({x:e}, {extra:?})");
+            }
+        }
     }
 }
