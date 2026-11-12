@@ -10,7 +10,7 @@
 //! no lock); read by the harness thread at any time. A read can see an
 //! entry being replaced: a sampling aid, as the hook's `stacks` is.
 
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
 /// Host entries kept per thread (deeper ones are counted, not kept).
 pub const DEPTH: usize = 16;
@@ -50,6 +50,9 @@ pub struct Spot {
     /// `esp` at the last entry, kept after it is left (where a thread that
     /// runs emulated code was last seen).
     last_esp: AtomicU32,
+    /// Inside `emu_start` (after the instance's set-up): only then may
+    /// another thread stop its emulator (`TerminateThread`, the watchdog).
+    pub emulating: AtomicBool,
 }
 
 impl Spot {
@@ -62,6 +65,7 @@ impl Spot {
             depth: AtomicU32::new(0),
             frames: std::array::from_fn(|_| (AtomicU64::new(0), AtomicU32::new(0))),
             last_esp: AtomicU32::new(0),
+            emulating: AtomicBool::new(false),
         }
     }
 

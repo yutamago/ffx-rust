@@ -52,6 +52,22 @@ fn exit_thread(e: &mut Exec, args: &Args) -> Ret {
     Ret::VOID
 }
 
+/// `TerminateThread(h, code)`: the caller's own thread ends as at
+/// `ExitThread` (`VsyncThreadImpl_run` ends itself so); another thread
+/// ends at its next block or call, its waits cut short
+/// (`Shared::terminate`). The game's other callers are the `Sys::Thread`
+/// destructors (`FmodManager_Destroy` at exit, `SysThread_dtor_00703990`),
+/// mostly on threads that ended already. 0 for a handle that is no
+/// thread.
+fn terminate_thread(e: &mut Exec, args: &Args) -> Ret {
+    let (ok, own) = e.shared().terminate(e.id, a(args, 0), a(args, 1));
+    if let Some(code) = own {
+        e.end(Stop::ThreadExit(code));
+        return Ret::VOID;
+    }
+    Ret::eax(u32::from(ok))
+}
+
 /// `GetExitCodeThread(h, &code)`.
 fn exit_code_thread(e: &mut Exec, args: &Args) -> Ret {
     let Some(code) = e.shared().sync.thread_code(a(args, 0)) else {
@@ -783,6 +799,7 @@ pub const TABLE: &[(&str, &str, Conv, usize, ImportFn)] = &[
     (K32, "ResumeThread", Conv::Stdcall, 1, resume_thread),
     (K32, "SuspendThread", Conv::Stdcall, 1, zero),
     (K32, "ExitThread", Conv::Stdcall, 1, exit_thread),
+    (K32, "TerminateThread", Conv::Stdcall, 2, terminate_thread),
     (K32, "GetExitCodeThread", Conv::Stdcall, 2, exit_code_thread),
     (
         K32,

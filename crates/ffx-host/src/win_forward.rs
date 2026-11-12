@@ -601,6 +601,14 @@ fn destroy_window(_: &mut Exec, args: &Args) -> Ret {
     Ret::eax(unsafe { wm::DestroyWindow(hwnd(h)) } as u32)
 }
 
+/// `SetParent(child, parent)`: the embedded mode's host window
+/// (`PWindowWin32_AttachToHost`); the previous parent.
+fn set_parent(_: &mut Exec, args: &Args) -> Ret {
+    // SAFETY: the game's window and the parent it was handed.
+    let old = unsafe { wm::SetParent(hwnd(a(args, 0)), hwnd(a(args, 1))) };
+    Ret::eax(hwnd_u32(old))
+}
+
 /// `PostQuitMessage(code)`.
 fn post_quit_message(_: &mut Exec, args: &Args) -> Ret {
     #[allow(clippy::cast_possible_wrap)]
@@ -735,6 +743,7 @@ pub const TABLE: &[(&str, &str, Conv, usize, ImportFn)] = &[
     (USER32, "GetClipCursor", Conv::Stdcall, 1, get_clip_cursor),
     (USER32, "UpdateWindow", Conv::Stdcall, 1, update_window),
     (USER32, "DestroyWindow", Conv::Stdcall, 1, destroy_window),
+    (USER32, "SetParent", Conv::Stdcall, 2, set_parent),
     (
         USER32,
         "PostQuitMessage",

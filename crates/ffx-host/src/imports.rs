@@ -785,8 +785,19 @@ fn message_box(e: &mut Exec, args: &Args, wide: bool) -> Ret {
     let mem = e.mem();
     let text = read_str(&mem, a(args, 1), wide);
     let caption = read_str(&mem, a(args, 2), wide);
+    // a note too: under the harness the run ends at `quit`, without the
+    // report that lists the messages
+    crate::log::note(&format!("message box {caption:?}: {text:?}"));
     e.stats.messages.push(format!("{caption}: {text}"));
     Ret::eax(1)
+}
+
+/// `OutputDebugStringW(text)`: a note (MSVCR110's `_wassert` writes a
+/// failed assert's message there before it gives up).
+fn debug_string_w(e: &mut Exec, args: &Args) -> Ret {
+    let text = read_str(&e.mem(), a(args, 0), true);
+    crate::log::note(&format!("OutputDebugStringW: {}", text.trim_end()));
+    Ret::VOID
 }
 
 fn message_box_w(e: &mut Exec, args: &Args) -> Ret {
@@ -1230,6 +1241,11 @@ pub const TABLE: &[(&str, &str, Conv, usize, ImportFn)] = &[
     ),
     (K32, "LoadLibraryW", Conv::Stdcall, 1, zero),
     (K32, "LoadLibraryExA", Conv::Stdcall, 3, zero),
+    // MSVCR110's: __crtMessageBoxW (a failed assert's box) and the
+    // ConcRT start-up load USER32/KERNEL32 by name; no module, so the
+    // C runtime takes its fallbacks (WP7, docs/host.md "Imports")
+    (K32, "LoadLibraryExW", Conv::Stdcall, 3, zero),
+    (K32, "OutputDebugStringW", Conv::Stdcall, 1, debug_string_w),
     (
         K32,
         "GetProcAddress",
