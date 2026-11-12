@@ -287,3 +287,57 @@ pub fn report_map_load(h: &mut impl Host, this: u32, name: u32, frame: u32) {
     let tag = h.rebase(MAP_LOAD_TAG);
     h.call_sym(REPORT, Conv::Thiscall(this), &[name, tag, frame, 0x100]);
 }
+
+/// `g_CharacterSwitchTweakUtil` (`0x00cccac4`), its size, the member
+/// constructor at `+4` (thiscall) and the float at `0x00b482d8` its `+0xd8`
+/// starts with.
+pub const CHAR_SWITCH: u32 = 0x00cc_cac4;
+pub const CHAR_SWITCH_SIZE: u32 = 0xf4;
+pub const CHAR_SWITCH_MEMBER_CTOR: u32 = 0x006f_5b50;
+pub const CHAR_SWITCH_D8: u32 = 0x00b4_82d8;
+
+/// `CharacterSwitchTweakUtil_CharacterSwitchTweakUtil(this)` (`0x006b55d0`,
+/// thiscall): the byte `+0` cleared, the member at `+4` constructed, then
+/// `+0xd8` the constant, `+0xcc`, `+0xd0`, the byte `+0xd4` 0, `+0xdc`
+/// 1280, `+0xe0` 720, `+0xe4`..`+0xec` 0.0, `+0xf0` 1.0, `+0x94`..`+0xac`
+/// zeroed. `this`.
+pub fn char_switch_ctor(h: &mut impl Host, this: u32) -> u32 {
+    h.write(this, 0u8);
+    h.call_sym(CHAR_SWITCH_MEMBER_CTOR, Conv::Thiscall(this + 4), &[]);
+    let c: u32 = h.read(h.rebase(CHAR_SWITCH_D8));
+    h.write(this + 0xd8, c);
+    h.write(this + 0xcc, 0u32);
+    h.write(this + 0xd0, 0u32);
+    h.write(this + 0xd4, 0u8);
+    h.write(this + 0xdc, 0x500u32);
+    h.write(this + 0xe0, 0x2d0u32);
+    for off in [0xe4, 0xe8, 0xec] {
+        h.write(this + off, 0u32);
+    }
+    h.write(this + 0xf0, 0x3f80_0000u32);
+    for k in 0..7 {
+        h.write(this + 0x94 + 4 * k, 0u32);
+    }
+    this
+}
+
+/// `CharacterSwitchTweakUtil_CreateInstance()` (`0x006b5eb0`, cdecl): once,
+/// `operator new(0xf4)` and the constructor (NULL when the allocation
+/// fails) into the global. The new instance; the original's `eax` when it
+/// already exists is a stack address (its frame's), for which this
+/// returns the instance (no caller reads it).
+pub fn char_switch_create(h: &mut impl Host) -> u32 {
+    let at = h.rebase(CHAR_SWITCH);
+    let g: u32 = h.read(at);
+    if g != 0 {
+        return g;
+    }
+    let n = h.call_sym(OPERATOR_NEW, Conv::Cdecl, &[CHAR_SWITCH_SIZE]);
+    let v = if n == 0 {
+        0
+    } else {
+        h.call_sym(0x006b_55d0, Conv::Thiscall(n), &[])
+    };
+    h.write(at, v);
+    v
+}

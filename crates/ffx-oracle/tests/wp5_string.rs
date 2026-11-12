@@ -1471,3 +1471,41 @@ fn wp5b_small_originals_3() {
         }
     }
 }
+
+/// The character-switch tweak tool: its constructor on junk (the member
+/// constructor a logging stub) and `CreateInstance` (already there, made,
+/// the allocation failing).
+#[test]
+fn wp5b_char_switch_tweak_util() {
+    use ffx_prender::wp5_small as sm;
+    for (label, mut t) in Twins::all() {
+        let log = t.alloc(&[0; 4 + 8 * 64]);
+        let s = log_stub_arg(&mut t, log, 0, 0x55, false);
+        jmp_stub(&mut t, sm::CHAR_SWITCH_MEMBER_CTOR, &s);
+        for round in 0..3u32 {
+            let obj = t.alloc(&[0x70 + round as u8; 0xf8]);
+            t.w32(log, 0);
+            let w = format!("{label} char switch ctor {round}");
+            t.run(&w, 0x006b_55d0, obj, &[], false, |g| {
+                sm::char_switch_ctor(g, obj)
+            });
+        }
+        let g = t.a.rebase(sm::CHAR_SWITCH);
+        // made (the stub allocator), then already there
+        t.w32(g, 0);
+        t.run_cdecl(&format!("{label} create"), 0x006b_5eb0, &[], |g| {
+            sm::char_switch_create(g)
+        });
+        // the allocation failing: operator new returning NULL
+        let s = log_stub_plain(&mut t, log, 0, 0, true);
+        jmp_stub(&mut t, sm::OPERATOR_NEW, &s);
+        t.w32(g, 0);
+        t.w32(log, 0);
+        t.run_cdecl(
+            &format!("{label} create, no memory"),
+            0x006b_5eb0,
+            &[],
+            |g| sm::char_switch_create(g),
+        );
+    }
+}

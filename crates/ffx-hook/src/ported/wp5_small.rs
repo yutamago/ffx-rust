@@ -83,4 +83,12 @@ ported! {
         let mut frame = super::StackFrame::<0x40>::new();
         s::report_map_load(&mut mem(), this, name, frame.at());
     }
+    /// `CharacterSwitchTweakUtil_CharacterSwitchTweakUtil`: the tweak tool's constructor; `this`.
+    CharacterSwitchTweakUtil_CharacterSwitchTweakUtil @ 0x006b_55d0 => extern "thiscall" fn sm_006b55d0(this: u32) -> u32 {
+        s::char_switch_ctor(&mut mem(), this)
+    }
+    /// `CharacterSwitchTweakUtil_CreateInstance`: the tweak tool created once.
+    CharacterSwitchTweakUtil_CreateInstance @ 0x006b_5eb0 => extern "C" fn sm_006b5eb0() -> u32 {
+        s::char_switch_create(&mut mem())
+    }
 }
