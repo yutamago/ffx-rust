@@ -498,6 +498,7 @@
 0x009db180	5	0	code_009db180
 0x009dba10	5	0	FFXVu0MulMatrix_thunk
 0x009dbe80	5	0	code_009dbe80
+0x009f2510	78	0	Table256_ctor_009f2510
 0x00a282f0	31	0	PVideoPlaybackWin32_play
 0x00a3d4d0	5	0	GDraw_teardown_thunk_00a3d4d0
 0x00a45860	5	0	abmap_cheng_panel_thunk_00a45860

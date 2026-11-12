@@ -103,4 +103,8 @@ ported! {
     PtrArray_reserve_00638240 @ 0x0063_8240 => extern "thiscall" fn sm_00638240(this: u32, n: u32) -> u32 {
         s::ptr_array_reserve(&mut mem(), this, n)
     }
+    /// `Table256_ctor_009f2510`: 256 (0, 1.0, 0.0) entries and a zero count; `this`.
+    Table256_ctor_009f2510 @ 0x009f_2510 => extern "thiscall" fn sm_009f2510(this: u32) -> u32 {
+        s::table256_ctor(&mut mem(), this)
+    }
 }

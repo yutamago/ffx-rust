@@ -1824,3 +1824,16 @@ fn wp5b_ptr_array_reserve() {
         }
     }
 }
+
+/// `Table256_ctor_009f2510` on junk.
+#[test]
+fn wp5b_table256_ctor() {
+    use ffx_prender::wp5_small as sm;
+    for (label, mut t) in Twins::all() {
+        let obj = t.alloc(&[0x6b; 0xc10]);
+        let w = format!("{label} table256 ctor");
+        t.run(&w, 0x009f_2510, obj, &[], false, |g| {
+            sm::table256_ctor(g, obj)
+        });
+    }
+}

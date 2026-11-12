@@ -423,3 +423,19 @@ pub fn ptr_array_reserve(h: &mut impl Host, this: u32, n: u32) -> u32 {
     h.write(this + 8, p);
     r
 }
+
+/// `Table256_ctor_009f2510(this)` (thiscall; the static initialiser
+/// `StaticInit_TailThiscall_00af2610`'s object): 256 entries of three words
+/// from `+4`, each (0, 1.0, 0.0) (the original's two x87 loops write the
+/// same values twice), and the count `+0` 0. `this`.
+pub fn table256_ctor(h: &mut impl Host, this: u32) -> u32 {
+    let mut bytes = Vec::with_capacity(12 * 256);
+    for _ in 0..256 {
+        bytes.extend(0u32.to_le_bytes());
+        bytes.extend(1.0f32.to_bits().to_le_bytes());
+        bytes.extend(0u32.to_le_bytes());
+    }
+    h.write_bytes(this + 4, &bytes);
+    h.write(this, 0u32);
+    this
+}
