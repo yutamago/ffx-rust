@@ -107,9 +107,9 @@ cleanup() { [[ "${FFX_KEEP_STAGE:-}" == 1 ]] && echo "kept: $stage" || rm -rf "$
 trap cleanup EXIT
 
 for exe in ffx-rust.exe ffx-launch.exe; do
-    if [[ -f "$bins/$exe" ]]; then
+    if [[ ($dry == 0 || -n "$prebuilt") && -f "$bins/$exe" ]]; then
         cp "$bins/$exe" "$stage/$exe"
-    elif [[ $dry == 1 ]]; then
+    elif [[ $dry == 1 && -z "$prebuilt" ]]; then
         echo "placeholder for $exe (dry run: not built)" >"$stage/$exe"
     else
         echo "package-release.sh: no $bins/$exe" >&2; exit 1
