@@ -1880,7 +1880,7 @@ fn run_stub(uc: &mut Unicorn<State>, stub: Stub, addr: u64) -> Result<()> {
         Stub::Memset => {
             let (dst, value, len) = (arg(uc, 0)?, arg(uc, 1)?, arg(uc, 2)?);
             #[allow(clippy::cast_possible_truncation)] // memset stores the low byte
-            crt::write(uc, dst, &vec![value as u8; len as usize])?;
+            crt::fill(uc, dst, value as u8, len as usize)?;
             dst
         }
         Stub::Crt(c) => crt::run(uc, c, u32::try_from(addr).expect("32-bit stub"))?,
@@ -2041,6 +2041,40 @@ mod tests {
         let mut t = vec![(0x1000_0000, 0x1100_0000), (0x1180_0000, 0x1200_0000)];
         assert_eq!(gap(&mut t, 0x80_0000).unwrap(), 0x1100_0000);
         assert_eq!(gap(&mut t, 0x10_0000).unwrap(), 0x1200_0000);
+    }
+
+    /// A memset with a garbage length (battle.snap's `0x7a7da0`: ~4 GiB
+    /// of `0xcd`) fails as one write does, storing nothing, and without a
+    /// buffer of its length (m5-oracle-leak: one per call took `script`'s
+    /// tests to 9.5 GB); one that fits stores and marks its pages dirty.
+    #[test]
+    fn fills_fail_without_a_buffer_of_their_length() {
+        fn high_water_kb() -> Option<u64> {
+            let status = std::fs::read_to_string("/proc/self/status").ok()?;
+            let line = status.lines().find_map(|l| l.strip_prefix("VmHWM:"))?;
+            line.trim().strip_suffix("kB")?.trim().parse().ok()
+        }
+        let mut uc = Unicorn::new_with_data(Arch::X86, Mode::MODE_32, State::default()).unwrap();
+        uc.mem_map(0x10_0000, 2 * PAGE, Prot::ALL).unwrap();
+        let before = high_water_kb();
+        for len in [0xffff_fff9, 0x2000] {
+            assert!(matches!(
+                crt::fill(&mut uc, 0x10_0010, 0xcd, len),
+                Err(Error::BadAccess(0x10_0010))
+            ));
+        }
+        if let (Some(a), Some(b)) = (before, high_water_kb()) {
+            assert!(b - a < 256 * 1024, "a failing fill took {} kB", b - a);
+        }
+        assert_eq!(uc.mem_read_as_vec(0x10_0000, 0x2000).unwrap(), [0; 0x2000]);
+        assert!(uc.get_data().dirty.is_empty());
+        crt::fill(&mut uc, 0x10_0ff0, 0xcd, 0x20).unwrap();
+        let m = uc.mem_read_as_vec(0x10_0fe0, 0x40).unwrap();
+        assert_eq!(m, [&[0; 0x10][..], &[0xcd; 0x20], &[0; 0x10]].concat());
+        assert_eq!(
+            uc.get_data().dirty.iter().copied().collect::<Vec<_>>(),
+            [0x100, 0x101]
+        );
     }
 }
 
@@ -2223,7 +2257,32 @@ mod crt {
         }
     }
 
+    /// Whether every page of `addr..addr + len` is mapped or in the
+    /// snapshot, so [`ensure`] can map it: a range that is not fails before
+    /// anything is mapped or allocated. A garbage length (battle.snap's
+    /// native `0x7a7da0` memsets ~4 GiB of `0xcd`) then costs no memory;
+    /// a 4 GiB buffer per call made `script`'s tests reach 9.5 GB
+    /// (m5-oracle-leak).
+    pub(super) fn known(uc: &Unicorn<State>, addr: u32, len: usize) -> bool {
+        let pages = uc.get_data().pages.as_ref();
+        let end = u64::from(addr) + len as u64;
+        if end > 1 << 32 {
+            return false;
+        }
+        let mut a = u64::from(addr) & !(PAGE - 1);
+        while a < end {
+            if uc.mem_read_as_vec(a, 1).is_err() && pages.is_none_or(|p| p.chunk(a).is_none()) {
+                return false;
+            }
+            a += PAGE;
+        }
+        true
+    }
+
     pub(super) fn read(uc: &mut Unicorn<State>, addr: u32, len: usize) -> Result<Vec<u8>> {
+        if !known(uc, addr, len) {
+            return Err(Error::BadAccess(u64::from(addr)));
+        }
         ensure(uc, addr, len);
         uc.mem_read_as_vec(u64::from(addr), len)
             .map_err(|_| Error::BadAccess(u64::from(addr)))
@@ -2234,6 +2293,9 @@ mod crt {
         if bytes.is_empty() {
             return Ok(());
         }
+        if !known(uc, addr, bytes.len()) {
+            return Err(Error::BadAccess(u64::from(addr)));
+        }
         ensure(uc, addr, bytes.len());
         uc.mem_write(u64::from(addr), bytes)
             .map_err(|_| Error::BadAccess(u64::from(addr)))?;
@@ -2241,6 +2303,25 @@ mod crt {
         let d = &mut uc.get_data_mut().dirty;
         for p in (addr >> 12)..=(last >> 12) {
             d.insert(p);
+        }
+        Ok(())
+    }
+
+    /// `len` bytes of `value` at `addr`, as one [`write`] would store them
+    /// (nothing when part of the range is unmapped), without a buffer of
+    /// `len` bytes.
+    pub(super) fn fill(uc: &mut Unicorn<State>, addr: u32, value: u8, len: usize) -> Result<()> {
+        const CHUNK: usize = 0x1_0000;
+        if len == 0 {
+            return Ok(());
+        }
+        if !known(uc, addr, len) {
+            return Err(Error::BadAccess(u64::from(addr)));
+        }
+        let chunk = vec![value; len.min(CHUNK)];
+        for off in (0..len).step_by(CHUNK) {
+            let at = addr.wrapping_add(u32::try_from(off).expect("in the 32-bit range"));
+            write(uc, at, &chunk[..(len - off).min(CHUNK)])?;
         }
         Ok(())
     }
@@ -2905,9 +2986,15 @@ mod crt {
             }
             Crt::Strncpy => {
                 let (dst, src, n) = (a[0], a[1], a[2]);
-                let mut s = cstr_n(uc, src, n)?;
-                s.resize(n as usize, 0);
+                let s = cstr_n(uc, src, n)?;
+                // the text, then NULs to `n` (one write's outcome: nothing
+                // when part of `dst..dst + n` is unmapped)
+                if !known(uc, dst, n as usize) {
+                    return Err(Error::BadAccess(u64::from(dst)));
+                }
                 write(uc, dst, &s)?;
+                let len = u32::try_from(s.len()).expect("at most n");
+                fill(uc, dst.wrapping_add(len), 0, (n - len) as usize)?;
                 dst
             }
             Crt::Strncat => {
