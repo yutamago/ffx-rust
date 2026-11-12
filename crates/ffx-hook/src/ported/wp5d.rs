@@ -245,4 +245,8 @@ ported! {
         let mut frame = StackFrame::<12>::new();
         d::button_material(&mut mem(), frame.at(), name, cluster, texture, material, instance)
     }
+    /// `RemapButtonIcon_setLayout_006e8140`: the three button quads built; the last `buildQuad`'s `eax`.
+    RemapButtonIcon_setLayout_006e8140 @ 0x006e_8140 => extern "thiscall" fn d_006e8140(this: u32, a0: u32, a1: u32, a2: u32, a3: u32, b0: u32, b1: u32, b2: u32, b3: u32) -> u32 {
+        d::remap_set_layout(&mut mem(), this, [a0, a1, a2, a3], [b0, b1, b2, b3])
+    }
 }

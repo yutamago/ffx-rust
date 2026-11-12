@@ -1550,3 +1550,25 @@ pub fn button_material(
         &[buffer.wrapping_add(off), frame, size],
     )
 }
+
+/// `SkipPrompt_buildQuad_006e7940` (stdcall: four `f32`s, mesh,
+/// instance, materials, material).
+pub const BUILD_QUAD: u32 = 0x006e_7940;
+
+/// `RemapButtonIcon_setLayout_006e8140(this; a[4], b[4])` (thiscall, eight
+/// `f32` words, `ret 0x20`): the three button quads built: the first two
+/// (slots `+0x18` and `+0x34`) at `a`, the third (`+0x50`) at `b`; each
+/// gets its slot's mesh (`+0x14`), instance (`+0x18`), materials (`+4`)
+/// and material word (`+0`) as `buildQuad`'s last four words. The floats
+/// pass as `fld dword`/`fstp dword` copy them (a signalling NaN quiet).
+/// The last `buildQuad`'s `eax`.
+pub fn remap_set_layout(h: &mut impl Host, this: u32, a: [u32; 4], b: [u32; 4]) -> u32 {
+    let mut r = 0;
+    for (slot, q) in [(0x18u32, a), (0x34, a), (0x50, b)] {
+        let mat: u32 = h.read(this + slot);
+        let mut w: Vec<u32> = q.iter().map(|&x| quiet(x)).collect();
+        w.extend([this + slot + 0x14, this + slot + 0x18, this + slot + 4, mat]);
+        r = h.call_sym(BUILD_QUAD, Conv::Stdcall, &w);
+    }
+    r
+}

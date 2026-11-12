@@ -1523,3 +1523,49 @@ fn wp5d_button_material() {
         }
     }
 }
+
+/// A stub that logs its eight stack words (32-byte entries after a
+/// count), returns `ret` and pops `pops` bytes.
+fn words8_stub(log: u32, pops: u16, ret: u32) -> Vec<u8> {
+    let mut c = vec![0xa1];
+    c.extend(log.to_le_bytes()); // mov eax, [log]
+    c.extend([0x83, 0xe0, 0x1f, 0xc1, 0xe0, 0x05]); // and eax, 31; shl eax, 5
+    c.push(0x05);
+    c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+    for i in 0..8u8 {
+        c.extend([0x8b, 0x54, 0x24, 4 + 4 * i]); // mov edx, [esp+4+4i]
+        c.extend([0x89, 0x50, 4 * i]); // mov [eax+4i], edx
+    }
+    c.extend([0xff, 0x05]);
+    c.extend(log.to_le_bytes()); // inc dword [log]
+    c.push(0xb8);
+    c.extend(ret.to_le_bytes()); // mov eax, ret
+    c.push(0xc2);
+    c.extend(pops.to_le_bytes());
+    c
+}
+
+/// `RemapButtonIcon`'s layout (`0x006e8140`): `buildQuad` a stub logging
+/// all eight words; floats of both signs. `eax` and memory.
+#[test]
+fn wp5d_remap_set_layout() {
+    use ffx_prender::wp5d as d;
+    for (label, mut t) in Twins::all() {
+        let log = t.alloc(&[0; 4 + 32 * 32]);
+        for round in 0..8u32 {
+            let s = words8_stub(log, 0x20, 0x9900 + round);
+            jmp_stub(&mut t, d::BUILD_QUAD, &s);
+            let this = t.alloc(&[0x47; 0x70]);
+            let f: Vec<u32> = (0..8)
+                .map(|k| (k as f32 * 0.25 - round as f32 * 3.5).to_bits())
+                .collect();
+            let a = [f[0], f[1], f[2], f[3]];
+            let b = [f[4], f[5], f[6], f[7]];
+            t.w32(log, 0);
+            let w = format!("{label} remap layout {round}");
+            t.run(&w, 0x006e_8140, this, &f, false, |g| {
+                d::remap_set_layout(g, this, a, b)
+            });
+        }
+    }
+}
