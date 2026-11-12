@@ -1300,8 +1300,9 @@ at a copy of the toolchain file without that line (all under
 LLVM's `llvm-ml64` under the name `ml64`. The hook (`dinput8.dll`) stays
 32-bit (`tools/build-hook.sh`), and so does its 32-bit clippy
 (`-p ffx-hook`); `ffx-host` is no longer in it.
-`FFX_HOST_RUSTFLAGS` and `FFX_HOST_CFLAGS` are added to cargo-xwin's
-target flags (the package's path remapping, below), and
+`FFX_HOST_RUSTFLAGS` is added to `RUSTFLAGS` (cargo-xwin sets it, empty,
+which makes cargo ignore every target `rustflags`) and `FFX_HOST_CFLAGS`
+to the C and C++ flags (the package's path remapping, below), and
 `CARGO_TARGET_DIR` is honoured.
 
 ## The release package

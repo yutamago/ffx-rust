@@ -86,7 +86,8 @@ elif [[ $dry == 0 ]]; then
     echo "building ffx-launch.exe"
     (
         eval "$(tools/xwin-env.sh "$target")"
-        export CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS="${CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS:-} $remap"
+        # cargo-xwin sets RUSTFLAGS (empty), which wins over the target's rustflags
+        export RUSTFLAGS="${RUSTFLAGS:-} $remap"
         cargo build -q --release --target "$target" -p ffx-launch
     )
     echo "building ffx-rust.exe (features: ${features:-none})"

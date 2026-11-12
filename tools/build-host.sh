@@ -4,9 +4,9 @@
 # Usage: tools/build-host.sh [build|clippy] [extra cargo args]
 # Features: FFX_HOST_FEATURES (default "swf": Iggy's Flash screens on Ruffle,
 # composited through the D3D11 layer; docs/host.md, "Iggy"); empty for none.
-# FFX_HOST_RUSTFLAGS: added to the target's rustflags after cargo-xwin's
-# (tools/package-release.sh: --remap-path-prefix, so no build path ends up
-# in the release binary); FFX_HOST_CFLAGS likewise to the C and C++ flags
+# FFX_HOST_RUSTFLAGS: added to RUSTFLAGS (cargo-xwin sets it, empty, which
+# makes cargo ignore every target rustflags setting; tools/package-release.sh:
+# --remap-path-prefix, so no build path ends up in the release binary); FFX_HOST_CFLAGS likewise to the C and C++ flags
 # (Unicorn's __FILE__ paths: -ffile-prefix-map); CARGO_TARGET_DIR is honoured.
 #
 # Unicorn (unicorn-engine-sys) builds with cmake for the MSVC target, which
@@ -62,7 +62,7 @@ fi
 # cargo-xwin's environment, its CRT cache set up under a lock (tools/xwin-env.sh)
 eval "$(tools/xwin-env.sh "$target")"
 if [[ -n "${FFX_HOST_RUSTFLAGS:-}" ]]; then
-    export CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS="${CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS:-} $FFX_HOST_RUSTFLAGS"
+    export RUSTFLAGS="${RUSTFLAGS:-} $FFX_HOST_RUSTFLAGS"
 fi
 if [[ -n "${FFX_HOST_CFLAGS:-}" ]]; then
     export CFLAGS_x86_64_pc_windows_msvc="${CFLAGS_x86_64_pc_windows_msvc:-} $FFX_HOST_CFLAGS"
