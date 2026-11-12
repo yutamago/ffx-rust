@@ -1131,3 +1131,134 @@ fn wp5b_small_originals() {
         t.run_cdecl(&w, 0x0076_dcb0, &[], |g| sm::cd_reset_channels(g));
     }
 }
+
+/// [`log_stub_arg`] for a callee that takes no `ecx` (cdecl, stdcall): the
+/// logged `ecx` is 0 (`xor ecx, ecx` first), as the caller's is junk.
+fn log_stub_plain(t: &mut Twins, log: u32, pops: u16, ret: u32, arg: bool) -> Vec<u8> {
+    let mut c = vec![0x31, 0xc9];
+    c.extend(log_stub_arg(t, log, pops, ret, arg));
+    c
+}
+
+/// `FreeCamera_handleInput` (`0x00680030`) with every callee and Win32
+/// import a stub (logging stubs; the window rect, the client origin and
+/// the clip rect written or recorded by value), over the toggles, the
+/// capture counter at 0 (capture) and above (release), the mouse-free
+/// word, the key held or not, the cursor shown or not, the pause object
+/// present, paused or not, windowed or not.
+#[test]
+#[allow(clippy::too_many_lines)]
+fn wp5b_free_camera_handle_input() {
+    use ffx_prender::wp5_camera::{self as fc, at};
+    for (label, mut t) in Twins::all() {
+        let log = t.alloc(&[0; 4 + 8 * 64]);
+        let cells = t.alloc(&[0; 0x40]);
+        let (pause_cell, key_cell, clip_seen) = (cells, cells + 4, cells + 0x10);
+        let pause_obj = t.alloc(&[0; 0x700]);
+        let hwnd_holder = t.alloc(&0x0000_ab00u32.to_le_bytes());
+        // objects the getters return, and logging stubs for the rest
+        for (sym, pops, ret, arg, this) in [
+            (at::MESSAGE, 0u16, 0x6e00_0000u32, false, false),
+            (at::MESSAGE_SHOW, 4, 1, true, true),
+            (at::SOUND, 0, 0x6f00_0000, false, false),
+            (at::SOUND_PLAY, 4, 2, true, true),
+            (at::SOUND_STOP, 4, 3, true, true),
+            (at::PAUSE_TOGGLE, 0, 4, false, true),
+            (at::INPUT, 0, 0x6200_0000, false, false),
+            (at::INPUT_WINDOW, 0, hwnd_holder, false, true),
+            (at::INPUT_SET_MOUSE, 8, 5, true, true),
+            (at::INPUT_CAMERA_STEP, 0x10, 6, true, true),
+            (at::CONTROLLER_UPDATE, 4, 7, true, true),
+            (at::CAMERA_FOLLOW, 4, 8, true, true),
+            (at::MATRIX_UPDATE, 0, 9, false, true),
+        ] {
+            let s = if this {
+                log_stub_arg(&mut t, log, pops, ret, arg)
+            } else {
+                log_stub_plain(&mut t, log, pops, ret, arg)
+            };
+            jmp_stub(&mut t, sym, &s);
+        }
+        // the pause getter and the key test return words from cells
+        let mut c = vec![0xa1];
+        c.extend(pause_cell.to_le_bytes()); // mov eax, [pause_cell]
+        c.push(0xc3);
+        jmp_stub(&mut t, at::PAUSE, &c);
+        let mut c = vec![0xa1];
+        c.extend(key_cell.to_le_bytes()); // mov eax, [key_cell]
+        c.push(0xc3);
+        jmp_stub(&mut t, at::KEY_HELD, &c);
+        // imports: ShowCursor and SetCursorPos log; GetClientRect and
+        // ClientToScreen write; ClipCursor records the rect's words
+        let show = log_stub_plain(&mut t, log, 4, 0x10, true);
+        let show = t.code(&show);
+        let set_pos = log_stub_plain(&mut t, log, 8, 0x11, true);
+        let set_pos = t.code(&set_pos);
+        // mov eax,[esp+8]; mov dword [eax],1; mov dword [eax+4],2;
+        // mov dword [eax+8],641; mov dword [eax+0xc],482; ret 8
+        let rect = t.code(&[
+            0x8b, 0x44, 0x24, 0x08, 0xc7, 0x00, 1, 0, 0, 0, 0xc7, 0x40, 0x04, 2, 0, 0, 0, 0xc7,
+            0x40, 0x08, 0x81, 0x02, 0, 0, 0xc7, 0x40, 0x0c, 0xe2, 0x01, 0, 0, 0xc2, 0x08, 0x00,
+        ]);
+        // mov eax,[esp+8]; mov dword [eax],100; mov dword [eax+4],50; ret 8
+        let origin = t.code(&[
+            0x8b, 0x44, 0x24, 0x08, 0xc7, 0x00, 100, 0, 0, 0, 0xc7, 0x40, 0x04, 50, 0, 0, 0, 0xc2,
+            0x08, 0x00,
+        ]);
+        // mov eax,[esp+4]; inc dword [clip_seen]; test eax,eax; jz end;
+        // copy 4 words to clip_seen+4..; end: ret 4
+        let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0xff, 0x05];
+        c.extend(clip_seen.to_le_bytes());
+        c.extend([0x85, 0xc0, 0x74, 0x30]);
+        for i in 0..4u32 {
+            c.extend([0x8b, 0x48, (4 * i) as u8]); // mov ecx, [eax+4i]
+            c.extend([0x89, 0x0d]);
+            c.extend((clip_seen + 4 + 4 * i).to_le_bytes()); // mov [clip_seen+4+4i], ecx
+        }
+        c.extend([0x90; 0x30 - 4 * 9]);
+        c.extend([0xc2, 0x04, 0x00]);
+        let clip = t.code(&c);
+        for (slot, f) in [
+            (at::SHOW_CURSOR_IAT, show),
+            (at::SET_CURSOR_POS_IAT, set_pos),
+            (at::GET_CLIENT_RECT_IAT, rect),
+            (at::CLIENT_TO_SCREEN_IAT, origin),
+            (at::CLIP_CURSOR_IAT, clip),
+        ] {
+            let s = t.a.rebase(slot);
+            t.w32(s, f);
+        }
+        let settings = t.alloc(&[0; 0x10]);
+        t.w32(t.a.rebase(at::GAME_SETTINGS), settings);
+        let frame = t.b.stack_range().start + 0x1000;
+        for case in 0..96u32 {
+            let cam = t.alloc(&[0x5c; 0x340]);
+            t.write(
+                cam + 0x338,
+                &[
+                    u8::from(case & 1 != 0),
+                    u8::from(case & 2 != 0),
+                    u8::from(case & 4 != 0),
+                    u8::from(case & 8 != 0),
+                ],
+            );
+            let count = [0u32, 1, 2, 0xffff_ffff][(case % 4) as usize];
+            t.w32(cam, count);
+            t.w32(cam + 4, if case & 16 != 0 { count } else { 0 });
+            t.w32(cam + 8, 0x3f00_0000);
+            t.w32(t.a.rebase(at::MOUSE_FREE), u32::from(case % 7 == 0));
+            t.w32(key_cell, u32::from(case % 3 != 0));
+            t.w32(pause_cell, if case % 5 == 0 { 0 } else { pause_obj });
+            t.write(pause_obj + 0x6fc, &[u8::from(case & 32 != 0)]);
+            t.w32(settings + 8, u32::from(case & 64 != 0));
+            t.w32(log, 0);
+            let w = format!("{label} free camera case {case}");
+            let (dt, x) = (0x3c88_8889u32, 0x1234 + case);
+            let at_ = t.a.rebase(0x0068_0030);
+            t.a.call(at_, Conv::Thiscall(cam), &[dt, x])
+                .unwrap_or_else(|e| panic!("{w}: the original: {e}"));
+            fc::handle_input(&mut G(&mut t.b), cam, dt, x, frame);
+            t.same(&w);
+        }
+    }
+}

@@ -49,4 +49,9 @@ ported! {
     std_Tree_BuyHeadNode_00654ea0 @ 0x0065_4ea0 => extern "C" fn sm_00654ea0() -> u32 {
         ffx_prender::glue3::bridge::tree_buy_head_node(&mut mem())
     }
+    /// `FreeCamera_handleInput(dt, x)`: the free camera's toggles, mouse capture and step.
+    FreeCamera_handleInput @ 0x0068_0030 => extern "thiscall" fn sm_00680030(this: u32, dt: u32, x: u32) {
+        let mut frame = super::StackFrame::<{ ffx_prender::wp5_camera::FRAME_WORDS }>::new();
+        ffx_prender::wp5_camera::handle_input(&mut mem(), this, dt, x, frame.at());
+    }
 }
