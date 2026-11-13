@@ -368,6 +368,110 @@ ported! {
     std_Tree_const_iterator_inc_006d6ff0 @ 0x006d_6ff0 => extern "fastcall" fn e_006d6ff0(it: u32) -> u32 {
         stl::tree_iterator_inc(&mut mem(), it)
     }
+    /// `std_Tree_freeSubtree_00625960(this; node)`: the subtree's nodes deleted.
+    std_Tree_freeSubtree_00625960 @ 0x0062_5960 => extern "thiscall" fn e_00625960(_this: u32, node: u32) {
+        e::free_subtree(&mut mem(), node);
+    }
+    /// `std_Tree_freeSubtree_0069a2d0(this; node)`: the subtree's nodes deleted.
+    std_Tree_freeSubtree_0069a2d0 @ 0x0069_a2d0 => extern "thiscall" fn e_0069a2d0(_this: u32, node: u32) {
+        e::free_subtree(&mut mem(), node);
+    }
+    /// `std_Tree_freeSubtree_006a0540(this; node)`: the subtree's nodes deleted.
+    std_Tree_freeSubtree_006a0540 @ 0x006a_0540 => extern "thiscall" fn e_006a0540(_this: u32, node: u32) {
+        e::free_subtree(&mut mem(), node);
+    }
+    /// `opusTree_FreeSubtree_00806b70(this; node)`: the subtree's nodes deleted.
+    opusTree_FreeSubtree_00806b70 @ 0x0080_6b70 => extern "thiscall" fn e_00806b70(_this: u32, node: u32) {
+        e::free_subtree(&mut mem(), node);
+    }
+    /// `opusTree_FreeSubtree_00806bb0(this; node)`: the subtree's nodes deleted.
+    opusTree_FreeSubtree_00806bb0 @ 0x0080_6bb0 => extern "thiscall" fn e_00806bb0(_this: u32, node: u32) {
+        e::free_subtree(&mut mem(), node);
+    }
+    /// `std_Tree_freeSubtree_00a417d0(this; node)`: the subtree's nodes deleted.
+    std_Tree_freeSubtree_00a417d0 @ 0x00a4_17d0 => extern "thiscall" fn e_00a417d0(_this: u32, node: u32) {
+        e::free_subtree(&mut mem(), node);
+    }
+    /// `PArray_wordsDup_0048ff70(n, src)`: the words copied into a new block; the block.
+    PArray_wordsDup_0048ff70 @ 0x0048_ff70 => extern "C" fn e_0048ff70(n: u32, src: u32) -> u32 {
+        e::words_dup(&mut mem(), n, src)
+    }
+    /// `PArray_wordsDup_004dc730(n, src)`: the words copied into a new block; the block.
+    PArray_wordsDup_004dc730 @ 0x004d_c730 => extern "C" fn e_004dc730(n: u32, src: u32) -> u32 {
+        e::words_dup(&mut mem(), n, src)
+    }
+    /// `PArray_wordsDup_004e4090(n, src)`: the words copied into a new block; the block.
+    PArray_wordsDup_004e4090 @ 0x004e_4090 => extern "C" fn e_004e4090(n: u32, src: u32) -> u32 {
+        e::words_dup(&mut mem(), n, src)
+    }
+    /// `PArray_wordsDup_004eaf20(n, src)`: the words copied into a new block; the block.
+    PArray_wordsDup_004eaf20 @ 0x004e_af20 => extern "C" fn e_004eaf20(n: u32, src: u32) -> u32 {
+        e::words_dup(&mut mem(), n, src)
+    }
+    /// `PArray_wordsDup_004eaf70(n, src)`: the words copied into a new block; the block.
+    PArray_wordsDup_004eaf70 @ 0x004e_af70 => extern "C" fn e_004eaf70(n: u32, src: u32) -> u32 {
+        e::words_dup(&mut mem(), n, src)
+    }
+    /// `PArray_wordsDup_004eafc0(n, src)`: the words copied into a new block; the block.
+    PArray_wordsDup_004eafc0 @ 0x004e_afc0 => extern "C" fn e_004eafc0(n: u32, src: u32) -> u32 {
+        e::words_dup(&mut mem(), n, src)
+    }
+    /// `PArray_wordsDup_004eb010(n, src)`: the words copied into a new block; the block.
+    PArray_wordsDup_004eb010 @ 0x004e_b010 => extern "C" fn e_004eb010(n: u32, src: u32) -> u32 {
+        e::words_dup(&mut mem(), n, src)
+    }
+    /// `PArray_wordsDup_004fb800(n, src)`: the words copied into a new block; the block.
+    PArray_wordsDup_004fb800 @ 0x004f_b800 => extern "C" fn e_004fb800(n: u32, src: u32) -> u32 {
+        e::words_dup(&mut mem(), n, src)
+    }
+    /// `PArray_wordsDup_00513af0(n, src)`: the words copied into a new block; the block.
+    PArray_wordsDup_00513af0 @ 0x0051_3af0 => extern "C" fn e_00513af0(n: u32, src: u32) -> u32 {
+        e::words_dup(&mut mem(), n, src)
+    }
+    /// `PArray_wordsDup_0052bbf0(n, src)`: the words copied into a new block; the block.
+    PArray_wordsDup_0052bbf0 @ 0x0052_bbf0 => extern "C" fn e_0052bbf0(n: u32, src: u32) -> u32 {
+        e::words_dup(&mut mem(), n, src)
+    }
+    /// `PArray_wordsDup_00535a10(n, src)`: the words copied into a new block; the block.
+    PArray_wordsDup_00535a10 @ 0x0053_5a10 => extern "C" fn e_00535a10(n: u32, src: u32) -> u32 {
+        e::words_dup(&mut mem(), n, src)
+    }
+    /// `PArray_wordsDup_005aaee0(n, src)`: the words copied into a new block; the block.
+    PArray_wordsDup_005aaee0 @ 0x005a_aee0 => extern "C" fn e_005aaee0(n: u32, src: u32) -> u32 {
+        e::words_dup(&mut mem(), n, src)
+    }
+    /// `PArray_wordsDup_005b12d0(n, src)`: the words copied into a new block; the block.
+    PArray_wordsDup_005b12d0 @ 0x005b_12d0 => extern "C" fn e_005b12d0(n: u32, src: u32) -> u32 {
+        e::words_dup(&mut mem(), n, src)
+    }
+    /// `PArray_wordsDup_00635630(n, src)`: the words copied into a new block; the block.
+    PArray_wordsDup_00635630 @ 0x0063_5630 => extern "C" fn e_00635630(n: u32, src: u32) -> u32 {
+        e::words_dup(&mut mem(), n, src)
+    }
+    /// `PArray_wordsDup_009e42b0(n, src)`: the words copied into a new block; the block.
+    PArray_wordsDup_009e42b0 @ 0x009e_42b0 => extern "C" fn e_009e42b0(n: u32, src: u32) -> u32 {
+        e::words_dup(&mut mem(), n, src)
+    }
+    /// `PArray_wordsDup_009e4300(n, src)`: the words copied into a new block; the block.
+    PArray_wordsDup_009e4300 @ 0x009e_4300 => extern "C" fn e_009e4300(n: u32, src: u32) -> u32 {
+        e::words_dup(&mut mem(), n, src)
+    }
+    /// `PArray_wordsDup_00a033e0(n, src)`: the words copied into a new block; the block.
+    PArray_wordsDup_00a033e0 @ 0x00a0_33e0 => extern "C" fn e_00a033e0(n: u32, src: u32) -> u32 {
+        e::words_dup(&mut mem(), n, src)
+    }
+    /// `PArray_wordsDup_00a33480(n, src)`: the words copied into a new block; the block.
+    PArray_wordsDup_00a33480 @ 0x00a3_3480 => extern "C" fn e_00a33480(n: u32, src: u32) -> u32 {
+        e::words_dup(&mut mem(), n, src)
+    }
+    /// `forceAutoBattleOff()`: auto-battle off (tip 0x37d) in a battle.
+    forceAutoBattleOff @ 0x0078_71f0 => extern "C" fn e_007871f0() -> u32 {
+        e::force_auto_battle_off(&mut mem())
+    }
+    /// `StdVectorU32_copyCtor_0064d620(this; &src)`: `0x0064d570`'s code with `StdVector_allocate_00654db0`; `this`.
+    StdVectorU32_copyCtor_0064d620 @ 0x0064_d620 => extern "thiscall" fn e_0064d620(this: u32, src: u32) -> u32 {
+        e::vector_copy_ctor(&mut mem(), this, src, 4, 0x0065_4db0, 0x0064_a880)
+    }
     /// `PSharray_data_004347a0`: the code of `PArray_Data_004d45a0`; the elements.
     PSharray_data_004347a0 @ 0x0043_47a0 => extern "thiscall" fn e_004347a0(this: u32) -> u32 {
         ffx_pcore::small::bridge::array_data(&mut mem(), this)

@@ -1082,3 +1082,107 @@ pub fn pause_hide(h: &mut impl Host) -> u32 {
     let name = h.rebase(HIDE_PAUSE);
     h.call_sym(CALL_AS3, Conv::Thiscall(menu), &[0, name, 0, 0, 1])
 }
+
+/// `std::_Tree::_Erase(this; node)` for trees whose nodes need no
+/// destruction (`0x0069a2d0`, `0x006a0540`, `0x00625960`, `0x00806b70`,
+/// `0x00806bb0`, `0x00a417d0`: the same code, each calling itself;
+/// thiscall, `ret 4`; the tree is not read): until a nil node, the right
+/// subtree (recursively), then the node deleted and on to its left child
+/// (read before).
+pub fn free_subtree(h: &mut impl Host, node: u32) {
+    let mut n = node;
+    while h.read::<u8>(n.wrapping_add(0xd)) == 0 {
+        let right: u32 = h.read(n.wrapping_add(8));
+        free_subtree(h, right);
+        let left: u32 = h.read(n);
+        h.call_sym(OPERATOR_DELETE, Conv::Cdecl, &[n]);
+        n = left;
+    }
+}
+
+/// The copies of [`free_subtree`].
+pub const FREE_SUBTREE_COPIES: [u32; 6] = [
+    0x0062_5960,
+    0x0069_a2d0,
+    0x006a_0540,
+    0x0080_6b70,
+    0x0080_6bb0,
+    0x00a4_17d0,
+];
+
+/// `Phyre_PhyreMalloc_0042fb80(size, align)` (cdecl).
+pub const PHYRE_MALLOC: u32 = 0x0042_fb80;
+
+/// A word array's copy into a new block (`0x00635630` and its 20
+/// byte-identical copies, [`WORDS_DUP_COPIES`]; cdecl `(n, src)`):
+/// `n` 0: 0; else `PhyreMalloc(4 n, 4)` and, when it gave a block, the
+/// `n` words copied into it (a slot at address 0 skipped without reading
+/// the source on: never with a real block). The block.
+pub fn words_dup(h: &mut impl Host, n: u32, src: u32) -> u32 {
+    if n == 0 {
+        return 0;
+    }
+    let block = h.call_sym(PHYRE_MALLOC, Conv::Cdecl, &[n.wrapping_mul(4), 4]);
+    if block == 0 {
+        return 0;
+    }
+    let (mut d, mut s) = (block, src);
+    for _ in 0..n {
+        let at = d;
+        d = d.wrapping_add(4);
+        if at != 0 {
+            let w: u32 = h.read(s);
+            h.write(at, w);
+            s = s.wrapping_add(4);
+        }
+    }
+    block
+}
+
+/// The addresses of [`words_dup`]'s code (`tools/dupes.py` exact family).
+pub const WORDS_DUP_COPIES: [u32; 21] = [
+    0x0048_ff70,
+    0x004d_c730,
+    0x004e_4090,
+    0x004e_af20,
+    0x004e_af70,
+    0x004e_afc0,
+    0x004e_b010,
+    0x004f_b800,
+    0x0051_3af0,
+    0x0052_81e0,
+    0x0052_bbf0,
+    0x0053_5a10,
+    0x005a_aee0,
+    0x005b_12d0,
+    0x0063_5630,
+    0x006a_ffc0,
+    0x006b_0010,
+    0x009e_42b0,
+    0x009e_4300,
+    0x00a0_33e0,
+    0x00a3_3480,
+];
+
+/// `MsBattleCheck` (cdecl) and `graphicPushTipByLocId(id)` (cdecl), and
+/// the auto-battle flag (`0x0133d6e0`).
+pub const MS_BATTLE_CHECK: u32 = 0x0078_0c90;
+pub const PUSH_TIP_BY_LOC_ID: u32 = 0x0064_2930;
+pub const AUTO_BATTLE: u32 = 0x0133_d6e0;
+
+/// `forceAutoBattleOff` (`0x007871f0`, cdecl): with the auto-battle flag
+/// 1 and `MsBattleCheck()` true, the flag cleared and the tip 0x37d
+/// pushed (`graphicPushTipByLocId`). `eax`: the tip's, `MsBattleCheck`'s
+/// 0, or (the flag not 1) the caller's, here 0.
+pub fn force_auto_battle_off(h: &mut impl Host) -> u32 {
+    let at = h.rebase(AUTO_BATTLE);
+    if h.read::<u32>(at) != 1 {
+        return 0;
+    }
+    let r = h.call_sym(MS_BATTLE_CHECK, Conv::Cdecl, &[]);
+    if r == 0 {
+        return 0;
+    }
+    h.write(at, 0u32);
+    h.call_sym(PUSH_TIP_BY_LOC_ID, Conv::Cdecl, &[0x37d])
+}

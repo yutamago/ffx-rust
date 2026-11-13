@@ -1321,3 +1321,90 @@ fn wp5e_tip_play_and_pause() {
         });
     }
 }
+
+/// The plain subtree frees ([`ffx_prender::wp5e::FREE_SUBTREE_COPIES`]:
+/// grown trees, from the root and from a subtree; memory: the freed
+/// pointers' order), the word-array copies (`WORDS_DUP_COPIES`, n 0..6,
+/// `PhyreMalloc` a recording stub returning a block or NULL), the
+/// `vector<u32>` copy constructor `0x0064d620`, and `forceAutoBattleOff`
+/// (`0x007871f0`: the flag 0/1/2, `MsBattleCheck` 0 or 1). `eax` and
+/// memory.
+#[test]
+fn wp5e_free_subtree_words_dup_auto_battle() {
+    use ffx_prender::wp5e as e;
+    for (label, mut t) in Twins::all() {
+        for &at in &e::FREE_SUBTREE_COPIES {
+            for round in 0..3u32 {
+                let n = t.rng.below(14);
+                let (map, head, nodes) = grown_string_tree(&mut t, n, 0x10);
+                let from = if round == 2 && n > 1 {
+                    nodes[(n / 2) as usize]
+                } else {
+                    Mem::read(&t.b, head + 4)
+                };
+                let w = format!("{label} free subtree {at:#x} {round} ({n})");
+                t.run_any_this1(&w, at, map, from, |g| e::free_subtree(g, from));
+            }
+        }
+        let log = t.alloc(&[0; 4 + 32 * 64]);
+        let cells = t.alloc(&[0; 8]);
+        let block = t.alloc(&[0x6e; 0x40]);
+        let s = import_stub(&mut t, log, 0x3a, 2, None, cells, 0);
+        let mut j = vec![0xe9];
+        let at = t.a.rebase(e::PHYRE_MALLOC);
+        j.extend(s.wrapping_sub(at + 5).to_le_bytes());
+        t.write(at, &j);
+        for &at in &e::WORDS_DUP_COPIES {
+            for n in [0u32, 1, 3, 6] {
+                let words: Vec<u8> = (0..4 * n.max(1)).map(|i| (i as u8) ^ 0x3c).collect();
+                let src = t.alloc(&words);
+                for null in [false, true] {
+                    t.w32(cells, if null { 0 } else { block });
+                    t.w32(log, 0);
+                    let w = format!("{label} words dup {at:#x} n {n} (null {null})");
+                    t.run_cdecl(&w, at, &[n, src], |g| e::words_dup(g, n, src));
+                }
+            }
+        }
+        for round in 0..6u32 {
+            let n = round % 6;
+            let words: Vec<u8> = (0..4 * n.max(1)).map(|i| i as u8).collect();
+            let src = t.alloc(&words);
+            let v = t.alloc(&[0; 12]);
+            t.w32(v, src);
+            t.w32(v + 4, src + 4 * n);
+            t.w32(v + 8, src + 4 * n);
+            let this = t.alloc(&[0x2f; 12]);
+            let w = format!("{label} vector<u32> copy ctor 0x64d620 {round}");
+            t.run(&w, 0x0064_d620, this, &[v], false, |g| {
+                e::vector_copy_ctor(g, this, v, 4, 0x0065_4db0, 0x0064_a880)
+            });
+        }
+        let check_cell = t.alloc(&[0; 4]);
+        let tip_cell = t.alloc(&[0x9d, 0x9d, 0, 0]);
+        let s = import_stub(&mut t, log, 0xbc, 0, None, check_cell, 0);
+        let mut j = vec![0xe9];
+        let at = t.a.rebase(e::MS_BATTLE_CHECK);
+        j.extend(s.wrapping_sub(at + 5).to_le_bytes());
+        t.write(at, &j);
+        let s = import_stub(&mut t, log, 0x71, 1, None, tip_cell, 0);
+        let mut j = vec![0xe9];
+        let at = t.a.rebase(e::PUSH_TIP_BY_LOC_ID);
+        j.extend(s.wrapping_sub(at + 5).to_le_bytes());
+        t.write(at, &j);
+        let flag = t.a.rebase(e::AUTO_BATTLE);
+        for (f, check) in [(1u32, 1u32), (1, 0), (0, 1), (2, 1)] {
+            t.w32(flag, f);
+            t.w32(check_cell, check);
+            t.w32(log, 0);
+            let w = format!("{label} auto battle off (flag {f}, battle {check})");
+            let at = t.a.rebase(0x0078_71f0);
+            let r = t.a.call(at, Conv::Cdecl, &[]).unwrap().eax;
+            let p = e::force_auto_battle_off(&mut G(&mut t.b));
+            if f == 1 {
+                assert_eq!(r, p, "{w}: eax");
+            }
+            t.same(&w);
+        }
+    }
+}
