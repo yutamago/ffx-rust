@@ -15,7 +15,9 @@
     clippy::cast_possible_truncation,
     clippy::too_many_lines,
     clippy::many_single_char_names,
-    clippy::similar_names
+    clippy::similar_names,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss
 )]
 
 mod m5_main3_common;
@@ -1418,6 +1420,128 @@ fn wp5f_mkv_ebml_readers_match_the_original() {
                 &[reader, n, lo, hi, result],
                 |m| Out::U32(mkv::unserialize_int(m, reader, n, pos, result, scratch)),
             );
+        }
+    });
+}
+
+/// An EBML varint of `v` in `len` bytes.
+fn varint(v: u64, len: usize) -> Vec<u8> {
+    let marked = v | 1 << (7 * len);
+    (0..len).rev().map(|i| (marked >> (8 * i)) as u8).collect()
+}
+
+/// A block payload: track 1, a time code, the lacing's header and the
+/// frames (sizes from `sizes`); `bad` breaks one thing.
+fn block_bytes(rng: &mut Rng, lacing: u8, sizes: &[usize], bad: u32) -> Vec<u8> {
+    let mut b = varint(u64::from(rng.pick(&[1u32, 2, 0x7e])), 1);
+    b.extend((rng.next() as u16).to_be_bytes());
+    b.push((lacing << 1) | rng.pick(&[0, 0x80, 0x08]));
+    let n = sizes.len();
+    match lacing {
+        0 => {}
+        1 => {
+            b.push((n - 1) as u8);
+            for &s in &sizes[..n - 1] {
+                b.extend(std::iter::repeat_n(0xffu8, s / 255));
+                b.push((s % 255) as u8);
+            }
+        }
+        2 => b.push((n - 1) as u8),
+        _ => {
+            b.push((n - 1) as u8);
+            b.extend(varint(sizes[0] as u64, rng.pick(&[1, 2, 3])));
+            for w in sizes[..n - 1].windows(2) {
+                let d = w[1] as i64 - w[0] as i64;
+                let len = rng.pick(&[1usize, 2, 3]);
+                let bias = (1i64 << (7 * len - 1)) - 1;
+                b.extend(varint((d + bias) as u64, len));
+            }
+        }
+    }
+    for &s in sizes {
+        b.extend((0..s).map(|_| rng.next() as u8));
+    }
+    match bad {
+        1 => b[0] = 0,                // a 0 track varint byte
+        2 => b.truncate(b.len() / 2), // short
+        3 => {
+            let at = rng.below(b.len() as u32) as usize;
+            b[at] = rng.next() as u8; // one byte changed
+        }
+        _ => {}
+    }
+    b
+}
+
+#[test]
+fn wp5f_mkv_block_parse_matches_the_original() {
+    let head = movie_head(0x2000).unwrap_or_default();
+    Twins::each(|t| {
+        let mut rng = Rng(0x0042_d470);
+        for k in 0..600 {
+            t.reset();
+            cdecl_imp(t, mkv::WASSERT, 3, 0x61);
+            // the movie allocator: a bump allocator over a fresh area
+            let area = t.zeros(0x2000);
+            let cell = t.words(&[area]);
+            let mut bump = vec![0xa1];
+            bump.extend(cell.to_le_bytes()); // mov eax, [cell]
+            bump.extend([0x8b, 0x4c, 0x24, 0x04]); // mov ecx, [esp + 4]
+            bump.extend([0x01, 0x0d]);
+            bump.extend(cell.to_le_bytes()); // add [cell], ecx
+            bump.push(0xc3);
+            let bump = t.code(&bump);
+            let slot = t.rebase(mkv::ALLOCATOR);
+            t.patch(slot, &bump.to_le_bytes());
+            let lacing = rng.pick(&[0u8, 1, 2, 3]);
+            let n = if lacing == 0 {
+                1
+            } else {
+                rng.pick(&[1usize, 2, 3, 5])
+            };
+            let fixed = rng.pick(&[0usize, 1, 7, 300]);
+            let sizes: Vec<usize> = (0..n)
+                .map(|_| {
+                    if lacing == 2 {
+                        fixed
+                    } else {
+                        rng.pick(&[0, 1, 7, 254, 255, 256, 600])
+                    }
+                })
+                .collect();
+            let bad = rng.pick(&[0u32, 0, 0, 1, 2, 3]);
+            let (data, start, size) = if rng.chance(8) && !head.is_empty() {
+                // real movie bytes from anywhere
+                let s = rng.below(0x1f00);
+                (head.clone(), u64::from(s), u64::from(rng.below(0x100)))
+            } else {
+                let mut d = vec![0u8; rng.below(8) as usize];
+                let off = d.len() as u64;
+                let b = block_bytes(&mut rng, lacing, &sizes, bad);
+                let len = b.len() as u64;
+                d.extend(b);
+                // the block's size as stored, or a little off
+                let size = match rng.below(8) {
+                    0 => len.saturating_sub(1),
+                    1 => len + 1,
+                    _ => len,
+                };
+                (d, off, size)
+            };
+            let reader = fake_reader(t, &data, u32::MAX, data.len() as u32);
+            let segment = t.words(&[reader]);
+            let cluster = t.words(&[if rng.chance(30) { 0 } else { segment }]);
+            let block = t.zeros(0x30);
+            t.w32(block, start as u32);
+            t.w32(block + 8, size as u32);
+            let what =
+                format!("Block::Parse {k} (lacing {lacing}, {n} frames, bad {bad}, size {size})");
+            let arg = if rng.chance(40) { 0 } else { cluster };
+            // the port's locals on the stack the diff skips
+            let scratch = t.frame_ebp(1) - 0x400;
+            t.check(&what, 0x0042_d470, Conv::Thiscall(block), &[arg], |m| {
+                Out::U32(mkv::block_parse(m, block, arg, scratch))
+            });
         }
     });
 }

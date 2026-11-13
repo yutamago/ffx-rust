@@ -352,4 +352,10 @@ ported! {
         let pos = u64::from(pos_hi) << 32 | u64::from(pos_lo);
         mkv::unserialize_int(&mut mem(), reader, size, pos, result, f.at())
     }
+    /// `mkvparser::Block::Parse(cluster)` -> status; the varint length,
+    /// the time code and the lace and count bytes in a frame.
+    mkvparser_Block_Parse_0042d470 @ 0x0042_d470 => extern "thiscall" fn block_parse(block: u32, cluster: u32) -> u32 {
+        let mut f = StackFrame::<8>::new();
+        mkv::block_parse(&mut mem(), block, cluster, f.at())
+    }
 }

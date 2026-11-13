@@ -379,4 +379,417 @@ pub mod bridge {
         }
         0
     }
+
+    /// The movie allocator (`mkvparser_SetAllocator`'s `malloc`, cdecl
+    /// `(size)`), `ReadUInt`, `UnserializeInt` and `__alldvrm`.
+    pub const ALLOCATOR: u32 = 0x022f_b510;
+    pub const READ_UINT: u32 = 0x0041_e710;
+    pub const UNSERIALIZE_INT: u32 = 0x0041_ec10;
+
+    fn alloc(h: &mut impl Host, n: u32) -> u32 {
+        let f: u32 = h.read(h.rebase(ALLOCATOR));
+        h.call(f, Conv::Cdecl, &[n])
+    }
+
+    /// `ReadUInt(reader, pos, &len)`: [`read_uint`] itself (the original's
+    /// callee; its custom convention has no `Host` call), its byte in
+    /// `len + 0x12` of the caller's frame.
+    fn read_uint_at(h: &mut impl Host, reader: u32, len: u32, pos: u64) -> i64 {
+        read_uint(h, reader, len, pos, at(len, 0x12)).cast_signed()
+    }
+
+    /// `new Frame[n]` as the original computes the size (`n * 16`, all
+    /// ones when that overflows).
+    fn alloc_frames(h: &mut impl Host, n: u32) -> u32 {
+        let bytes = u64::from(n) * 16;
+        let size = if bytes > u64::from(u32::MAX) {
+            u32::MAX
+        } else {
+            bytes as u32
+        };
+        alloc(h, size)
+    }
+
+    /// A frame's `len` (`+8`) sign-extended.
+    fn frame_len(h: &impl Host, f: u32) -> i64 {
+        i64::from(h.read::<i32>(at(f, 8)))
+    }
+
+    fn write_i64(h: &mut impl Host, p: u32, v: i64) {
+        let v = v.cast_unsigned();
+        h.write(p, v as u32);
+        h.write(at(p, 4), (v >> 32) as u32);
+    }
+
+    /// Whether a 64-bit length fits a frame's `long` the way the original
+    /// tests it: negative values pass (they are stored as they are), else
+    /// at most `0x7fffffff`.
+    fn fits_long(v: i64) -> bool {
+        v < 0 || v <= 0x7fff_ffff
+    }
+
+    /// Sets the frames' positions in turn from `pos`; the end position.
+    fn place_frames(
+        h: &mut impl Host,
+        frames: u32,
+        end: u32,
+        mut pos: i64,
+        stop: i64,
+        line: u32,
+    ) -> i64 {
+        let mut f = frames;
+        while f != end {
+            let len = frame_len(h, f);
+            if pos.wrapping_add(len) > stop {
+                wassert(h, 0x00b9_1f48, line);
+            }
+            write_i64(h, f, pos);
+            pos = pos.wrapping_add(frame_len(h, f));
+            f = at(f, 0x10);
+        }
+        pos
+    }
+
+    /// `mkvparser::Block::Parse(block; cluster)` (`0x0042d470`, thiscall,
+    /// `ret 4`) -> 0, -1 without a cluster or segment, -2 for a bad block.
+    /// The block (`+0` start, `+8` size, `+0x10` track, `+0x18` time code
+    /// (`i16`), `+0x1a` flags, `+0x1c` frames, `+0x20` count) is read from
+    /// the segment's reader: the track number (`ReadUInt`), the time code
+    /// (`UnserializeInt`, 2 bytes, a `short`), the flags byte; then the
+    /// frames of its lacing: none (one frame to the end), Xiph (sizes as
+    /// runs of 0xff bytes), fixed (the rest split evenly, `__alldvrm`) or
+    /// EBML (a varint, then signed varint differences); every frame's
+    /// position follows. The original's asserts are reported as it does.
+    /// `frame` (32 bytes) holds the original's locals the callees write:
+    /// the varint length (+0, `ebp - 0x28`), the time code (+8, 8 bytes,
+    /// `ebp - 0x40`), the lace byte (+0x10, `ebp - 1`), the count byte
+    /// (+0x11, the top byte of its `cluster` slot), and the callees' own
+    /// bytes (+0x12, +0x18..0x20).
+    #[allow(clippy::too_many_lines)] // the four lacings, as the original
+    pub fn block_parse(h: &mut impl Host, block: u32, cluster: u32, frame: u32) -> u32 {
+        const BAD: u32 = (-2i32).cast_unsigned();
+        if cluster == 0 || h.read::<u32>(cluster) == 0 {
+            return u32::MAX;
+        }
+        if read_i64(h, block) < 0 {
+            wassert(h, 0x00b9_1e98, 0x1f20);
+        }
+        if read_i64(h, at(block, 8)) < 0 {
+            wassert(h, 0x00b9_111c, 0x1f21);
+        }
+        if read_i64(h, at(block, 0x10)) > 0 {
+            wassert(h, 0x00b9_1eb4, 0x1f22);
+        }
+        if h.read::<u32>(at(block, 0x1c)) != 0 {
+            wassert(h, 0x00b9_1ed0, 0x1f23);
+        }
+        if h.read::<i32>(at(block, 0x20)) > 0 {
+            wassert(h, 0x00b9_1ef4, 0x1f24);
+        }
+        let start = read_i64(h, block);
+        let stop = start.wrapping_add(read_i64(h, at(block, 8)));
+        let segment: u32 = h.read(cluster);
+        let reader: u32 = h.read(segment);
+        let lenp = frame;
+        let track = read_uint_at(h, reader, lenp, start.cast_unsigned());
+        write_i64(h, at(block, 0x10), track);
+        if track <= 0 {
+            return BAD;
+        }
+        let mut pos = start.wrapping_add(i64::from(h.read::<i32>(lenp)));
+        if pos > stop || stop.wrapping_sub(pos) < 2 {
+            return BAD;
+        }
+        let tc = at(frame, 8);
+        // `UnserializeInt` ([`unserialize_int`] itself, as `ReadUInt`)
+        if unserialize_int(h, reader, 2, pos.cast_unsigned(), tc, at(frame, 0x18)) != 0 {
+            return BAD;
+        }
+        let value = read_i64(h, tc);
+        if !(-0x8000..=0x7fff).contains(&value) {
+            return BAD;
+        }
+        pos = pos.wrapping_add(2);
+        h.write(at(block, 0x18), value as u16);
+        if stop.wrapping_sub(pos) <= 0 {
+            return BAD;
+        }
+        let flags = at(block, 0x1a);
+        if read(h, reader, pos.cast_unsigned(), 1, flags) != 0 {
+            return BAD;
+        }
+        let lacing = (h.read::<u8>(flags) >> 1) & 3;
+        pos = pos.wrapping_add(1);
+        if lacing == 0 {
+            if pos > stop {
+                return BAD;
+            }
+            h.write(at(block, 0x20), 1u32);
+            let f = alloc_frames(h, 1);
+            h.write(at(block, 0x1c), f);
+            write_i64(h, f, pos);
+            let size = stop.wrapping_sub(pos);
+            if !fits_long(size) {
+                return BAD;
+            }
+            h.write(at(f, 8), size as u32);
+            return 0;
+        }
+        if pos >= stop {
+            return BAD;
+        }
+        let count_byte = at(frame, 0x11);
+        if read(h, reader, pos.cast_unsigned(), 1, count_byte) != 0 {
+            return BAD;
+        }
+        pos = pos.wrapping_add(1);
+        if pos > stop {
+            wassert(h, 0x00b9_0958, 0x1f77);
+        }
+        let count = u32::from(h.read::<u8>(count_byte)) + 1;
+        h.write(at(block, 0x20), count);
+        let frames = alloc_frames(h, count);
+        h.write(at(block, 0x1c), frames);
+        if frames == 0 {
+            wassert(h, 0x00b9_1f1c, 0x1f7c);
+        }
+        match lacing {
+            1 => block_xiph(h, block, reader, pos, stop, at(frame, 0x10)),
+            2 => block_fixed(h, block, pos, stop),
+            _ => block_ebml(h, block, reader, pos, stop, lenp),
+        }
+    }
+
+    /// Xiph lacing (`Block::Parse`, lacing 1).
+    fn block_xiph(
+        h: &mut impl Host,
+        block: u32,
+        reader: u32,
+        mut pos: i64,
+        stop: i64,
+        byte: u32,
+    ) -> u32 {
+        const BAD: u32 = (-2i32).cast_unsigned();
+        let n: u32 = h.read(at(block, 0x20));
+        let frames: u32 = h.read(at(block, 0x1c));
+        let end = at(frames, n << 4);
+        let mut pf = frames;
+        let mut total = 0u32;
+        let mut left = n.cast_signed();
+        while left > 1 {
+            let mut size = 0u32;
+            loop {
+                if pos >= stop {
+                    return BAD;
+                }
+                if read(h, reader, pos.cast_unsigned(), 1, byte) != 0 {
+                    return BAD;
+                }
+                pos = pos.wrapping_add(1);
+                let b: u8 = h.read(byte);
+                size = size.wrapping_add(u32::from(b));
+                if b != 0xff {
+                    break;
+                }
+            }
+            let f = pf;
+            pf = at(pf, 0x10);
+            if pf >= end {
+                wassert(h, 0x00b9_1f30, 0x1f9c);
+            }
+            total = total.wrapping_add(size);
+            h.write(f, 0u32);
+            h.write(at(f, 4), 0u32);
+            h.write(at(f, 8), size);
+            left -= 1;
+        }
+        if pf >= end {
+            wassert(h, 0x00b9_1f30, 0x1fa6);
+        }
+        if pos > stop {
+            wassert(h, 0x00b9_0958, 0x1fa7);
+        }
+        if at(pf, 0x10) != end {
+            return BAD;
+        }
+        h.write(pf, 0u32);
+        h.write(at(pf, 4), 0u32);
+        let rest = stop.wrapping_sub(pos);
+        let total = i64::from(total.cast_signed());
+        if rest < total {
+            return BAD;
+        }
+        let last = rest.wrapping_sub(total);
+        if !fits_long(last) {
+            return BAD;
+        }
+        h.write(at(pf, 8), last as u32);
+        let pos = place_frames(h, frames, end, pos, stop, 0x1fc1);
+        if pos != stop {
+            wassert(h, 0x00b9_0970, 0x1fc7);
+        }
+        0
+    }
+
+    /// `__alldvrm` (`0x00aa5200`): 64-bit signed division with the
+    /// remainder (quotient `edx:eax`, remainder `ecx:ebx`).
+    pub const ALLDVRM: u32 = 0x00aa_5200;
+
+    /// Fixed-size lacing (`Block::Parse`, lacing 2): the rest split into
+    /// `count` frames (64-bit signed division; a remainder or a frame size
+    /// past a `long` gives -2).
+    fn block_fixed(h: &mut impl Host, block: u32, pos: i64, stop: i64) -> u32 {
+        const BAD: u32 = (-2i32).cast_unsigned();
+        let n: u32 = h.read(at(block, 0x20));
+        let rest = stop.wrapping_sub(pos);
+        let d = i64::from(n.cast_signed());
+        // the original's `__alldvrm`; a zero count cannot occur (count
+        // byte + 1)
+        let (Some(q), Some(r)) = (rest.checked_div(d), rest.checked_rem(d)) else {
+            return BAD;
+        };
+        if r != 0 || !fits_long(q) {
+            return BAD;
+        }
+        let frames: u32 = h.read(at(block, 0x1c));
+        let end = at(frames, n << 4);
+        let mut p = pos;
+        let mut f = frames;
+        while f != end {
+            let next = p.wrapping_add(q);
+            if next > stop {
+                wassert(h, 0x00b9_1f74, 0x1fd7);
+            }
+            write_i64(h, f, p);
+            h.write(at(f, 8), q as u32);
+            p = next;
+            f = at(f, 0x10);
+        }
+        if p != stop {
+            wassert(h, 0x00b9_0970, 0x1fe1);
+        }
+        0
+    }
+
+    /// EBML lacing (`Block::Parse`, lacing 3): the first size a varint,
+    /// each next one the previous plus a signed varint difference (biased
+    /// by `2^(7 len - 1) - 1`), the last frame the rest.
+    #[allow(clippy::too_many_lines)] // the original's checks
+    fn block_ebml(
+        h: &mut impl Host,
+        block: u32,
+        reader: u32,
+        pos: i64,
+        stop: i64,
+        lenp: u32,
+    ) -> u32 {
+        const BAD: u32 = (-2i32).cast_unsigned();
+        let n: u32 = h.read(at(block, 0x20));
+        if pos >= stop {
+            return BAD;
+        }
+        let first = read_uint_at(h, reader, lenp, pos.cast_unsigned());
+        if !(0..=0x7fff_ffff).contains(&first) {
+            return BAD;
+        }
+        let mut pos = pos.wrapping_add(i64::from(h.read::<i32>(lenp)));
+        if pos > stop || first.wrapping_add(pos) > stop {
+            return BAD;
+        }
+        let frames: u32 = h.read(at(block, 0x1c));
+        let end = at(frames, n << 4);
+        h.write(at(frames, 8), first as u32);
+        h.write(frames, 0u32);
+        h.write(at(frames, 4), 0u32);
+        let mut pf = frames;
+        let mut size = first;
+        let mut total = first as u32;
+        let mut left = n.cast_signed() - 1;
+        while left > 1 {
+            if pos >= stop {
+                return BAD;
+            }
+            if pf >= end {
+                wassert(h, 0x00b9_1f30, 0x200d);
+            }
+            let prev = pf;
+            pf = at(pf, 0x10);
+            if frame_len(h, prev) != size {
+                wassert(h, 0x00b9_1fc4, 0x2010);
+            }
+            if frame_len(h, prev) != size {
+                return BAD;
+            }
+            if pf >= end {
+                wassert(h, 0x00b9_1f30, 0x2014);
+            }
+            h.write(pf, 0u32);
+            h.write(at(pf, 4), 0u32);
+            let delta = read_uint_at(h, reader, lenp, pos.cast_unsigned());
+            if delta < 0 {
+                return BAD;
+            }
+            let len = h.read::<i32>(lenp);
+            pos = pos.wrapping_add(i64::from(len));
+            if pos > stop {
+                return BAD;
+            }
+            // the bias 2^(7 len - 1) - 1 as the original builds it
+            // (`bts` into the low word, moved up at 32, gone at 64)
+            let bit = (len.wrapping_mul(7).wrapping_sub(1)).cast_unsigned();
+            let low = 1u32 << (bit & 31);
+            let (lo, hi) = if bit >= 64 {
+                (0, 0)
+            } else if bit >= 32 {
+                (0, low)
+            } else {
+                (low, 0)
+            };
+            let bias = (u64::from(hi) << 32 | u64::from(lo)).cast_signed();
+            size = size.wrapping_add(delta.wrapping_sub(bias).wrapping_add(1));
+            if !(0..=0x7fff_ffff).contains(&size) {
+                return BAD;
+            }
+            total = total.wrapping_add(size as u32);
+            h.write(at(pf, 8), size as u32);
+            left -= 1;
+        }
+        if pos > stop {
+            wassert(h, 0x00b9_0958, 0x2038);
+        }
+        if pf >= end {
+            wassert(h, 0x00b9_1f30, 0x2039);
+        }
+        let prev = pf;
+        pf = at(pf, 0x10);
+        if frame_len(h, prev) != size {
+            wassert(h, 0x00b9_1fc4, 0x203c);
+        }
+        if frame_len(h, prev) != size {
+            return BAD;
+        }
+        if pf >= end {
+            wassert(h, 0x00b9_1f30, 0x2040);
+        }
+        if at(pf, 0x10) != end {
+            wassert(h, 0x00b9_1ff4, 0x2043);
+        }
+        h.write(pf, 0u32);
+        h.write(at(pf, 4), 0u32);
+        let rest = stop.wrapping_sub(pos);
+        let total = i64::from(total.cast_signed());
+        if rest < total {
+            return BAD;
+        }
+        let last = rest.wrapping_sub(total);
+        if !fits_long(last) {
+            return BAD;
+        }
+        h.write(at(pf, 8), last as u32);
+        let pos = place_frames(h, frames, end, pos, stop, 0x2057);
+        if pos != stop {
+            wassert(h, 0x00b9_0970, 0x205d);
+        }
+        0
+    }
 }
