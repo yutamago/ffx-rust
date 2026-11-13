@@ -1191,3 +1191,233 @@ fn wp5f_records_maps_and_buffers_match_the_original() {
 fn this_imp_std(t: &mut Twins, slot: u32, n: u32, ret: u32) {
     imp(t, slot, false, n, n, &Ret::Fixed(ret), &[]);
 }
+
+// ---- mkvparser (ffx_prender::wp5f_mkv) ----
+
+use ffx_prender::wp5f_mkv::bridge as mkv;
+
+#[test]
+fn wp5f_mkv_small_apis_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x0042_3840);
+        for k in 0..200 {
+            t.reset();
+            cdecl_imp(t, mkv::WASSERT, 3, 0x61);
+            // Segment::GetFirst
+            let first = rng.pick(&[0, 0x0044_0000]);
+            let list = t.words(&[first, 7]);
+            let seg = t.zeros(0x90);
+            t.w32(seg + 0x80, rng.pick(&[0, list, list]));
+            t.w32(seg + 0x84, rng.pick(&[0, 1, 2, u32::MAX]));
+            t.check(
+                &format!("Segment::GetFirst {k}"),
+                0x0042_3840,
+                Conv::Thiscall(seg),
+                &[],
+                |m| Out::U32(mkv::segment_get_first(m, seg)),
+            );
+            // Tracks::GetTrackByNumber
+            let tr: Vec<u32> = (0..3)
+                .map(|i| {
+                    let tk = t.zeros(0x30);
+                    t.w32(tk + 0x24, i + 1);
+                    tk
+                })
+                .collect();
+            let arr = t.words(&[tr[0], 0, tr[1], tr[2]]);
+            let tracks = t.zeros(0x30);
+            t.w32(tracks + 0x28, arr);
+            t.w32(tracks + 0x2c, arr + 4 * rng.pick(&[0, 2, 4]));
+            let n = rng.pick(&[0u32, 1, 2, 3, 4, u32::MAX]);
+            t.check(
+                &format!("GetTrackByNumber {k}"),
+                0x0042_9da0,
+                Conv::Thiscall(tracks),
+                &[n],
+                |m| Out::U32(mkv::tracks_get_track_by_number(m, tracks, n)),
+            );
+            // BlockEntry::EOS
+            let e = t.zeros(0x10);
+            t.fake_vtable(
+                e,
+                &[
+                    (0, 0, vec![]),
+                    (0, 0, vec![]),
+                    (0, rng.pick(&[0, 1, 2]), vec![]),
+                ],
+            );
+            t.check(
+                &format!("BlockEntry::EOS {k}"),
+                0x0042_d050,
+                Conv::Thiscall(e),
+                &[],
+                |m| Out::U32(mkv::block_entry_eos(m, e)),
+            );
+            // Cluster::GetFirst / GetNext
+            let count = rng.pick(&[0u32, 1, 3]);
+            let entries: Vec<u32> = (0..4)
+                .map(|i| {
+                    let en = t.zeros(0x10);
+                    t.w32(en + 8, i);
+                    if rng.chance(8) { 0 } else { en }
+                })
+                .collect();
+            let arr = t.words(&entries);
+            let cl = t.zeros(0x40);
+            t.w32(cl + 0x30, arr);
+            t.w32(cl + 0x38, count);
+            // Parse: a status, the entry count grown by one sometimes
+            let status = rng.pick(&[0u32, 0, 1, u32::MAX - 2]);
+            let grow = u8::from(rng.chance(2));
+            let extra = vec![0x80, 0x41, 0x38, grow]; // add byte [ecx + 0x38], grow
+            t.stub_ex(mkv::CLUSTER_PARSE, true, 2, 2, &Ret::Fixed(status), &extra);
+            let out = t.words(&[0x5555]);
+            t.skip = 0;
+            t.check_framed(
+                &format!("Cluster::GetFirst {k}"),
+                0x0042_c880,
+                Conv::Thiscall(cl),
+                &[out],
+                0x10,
+                |m, ebp| Out::U32(mkv::cluster_get_first(m, cl, out, ebp - 0x10, ebp - 4)),
+            );
+            t.w32(cl + 0x38, count.max(1));
+            let cur_i = rng.below(count.max(1));
+            let cur = if rng.chance(10) {
+                entries[3]
+            } else {
+                entries[cur_i as usize]
+            };
+            if cur == 0 {
+                t.skip = 4;
+                continue;
+            }
+            t.check_framed(
+                &format!("Cluster::GetNext {k}"),
+                0x0042_c9d0,
+                Conv::Thiscall(cl),
+                &[cur, out],
+                8,
+                |m, ebp| Out::U32(mkv::cluster_get_next(m, cl, cur, out, ebp - 8, ebp + 8)),
+            );
+            t.skip = 4;
+        }
+    });
+}
+
+/// The first `n` bytes of a game movie (`FFX_Data.vbf`).
+fn movie_head(n: usize) -> Option<Vec<u8>> {
+    let dir = std::path::PathBuf::from(std::env::var_os("FFX_GAME_DIR")?);
+    let archive = ffx_vbf::Archive::open(dir.join("data/FFX_Data.vbf")).ok()?;
+    let entry = archive.find("ffx_data/gamedata/ps3data/video/4_480.webm")?;
+    let mut bytes = archive.read(entry).ok()?;
+    bytes.truncate(n);
+    Some(bytes)
+}
+
+/// An `IMkvReader` over `data` in the oracles: `Read(pos, len, buf)`
+/// copies (status `err` past the data or for a high position word),
+/// `Length(&total, &avail)` gives the data's size and `avail`. Layout:
+/// vtable, data, size, err, avail.
+fn fake_reader(t: &mut Twins, data: &[u8], err: u32, avail: u32) -> u32 {
+    let read = t.code(&[
+        0x8b, 0x44, 0x24, 0x04, // mov eax, [esp + 4]
+        0x83, 0x7c, 0x24, 0x08, 0x00, // cmp dword [esp + 8], 0
+        0x75, 0x23, // jne err
+        0x8b, 0x54, 0x24, 0x0c, // mov edx, [esp + 0xc]
+        0x03, 0xc2, // add eax, edx
+        0x3b, 0x41, 0x08, // cmp eax, [ecx + 8]
+        0x77, 0x18, // ja err
+        0x56, 0x57, // push esi; push edi
+        0x8b, 0x71, 0x04, // mov esi, [ecx + 4]
+        0x03, 0x74, 0x24, 0x0c, // add esi, [esp + 0xc]
+        0x8b, 0x7c, 0x24, 0x18, // mov edi, [esp + 0x18]
+        0x8b, 0xca, // mov ecx, edx
+        0xf3, 0xa4, // rep movsb
+        0x5f, 0x5e, // pop edi; pop esi
+        0x33, 0xc0, // xor eax, eax
+        0xc2, 0x10, 0x00, // ret 0x10
+        0x8b, 0x41, 0x0c, // err: mov eax, [ecx + 0xc]
+        0xc2, 0x10, 0x00, // ret 0x10
+    ]);
+    let length = t.code(&[
+        0x8b, 0x44, 0x24, 0x04, // mov eax, [esp + 4]
+        0x8b, 0x51, 0x08, // mov edx, [ecx + 8]
+        0x89, 0x10, // mov [eax], edx
+        0xc7, 0x40, 0x04, 0, 0, 0, 0, // mov dword [eax + 4], 0
+        0x8b, 0x44, 0x24, 0x08, // mov eax, [esp + 8]
+        0x8b, 0x51, 0x10, // mov edx, [ecx + 0x10]
+        0x89, 0x10, // mov [eax], edx
+        0xc7, 0x40, 0x04, 0, 0, 0, 0, // mov dword [eax + 4], 0
+        0x33, 0xc0, // xor eax, eax
+        0xc2, 0x08, 0x00, // ret 8
+    ]);
+    let vt = t.words(&[read, length, 0]);
+    let d = t.alloc(data);
+    t.words(&[vt, d, data.len() as u32, err, avail])
+}
+
+#[test]
+fn wp5f_mkv_ebml_readers_match_the_original() {
+    let Some(data) = movie_head(0x4000) else {
+        eprintln!("no movie; skipping");
+        return;
+    };
+    Twins::each(|t| {
+        let mut rng = Rng(0x0041_e710);
+        for k in 0..400 {
+            t.reset();
+            cdecl_imp(t, mkv::WASSERT, 3, 0x61);
+            let err = rng.pick(&[u32::MAX, 1, u32::MAX - 4]);
+            let size = data.len() as u32;
+            let avail = rng.pick(&[size, size, 0x100, 0, size + 4]);
+            let reader = fake_reader(t, &data, err, avail);
+            let pos = if rng.chance(10) {
+                rng.pick(&[u64::from(size) - 1, u64::from(size), 1 << 32, u64::MAX])
+            } else {
+                u64::from(rng.below(0x3ff0))
+            };
+            let (lo, hi) = (pos as u32, (pos >> 32) as u32);
+            let len = t.words(&[0x77]);
+            t.skip = 0;
+            t.check_framed(
+                &format!("ReadUInt {k} ({pos:#x})"),
+                0x0041_e710,
+                Conv::FastcallCallerPops,
+                &[reader, len, lo, hi],
+                1,
+                |m, ebp| Out::U64(mkv::read_uint(m, reader, len, pos, ebp - 1)),
+            );
+            t.skip = 8;
+            t.check_framed(
+                &format!("GetUIntLength {k} ({pos:#x}, avail {avail:#x})"),
+                0x0041_e850,
+                Conv::FastcallCallerPops,
+                &[reader, len, lo, hi],
+                0x18,
+                |m, ebp| Out::U64(mkv::get_uint_length(m, reader, len, pos, ebp - 0x18)),
+            );
+            t.skip = 4;
+            let n = rng.pick(&[0u64, 1, 2, 4, 8, 9, 1 << 32]);
+            // the port's scratch for the byte: stack the diff skips (the
+            // original uses its own argument slots)
+            let scratch = t.frame_ebp(6) - 0x300;
+            t.check(
+                &format!("UnserializeUInt {k} ({pos:#x}, {n})"),
+                0x0041_e980,
+                Conv::FastcallCallerPops,
+                &[reader, 0, lo, hi, n as u32, (n >> 32) as u32],
+                |m| Out::U64(mkv::unserialize_uint(m, reader, pos, n, scratch)),
+            );
+            let n = rng.pick(&[1u32, 2, 3, 4, 8]);
+            let result = t.words(&[0x1111, 0x2222]);
+            t.check(
+                &format!("UnserializeInt {k} ({pos:#x}, {n})"),
+                0x0041_ec10,
+                Conv::FastcallCallerPops,
+                &[reader, n, lo, hi, result],
+                |m| Out::U32(mkv::unserialize_int(m, reader, n, pos, result, scratch)),
+            );
+        }
+    });
+}

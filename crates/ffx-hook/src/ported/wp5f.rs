@@ -12,6 +12,7 @@
 use super::{StackFrame, mem, ported};
 use ffx_menu::wp5f_menu::bridge as menu;
 use ffx_prender::wp5f::bridge as pr;
+use ffx_prender::wp5f_mkv::bridge as mkv;
 use ffx_sg::m5main4_lib::bridge as lib;
 use ffx_system::wp5f_sstream::bridge as ss;
 
@@ -296,5 +297,59 @@ ported! {
     /// `AtlConvAllocMemory(p, n, fixed, fixed_n)`.
     AtlConvAllocMemory_006496d0 @ 0x0064_96d0 => extern "C" fn conv_alloc_memory(p: u32, n: u32, fixed: u32, fixed_n: u32) {
         pr::conv_alloc_memory(&mut mem(), p, n, fixed, fixed_n);
+    }
+    /// `mkvparser::Segment::GetFirst()` -> the first cluster or the end.
+    mkvparser_Segment_GetFirst @ 0x0042_3840 => extern "thiscall" fn segment_get_first(seg: u32) -> u32 {
+        mkv::segment_get_first(&mut mem(), seg)
+    }
+    /// `mkvparser::Tracks::GetTrackByNumber(n)` -> the track or 0.
+    mkvparser_Tracks_GetTrackByNumber @ 0x0042_9da0 => extern "thiscall" fn tracks_get_track_by_number(tracks: u32, n: u32) -> u32 {
+        mkv::tracks_get_track_by_number(&mut mem(), tracks, n)
+    }
+    /// `mkvparser::BlockEntry::EOS()` -> 1 for the end-of-stream entry.
+    mkvparser_BlockEntry_EOS @ 0x0042_d050 => extern "thiscall" fn block_entry_eos(entry: u32) -> u32 {
+        mkv::block_entry_eos(&mut mem(), entry)
+    }
+    /// `mkvparser::Cluster::GetFirst(&out)` -> status; the parse's `pos`
+    /// and `len` in a frame.
+    mkvparser_Cluster_GetFirst @ 0x0042_c880 => extern "thiscall" fn cluster_get_first(cl: u32, out: u32) -> u32 {
+        let mut f = StackFrame::<3>::new();
+        let pos = f.at();
+        mkv::cluster_get_first(&mut mem(), cl, out, pos, pos + 8)
+    }
+    /// `mkvparser::Cluster::GetNext(cur, &out)` -> status; `pos` in a
+    /// frame, `len` in the caller's `cur` slot (as the original).
+    mkvparser_Cluster_GetNext @ 0x0042_c9d0 => extern "thiscall" fn cluster_get_next(cl: u32, cur: u32, out: u32; slots: u32) -> u32 {
+        let mut f = StackFrame::<2>::new();
+        mkv::cluster_get_next(&mut mem(), cl, cur, out, f.at(), slots)
+    }
+    /// `mkvparser::ReadUInt(reader, pos, &len)` -> the value (`edx:eax`);
+    /// the byte read in a frame.
+    mkvparser_ReadUInt_0041e710 @ 0x0041_e710 => extern "fastcall-caller-pops" fn read_uint(reader: u32, len: u32, pos_lo: u32, pos_hi: u32) -> u64 {
+        let mut f = StackFrame::<1>::new();
+        let pos = u64::from(pos_hi) << 32 | u64::from(pos_lo);
+        mkv::read_uint(&mut mem(), reader, len, pos, f.at())
+    }
+    /// `mkvparser::GetUIntLength(reader, pos, &len)` -> status
+    /// (`edx:eax`); `Length`'s two results and the byte in a frame.
+    mkvparser_GetUIntLength_0041e850 @ 0x0041_e850 => extern "fastcall-caller-pops" fn get_uint_length(reader: u32, len: u32, pos_lo: u32, pos_hi: u32) -> u64 {
+        let mut f = StackFrame::<6>::new();
+        let pos = u64::from(pos_hi) << 32 | u64::from(pos_lo);
+        mkv::get_uint_length(&mut mem(), reader, len, pos, f.at())
+    }
+    /// `mkvparser::UnserializeUInt(reader, pos, size)` -> the value
+    /// (`edx:eax`); the byte in a frame.
+    mkvparser_UnserializeUInt_0041e980 @ 0x0041_e980 => extern "fastcall-caller-pops" fn unserialize_uint(reader: u32, _edx: u32, pos_lo: u32, pos_hi: u32, size_lo: u32, size_hi: u32) -> u64 {
+        let mut f = StackFrame::<2>::new();
+        let pos = u64::from(pos_hi) << 32 | u64::from(pos_lo);
+        let size = u64::from(size_hi) << 32 | u64::from(size_lo);
+        mkv::unserialize_uint(&mut mem(), reader, pos, size, f.at())
+    }
+    /// `mkvparser::UnserializeInt(reader, size, pos, &result)` -> status;
+    /// the byte in a frame.
+    mkvparser_UnserializeInt_0041ec10 @ 0x0041_ec10 => extern "fastcall-caller-pops" fn unserialize_int(reader: u32, size: u32, pos_lo: u32, pos_hi: u32, result: u32) -> u32 {
+        let mut f = StackFrame::<2>::new();
+        let pos = u64::from(pos_hi) << 32 | u64::from(pos_lo);
+        mkv::unserialize_int(&mut mem(), reader, size, pos, result, f.at())
     }
 }
