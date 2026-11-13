@@ -858,3 +858,25 @@ pub fn string_plus_cstr(h: &mut impl Host, out: u32, a: u32, b: u32) -> u32 {
 pub fn named_value_buy_node(h: &mut impl Host, this: u32, pair: u32) -> u32 {
     buy_node_moved(h, this, pair, 0x0065_4f80, 0x0064_94d0)
 }
+
+/// `std::_Distance2` over a map's nodes (`0x006f3520`, and the same bytes
+/// at `0x0061ec20`, `0x00699340`; cdecl `(first, last, &count, ..)`):
+/// `*count` (read once) counted up once per node from `first` to `last` (in-order
+/// successors; a nil node is not advanced from, so the original loops
+/// forever there, and so does this). `eax`: `last`.
+pub fn tree_distance(h: &mut impl Host, first: u32, last: u32, count: u32) -> u32 {
+    let mut at = first;
+    if at == last {
+        return at;
+    }
+    // read once, then counted in a register
+    let mut n: u32 = h.read(count);
+    while at != last {
+        n = n.wrapping_add(1);
+        h.write(count, n);
+        if h.read::<u8>(at.wrapping_add(0xd)) == 0 {
+            at = successor(h, at);
+        }
+    }
+    at
+}

@@ -311,6 +311,23 @@ ported! {
     std_string_plusCstr_006495b0 @ 0x0064_95b0 => extern "C" fn e_006495b0(out: u32, a: u32, b: u32) -> u32 {
         e::string_plus_cstr(&mut mem(), out, a, b)
     }
+    /// `dlmalloc_internal_memalign_006ea5f0(m, alignment, bytes)`: an aligned block.
+    dlmalloc_internal_memalign_006ea5f0 @ 0x006e_a5f0 => extern "C" fn e_006ea5f0(m: u32, alignment: u32, bytes: u32) -> u32 {
+        let mut spins = StackFrame::<1>::new();
+        ffx_sg::m5main4_lib::bridge::internal_memalign(&mut mem(), m, alignment, bytes, spins.at())
+    }
+    /// `std_Tree_distance_0061ec20(first, last, &count)`: the nodes counted; `last`.
+    std_Tree_distance_0061ec20 @ 0x0061_ec20 => extern "C" fn e_0061ec20(first: u32, last: u32, count: u32) -> u32 {
+        e::tree_distance(&mut mem(), first, last, count)
+    }
+    /// `std_Tree_distance_00699340(first, last, &count)`: the nodes counted; `last`.
+    std_Tree_distance_00699340 @ 0x0069_9340 => extern "C" fn e_00699340(first: u32, last: u32, count: u32) -> u32 {
+        e::tree_distance(&mut mem(), first, last, count)
+    }
+    /// `std_Tree_distance_006f3520(first, last, &count)`: the nodes counted; `last`.
+    std_Tree_distance_006f3520 @ 0x006f_3520 => extern "C" fn e_006f3520(first: u32, last: u32, count: u32) -> u32 {
+        e::tree_distance(&mut mem(), first, last, count)
+    }
     /// `PSharray_data_004347a0`: the code of `PArray_Data_004d45a0`; the elements.
     PSharray_data_004347a0 @ 0x0043_47a0 => extern "thiscall" fn e_004347a0(this: u32) -> u32 {
         ffx_pcore::small::bridge::array_data(&mut mem(), this)

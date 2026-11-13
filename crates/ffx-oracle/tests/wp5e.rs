@@ -1054,3 +1054,30 @@ fn wp5e_string_plus_and_named_node() {
         }
     }
 }
+
+/// `std::_Distance2` over map nodes (`0x006f3520`, `0x0061ec20`,
+/// `0x00699340`): grown trees, ranges from every node to a later one or
+/// the head, the count starting at junk. `eax` and memory.
+#[test]
+fn wp5e_tree_distance() {
+    use ffx_prender::wp5e as e;
+    for (label, mut t) in Twins::all() {
+        for at in [0x006f_3520u32, 0x0061_ec20, 0x0069_9340] {
+            for round in 0..4u32 {
+                let n = 1 + t.rng.below(14);
+                let (_, head, nodes) = grown_string_tree(&mut t, n, 0x10);
+                let count = t.alloc(&[0; 4]);
+                for i in 0..n {
+                    let j = i + t.rng.below(n - i + 1);
+                    let first = nodes[i as usize];
+                    let last = nodes.get(j as usize).copied().unwrap_or(head);
+                    t.w32(count, 0x100 * round + i);
+                    let w = format!("{label} distance {at:#x} {round} ({i}..{j} of {n})");
+                    t.run_cdecl(&w, at, &[first, last, count, 0x5a5a], |g| {
+                        e::tree_distance(g, first, last, count)
+                    });
+                }
+            }
+        }
+    }
+}
