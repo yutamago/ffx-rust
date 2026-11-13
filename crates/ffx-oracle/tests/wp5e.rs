@@ -1147,3 +1147,37 @@ fn wp5e_vfx_table_insert() {
         }
     }
 }
+
+/// The 4x4 matrix product `0x005e4400` (its two callees the originals):
+/// random matrices of small and large floats, `out` apart and equal to
+/// `a`. `eax` and memory.
+#[test]
+fn wp5e_matrix_mul() {
+    use ffx_prender::wp5e as e;
+    for (label, mut t) in Twins::all() {
+        let frame = t.b.stack_range().start + 0x1000;
+        for round in 0..20u32 {
+            let m = |t: &mut Twins| {
+                let f: Vec<u8> = (0..16)
+                    .flat_map(|_| {
+                        let v = f32::from(t.rng.next() as i16) / 1.0e3
+                            * if t.rng.below(4) == 0 { 1e4 } else { 1.0 };
+                        v.to_le_bytes()
+                    })
+                    .collect();
+                t.alloc(&f)
+            };
+            let a = m(&mut t);
+            let b = m(&mut t);
+            let out = if round % 4 == 3 {
+                a
+            } else {
+                t.alloc(&[0x55; 0x40])
+            };
+            let w = format!("{label} matrix mul {round}");
+            t.run_cdecl(&w, 0x005e_4400, &[out, a, b], |g| {
+                e::matrix_mul(g, out, a, b, frame)
+            });
+        }
+    }
+}

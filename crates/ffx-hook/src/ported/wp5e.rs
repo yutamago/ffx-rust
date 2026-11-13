@@ -337,6 +337,11 @@ ported! {
         let mut slot = StackFrame::<1>::new();
         e::vfx_insert_nohint(&mut mem(), this, out, leftish, value, node, slot.at())
     }
+    /// `PMatrix4_mul_005e4400(out, &a, &b)`: `b`'s rows times `a`; `out`.
+    PMatrix4_mul_005e4400 @ 0x005e_4400 => extern "C" fn e_005e4400(out: u32, a: u32, b: u32) -> u32 {
+        let mut frame = StackFrame::<16>::new();
+        e::matrix_mul(&mut mem(), out, a, b, frame.at())
+    }
     /// `PSharray_data_004347a0`: the code of `PArray_Data_004d45a0`; the elements.
     PSharray_data_004347a0 @ 0x0043_47a0 => extern "thiscall" fn e_004347a0(this: u32) -> u32 {
         ffx_pcore::small::bridge::array_data(&mut mem(), this)

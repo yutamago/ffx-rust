@@ -972,3 +972,26 @@ fn vfx_hang(
     h.write(out.wrapping_add(4), 1u8);
     out
 }
+
+/// `PMatrix4_RowTimes_004c9c20(m; &out, &v)` and
+/// `PMatrix4_FromRows_00450d40(m; r0, r1, r2, r3)` (thiscall).
+pub const ROW_TIMES: u32 = 0x004c_9c20;
+pub const FROM_ROWS: u32 = 0x0045_0d40;
+
+/// A 4x4 matrix product (`0x005e4400`, cdecl `(out, &a, &b)`;
+/// `PhyreScene_setObjectRotation`'s): each row of `b` (from the last,
+/// `+0x30`, to the first) times `a` by [`ROW_TIMES`] into `frame` (the
+/// original's `ebp - 0x40`: row 3 at `+0x30` .. row 0 at `+0`), then
+/// `out` = [`FROM_ROWS`] of the four. `out`.
+pub fn matrix_mul(h: &mut impl Host, out: u32, a: u32, b: u32, frame: u32) -> u32 {
+    let mut rows = [0u32; 4];
+    for i in (0..4u32).rev() {
+        rows[i as usize] = h.call_sym(
+            ROW_TIMES,
+            Conv::Thiscall(a),
+            &[frame + 0x10 * i, b + 0x10 * i],
+        );
+    }
+    h.call_sym(FROM_ROWS, Conv::Thiscall(out), &rows);
+    out
+}
