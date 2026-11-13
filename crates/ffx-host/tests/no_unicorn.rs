@@ -45,13 +45,13 @@ fn documents(name: &str) -> PathBuf {
 
 /// `MsCheckRange`, a port (cdecl `(x, lo, hi)`: `x` clamped).
 const MS_CHECK_RANGE: u32 = 0x0079_a0c0;
-/// An address with no Rust side: `0x0048c260`, a Phyre class descriptor's
-/// script-context callee (`Cluster_ApplyPointerFixups`' on the loader
-/// thread, the no-Unicorn boot's next stop after m5-wp5e's first batch;
-/// the entry point, `Game_Main`, `GDraw`'s trampoline `0x00a34b00` and the
-/// symbol map's `operator[]` `0x006f3ae0` that this test used are ported
-/// now).
-const ENTRY: u32 = 0x0048_c260;
+/// An address with no Rust side: `lua_getfield` (`0x0094b030`, the
+/// statically linked Lua VM, which nothing ports yet; the no-Unicorn boot
+/// no longer stops anywhere after m5-wp5e, and the entry point, `Game_Main`,
+/// `GDraw`'s trampoline `0x00a34b00`, the symbol map's `operator[]`
+/// `0x006f3ae0` and the array-start callback `0x0048c260` that this test
+/// used are ported now).
+const ENTRY: u32 = 0x0094_b030;
 
 #[test]
 fn a_port_called_from_rust_runs_without_the_emulator() {
