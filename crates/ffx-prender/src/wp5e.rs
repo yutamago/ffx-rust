@@ -66,11 +66,6 @@ fn compare(h: &mut impl Host, s: u32, t: u32) -> i32 {
         .cast_signed()
 }
 
-/// `a < b` for two strings through [`STRING_LESS`] (`al`).
-fn less(h: &mut impl Host, a: u32, b: u32) -> bool {
-    h.call_sym(STRING_LESS, Conv::Stdcall, &[a, b]) & 0xff != 0
-}
-
 /// `std::map<std::string, u32>::_Insert_hint(this; &out, where, &value,
 /// node)` (`0x006f35b0`, thiscall, `ret 0x10`; MSVC 2012): `node` (whose
 /// key is the string at `value`) hung next to `where` when the hint
@@ -98,10 +93,82 @@ pub fn symbol_insert_hint<H: Host>(
     node: u32,
     slot: u32,
 ) -> u32 {
+    let lt = |h: &mut H, a: u32, b: u32| compare(h, a, b) < 0;
+    insert_hint_with(h, this, out, at, value, node, slot, &SYMBOL_HINT, lt)
+}
+
+/// A map's `_Insert_hint` callees: `_Insert_at`, `_Insert_nohint`, the
+/// iterator `--`/`++` (thiscall on a slot) and the key `<` (stdcall `(a,
+/// b)`, `al`).
+pub struct HintOps {
+    pub insert_at: u32,
+    pub nohint: u32,
+    pub dec: u32,
+    pub inc: u32,
+    pub less: u32,
+}
+
+/// The symbol map's ([`symbol_insert_hint`]).
+pub const SYMBOL_HINT: HintOps = HintOps {
+    insert_at: INSERT_AT,
+    nohint: INSERT_NOHINT,
+    dec: ITERATOR_DEC,
+    inc: ITERATOR_INC,
+    less: STRING_LESS,
+};
+
+/// The VFX render data table's `std::map<u64, ..>` ([`vfx_insert_hint`]).
+pub const VFX_HINT: HintOps = HintOps {
+    insert_at: VFX_INSERT_AT,
+    nohint: 0x0069_cfe0,
+    dec: VFX_ITERATOR_DEC,
+    inc: 0x0069_ebd0,
+    less: 0x0069_eda0,
+};
+
+/// The VFX render data table's `_Insert_hint(this; &out, where, &value,
+/// node)` (`0x0069caf0`, thiscall, `ret 0x10`;
+/// `VfxRenderDataMap_eraseRange_0069d990`'s): [`symbol_insert_hint`]'s
+/// code with `u64` keys compared inline (high word first) and
+/// [`VFX_HINT`]'s callees; the iterator in a local (`ebp - 0x18`) and
+/// `_Insert_nohint`'s pair at `ebp - 0x28` (`slot`: two words). `out`.
+pub fn vfx_insert_hint<H: Host>(
+    h: &mut H,
+    this: u32,
+    out: u32,
+    at: u32,
+    value: u32,
+    node: u32,
+    slot: u32,
+) -> u32 {
+    let lt = |h: &mut H, a: u32, b: u32| key64_less(h, a, b);
+    insert_hint_with(h, this, out, at, value, node, slot, &VFX_HINT, lt)
+}
+
+/// MSVC 2012's `std::_Tree::_Insert_hint` over `ops` and the key order
+/// `lt` (the original's inline comparisons; the `<` calls go through
+/// `ops.less`). See [`symbol_insert_hint`].
+#[allow(clippy::too_many_arguments)]
+fn insert_hint_with<H: Host>(
+    h: &mut H,
+    this: u32,
+    out: u32,
+    at: u32,
+    value: u32,
+    node: u32,
+    slot: u32,
+    ops: &HintOps,
+    lt: impl Fn(&mut H, u32, u32) -> bool,
+) -> u32 {
     let hang = |h: &mut H, left: bool, place: u32| {
-        h_insert_at(h, this, out, left, place, value, node);
+        h.call_sym(
+            ops.insert_at,
+            Conv::Thiscall(this),
+            &[out, u32::from(left), place, value, node],
+        );
         out
     };
+    let less = |h: &mut H, a: u32, b: u32| h.call_sym(ops.less, Conv::Stdcall, &[a, b]) & 0xff != 0;
     let head: u32 = h.read(this);
     if h.read::<u32>(this.wrapping_add(4)) == 0 {
         return hang(h, true, head);
@@ -109,18 +176,18 @@ pub fn symbol_insert_hint<H: Host>(
     let key = |n: u32| n.wrapping_add(0x10);
     if at == h.read::<u32>(head) {
         // the leftmost
-        if compare(h, value, key(at)) < 0 {
+        if lt(h, value, key(at)) {
             return hang(h, true, at);
         }
     } else if at == head {
         let last: u32 = h.read(head.wrapping_add(8));
-        if compare(h, key(last), value) < 0 {
+        if lt(h, key(last), value) {
             return hang(h, false, last);
         }
     } else {
-        if compare(h, value, key(at)) < 0 {
+        if lt(h, value, key(at)) {
             h.write(slot, at);
-            h.call_sym(ITERATOR_DEC, Conv::Thiscall(slot), &[]);
+            h.call_sym(ops.dec, Conv::Thiscall(slot), &[]);
             let prev: u32 = h.read(slot);
             if less(h, key(prev), value) {
                 return if right_is_nil(h, prev) {
@@ -132,7 +199,7 @@ pub fn symbol_insert_hint<H: Host>(
         }
         if less(h, key(at), value) {
             h.write(slot, at);
-            h.call_sym(ITERATOR_INC, Conv::Thiscall(slot), &[]);
+            h.call_sym(ops.inc, Conv::Thiscall(slot), &[]);
             let next: u32 = h.read(slot);
             if next == h.read::<u32>(this) || less(h, value, key(next)) {
                 return if right_is_nil(h, at) {
@@ -143,7 +210,7 @@ pub fn symbol_insert_hint<H: Host>(
             }
         }
     }
-    let r = h.call_sym(INSERT_NOHINT, Conv::Thiscall(this), &[slot, 0, value, node]);
+    let r = h.call_sym(ops.nohint, Conv::Thiscall(this), &[slot, 0, value, node]);
     let it: u32 = h.read(r);
     h.write(out, it);
     out
@@ -153,23 +220,6 @@ pub fn symbol_insert_hint<H: Host>(
 fn right_is_nil(h: &impl Host, n: u32) -> bool {
     let r: u32 = h.read(n.wrapping_add(8));
     h.read::<u8>(r.wrapping_add(0xd)) != 0
-}
-
-/// `_Insert_at(this; out, left, place, value, node)` ([`INSERT_AT`]).
-fn h_insert_at(
-    h: &mut impl Host,
-    this: u32,
-    out: u32,
-    left: bool,
-    place: u32,
-    value: u32,
-    node: u32,
-) -> u32 {
-    h.call_sym(
-        INSERT_AT,
-        Conv::Thiscall(this),
-        &[out, u32::from(left), place, value, node],
-    )
 }
 
 /// `std::map<std::string, u32>::operator[](this; &key)` (`0x006f3ae0`,

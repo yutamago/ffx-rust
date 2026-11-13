@@ -485,6 +485,11 @@ ported! {
     FreeCamera_setFreeCameraMode @ 0x0068_03a0 => extern "thiscall" fn e_006803a0(this: u32, mode: u32) -> u32 {
         e::free_camera_set_mode(&mut mem(), this, mode)
     }
+    /// `VfxRenderDataTable_insertHint_0069caf0(this; &out, where, &value, node)`: `node` hung by the hint or by `_Insert_nohint`; `out`.
+    VfxRenderDataTable_insertHint_0069caf0 @ 0x0069_caf0 => extern "thiscall" fn e_0069caf0(this: u32, out: u32, at: u32, value: u32, node: u32) -> u32 {
+        let mut slot = StackFrame::<2>::new();
+        e::vfx_insert_hint(&mut mem(), this, out, at, value, node, slot.at())
+    }
     /// `PSharray_data_004347a0`: the code of `PArray_Data_004d45a0`; the elements.
     PSharray_data_004347a0 @ 0x0043_47a0 => extern "thiscall" fn e_004347a0(this: u32) -> u32 {
         ffx_pcore::small::bridge::array_data(&mut mem(), this)

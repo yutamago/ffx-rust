@@ -1518,3 +1518,72 @@ fn wp5e_tip_push_and_free_camera() {
         }
     }
 }
+
+/// The VFX render data table's `_Insert_hint` (`0x0069caf0`): maps of
+/// 0..24 keys from a small set (built by the original `_Insert_nohint`),
+/// a new node hung with every hint (the head and the leftmost included),
+/// now and then with a key already there. Its callees the originals.
+/// `eax` and memory.
+#[test]
+fn wp5e_vfx_insert_hint() {
+    use ffx_prender::wp5e as e;
+    for (label, mut t) in Twins::all() {
+        let slot = t.b.stack_range().start + 0x1000;
+        for round in 0..24u32 {
+            let (map, head) = empty_map(&mut t);
+            // the head's key area 0 (below every key: a port that read it
+            // where the original stops at the head would go wrong)
+            t.write(head + 0x10, &[0; 8]);
+            let out = t.alloc(&[0x33; 8]);
+            let count = t.rng.below(25);
+            let node_of = |t: &mut Twins, lo: u32, hi: u32| {
+                let value = t.alloc(&[0; 12]);
+                t.w32(value, lo);
+                t.w32(value + 4, hi);
+                t.w32(value + 8, 0x4400);
+                both(t, 0x0069_c5f0, Conv::Thiscall(map), &[value])
+            };
+            for _ in 0..count {
+                let (lo, hi) = (t.rng.below(6), t.rng.below(3));
+                let node = node_of(&mut t, lo, hi);
+                let tmp = t.alloc(&[0; 8]);
+                both(
+                    &mut t,
+                    0x0069_cfe0,
+                    Conv::Thiscall(map),
+                    &[tmp, 0, node + 0x10, node],
+                );
+            }
+            let mut nodes = vec![head];
+            let mut at: u32 = Mem::read(&t.b, head);
+            while at != head {
+                nodes.push(at);
+                let it = t.alloc(&at.to_le_bytes());
+                both(&mut t, 0x0063_52b0, Conv::Thiscall(it), &[]);
+                at = Mem::read(&t.b, it);
+            }
+            for (i, &hint) in nodes.clone().iter().enumerate() {
+                let (lo, hi) = match t.rng.below(3) {
+                    0 if hint != head => {
+                        (Mem::read(&t.b, hint + 0x10), Mem::read(&t.b, hint + 0x14))
+                    }
+                    _ => (t.rng.below(6), t.rng.below(3)),
+                };
+                let node = node_of(&mut t, lo, hi);
+                let value = node + 0x10;
+                let w = format!(
+                    "{label} vfx insert hint {round} hint {i} of {}",
+                    nodes.len()
+                );
+                t.run(
+                    &w,
+                    0x0069_caf0,
+                    map,
+                    &[out, hint, value, node],
+                    false,
+                    |g| e::vfx_insert_hint(g, map, out, hint, value, node, slot),
+                );
+            }
+        }
+    }
+}
