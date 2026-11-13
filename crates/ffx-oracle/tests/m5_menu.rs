@@ -8371,3 +8371,80 @@ fn l8_ms_gui_battle_config_proc() {
         t.skip = 0;
     });
 }
+
+// ---- M5 finish wp5f (ffx_menu::wp5f_menu) ----
+
+use ffx_menu::wp5f_menu::bridge as w5;
+
+/// The four screens' layout reads: every `TkMn2SeqGet*` and
+/// `TkMn2GetCommonPlate` a recording stub (the colours and the number
+/// distinct), both layouts of the config screen.
+#[test]
+fn wp5f_init_layouts_match_the_original() {
+    type Bridge = fn(&mut G) -> u32;
+    let list: &[(u32, Bridge)] = &[
+        (w5::CONFIG_INIT_LAYOUT, |m| w5::config_init_layout(m)),
+        (w5::EQUIP_INIT_LAYOUT, |m| w5::equip_init_layout(m)),
+        (w5::LIMIT_INIT_LAYOUT, |m| w5::limit_init_layout(m)),
+        (w5::KAIZOU_INIT_LAYOUT, |m| w5::kaizou_init_layout(m)),
+    ];
+    Twins::each(|t| {
+        let mut rng = Rng(0x008c_c050);
+        for i in 0..8 {
+            t.reset();
+            t.stubs(&[
+                (w5::GET_U32_023CBEB0, false, 0, 0, [0, 1, 2, 1][i % 4]),
+                (w5::TK_MN2_GET_COMMON_PLATE, false, 6, 0, rng.word()),
+                (w5::TK_MN2_SEQ_GET_NUM, false, 1, 0, rng.word()),
+                (w5::TK_MN2_SEQ_GET_RECT, false, 2, 0, rng.word()),
+                (w5::TK_MN2_SEQ_GET_POS, false, 2, 0, rng.word()),
+            ]);
+            t.stub_countdown(w5::TK_MN2_SEQ_GET_COLOR, 1, 2, rng.word(), rng.word());
+            for &(sym, f) in list {
+                t.check(&format!("{sym:#x} #{i}"), sym, Conv::Cdecl, &[], |m| {
+                    Out::U32(f(m))
+                });
+            }
+        }
+    });
+}
+
+/// The main menu's help bar: the mask's two stop bits, with and without a
+/// message, mode 0x800003 with window 1 open or closed, the tutorial
+/// choice (its second ask answering otherwise), windows 1 and 2; the
+/// remaps' results distinct per axis.
+#[test]
+fn wp5f_draw_help_bar_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x008a_9350);
+        for i in 0..96 {
+            t.reset();
+            let mask = [0u32, 0x800, 0x8_0000, 0x7ff, 0x10_0000, 0x8_0800][i % 6];
+            t.stubs(&[
+                (w5::TK_MENU_MAIN_GET_MENU_ACTIVE_MASK, false, 0, 0, mask),
+                (w5::TK_VU1_SYNC_PATH, false, 0, 0, rng.word()),
+                (w5::TO_MENU_OPEN_PKT_BUFF_TMP, false, 0, 0, 0x81),
+                (w5::TO_MENU_DRAW_KICK_TMP, false, 0, 0, 0x82),
+                (w5::TO_MKP_SHAPE_XYWHUVC2, false, 11, 0, 0x83),
+                (w5::TO_MKP_SHAPE_XYWHUV, false, 9, 0, 0x84),
+                (w5::TO_MKP_CROSS_EXT_MES_FONT_LCLUT, false, 7, 0, 0x85),
+            ]);
+            let (first, second) = [(0, 0), (1, 1), (1, 0), (0, 1)][(i / 6) % 4];
+            t.stub_countdown(w5::MENU_TUTO_CHOICE_IS5, 0, 1, first, second);
+            t.stub_float_logged(w5::GRAPHIC_UI_REMAP_X2, 1, 2.5 + i as f32);
+            t.stub_float_logged(w5::GRAPHIC_UI_REMAP_Y2, 1, -0.75 * i as f32);
+            let msg = if i % 5 == 0 { 0 } else { rng.word() };
+            t.g32(0x0184_1c00, msg);
+            t.g32(0x0134_0854, [0, 1][(i / 24) % 2]);
+            t.g32(0x0184_09a8, [0, 0x0088_0000][(i / 48) % 2]);
+            t.g32(0x0184_0a40, [0, 0x0088_0000][(i / 3) % 2]);
+            t.check(
+                &format!("help bar #{i}"),
+                w5::DRAW_HELP_BAR,
+                Conv::Cdecl,
+                &[0x1234],
+                |m| Out::U32(w5::draw_help_bar(m)),
+            );
+        }
+    });
+}

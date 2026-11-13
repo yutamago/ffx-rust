@@ -1,12 +1,16 @@
 //! M5 finish, WP5 part 5 (wp5f): the last `FFX.exe` frontier: dlmalloc's
-//! heap growth and release (`ffx_sg::m5main4_lib`). Parity tests:
-//! `crates/ffx-oracle/tests/m5_main4.rs` (`dlmalloc_*`).
+//! heap growth and release (`ffx_sg::m5main4_lib`; parity tests in
+//! `crates/ffx-oracle/tests/m5_main4.rs`, `dlmalloc_*`), the menu screens'
+//! layout reads and the main menu's help bar (`ffx_menu::wp5f_menu`;
+//! `crates/ffx-oracle/tests/m5_menu.rs`, `wp5f_*`).
 //!
 //! Threads: the heaps are the game's `mspace`s (the cloth heap on the
-//! cloth workers, the graphics heap on the main thread). No shim keeps
-//! state; the region queries' buffers are `StackFrame`s (7 words).
+//! cloth workers, the graphics heap on the main thread); the menu runs on
+//! the main thread. No shim keeps state; the region queries' buffers are
+//! `StackFrame`s (7 words).
 
 use super::{StackFrame, mem, ported};
+use ffx_menu::wp5f_menu::bridge as menu;
 use ffx_sg::m5main4_lib::bridge as lib;
 
 ported! {
@@ -49,5 +53,27 @@ ported! {
     /// `tmalloc_large(m, nb)` -> the chunk's memory or 0.
     dlmalloc_tmalloc_large_006eb540 @ 0x006e_b540 => extern "C" fn tmalloc_large(m: u32, nb: u32) -> u32 {
         lib::tmalloc_large(&mut mem(), m, nb)
+    }
+
+    /// `MenuConfig_InitLayout_008cc050()` -> the last colour.
+    MenuConfig_InitLayout_008cc050 @ 0x008c_c050 => extern "C" fn config_init_layout() -> u32 {
+        menu::config_init_layout(&mut mem())
+    }
+    /// `MenuEquip_InitLayout_008cfc40()` -> the last call's `eax`.
+    MenuEquip_InitLayout_008cfc40 @ 0x008c_fc40 => extern "C" fn equip_init_layout() -> u32 {
+        menu::equip_init_layout(&mut mem())
+    }
+    /// `MenuLimit_InitLayout_008d0cd0()` -> the last call's `eax`.
+    MenuLimit_InitLayout_008d0cd0 @ 0x008d_0cd0 => extern "C" fn limit_init_layout() -> u32 {
+        menu::limit_init_layout(&mut mem())
+    }
+    /// `MenuKaizou_InitLayout_008d6be0()` -> the last call's `eax`.
+    MenuKaizou_InitLayout_008d6be0 @ 0x008d_6be0 => extern "C" fn kaizou_init_layout() -> u32 {
+        menu::kaizou_init_layout(&mut mem())
+    }
+    /// `TkMenuMain_DrawHelpBar_008a9350(window)` -> the mask or
+    /// `TkVU1SyncPath`'s `eax`.
+    TkMenuMain_DrawHelpBar_008a9350 @ 0x008a_9350 => extern "C" fn draw_help_bar(_window: u32) -> u32 {
+        menu::draw_help_bar(&mut mem())
     }
 }
