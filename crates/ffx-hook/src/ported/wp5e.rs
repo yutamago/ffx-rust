@@ -490,6 +490,10 @@ ported! {
         let mut slot = StackFrame::<2>::new();
         e::vfx_insert_hint(&mut mem(), this, out, at, value, node, slot.at())
     }
+    /// `PhyreScene_vfxEventMeshPass_006673b0(scene; event, clip)`: the event's meshes drawn in their passes; 0.
+    PhyreScene_vfxEventMeshPass_006673b0 @ 0x0066_73b0 => extern "thiscall" fn e_006673b0(scene: u32, ev: u32, clip: u32) -> u32 {
+        e::vfx_event_mesh_pass(&mut mem(), scene, ev, clip)
+    }
     /// `PSharray_data_004347a0`: the code of `PArray_Data_004d45a0`; the elements.
     PSharray_data_004347a0 @ 0x0043_47a0 => extern "thiscall" fn e_004347a0(this: u32) -> u32 {
         ffx_pcore::small::bridge::array_data(&mut mem(), this)

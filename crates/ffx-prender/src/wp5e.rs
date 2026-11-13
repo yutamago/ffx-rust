@@ -1320,3 +1320,92 @@ pub fn free_camera_set_mode(h: &mut impl Host, this: u32, mode: u32) -> u32 {
     }
     free_camera_take_scene(h, this)
 }
+
+/// `Ch_GetId(chr)` (cdecl), `Phyre_PRendering_PRendererBase_renderMeshInstance`
+/// (thiscall `(renderer; instance, contexts, x, y)`, `ret 0x10`),
+/// `PRendererBase_pushCommand20_005bb2e0(renderer; arg)` (thiscall) and
+/// `PhyreScene_DrawMeshMatrices(scene; on)` (thiscall).
+pub const CH_GET_ID: u32 = 0x0082_6b80;
+pub const RENDER_MESH_INSTANCE: u32 = 0x005b_9a90;
+pub const PUSH_COMMAND_20: u32 = 0x005b_b2e0;
+pub const DRAW_MESH_MATRICES: u32 = 0x0066_b360;
+/// The render pass names the renderer's `+0x48` points at: `"Opaque"`,
+/// `"Transparent"`, `"postTransparent"`, `"TransparentClipY"` (their
+/// table entries).
+pub const PASS_OPAQUE: u32 = 0x00c1_69b4;
+pub const PASS_TRANSPARENT: u32 = 0x00c1_69d4;
+pub const PASS_POST_TRANSPARENT: u32 = 0x00c1_6a44;
+pub const PASS_TRANSPARENT_CLIP_Y: u32 = 0x00c1_6b54;
+
+/// Every mesh instance of the event's list (`ev[0]` the count, top bit
+/// masked and read again after each, `ev[1]` the array) rendered:
+/// `renderMeshInstance(scene's renderer; mesh, mesh + 0x10's word, 0,
+/// renderer + 0x13c's word)`, the renderer read again for each.
+fn render_event_meshes(h: &mut impl Host, scene: u32, ev: u32) {
+    let mut i = 0u32;
+    while i < h.read::<u32>(ev) & 0x7fff_ffff {
+        let r: u32 = h.read(scene.wrapping_add(0xd0));
+        let list: u32 = h.read(ev.wrapping_add(4));
+        let mesh: u32 = h.read(list.wrapping_add(4 * i));
+        let contexts: u32 = h.read(mesh.wrapping_add(0x10));
+        let y: u32 = h.read(r.wrapping_add(0x13c));
+        h.call_sym(
+            RENDER_MESH_INSTANCE,
+            Conv::Thiscall(r),
+            &[mesh, contexts, 0, y],
+        );
+        i += 1;
+    }
+}
+
+/// The renderer's pass name (`+0x48`) set to the table entry `pass`.
+fn set_pass(h: &mut impl Host, scene: u32, pass: u32) {
+    let r: u32 = h.read(scene.wrapping_add(0xd0));
+    let p = h.rebase(pass);
+    h.write(r.wrapping_add(0x48), p);
+}
+
+/// `PhyreScene_processVFXDrawEvent`'s mesh pass (`0x006673b0`, thiscall
+/// `(scene; event, clip)`, `ret 8`): the event's character (`+0x18`)
+/// one of 0x10fb..0x10fd or 0x1100 draws the scene's mesh matrices
+/// (`PhyreScene_DrawMeshMatrices(scene; 0)`) in place of the event's
+/// meshes; the event's callback (`+0x1c`, cdecl `(event)`) first. With
+/// `clip` (its low byte): command 2, the pass `"TransparentClipY"` and a
+/// draw, command 1, the same pass and a draw again; else the passes
+/// `"Opaque"` and `"Transparent"` with a draw each, then (not for the
+/// special characters) `"postTransparent"` and one more. The original
+/// keeps its flag in its own `event` slot's top byte (dead after). 0.
+pub fn vfx_event_mesh_pass<H: Host>(h: &mut H, scene: u32, ev: u32, clip: u32) -> u32 {
+    let chr: u32 = h.read(ev.wrapping_add(0x18));
+    let id = h.call_sym(CH_GET_ID, Conv::Cdecl, &[chr]);
+    let special = matches!(id, 0x10fb | 0x10fc | 0x10fd | 0x1100);
+    let cb: u32 = h.read(ev.wrapping_add(0x1c));
+    if cb != 0 {
+        h.call(cb, Conv::Cdecl, &[ev]);
+    }
+    let draw = |h: &mut H| {
+        if special {
+            h.call_sym(DRAW_MESH_MATRICES, Conv::Thiscall(scene), &[0]);
+        } else {
+            render_event_meshes(h, scene, ev);
+        }
+    };
+    if clip & 0xff != 0 {
+        for command in [2u32, 1] {
+            let r: u32 = h.read(scene.wrapping_add(0xd0));
+            h.call_sym(PUSH_COMMAND_20, Conv::Thiscall(r), &[command]);
+            set_pass(h, scene, PASS_TRANSPARENT_CLIP_Y);
+            draw(h);
+        }
+        return 0;
+    }
+    set_pass(h, scene, PASS_OPAQUE);
+    draw(h);
+    set_pass(h, scene, PASS_TRANSPARENT);
+    draw(h);
+    if !special {
+        set_pass(h, scene, PASS_POST_TRANSPARENT);
+        render_event_meshes(h, scene, ev);
+    }
+    0
+}

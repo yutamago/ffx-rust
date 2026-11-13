@@ -1587,3 +1587,69 @@ fn wp5e_vfx_insert_hint() {
         }
     }
 }
+
+/// `PhyreScene_processVFXDrawEvent`'s mesh pass (`0x006673b0`): the
+/// character ids 0x10fb..0x10fd, 0x1100 and others, clip 0, 1 and 0x100
+/// (only the low byte), the callback set or not, 0..3 meshes (the count's
+/// top bit set now and then); every callee a logging stub. `eax` and
+/// memory (the renderer's pass word and the logs).
+#[test]
+fn wp5e_vfx_event_mesh_pass() {
+    use ffx_prender::wp5e as e;
+    for (label, mut t) in Twins::all() {
+        let log = t.alloc(&[0; 4 + 32 * 64]);
+        let id = t.alloc(&[0; 4]);
+        let s = import_stub(&mut t, log, 0x1d, 1, None, id, 0);
+        let mut j = vec![0xe9];
+        let at = t.a.rebase(e::CH_GET_ID);
+        j.extend(s.wrapping_sub(at + 5).to_le_bytes());
+        t.write(at, &j);
+        let s = deref_stub(log, 0x9e, &[0, 1, 2, 3], None, 0x10, 0x9e9e);
+        jmp_stub(&mut t, e::RENDER_MESH_INSTANCE, &s);
+        jmp_stub(
+            &mut t,
+            e::PUSH_COMMAND_20,
+            &deref_stub(log, 0x20, &[0], None, 4, 0x2020),
+        );
+        jmp_stub(
+            &mut t,
+            e::DRAW_MESH_MATRICES,
+            &deref_stub(log, 0x4d, &[0], None, 4, 0x4d4d),
+        );
+        let mut c = vec![0x31, 0xc9];
+        c.extend(deref_stub(log, 0xcb, &[0], None, 0, 0xcbcb));
+        let callback = t.code(&c);
+        let renderer = t.alloc(&[0x52; 0x140]);
+        let scene = t.alloc(&[0x53; 0x100]);
+        t.w32(scene + 0xd0, renderer);
+        let meshes: Vec<u32> = (0..3)
+            .map(|k| {
+                let m = t.alloc(&[0x40 + k as u8; 0x20]);
+                t.w32(m + 0x10, 0x6000 + k);
+                m
+            })
+            .collect();
+        let list = t.alloc(
+            &meshes
+                .iter()
+                .flat_map(|m| m.to_le_bytes())
+                .collect::<Vec<_>>(),
+        );
+        for case in 0..48u32 {
+            let chr_id = [0x10fb, 0x10fc, 0x10fd, 0x1100, 0x10fe, 0x22][(case % 6) as usize];
+            t.w32(id, chr_id);
+            let clip = [0u32, 1, 0x100][((case / 6) % 3) as usize];
+            let ev = t.alloc(&[0; 0x20]);
+            let n = (case / 12) % 4;
+            t.w32(ev, n | if case % 5 == 0 { 0x8000_0000 } else { 0 });
+            t.w32(ev + 4, list);
+            t.w32(ev + 0x18, 0x0700 + case);
+            t.w32(ev + 0x1c, if case % 2 == 0 { callback } else { 0 });
+            t.w32(log, 0);
+            let w = format!("{label} vfx mesh pass {case} (id {chr_id:#x}, clip {clip:#x}, {n})");
+            t.run(&w, 0x0066_73b0, scene, &[ev, clip], false, |g| {
+                e::vfx_event_mesh_pass(g, scene, ev, clip)
+            });
+        }
+    }
+}
