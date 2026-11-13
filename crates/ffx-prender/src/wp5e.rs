@@ -1479,3 +1479,32 @@ pub fn map_name_line_text<H: Host>(h: &mut H, this: u32, n: u32, buf: u32) -> u3
         None => h.call(sprintf_s, Conv::Cdecl, &[buf, 0x100, fmt, mark, label]),
     }
 }
+
+/// `LocText_ConvertLineBreaks_006e9700(src, dst, n)` (cdecl),
+/// `GetDerefU32_00a28d10(this)` (thiscall: `this[0]`), and Iggy's
+/// `IggyPlayerCallbackResultPath(player)` and `IggyValueSetStringUTF8RS(
+/// path, a, b, text, len)` import slots (stdcall).
+pub const CONVERT_LINE_BREAKS: u32 = 0x006e_9700;
+pub const GET_DEREF: u32 = 0x00a2_8d10;
+pub const IGGY_RESULT_PATH_SLOT: u32 = 0x00b0_c818;
+pub const IGGY_SET_STRING_SLOT: u32 = 0x00b0_c81c;
+
+/// `GuideMap_setLocationText_006e9870(menu, loc)` (cdecl;
+/// `rcbgGuideMapSave`'s tail target and `IggyCallback_lookupName`'s): the
+/// text `loc` (`SaveDataGetLoc`) into `frame` (0x800 bytes, the original's
+/// `ebp - 0x804`), its line breaks converted into `frame + 0x400` (at most
+/// 0x3ff bytes), and the Iggy callback's result set to it
+/// (`IggyValueSetStringUTF8RS(IggyPlayerCallbackResultPath(menu[0]), 0,
+/// 0, text, strlen(text))`). That call's `eax`.
+pub fn guide_map_set_location_text(h: &mut impl Host, menu: u32, loc: u32, frame: u32) -> u32 {
+    let raw = frame;
+    let text = frame + 0x400;
+    h.call_sym(SAVE_DATA_GET_LOC, Conv::Cdecl, &[loc, raw]);
+    h.call_sym(CONVERT_LINE_BREAKS, Conv::Cdecl, &[raw, text, 0x3ff]);
+    let player = h.call_sym(GET_DEREF, Conv::Thiscall(menu), &[]);
+    let result_path: u32 = h.read(h.rebase(IGGY_RESULT_PATH_SLOT));
+    let path = h.call(result_path, Conv::Stdcall, &[player]);
+    let len = c_len(h, text);
+    let set_string: u32 = h.read(h.rebase(IGGY_SET_STRING_SLOT));
+    h.call(set_string, Conv::Stdcall, &[path, 0, 0, text, len])
+}

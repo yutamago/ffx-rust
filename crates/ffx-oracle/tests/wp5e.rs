@@ -1736,3 +1736,63 @@ fn wp5e_map_name_line_text() {
         }
     }
 }
+
+/// `GuideMap_setLocationText` (`0x006e9870`): `SaveDataGetLoc` a stub
+/// writing a text with line breaks of 0..30 characters, the line-break
+/// conversion and the player getter the originals, the two Iggy imports
+/// logging stubs (the text read back through its pointer, which differs
+/// on the two sides). `eax` and memory.
+#[test]
+fn wp5e_guide_map_location_text() {
+    use ffx_prender::wp5e as e;
+    for (label, mut t) in Twins::all() {
+        let log = t.alloc(&[0; 4 + 32 * 64]);
+        let text = t.alloc(&[0; 0x40]);
+        // SaveDataGetLoc(id, out): the text at `text` copied to out
+        let mut c = vec![0x56, 0x57, 0x8b, 0x7c, 0x24, 0x10, 0xbe]; // push esi; push edi; mov edi, [esp+0x10]; mov esi, imm
+        c.extend(text.to_le_bytes());
+        c.extend([0xb9, 0x40, 0, 0, 0, 0xf3, 0xa4, 0x5f, 0x5e, 0xc3]); // mov ecx, 0x40; rep movsb; pop edi; pop esi; ret
+        jmp_stub(&mut t, e::SAVE_DATA_GET_LOC, &c);
+        let mut c = vec![0x31, 0xc9];
+        c.extend(deref_stub(log, 0x9a, &[0], None, 4, 0x5150));
+        let s = t.code(&c);
+        set_import(&mut t, e::IGGY_RESULT_PATH_SLOT, s);
+        let mut c = vec![0x31, 0xc9];
+        c.extend(deref_stub(
+            log,
+            0x5e,
+            &[0, 1, 2, 4],
+            Some((3, 8)),
+            0x14,
+            0x5e5e,
+        ));
+        let s = t.code(&c);
+        set_import(&mut t, e::IGGY_SET_STRING_SLOT, s);
+        let frame = t.b.stack_range().start + 0x1000;
+        for round in 0..12u32 {
+            let n = (round * 3) % 31;
+            let mut s: Vec<u8> = (0..n)
+                .map(|i| {
+                    if i % 7 == 3 {
+                        b'\\'
+                    } else if i % 7 == 4 {
+                        b'n'
+                    } else {
+                        b'a' + (i % 5) as u8
+                    }
+                })
+                .collect();
+            s.resize(0x40, 0);
+            t.write(text, &s);
+            // the menu's player: [[menu + 0x6c]]
+            let player = t.alloc(&(0x4700 + round).to_le_bytes());
+            let menu = t.alloc(&[0; 0x70]);
+            t.w32(menu + 0x6c, player);
+            t.w32(log, 0);
+            let w = format!("{label} guide map location text {round} ({n})");
+            t.run_cdecl(&w, 0x006e_9870, &[menu, 0x300 + round], |g| {
+                e::guide_map_set_location_text(g, menu, 0x300 + round, frame)
+            });
+        }
+    }
+}

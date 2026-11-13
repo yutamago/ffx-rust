@@ -506,6 +506,11 @@ ported! {
     MapNameTweak_getLineText_006b6ef0 @ 0x006b_6ef0 => extern "thiscall" fn e_006b6ef0(this: u32, n: u32, buf: u32) -> u32 {
         e::map_name_line_text(&mut mem(), this, n, buf)
     }
+    /// `GuideMap_setLocationText_006e9870(menu, loc)`: the Iggy callback's result set to the location's text.
+    GuideMap_setLocationText_006e9870 @ 0x006e_9870 => extern "C" fn e_006e9870(menu: u32, loc: u32) -> u32 {
+        let mut frame = StackFrame::<0x200>::new();
+        e::guide_map_set_location_text(&mut mem(), menu, loc, frame.at())
+    }
     /// `PSharray_data_004347a0`: the code of `PArray_Data_004d45a0`; the elements.
     PSharray_data_004347a0 @ 0x0043_47a0 => extern "thiscall" fn e_004347a0(this: u32) -> u32 {
         ffx_pcore::small::bridge::array_data(&mut mem(), this)
