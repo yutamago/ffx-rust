@@ -226,7 +226,22 @@ ports. A call from Rust to one (`Exec::call`, after the table, the
 imports and the traps) reads its first bytes and does what the
 instruction does to `eax`, with no emulator start; Unicorn code calling
 one runs it (a block, no stop). `tests/crt.rs` checks each shape on a
-real function against Unicorn.
+real function against Unicorn. Since m5-wp5e also `mov eax, ecx` and
+`lea eax, [ecx + d]` (a member's address: about 490 functions; the
+no-Unicorn boot met `0x006a2220` in `PhyreScene_DrawZPrePass`), and
+the framed accessors `push ebp; mov ebp, esp; mov eax, [ebp+8]; (add
+eax, imm;) pop ebp; ret (n)` (the first stack word plus an offset:
+about 370, `FieldAddr10_006a06c0` among them). **Store wrappers**: the
+Phyre class descriptors' `getPointerFromScriptContext` (about 410:
+`push [ebp+8]; call X; mov ecx, [ebp+0xc]; add esp, 4; mov [ecx], eax;
+ret 8`) called from Rust call `X(a)` through `Exec::call` and store its
+`eax` at the second word (`leaf::store_wrapper`).
+
+**Jump thunks** (m5-wp5e). A call from Rust to an address with no table
+entry whose first instruction is `jmp rel32` goes to the jump's target
+(`Shared::resolve_call`, after the import thunks; at most 8 steps): the
+target gets the caller's words and registers, as the jump gives them
+(`0x0069fe40`, `jmp ChrShaderRender_ShadowEnd_0069fdc0`).
 
 **C runtime helpers** (`src/crt.rs`, m5-wp5): `FFX.exe`'s statically
 linked `eh_vector_constructor_iterator`/`eh_vector_destructor_iterator`
@@ -449,6 +464,18 @@ DLLs" below) the boot runs into `InitializeGlobalClassDescriptors` and
 stops at `FFX.exe` functions without a port (`0x005dff30`, a
 `PGameplay` component constructor's callee); every C runtime import has
 a Rust side (`tests/no_unicorn.rs`' TSV lists none).
+
+After m5-wp5d and m5-wp5e (2026-11-13: the loader's string maps, the
+asset list's copies and erases, `TipSystem`, the 51 `PSharray`
+array-start callbacks, dlmalloc's `internal_memalign`, the VFX render
+data table's map, the leaf and jump-thunk routes above) the headless
+boot has no stop left on its way: the opening, the field map's load, the
+event scripts (`Ch_Allocate`), field particles and key-frame animation
+run in Rust only. At 1,500 flips it has played 198 updates, as the
+Unicorn build does; with `FFX_NOU_PRESENTS=3000 FFX_NOU_BUDGET=400` it
+ran 1,392 updates and 1,836 flips (46.5 s of game time) and used its
+budget up with no unported address. The test takes a budget stop with
+no unported address as a pass.
 
 ## x87
 

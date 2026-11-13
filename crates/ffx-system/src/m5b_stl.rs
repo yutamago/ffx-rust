@@ -19,6 +19,28 @@ pub const ROTATE_LEFT: u32 = 0x0069_a3f0;
 pub const ROTATE_RIGHT: u32 = 0x0069_a4f0;
 pub const TREE_MIN: u32 = 0x0069_a470;
 pub const TREE_MAX: u32 = 0x0069_a450;
+
+/// The callees of a `std::_Tree::erase(iterator)` copy: its rotations
+/// (thiscall `(this; node)`), `_Min`/`_Max` (cdecl `(node)`), and the
+/// offset of a `std::string` key the copy frees before the node (wp5e:
+/// the string maps' copies `0x00636e20` and its siblings).
+#[derive(Clone, Copy)]
+pub struct EraseCalls {
+    pub rotate_left: u32,
+    pub rotate_right: u32,
+    pub min: u32,
+    pub max: u32,
+    pub string_key: Option<u32>,
+}
+
+/// `ClusterMap_erase_0069b010`'s callees (no key to free).
+pub const CLUSTER_ERASE: EraseCalls = EraseCalls {
+    rotate_left: ROTATE_LEFT,
+    rotate_right: ROTATE_RIGHT,
+    min: TREE_MIN,
+    max: TREE_MAX,
+    string_key: None,
+};
 /// `operator_new` / `operator_delete` (cdecl).
 pub const OPERATOR_NEW: u32 = 0x0063_0310;
 pub const OPERATOR_DELETE: u32 = 0x0063_0390;
@@ -68,10 +90,9 @@ pub const SYMBOL_HAS_KEY_EBP: u32 = 0x40;
 pub mod bridge {
     use super::{
         BAD_ITERATOR, DJB_HASH, LOWER_BOUND, MAP_INDEX, MAP_TOO_LONG, MEMMOVE_IAT, OPERATOR_DELETE,
-        OPERATOR_NEW, RANGE_COUNT, RELEASE_MUTEX_IAT, ROTATE_LEFT, ROTATE_RIGHT, STRING_ASSIGN,
-        STRING_COMPARE, SYMBOL_HAS_KEY_EBP, TREE_ERASE_RANGE, TREE_ERASE_SUBTREE, TREE_MAX,
-        TREE_MIN, VECTOR_DESTROY, VECTOR_TOO_LONG, WAIT_IAT, XBAD_ALLOC_IAT, XLENGTH_IAT,
-        XOUT_OF_RANGE_IAT,
+        OPERATOR_NEW, RANGE_COUNT, RELEASE_MUTEX_IAT, STRING_ASSIGN, STRING_COMPARE,
+        SYMBOL_HAS_KEY_EBP, TREE_ERASE_RANGE, TREE_ERASE_SUBTREE, VECTOR_DESTROY, VECTOR_TOO_LONG,
+        WAIT_IAT, XBAD_ALLOC_IAT, XLENGTH_IAT, XOUT_OF_RANGE_IAT,
     };
     use crate::stl::bridge::{memcmp, tree_iterator_inc, tree_rotate_left, tree_rotate_right};
     use ffx_graphic::host::{Conv, Host};
@@ -113,8 +134,23 @@ pub mod bridge {
         at: u32,
         node: u32,
     ) -> u32 {
+        tree_insert_at_limited(h, this, out, add_left, at, node, 0x0aaa_aaa9)
+    }
+
+    /// [`tree_insert_at`] for a copy whose `max_size()` check is `size >=
+    /// limit` (`0x0069c8e0`, the VFX render data table's: 0x07fffffe;
+    /// m5-wp5e).
+    pub fn tree_insert_at_limited(
+        h: &mut impl Host,
+        this: u32,
+        out: u32,
+        add_left: u32,
+        at: u32,
+        node: u32,
+        limit: u32,
+    ) -> u32 {
         let mut size: u32 = h.read(this.wrapping_add(4));
-        if size >= 0x0aaa_aaa9 {
+        if size >= limit {
             h.call_sym(OPERATOR_DELETE, Conv::Cdecl, &[node]);
             let msg = h.rebase(MAP_TOO_LONG);
             size = import(h, XLENGTH_IAT, Conv::Cdecl, &[msg]);
@@ -198,6 +234,20 @@ pub mod bridge {
     /// the size counted down (not below 0); `out` = the successor.
     /// Returns `out`.
     pub fn tree_erase(h: &mut impl Host, this: u32, out: u32, slot: u32) -> u32 {
+        tree_erase_with(h, this, out, slot, &super::CLUSTER_ERASE)
+    }
+
+    /// [`tree_erase`] for a copy with other callees ([`super::EraseCalls`]):
+    /// with a string key, after the fix-up the key's heap block freed (a
+    /// capacity of 16 or more) and the key emptied, then the node deleted.
+    #[allow(clippy::too_many_lines)] // one MSVC routine
+    pub fn tree_erase_with(
+        h: &mut impl Host,
+        this: u32,
+        out: u32,
+        slot: u32,
+        calls: &super::EraseCalls,
+    ) -> u32 {
         let erased: u32 = h.read(slot);
         if nil(h, erased) {
             let msg = h.rebase(BAD_ITERATOR);
@@ -236,7 +286,7 @@ pub mod bridge {
                 let v = if nil(h, fix) {
                     fix_parent
                 } else {
-                    h.call_sym(TREE_MIN, Conv::Cdecl, &[fix])
+                    h.call_sym(calls.min, Conv::Cdecl, &[fix])
                 };
                 let head: u32 = h.read(this);
                 h.write(head, v);
@@ -246,7 +296,7 @@ pub mod bridge {
                 let v = if nil(h, fix) {
                     fix_parent
                 } else {
-                    h.call_sym(TREE_MAX, Conv::Cdecl, &[fix])
+                    h.call_sym(calls.max, Conv::Cdecl, &[fix])
                 };
                 let head: u32 = h.read(this);
                 h.write(head.wrapping_add(8), v);
@@ -286,7 +336,10 @@ pub mod bridge {
             h.write(erased.wrapping_add(0xc), b);
         }
         if h.read::<u8>(erased.wrapping_add(0xc)) == 1 {
-            erase_fixup(h, this, fix, fix_parent);
+            erase_fixup(h, this, fix, fix_parent, calls);
+        }
+        if let Some(k) = calls.string_key {
+            free_string(h, erased.wrapping_add(k));
         }
         h.call_sym(OPERATOR_DELETE, Conv::Cdecl, &[erased]);
         let size: u32 = h.read(this.wrapping_add(4));
@@ -296,6 +349,18 @@ pub mod bridge {
         let next: u32 = h.read(slot);
         h.write(out, next);
         out
+    }
+
+    /// A `std::string`'s heap block freed (a capacity of 16 or more) and
+    /// the string emptied (capacity 15, size 0, the first byte 0).
+    fn free_string(h: &mut impl Host, s: u32) {
+        if h.read::<u32>(s.wrapping_add(0x14)) >= 0x10 {
+            let p: u32 = h.read(s);
+            h.call_sym(OPERATOR_DELETE, Conv::Cdecl, &[p]);
+        }
+        h.write(s.wrapping_add(0x14), 0xfu32);
+        h.write(s.wrapping_add(0x10), 0u32);
+        h.write(s, 0u8);
     }
 
     fn black(h: &impl Host, node: u32) -> bool {
@@ -308,7 +373,13 @@ pub mod bridge {
     }
 
     /// The erase's red-black fix-up from `fix` (under `fix_parent`).
-    fn erase_fixup(h: &mut impl Host, this: u32, mut fix: u32, mut fix_parent: u32) {
+    fn erase_fixup(
+        h: &mut impl Host,
+        this: u32,
+        mut fix: u32,
+        mut fix_parent: u32,
+        calls: &super::EraseCalls,
+    ) {
         if fix != root(h, this) {
             while black(h, fix) {
                 let left: u32 = h.read(fix_parent);
@@ -317,7 +388,7 @@ pub mod bridge {
                     if red(h, p) {
                         colour(h, p, 1);
                         colour(h, fix_parent, 0);
-                        h.call_sym(ROTATE_LEFT, Conv::Thiscall(this), &[fix_parent]);
+                        h.call_sym(calls.rotate_left, Conv::Thiscall(this), &[fix_parent]);
                         p = h.read(fix_parent.wrapping_add(8));
                     }
                     if nil(h, p) {
@@ -329,7 +400,7 @@ pub mod bridge {
                             let l: u32 = h.read(p);
                             colour(h, l, 1);
                             colour(h, p, 0);
-                            h.call_sym(ROTATE_RIGHT, Conv::Thiscall(this), &[p]);
+                            h.call_sym(calls.rotate_right, Conv::Thiscall(this), &[p]);
                             p = h.read(fix_parent.wrapping_add(8));
                         }
                         let c: u8 = h.read(fix_parent.wrapping_add(0xc));
@@ -337,7 +408,7 @@ pub mod bridge {
                         colour(h, fix_parent, 1);
                         let r: u32 = h.read(p.wrapping_add(8));
                         colour(h, r, 1);
-                        h.call_sym(ROTATE_LEFT, Conv::Thiscall(this), &[fix_parent]);
+                        h.call_sym(calls.rotate_left, Conv::Thiscall(this), &[fix_parent]);
                         break;
                     }
                 } else {
@@ -345,7 +416,7 @@ pub mod bridge {
                     if red(h, p) {
                         colour(h, p, 1);
                         colour(h, fix_parent, 0);
-                        h.call_sym(ROTATE_RIGHT, Conv::Thiscall(this), &[fix_parent]);
+                        h.call_sym(calls.rotate_right, Conv::Thiscall(this), &[fix_parent]);
                         p = h.read(fix_parent);
                     }
                     if nil(h, p) {
@@ -357,7 +428,7 @@ pub mod bridge {
                             let r: u32 = h.read(p.wrapping_add(8));
                             colour(h, r, 1);
                             colour(h, p, 0);
-                            h.call_sym(ROTATE_LEFT, Conv::Thiscall(this), &[p]);
+                            h.call_sym(calls.rotate_left, Conv::Thiscall(this), &[p]);
                             p = h.read(fix_parent);
                         }
                         let c: u8 = h.read(fix_parent.wrapping_add(0xc));
@@ -365,7 +436,7 @@ pub mod bridge {
                         colour(h, fix_parent, 1);
                         let l: u32 = h.read(p);
                         colour(h, l, 1);
-                        h.call_sym(ROTATE_RIGHT, Conv::Thiscall(this), &[fix_parent]);
+                        h.call_sym(calls.rotate_right, Conv::Thiscall(this), &[fix_parent]);
                         break;
                     }
                 }

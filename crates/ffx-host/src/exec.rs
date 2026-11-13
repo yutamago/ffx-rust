@@ -615,6 +615,40 @@ impl Shared {
             .then(|| ffx_bridge::Mem::read(&mem, slot))
     }
 
+    /// Where a call to `addr` from Rust goes: through import thunks
+    /// ([`Shared::thunk`]) and through jump thunks, a `jmp rel32` as the
+    /// first instruction of a function with no table entry of its own
+    /// (`0x0069fe40`, `jmp ChrShaderRender_ShadowEnd_0069fdc0`: the target
+    /// gets the caller's stack and registers, as the jump gives them;
+    /// m5-wp5e). At most 8 steps.
+    #[must_use]
+    pub fn resolve_call(&self, addr: u32) -> u32 {
+        let mem = ArenaMem {
+            arena: Arc::clone(&self.arena),
+        };
+        let mut at = addr;
+        for _ in 0..8 {
+            if self.table.get(at).is_some() {
+                break;
+            }
+            if let Some(to) = self.thunk(at) {
+                at = to;
+                continue;
+            }
+            if !self.image.is_code(at) {
+                break;
+            }
+            let mut b = [0u8; 5];
+            ffx_bridge::Mem::read_bytes(&mem, at, &mut b);
+            if b[0] != 0xe9 {
+                break;
+            }
+            let rel = i32::from_le_bytes([b[1], b[2], b[3], b[4]]);
+            at = at.wrapping_add(5).wrapping_add_signed(rel);
+        }
+        at
+    }
+
     /// Whether `addr` is an import thunk patched to `int3`
     /// ([`Shared::find_thunks`]).
     #[must_use]
@@ -1542,7 +1576,7 @@ impl Exec {
         if self.halted() {
             return Err(Error::Stopped);
         }
-        let addr = self.shared.thunk(addr).unwrap_or(addr);
+        let addr = self.shared.resolve_call(addr);
         let esp = self.reg(RegisterX86::ESP).unwrap_or(0);
         let r = if let Some(entry) = self.shared.table.get(addr).copied() {
             *self.stats.ports.entry(addr).or_default() += 1;
@@ -1601,7 +1635,27 @@ impl Exec {
             .flatten()
         {
             self.stats.leaf_calls += 1;
-            Ok(crate::leaf::run(&self.mem(), leaf, args.ecx))
+            let first = args.stack.first().copied().unwrap_or(0);
+            Ok(crate::leaf::run(&self.mem(), leaf, args.ecx, first))
+        } else if let Some(target) = self
+            .shared
+            .image
+            .is_code(addr)
+            .then(|| crate::leaf::store_wrapper(&self.mem(), addr))
+            .flatten()
+        {
+            // `*out = target(a)`: the call, then the store (m5-wp5e)
+            self.stats.leaf_calls += 1;
+            let a = args.stack.first().copied().unwrap_or(0);
+            let out = args.stack.get(1).copied().unwrap_or(0);
+            let inner = Args {
+                stack: vec![a],
+                ..Args::default()
+            };
+            self.call(target, Conv::Cdecl, &inner).map(|r| {
+                ffx_bridge::Mem::write(&mut self.mem(), out, r.eax);
+                Ret::eax(r.eax)
+            })
         } else {
             self.call_code(addr, conv, args)
         };
@@ -3136,13 +3190,14 @@ impl ffx_bridge::route::Router for Exec {
         float: ffx_bridge::route::Float,
     ) -> ffx_bridge::route::Raw {
         use ffx_bridge::route::{Float, Raw};
-        let addr = self.shared.thunk(addr).unwrap_or(addr);
+        let addr = self.shared.resolve_call(addr);
         #[cfg(feature = "dev-unicorn")]
         let emulated = self.shared.table.get(addr).is_none()
             && !self.shared.stubs.contains_key(&addr)
             && self.shared.trap(addr).is_none()
             && !(self.shared.image.is_code(addr)
-                && crate::leaf::decode(&self.mem(), addr).is_some());
+                && (crate::leaf::decode(&self.mem(), addr).is_some()
+                    || crate::leaf::store_wrapper(&self.mem(), addr).is_some()));
         let Ok(ret) = Exec::call(self, addr, conv, args) else {
             halted()
         };

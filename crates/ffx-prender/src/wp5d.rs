@@ -998,7 +998,7 @@ fn memcmp_sign(h: &impl Host, a: u32, b: u32, n: u32) -> i32 {
 }
 
 /// The characters and size of the `std::string` at `s`.
-fn string_parts(h: &impl Host, s: u32) -> (u32, u32) {
+pub(crate) fn string_parts(h: &impl Host, s: u32) -> (u32, u32) {
     let cap: u32 = h.read(s.wrapping_add(0x14));
     let at = if cap >= 16 { h.read(s) } else { s };
     (at, h.read(s.wrapping_add(0x10)))

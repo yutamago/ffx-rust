@@ -634,6 +634,111 @@ pub mod bridge {
         }
     }
 
+    /// dlmalloc's `internal_memalign(m, alignment, bytes)` (`0x006ea5f0`,
+    /// cdecl; `mspace_memalign`'s callee; m5-wp5e): an alignment up to 8
+    /// is plain [`MSPACE_MALLOC_SYM`]; else the alignment at least 16 and
+    /// rounded up to a power of two, `bytes` under `0xffffffc0 -
+    /// alignment` (else 0), a block of `nb + alignment + 12` (`nb` the
+    /// padded request, at least 16), and under the heap's lock: when the
+    /// block is not aligned, the aligned chunk inside it (moved on by the
+    /// alignment when the lead would be under 16 bytes) takes the rest
+    /// (a mapped chunk: its previous foot grows by the lead; else both
+    /// chunks marked in use) and the lead is freed after; a tail of more
+    /// than 16 bytes past `nb` is split off and freed too
+    /// ([`MSPACE_FREE_SYM`], after the lock is released). The aligned
+    /// block. `spins` is a word for the lock's spin counter (a register in
+    /// the original).
+    pub fn internal_memalign(
+        h: &mut impl Host,
+        m: u32,
+        alignment: u32,
+        bytes: u32,
+        spins: u32,
+    ) -> u32 {
+        if alignment <= 8 {
+            return h.call_sym(MSPACE_MALLOC_SYM, Conv::Cdecl, &[m, bytes]);
+        }
+        let mut align = alignment.max(0x10);
+        if align & (align - 1) != 0 {
+            let mut a = 0x10u32;
+            while a < align {
+                a = a.wrapping_add(a);
+            }
+            align = a;
+        }
+        if bytes >= 0xffff_ffc0u32.wrapping_sub(align) {
+            return 0;
+        }
+        let nb = if bytes < 0xb {
+            0x10
+        } else {
+            bytes.wrapping_add(0xb) & !7
+        };
+        let mem = h.call_sym(
+            MSPACE_MALLOC_SYM,
+            Conv::Cdecl,
+            &[m, nb.wrapping_add(0xc).wrapping_add(align)],
+        );
+        if mem == 0 {
+            return 0;
+        }
+        let mut leader = 0;
+        let mut p = mem.wrapping_sub(8);
+        lock(h, m, spins);
+        if !mem.is_multiple_of(align) {
+            let mut br =
+                (mem.wrapping_sub(1).wrapping_add(align) & align.wrapping_neg()).wrapping_sub(8);
+            if br.wrapping_sub(p) < 0x10 {
+                br = br.wrapping_add(align);
+            }
+            let head: u32 = h.read(at(p, 4));
+            let lead = br.wrapping_sub(p);
+            let size = (head & !7).wrapping_sub(lead);
+            if head & 3 == 0 {
+                // a mapped chunk
+                let foot: u32 = h.read(p);
+                h.write(br, foot.wrapping_add(lead));
+                h.write(at(br, 4), size);
+            } else {
+                let nh: u32 = h.read(at(br, 4));
+                h.write(at(br, 4), (nh & 1) | size | 2);
+                let next = at(br, size.wrapping_add(4));
+                let w: u32 = h.read(next);
+                h.write(next, w | 1);
+                let ph: u32 = h.read(at(p, 4));
+                h.write(at(p, 4), (ph & 1) | lead | 2);
+                let next = at(p, lead.wrapping_add(4));
+                let w: u32 = h.read(next);
+                h.write(next, w | 1);
+                leader = at(p, 8);
+            }
+            p = br;
+        }
+        let head: u32 = h.read(at(p, 4));
+        let mut trailer = 0;
+        if head & 3 != 0 && head & !7 > nb.wrapping_add(0x10) {
+            let rest = (head & !7).wrapping_sub(nb);
+            let r = at(p, nb);
+            h.write(at(p, 4), (head & 1) | nb | 2);
+            let w: u32 = h.read(at(r, 4));
+            h.write(at(r, 4), w | 1);
+            let w: u32 = h.read(at(r, 4));
+            h.write(at(r, 4), (w & 1) | rest | 2);
+            let next = at(r, rest.wrapping_add(4));
+            let w: u32 = h.read(next);
+            h.write(next, w | 1);
+            trailer = at(r, 8);
+        }
+        unlock(h, m);
+        if leader != 0 {
+            h.call_sym(MSPACE_FREE_SYM, Conv::Cdecl, &[m, leader]);
+        }
+        if trailer != 0 {
+            h.call_sym(MSPACE_FREE_SYM, Conv::Cdecl, &[m, trailer]);
+        }
+        at(p, 8)
+    }
+
     /// `mspace_free(m, mem)` (`0x006ebee0`, cdecl): dlmalloc's free. The
     /// block's usable bytes are filled with 0xfe first; then under the
     /// heap's lock (`spins`, the caller's `mem` slot, counts its tries)

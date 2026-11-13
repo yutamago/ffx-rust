@@ -3071,3 +3071,55 @@ fn dlmalloc_mspace_free_matches_the_original() {
         }
     });
 }
+
+/// dlmalloc's `internal_memalign` (`0x006ea5f0`, m5-wp5e): `mspace_malloc`
+/// and `mspace_free` recording stubs, the malloc's block placed at every
+/// 8-byte offset of a 0x40 window (aligned or not: a lead of under 16
+/// moves on), chunks in use, free-bit set or mapped, tails long enough
+/// to split or not; alignments 0..8 (plain malloc), 9..0x40 (rounded up
+/// to powers of two), requests 0..0x60 and too large ones; the lock as
+/// in the malloc test. Result and memory (the stubs' logs).
+#[test]
+fn dlmalloc_internal_memalign_matches_the_original() {
+    let mut rng = Rng(0x006e_a5f0);
+    Twins::each(|t| {
+        for k in 0..400 {
+            t.reset();
+            let m = t.zeros(0x200);
+            dl_lock_stubs(t, &mut rng, m);
+            // junk inside (the new chunk's old head bit 0 is kept)
+            let junk: Vec<u32> = (0..0x400).map(|_| rng.next()).collect();
+            let arena = t.words(&junk) + 0x100;
+            let mem = arena + 8 * rng.below(8);
+            let flags = rng.pick(&[1u32, 3, 3, 0]);
+            let align = rng.pick(&[0u32, 1, 8, 9, 0x10, 0x11, 0x20, 0x30, 0x40]);
+            let bytes = if rng.chance(20) {
+                rng.pick(&[0xffff_ffc0u32 - align.max(0x10), 0xffff_ff00])
+            } else {
+                rng.below(0x60)
+            };
+            // the block as large as asked (nb + alignment + 12, the chunk
+            // 4 more) and some spare
+            let nb = if bytes < 0xb {
+                0x10
+            } else {
+                bytes.wrapping_add(0xb) & !7
+            };
+            let a = align.max(0x10).next_power_of_two();
+            let size = (nb.min(0x100) + a + 0x10 + 7) & !7;
+            let size = size + 8 * rng.below(6);
+            t.w32(mem - 8, rng.pick(&[0u32, 0x40, 0x123]));
+            t.w32(mem - 4, size | flags);
+            let ret = if rng.chance(8) { 0 } else { mem };
+            t.stub(lib::MSPACE_MALLOC_SYM, false, 2, 0, ret);
+            t.stub(lib::MSPACE_FREE_SYM, false, 2, 0, 0x77);
+            let what = format!(
+                "internal_memalign {k} (align {align:#x}, {bytes:#x}, size {size:#x}|{flags})"
+            );
+            let spins = t.frame_ebp(3) - 0x200;
+            t.check(&what, 0x006e_a5f0, Conv::Cdecl, &[m, align, bytes], |mm| {
+                Out::U32(lib::internal_memalign(mm, m, align, bytes, spins))
+            });
+        }
+    });
+}

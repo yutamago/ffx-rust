@@ -9,6 +9,8 @@
 //! `FFX_HOST_UNPORTED_OUT=<file>` writes what the boot found as TSV: the
 //! unported addresses it stopped at, and every C runtime import without a
 //! Rust side (`kind`, `address or import`, `name`, `detail`).
+//! `FFX_NOU_PRESENTS=<n>` (default 3) and `FFX_NOU_BUDGET=<seconds>`
+//! (default 120) let the boot run further.
 
 #![cfg(not(feature = "dev-unicorn"))]
 
@@ -43,11 +45,13 @@ fn documents(name: &str) -> PathBuf {
 
 /// `MsCheckRange`, a port (cdecl `(x, lo, hi)`: `x` clamped).
 const MS_CHECK_RANGE: u32 = 0x0079_a0c0;
-/// An address with no Rust side: the `map<string, ...>::operator[]` at
-/// `0x006f3ae0` (`AssetListReader_getSymbolId`'s callee, the no-Unicorn boot's
-/// next stop after m5-wp5d; the entry point, `Game_Main` and `GDraw`'s
-/// trampoline `0x00a34b00` that this test used are ported now).
-const ENTRY: u32 = 0x006f_3ae0;
+/// An address with no Rust side: `lua_getfield` (`0x0094b030`, the
+/// statically linked Lua VM, which nothing ports yet; the no-Unicorn boot
+/// no longer stops anywhere after m5-wp5e, and the entry point, `Game_Main`,
+/// `GDraw`'s trampoline `0x00a34b00`, the symbol map's `operator[]`
+/// `0x006f3ae0` and the array-start callback `0x0048c260` that this test
+/// used are ported now).
+const ENTRY: u32 = 0x0094_b030;
 
 #[test]
 fn a_port_called_from_rust_runs_without_the_emulator() {
@@ -132,29 +136,48 @@ fn row(out: &mut String, kind: &str, what: &str, name: &str, detail: &str) {
     let _ = writeln!(out, "{kind}\t{what}\t{name}\t{detail}");
 }
 
+/// A number from the environment variable `name`, else `default`.
+fn env_or(name: &str, default: u64) -> u64 {
+    std::env::var(name)
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(default)
+}
+
 #[test]
 fn boots_until_the_first_unported_address() {
     let Some(exe) = exe() else { return };
+    let presents = u32::try_from(env_or("FFX_NOU_PRESENTS", 3)).unwrap_or(3);
     let opts = ffx_host::Options {
         documents: Some(documents("no-unicorn")),
         gfx: ffx_host::gfx::Config {
             backend: ffx_host::gfx::Choice::Null,
-            stop_after_presents: Some(3),
+            stop_after_presents: Some(presents),
             ..ffx_host::gfx::Config::default()
         },
         ..ffx_host::Options::default()
     };
     let mut exec = ffx_host::boot_opts(&exe, ffx_host::ports::table(), &opts).unwrap();
-    exec.set_budget(Duration::from_secs(120));
+    exec.set_budget(Duration::from_secs(env_or("FFX_NOU_BUDGET", 120)));
     let stop = exec.run_entry().unwrap();
     exec.join_threads(Duration::from_secs(5));
     let syms = syms();
     let report = ffx_host::report::text(&exec, &syms, &format!("{stop}"));
     eprintln!("{report}");
     assert!(exec.shared().dlls.is_empty());
+    let mut all = exec.stats.unported.clone();
+    for t in exec.shared().threads.lock().unwrap().iter() {
+        for u in t.stats.iter().flat_map(|s| s.unported.iter()) {
+            if !all.iter().any(|a| a.0 == u.0) {
+                all.push(u.clone());
+            }
+        }
+    }
     // the run ends at an unported address, at a C runtime import without
-    // a Rust side (the boot got past the code: wp5b), or, once the table
-    // reaches that far, at the presents' milestone
+    // a Rust side (the boot got past the code: wp5b), once the table
+    // reaches that far at the presents' milestone, or at the budget (when
+    // another thread stopped at an unported address, the main thread
+    // waits for the loader's work then)
     let first = match &stop {
         Stop::Failed(why, _) if why.starts_with("unstubbed import ") => {
             eprintln!("the boot's first missing import: {why}");
@@ -166,20 +189,15 @@ fn boots_until_the_first_unported_address() {
             Some(*addr)
         }
         Stop::Milestone(m) => {
-            assert_eq!(m, "Present 3", "{report}");
+            assert_eq!(m, &format!("Present {presents}"), "{report}");
             None
         }
+        // (a long run, FFX_NOU_BUDGET, may also just use its budget up
+        // with no stop at all: m5-wp5e's boot plays the field's updates)
+        Stop::Budget(_) => all.first().map(|u| u.0),
         other => panic!("unexpected stop {other:?}\n{report}"),
     };
     let mut out = String::from("# kind\taddress or import\tname\tdetail\n");
-    let mut all = exec.stats.unported.clone();
-    for t in exec.shared().threads.lock().unwrap().iter() {
-        for u in t.stats.iter().flat_map(|s| s.unported.iter()) {
-            if !all.iter().any(|a| a.0 == u.0) {
-                all.push(u.clone());
-            }
-        }
-    }
     for (a, what) in &all {
         let kind = if Some(*a) == first {
             "boot-first"
