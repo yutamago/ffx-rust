@@ -1796,3 +1796,37 @@ fn wp5e_guide_map_location_text() {
         }
     }
 }
+
+/// The movie player's request queue push (`0x006d7d90`): the two arrays
+/// with capacities 0, 2 and 5 (growing: `Array_Reserve_00667e00` a stub
+/// that logs the size asked and sets the capacity), 24 pushes in a row. `eax` and memory.
+#[test]
+fn wp5e_fmv_queue_push() {
+    use ffx_prender::wp5e as e;
+    for (label, mut t) in Twins::all() {
+        // Array_Reserve (the game's heap needs its thread): a stub that
+        // logs (array, n) and sets the capacity; the data blocks are big
+        // enough from the start
+        let log = t.alloc(&[0; 4 + 32 * 64]);
+        let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0x89, 0x41, 0x04]; // mov eax, [esp+4]; mov [ecx+4], eax
+        c.extend(deref_stub(log, 0x7e, &[0], None, 4, 0x7e7e));
+        jmp_stub(&mut t, e::ARRAY_RESERVE, &c);
+        for round in 0..3u32 {
+            let q = t.alloc(&[0; 0x20]);
+            let cap = [0u32, 2, 5][round as usize];
+            for array in [q + 4, q + 0x10] {
+                let data = t.alloc(&[0x6d; 0x100]);
+                t.w32(array, 0);
+                t.w32(array + 4, cap);
+                t.w32(array + 8, data);
+            }
+            for k in 0..24u32 {
+                let (a, b) = (0x1000 + k, 0x2000 + k);
+                let w = format!("{label} fmv queue push {round} #{k}");
+                t.run(&w, 0x006d_7d90, q, &[a, b], false, |g| {
+                    e::fmv_queue_push(g, q, a, b)
+                });
+            }
+        }
+    }
+}

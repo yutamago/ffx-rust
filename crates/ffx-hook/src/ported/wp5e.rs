@@ -511,6 +511,10 @@ ported! {
         let mut frame = StackFrame::<0x200>::new();
         e::guide_map_set_location_text(&mut mem(), menu, loc, frame.at())
     }
+    /// `FmvRequestQueue_push_006d7d90(this; a, b)`: `b` and `a` pushed onto the two request arrays.
+    FmvRequestQueue_push_006d7d90 @ 0x006d_7d90 => extern "thiscall" fn e_006d7d90(this: u32, a: u32, b: u32) -> u32 {
+        e::fmv_queue_push(&mut mem(), this, a, b)
+    }
     /// `PSharray_data_004347a0`: the code of `PArray_Data_004d45a0`; the elements.
     PSharray_data_004347a0 @ 0x0043_47a0 => extern "thiscall" fn e_004347a0(this: u32) -> u32 {
         ffx_pcore::small::bridge::array_data(&mut mem(), this)

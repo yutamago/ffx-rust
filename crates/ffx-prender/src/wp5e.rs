@@ -1508,3 +1508,44 @@ pub fn guide_map_set_location_text(h: &mut impl Host, menu: u32, loc: u32, frame
     let set_string: u32 = h.read(h.rebase(IGGY_SET_STRING_SLOT));
     h.call(set_string, Conv::Stdcall, &[path, 0, 0, text, len])
 }
+
+/// `Array_Reserve_00667e00(array; n)` (thiscall on `{count, capacity,
+/// data}`).
+pub const ARRAY_RESERVE: u32 = 0x0066_7e00;
+
+/// A word pushed onto a Phyre array `{count, capacity, data}` at
+/// `array`: the count up; past the capacity the array reserved to
+/// `count + count / 8 + 2` (`count / 8` signed, rounding to 0); the word stored
+/// in the last slot unless its address is 0. `eax` the original leaves:
+/// the word, or the data pointer when the slot address was 0.
+fn array_push(h: &mut impl Host, array: u32, word: u32) -> u32 {
+    let count = h.read::<u32>(array).wrapping_add(1);
+    h.write(array, count);
+    let count: u32 = h.read(array);
+    if count.cast_signed() > h.read::<u32>(array.wrapping_add(4)).cast_signed() {
+        let n = count.cast_signed();
+        let grow = (n / 8).wrapping_add(n.wrapping_add(2));
+        h.call_sym(
+            ARRAY_RESERVE,
+            Conv::Thiscall(array),
+            &[grow.cast_unsigned()],
+        );
+    }
+    let count: u32 = h.read(array);
+    let data: u32 = h.read(array.wrapping_add(8));
+    let slot = data.wrapping_add(count.wrapping_sub(1).wrapping_mul(4));
+    if slot == 0 {
+        return data;
+    }
+    h.write(slot, word);
+    word
+}
+
+/// The movie player's request queue push (`0x006d7d90`, thiscall `(this;
+/// a, b)`, `ret 8`; `PhyFMVPlayerManager_processRequests`'s): `b` onto
+/// the array at `+0x10`, then `a` onto the one at `+4`
+/// ([`array_push`]'s growth). `eax`: the second push's.
+pub fn fmv_queue_push(h: &mut impl Host, this: u32, a: u32, b: u32) -> u32 {
+    array_push(h, this.wrapping_add(0x10), b);
+    array_push(h, this.wrapping_add(4), a)
+}
