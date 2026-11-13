@@ -297,3 +297,4 @@ pub mod wp5_small;
 pub mod wp5_sort;
 pub mod wp5d;
 pub mod wp5e;
+pub mod wp5f;

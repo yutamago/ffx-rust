@@ -11,6 +11,7 @@
 
 use super::{StackFrame, mem, ported};
 use ffx_menu::wp5f_menu::bridge as menu;
+use ffx_prender::wp5f::bridge as pr;
 use ffx_sg::m5main4_lib::bridge as lib;
 use ffx_system::wp5f_sstream::bridge as ss;
 
@@ -194,5 +195,83 @@ ported! {
     /// `Facet_Register(f)` -> the list node.
     Facet_Register @ 0x0094_a684 => extern "C" fn facet_register(facet: u32) -> u32 {
         ss::facet_register(&mut mem(), facet)
+    }
+
+    /// `0x006b60f0()`: the singleton at `0x00cccad0` freed.
+    GraphicFinalize_freeSingleton_006b60f0 @ 0x006b_60f0 => extern "C" fn free_singleton_cccad0() {
+        pr::free_singleton_cccad0(&mut mem());
+    }
+    /// `0x006b6180()`: the singleton at `0x00cccae0` freed.
+    GraphicFinalize_freeSingleton_006b6180 @ 0x006b_6180 => extern "C" fn free_singleton_6180() {
+        pr::free_singleton(&mut mem(), pr::SINGLETONS[0].1);
+    }
+    /// `0x006b61b0()`: the singleton at `0x00cccad8` freed.
+    GraphicFinalize_freeSingleton_006b61b0 @ 0x006b_61b0 => extern "C" fn free_singleton_61b0() {
+        pr::free_singleton(&mut mem(), pr::SINGLETONS[1].1);
+    }
+    /// `0x006b61e0()`: the singleton at `0x00cccadc` freed.
+    GraphicFinalize_freeSingleton_006b61e0 @ 0x006b_61e0 => extern "C" fn free_singleton_61e0() {
+        pr::free_singleton(&mut mem(), pr::SINGLETONS[2].1);
+    }
+    /// `0x006b6210()`: the singleton at `0x00cccac4` freed.
+    GraphicFinalize_freeSingleton_006b6210 @ 0x006b_6210 => extern "C" fn free_singleton_6210() {
+        pr::free_singleton(&mut mem(), pr::SINGLETONS[3].1);
+    }
+    /// `0x006b6240()`: the singleton at `0x00cccad4` freed.
+    GraphicFinalize_freeSingleton_006b6240 @ 0x006b_6240 => extern "C" fn free_singleton_6240() {
+        pr::free_singleton(&mut mem(), pr::SINGLETONS[4].1);
+    }
+    /// `0x006b6270()`: the singleton at `0x00cccae4` freed.
+    GraphicFinalize_freeSingleton_006b6270 @ 0x006b_6270 => extern "C" fn free_singleton_6270() {
+        pr::free_singleton(&mut mem(), pr::SINGLETONS[5].1);
+    }
+    /// `0x006b62a0()`: the singleton at `0x00cccac8` freed.
+    GraphicFinalize_freeSingleton_006b62a0 @ 0x006b_62a0 => extern "C" fn free_singleton_62a0() {
+        pr::free_singleton(&mut mem(), pr::SINGLETONS[6].1);
+    }
+    /// `0x006b62d0()`: the object at `0x00cccac0` deleted.
+    GraphicFinalize_freeObject_006b62d0 @ 0x006b_62d0 => extern "C" fn free_object_cccac0() {
+        pr::free_object_cccac0(&mut mem());
+    }
+    /// `0x006dc870()` -> `Input_ShutdownDevice`'s `eax` (0 without a block).
+    FreeBlock_cdede8_006dc870 @ 0x006d_c870 => extern "C" fn free_block_cdede8() -> u32 {
+        pr::free_block_cdede8(&mut mem())
+    }
+    /// `0x0041e6a0(this)`: the `IMkvReader` vtable stored.
+    MkvReader_baseDtor_0041e6a0 @ 0x0041_e6a0 => extern "thiscall" fn mkv_reader_base_dtor(this: u32) {
+        pr::mkv_reader_base_dtor(&mut mem(), this);
+    }
+    /// `SqsSePlayState()` -> 0.
+    SqsSePlayState @ 0x0081_e530 => extern "C" fn sqs_se_play_state() -> u32 {
+        pr::sqs_se_play_state(&mut mem())
+    }
+    /// `0x005f0950(array, n)`.
+    ClearRecords_005f0950 @ 0x005f_0950 => extern "C" fn clear_records(array: u32, n: u32) {
+        pr::clear_records(&mut mem(), array, n);
+    }
+    /// `0x006058b0(this; a, xyz, f)` -> `0x006058e0`'s `eax`.
+    SetPositionThen_006058b0 @ 0x0060_58b0 => extern "thiscall" fn set_position_then(this: u32, a: u32, xyz: u32, f: u32) -> u32 {
+        pr::set_position_then(&mut mem(), this, a, xyz, f)
+    }
+    /// `SectionVector_grow_006b6500(this; n)` -> `_Reallocate`'s `eax` (the
+    /// spare count when there is room).
+    SectionVector_grow_006b6500 @ 0x006b_6500 => extern "thiscall" fn section_vector_grow(this: u32, n: u32) -> u32 {
+        pr::section_vector_grow(&mut mem(), this, n)
+    }
+    /// `std::string::find_first_of(set, pos, n)` -> the position or -1.
+    std_string_findFirstOf_006b68c0 @ 0x006b_68c0 => extern "thiscall" fn find_first_of(this: u32, set: u32, pos: u32, n: u32) -> u32 {
+        pr::find_first_of(&mut mem(), this, set, pos, n)
+    }
+    /// `0x006b6730(this; name)`: the map name set and changed.
+    SetMapName_006b6730 @ 0x006b_6730 => extern "thiscall" fn set_map_name(this: u32, name: u32) {
+        pr::set_map_name(&mut mem(), this, name);
+    }
+    /// `0x00807120(tree)`: the opus tree cleared.
+    opusTree_clear_00807120 @ 0x0080_7120 => extern "thiscall" fn opus_tree_clear(tree: u32) {
+        pr::opus_tree_clear(&mut mem(), tree);
+    }
+    /// `0x0094a641()`: the facet list freed.
+    FacetList_free_0094a641 @ 0x0094_a641 => extern "C" fn facet_list_free() {
+        pr::facet_list_free(&mut mem());
     }
 }

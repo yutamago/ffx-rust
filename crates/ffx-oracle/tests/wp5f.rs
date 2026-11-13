@@ -729,3 +729,274 @@ fn wp5f_use_facet_and_push_back_match_the_original() {
         }
     });
 }
+
+// ---- small functions (ffx_prender::wp5f) ----
+
+use ffx_prender::wp5f::bridge as pr;
+
+#[test]
+fn wp5f_teardown_frees_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x006b_6180);
+        for k in 0..16 {
+            t.reset();
+            t.stub(pr::TEXT_UTIL_ENTRY_DTOR, true, 0, 0, 0x41);
+            t.stub(pr::OPERATOR_DELETE, false, 1, 0, 0x42);
+            t.stub(pr::PHYRE_FREE, false, 1, 0, 0x43);
+            t.stub(pr::INPUT_SHUTDOWN_DEVICE, false, 0, 0, 0x44);
+            let present = k % 4 != 0;
+            for (sym, s) in pr::SINGLETONS {
+                let obj = if present { t.zeros(0x200) } else { 0 };
+                t.g32(s.global, obj);
+                t.check(&format!("{sym:#x} {k}"), sym, Conv::Cdecl, &[], |m| {
+                    pr::free_singleton(m, s);
+                    Out::None
+                });
+            }
+            let obj = if present { t.zeros(0x40) } else { 0 };
+            if present {
+                t.w32(obj + 0x1c, rng.pick(&[0, 0x1234]));
+                t.w32(obj + 0x20, rng.next());
+                t.w32(obj + 0x24, rng.next());
+            }
+            t.g32(0x00cc_cad0, obj);
+            t.check(
+                &format!("0x006b60f0 {k}"),
+                0x006b_60f0,
+                Conv::Cdecl,
+                &[],
+                |m| {
+                    pr::free_singleton_cccad0(m);
+                    Out::None
+                },
+            );
+            let obj = if present { t.zeros(0x10) } else { 0 };
+            if present {
+                t.fake_vtable(obj, &[(1, 0x45, vec![])]);
+            }
+            t.g32(0x00cc_cac0, obj);
+            t.check(
+                &format!("0x006b62d0 {k}"),
+                0x006b_62d0,
+                Conv::Cdecl,
+                &[],
+                |m| {
+                    pr::free_object_cccac0(m);
+                    Out::None
+                },
+            );
+            t.g32(0x00cd_ede8, if present { 0x0055_0000 } else { 0 });
+            t.check(
+                &format!("0x006dc870 {k}"),
+                0x006d_c870,
+                Conv::Cdecl,
+                &[],
+                |m| {
+                    let r = pr::free_block_cdede8(m);
+                    if present { Out::U32(r) } else { Out::None }
+                },
+            );
+            // the facet list
+            let mut head = 0;
+            for _ in 0..rng.below(4) {
+                head = t.words(&[head, rng.next()]);
+            }
+            t.g32(pr::FACET_LIST, head);
+            t.stub(pr::FAC_NODE_DTOR, true, 0, 0, 0x46);
+            t.check(
+                &format!("0x0094a641 {k}"),
+                0x0094_a641,
+                Conv::Cdecl,
+                &[],
+                |m| {
+                    pr::facet_list_free(m);
+                    Out::None
+                },
+            );
+        }
+    });
+}
+
+#[test]
+fn wp5f_small_helpers_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x005f_0950);
+        for k in 0..60 {
+            t.reset();
+            let obj = t.zeros(8);
+            t.check(
+                &format!("0x0041e6a0 {k}"),
+                0x0041_e6a0,
+                Conv::Thiscall(obj),
+                &[],
+                |m| {
+                    pr::mkv_reader_base_dtor(m, obj);
+                    Out::None
+                },
+            );
+            cdecl_imp(t, 0x00b0_c350, 0, 0x0077_0000);
+            cdecl_imp(t, 0x00b0_c38c, 2, 0x33);
+            t.check(
+                &format!("SqsSePlayState {k}"),
+                0x0081_e530,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(pr::sqs_se_play_state(m)),
+            );
+            let junk: Vec<u32> = (0..0x80).map(|_| rng.next()).collect();
+            let arr = t.words(&junk);
+            let n = rng.below(6);
+            t.check(
+                &format!("0x005f0950 {k}"),
+                0x005f_0950,
+                Conv::Cdecl,
+                &[arr, n],
+                |m| {
+                    pr::clear_records(m, arr, n);
+                    Out::None
+                },
+            );
+            t.check(
+                &format!("0x005f0950 null {k}"),
+                0x005f_0950,
+                Conv::Cdecl,
+                &[0, 1],
+                |m| {
+                    pr::clear_records(m, 0, 1);
+                    Out::None
+                },
+            );
+            // floats (quiet NaNs and ordinary values; no signalling NaNs)
+            t.stub(pr::SET_AFTER_POSITION, true, 2, 2, 0x47);
+            let pick = |rng: &mut Rng| {
+                rng.pick(&[0x3f80_0000u32, 0xc2c8_0000, 0x7fc0_0001, 0, 0x8000_0000])
+            };
+            let xyz = t.words(&[pick(&mut rng), pick(&mut rng), pick(&mut rng)]);
+            let this = t.zeros(0x80);
+            let (a, f) = (rng.next(), pick(&mut rng));
+            t.check(
+                &format!("0x006058b0 {k}"),
+                0x0060_58b0,
+                Conv::Thiscall(this),
+                &[a, xyz, f],
+                |m| Out::U32(pr::set_position_then(m, this, a, xyz, f)),
+            );
+        }
+    });
+}
+
+#[test]
+fn wp5f_vector_grow_and_strings_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x006b_6500);
+        for k in 0..200 {
+            t.reset();
+            t.stub(pr::SECTION_VECTOR_REALLOCATE, true, 1, 1, 0x48);
+            cdecl_imp(t, pr::XLENGTH_ERROR, 1, 0x49);
+            let first = 0x0100_0000u32;
+            let size = rng.pick(&[0u32, 1, 5, 12, 0x1555_5550]);
+            let cap = size + rng.pick(&[0u32, 1, 4, 20]);
+            let v = t.words(&[first, first + 12 * size, first + 12 * cap]);
+            let n = rng.pick(&[0u32, 1, 3, 7, 30, 0x10]);
+            t.check(
+                &format!("vector grow {k} ({size}, {cap}, {n})"),
+                0x006b_6500,
+                Conv::Thiscall(v),
+                &[n],
+                |m| Out::U32(pr::section_vector_grow(m, v, n)),
+            );
+            // find_first_of over a small or a large string
+            let text = b"hello, world; a=b\0";
+            let s = t.zeros(0x18);
+            let big = t.alloc(text);
+            let len = rng.pick(&[0u32, 5, 17]);
+            if rng.chance(2) {
+                t.write(s, &text[..16]);
+                t.w32(s + 0x14, 0xf);
+            } else {
+                t.w32(s, big);
+                t.w32(s + 0x14, 0x1f);
+            }
+            t.w32(s + 0x10, len.min(if rng.chance(2) { 15 } else { 17 }));
+            let set = t.alloc(rng.pick(&[&b",;"[..], b"=", b"xyz", b"o"]));
+            let n = rng.pick(&[0u32, 1, 2]);
+            let pos = rng.pick(&[0u32, 3, 6, 20]);
+            // memchr: the real search, as a stub would not know the set
+            let memchr = t.code(&[
+                0x8b, 0x44, 0x24, 0x04, // mov eax, [esp + 4]
+                0x8b, 0x4c, 0x24, 0x0c, // mov ecx, [esp + 0xc]
+                0x8a, 0x54, 0x24, 0x08, // mov dl, [esp + 8]
+                0x85, 0xc9, // l: test ecx, ecx
+                0x74, 0x0a, // jz miss
+                0x38, 0x10, // cmp [eax], dl
+                0x74, 0x08, // je hit
+                0x40, // inc eax
+                0x49, // dec ecx
+                0xeb, 0xf4, // jmp l
+                0x90, 0x90, //
+                0x33, 0xc0, // miss: xor eax, eax
+                0xc3, // hit: ret
+            ]);
+            let at = t.rebase(pr::MEMCHR);
+            t.patch(at, &memchr.to_le_bytes());
+            t.check(
+                &format!("find_first_of {k}"),
+                0x006b_68c0,
+                Conv::Thiscall(s),
+                &[set, pos, n],
+                |m| Out::U32(pr::find_first_of(m, s, set, pos, n)),
+            );
+            // the map name
+            cdecl_imp(t, pr::SPRINTF_S, 3, 0x4a);
+            t.stub(pr::MAP_CHANGE, false, 1, 0, 0x4b);
+            let this = t.zeros(0x50);
+            t.write(
+                this + 0x30,
+                rng.pick(&[&b"bsil0000\0"[..], b"\0", b"bsil00\0"]),
+            );
+            let name = t.alloc(rng.pick(&[&b"bsil0000\0"[..], b"\0", b"kami0100\0", b"bsil000\0"]));
+            t.check(
+                &format!("map name {k}"),
+                0x006b_6730,
+                Conv::Thiscall(this),
+                &[name],
+                |m| {
+                    pr::set_map_name(m, this, name);
+                    Out::None
+                },
+            );
+        }
+    });
+}
+
+#[test]
+fn wp5f_opus_tree_clear_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x0080_7120);
+        for k in 0..40 {
+            t.reset();
+            t.stub(pr::OPUS_FREE_SUBTREE, true, 1, 1, 0x4c);
+            t.stub(pr::OPERATOR_DELETE, false, 1, 0, 0x4d);
+            let head = t.zeros(0x10);
+            t.w8(head + 0xd, 1);
+            // a left spine of 0..4 nodes (left +0, parent +4, right +8)
+            let mut next = head;
+            for _ in 0..rng.below(5) {
+                let node = t.words(&[next, 0, rng.next(), 0]);
+                next = node;
+            }
+            t.w32(head + 4, next);
+            let tree = t.words(&[head, rng.next()]);
+            t.check(
+                &format!("opus clear {k}"),
+                0x0080_7120,
+                Conv::Thiscall(tree),
+                &[],
+                |m| {
+                    pr::opus_tree_clear(m, tree);
+                    Out::None
+                },
+            );
+        }
+    });
+}
