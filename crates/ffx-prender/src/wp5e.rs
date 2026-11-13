@@ -3,6 +3,7 @@
 //! and their callees. Each follows its original's machine code; `eax` is
 //! the original's.
 
+use ffx_bridge::Mem;
 use ffx_graphic::host::{Conv, Host};
 
 use crate::wp5d::{BUY_NODE_2C, OPERATOR_DELETE, OPERATOR_NEW, STRING_ASSIGN_SUBSTR, string_parts};
@@ -370,3 +371,247 @@ pub const SHARRAY_DATA_COPIES: [u32; 51] = [
     0x005f_e400,
     0x0062_80f0,
 ];
+
+/// `std_Tree_BuyHeadNode_00654ea0()` (cdecl: a 0x2c-byte head node).
+pub const BUY_HEAD_NODE: u32 = 0x0065_4ea0;
+/// The asset list's `std::map<std::string, u32>` copy (`0x00649bd0`),
+/// its `_Copy` (`0x00649cb0`) and `_Buynode(&pair)` (`0x00649a60`).
+pub const MAP_COPY: u32 = 0x0064_9bd0;
+pub const TREE_COPY: u32 = 0x0064_9cb0;
+pub const MAP_BUY_NODE: u32 = 0x0064_9a60;
+/// `std::vector<u32>`'s `_Buy` (`StdVector_allocate_00654d40`) and the
+/// words' `_Uninit_copy` (`0x0064a850`; the same bytes at `0x0064a880`).
+pub const VECTOR_BUY_4: u32 = 0x0065_4d40;
+pub const WORDS_COPY: u32 = 0x0064_a850;
+/// `std::vector<std::string>`'s `_Buy` (`0x00654e20`) and the strings'
+/// `_Uninit_copy` (`0x0064a8b0`).
+pub const VECTOR_BUY_24: u32 = 0x0065_4e20;
+pub const STRINGS_COPY: u32 = 0x0064_a8b0;
+/// MSVCP110's `_Xlength_error` and `_Xbad_alloc` import slots, and
+/// `"vector<T> too long"`.
+pub const XLENGTH_ERROR_SLOT: u32 = 0x00b0_c29c;
+pub const XBAD_ALLOC_SLOT: u32 = 0x00b0_c2a0;
+pub const VECTOR_TOO_LONG: u32 = 0x00b3_4498;
+
+/// Calls the import in `slot` (cdecl).
+fn import(h: &mut impl Host, slot: u32, args: &[u32]) -> u32 {
+    let f: u32 = h.read(h.rebase(slot));
+    h.call(f, Conv::Cdecl, args)
+}
+
+/// `std::map<std::string, u32>`'s copy constructor (`0x0064d050`,
+/// thiscall `(this; &src, alloc)`, `ret 8`; `AssetListReader_copy_0064d9e0`'s
+/// `+0`): the two words cleared, a head node ([`BUY_HEAD_NODE`]) at
+/// `+0`, the tree copied by [`MAP_COPY`]. The allocator word the original
+/// passes on is its `ebp - 0x14` with only the low byte written (0), which
+/// no callee reads: 0 here (junk read: `[ebp-0x14]`'s upper bytes never
+/// written; 0, brief 2026-10-24). `this`.
+pub fn map_copy_ctor(h: &mut impl Host, this: u32, src: u32) -> u32 {
+    h.write(this, 0u32);
+    h.write(this.wrapping_add(4), 0u32);
+    let head = h.call_sym(BUY_HEAD_NODE, Conv::Cdecl, &[]);
+    h.write(this, head);
+    h.call_sym(MAP_COPY, Conv::Thiscall(this), &[src, 0]);
+    this
+}
+
+/// The map's `_Copy(&src)` (`0x00649bd0`, thiscall `(this; &src, tag)`,
+/// `ret 8`; `tag`, an allocator word, is only passed on and never read):
+/// the root copied under the head ([`tree_copy`]), the size taken, the head's leftmost and rightmost set (itself for
+/// an empty tree). `eax`: the head for an empty tree, else the nil node
+/// the rightmost walk ended on.
+pub fn map_copy(h: &mut impl Host, this: u32, src: u32) -> u32 {
+    let head: u32 = h.read(this);
+    let src_head: u32 = h.read(src);
+    let src_root: u32 = h.read(src_head.wrapping_add(4));
+    let root = tree_copy(h, this, src_root, head);
+    h.write(head.wrapping_add(4), root);
+    let size: u32 = h.read(src.wrapping_add(4));
+    h.write(this.wrapping_add(4), size);
+    let head: u32 = h.read(this);
+    let root: u32 = h.read(head.wrapping_add(4));
+    let nil = |h: &mut _, n: u32| Mem::read::<u8>(h, n.wrapping_add(0xd)) != 0;
+    if nil(h, root) {
+        h.write(head, head);
+        let head: u32 = h.read(this);
+        h.write(head.wrapping_add(8), head);
+        return head;
+    }
+    let mut n = root;
+    loop {
+        let l: u32 = h.read(n);
+        if nil(h, l) {
+            break;
+        }
+        n = l;
+    }
+    h.write(head, n);
+    let head: u32 = h.read(this);
+    let mut n: u32 = h.read(head.wrapping_add(4));
+    let end = loop {
+        let r: u32 = h.read(n.wrapping_add(8));
+        if nil(h, r) {
+            break r;
+        }
+        n = r;
+    };
+    h.write(head.wrapping_add(8), n);
+    end
+}
+
+/// The map's recursive `_Copy(node, where)` (`0x00649cb0`, thiscall
+/// `(this; node, where, tag)`, `ret 0xc`; `tag` only passed on): for a non-nil `node`, a node
+/// made by [`MAP_BUY_NODE`] from its pair, its parent `where`, its
+/// colour, its children the copies of `node`'s (left first). The copy of
+/// `node` (the first one made), or the head for a nil one.
+pub fn tree_copy(h: &mut impl Host, this: u32, node: u32, at: u32) -> u32 {
+    let mut first: u32 = h.read(this);
+    if h.read::<u8>(node.wrapping_add(0xd)) != 0 {
+        return first;
+    }
+    let copy = h.call_sym(
+        MAP_BUY_NODE,
+        Conv::Thiscall(this),
+        &[node.wrapping_add(0x10)],
+    );
+    h.write(copy.wrapping_add(4), at);
+    let colour: u8 = h.read(node.wrapping_add(0xc));
+    h.write(copy.wrapping_add(0xc), colour);
+    if h.read::<u8>(first.wrapping_add(0xd)) != 0 {
+        first = copy;
+    }
+    let left: u32 = h.read(node);
+    let l = tree_copy(h, this, left, copy);
+    h.write(copy, l);
+    let right: u32 = h.read(node.wrapping_add(8));
+    let r = tree_copy(h, this, right, copy);
+    h.write(copy.wrapping_add(8), r);
+    first
+}
+
+/// The map's `_Buynode(&pair)` (`0x00649a60`, thiscall on the tree,
+/// `ret 4`): a 0x2c-byte node ([`BUY_NODE_2C`]), its colour and nil bytes
+/// 0, the key copied (`+0x10` emptied, then `assign(&pair, 0, npos)`)
+/// and the value word (`pair + 0x18`) to `+0x28`. The node.
+pub fn map_buy_node(h: &mut impl Host, this: u32, pair: u32) -> u32 {
+    let node = h.call_sym(BUY_NODE_2C, Conv::Thiscall(this), &[]);
+    h.write(node.wrapping_add(0xc), 0u16);
+    let s = node.wrapping_add(0x10);
+    if s != 0 {
+        h.write(s + 0x14, 0xfu32);
+        h.write(s + 0x10, 0u32);
+        h.write(s, 0u8);
+        h.call_sym(
+            STRING_ASSIGN_SUBSTR,
+            Conv::Thiscall(s),
+            &[pair, 0, 0xffff_ffff],
+        );
+        let v: u32 = h.read(pair.wrapping_add(0x18));
+        h.write(s + 0x18, v);
+    }
+    node
+}
+
+/// `std::vector<T>`'s `_Buy(n)` for `size`-byte elements (`0x00654e20`:
+/// 0x18, at most `max`; thiscall, `ret 4`): the three words cleared; `n`
+/// 0: `al` 0 (`eax` 0); above `max` `_Xlength_error("vector<T> too
+/// long")`; else `operator new(n * size)` (`_Xbad_alloc` on NULL), the
+/// words set: `eax` the end of the storage with `al` 1.
+pub fn vector_buy(h: &mut impl Host, this: u32, n: u32, size: u32, max: u32) -> u32 {
+    h.write(this, 0u32);
+    h.write(this.wrapping_add(4), 0u32);
+    h.write(this.wrapping_add(8), 0u32);
+    if n == 0 {
+        return 0;
+    }
+    if n > max {
+        let text = h.rebase(VECTOR_TOO_LONG);
+        return import(h, XLENGTH_ERROR_SLOT, &[text]);
+    }
+    let bytes = n.wrapping_mul(size);
+    let p = h.call_sym(OPERATOR_NEW, Conv::Cdecl, &[bytes]);
+    if p == 0 {
+        return import(h, XBAD_ALLOC_SLOT, &[]);
+    }
+    h.write(this, p);
+    h.write(this.wrapping_add(4), p);
+    let end = p.wrapping_add(bytes);
+    h.write(this.wrapping_add(8), end);
+    (end & !0xff) | 1
+}
+
+/// `std::_Uninitialized_copy` of words (`0x0064a850`, `0x0064a880`;
+/// cdecl `(first, last, dst, ..)`): each word copied, a NULL `dst`
+/// skipped but advanced. The end of `dst`.
+pub fn words_copy(h: &mut impl Host, first: u32, last: u32, dst: u32) -> u32 {
+    let (mut s, mut d) = (first, dst);
+    while s != last {
+        if d != 0 {
+            let w: u32 = h.read(s);
+            h.write(d, w);
+        }
+        s = s.wrapping_add(4);
+        d = d.wrapping_add(4);
+    }
+    d
+}
+
+/// `std::_Uninitialized_copy` of `std::string`s (`0x0064a8b0`, cdecl
+/// `(first, last, dst, ..)`): each target emptied, then `assign(src, 0,
+/// npos)`; a NULL `dst` skipped but advanced. The end of `dst`.
+pub fn strings_copy(h: &mut impl Host, first: u32, last: u32, dst: u32) -> u32 {
+    let (mut s, mut d) = (first, dst);
+    while s != last {
+        if d != 0 {
+            h.write(d + 0x14, 0xfu32);
+            h.write(d + 0x10, 0u32);
+            h.write(d, 0u8);
+            h.call_sym(
+                STRING_ASSIGN_SUBSTR,
+                Conv::Thiscall(d),
+                &[s, 0, 0xffff_ffff],
+            );
+        }
+        s = s.wrapping_add(0x18);
+        d = d.wrapping_add(0x18);
+    }
+    d
+}
+
+/// A `std::vector`'s copy constructor (`0x0064d570`: `u32`s, `_Buy`
+/// [`VECTOR_BUY_4`], [`WORDS_COPY`]; `0x0064d730`: `std::string`s,
+/// [`VECTOR_BUY_24`], [`STRINGS_COPY`]; thiscall `(this; &src)`, `ret
+/// 4`): the words cleared, `_Buy(src.size())` (the byte difference
+/// shifted right 2 for words, divided by `size` (signed) otherwise), and when it bought storage, the elements
+/// copied and the end stored at `+4`. The copy's other words (an
+/// allocator's address and `src`) are not read by either copy: 0 here.
+/// `this`.
+pub fn vector_copy_ctor(
+    h: &mut impl Host,
+    this: u32,
+    src: u32,
+    size: u32,
+    buy: u32,
+    copy: u32,
+) -> u32 {
+    h.write(this, 0u32);
+    h.write(this.wrapping_add(4), 0u32);
+    h.write(this.wrapping_add(8), 0u32);
+    let first: u32 = h.read(src);
+    let last: u32 = h.read(src.wrapping_add(4));
+    let diff = last.wrapping_sub(first).cast_signed();
+    // `sar 2` for words (rounding down), a signed division otherwise
+    let n = if size == 4 {
+        diff >> 2
+    } else {
+        diff / size.cast_signed()
+    };
+    if h.call_sym(buy, Conv::Thiscall(this), &[n.cast_unsigned()]) & 0xff != 0 {
+        let first: u32 = h.read(src);
+        let last: u32 = h.read(src.wrapping_add(4));
+        let dst: u32 = h.read(this);
+        let end = h.call_sym(copy, Conv::Cdecl, &[first, last, dst, 0, 0]);
+        h.write(this.wrapping_add(4), end);
+    }
+    this
+}

@@ -55,6 +55,46 @@ ported! {
     TipSystem_onHide_006e8760 @ 0x006e_8760 => extern "C" fn e_006e8760() -> u32 {
         e::tip_hide(&mut mem())
     }
+    /// `AssetMap_copyCtor_0064d050(this; &src, alloc)`: the map copied; `this`.
+    AssetMap_copyCtor_0064d050 @ 0x0064_d050 => extern "thiscall" fn e_0064d050(this: u32, src: u32, _alloc: u32) -> u32 {
+        e::map_copy_ctor(&mut mem(), this, src)
+    }
+    /// `AssetMap_copy_00649bd0(this; &src, tag)`: the tree, size and extremes copied.
+    AssetMap_copy_00649bd0 @ 0x0064_9bd0 => extern "thiscall" fn e_00649bd0(this: u32, src: u32, _tag: u32) -> u32 {
+        e::map_copy(&mut mem(), this, src)
+    }
+    /// `AssetMap_treeCopy_00649cb0(this; node, where, tag)`: the subtree copied; its copy.
+    AssetMap_treeCopy_00649cb0 @ 0x0064_9cb0 => extern "thiscall" fn e_00649cb0(this: u32, node: u32, at: u32, _tag: u32) -> u32 {
+        e::tree_copy(&mut mem(), this, node, at)
+    }
+    /// `AssetMap_buyNode_00649a60(this; &pair)`: a node with the pair copied in.
+    AssetMap_buyNode_00649a60 @ 0x0064_9a60 => extern "thiscall" fn e_00649a60(this: u32, pair: u32) -> u32 {
+        e::map_buy_node(&mut mem(), this, pair)
+    }
+    /// `StdVectorString_buy_00654e20(this; n)`: storage for `n` strings (`al`).
+    StdVectorString_buy_00654e20 @ 0x0065_4e20 => extern "thiscall" fn e_00654e20(this: u32, n: u32) -> u32 {
+        e::vector_buy(&mut mem(), this, n, 0x18, 0x0aaa_aaaa)
+    }
+    /// `StdWords_uninitCopy_0064a850(first, last, dst)`: the words copied; the end.
+    StdWords_uninitCopy_0064a850 @ 0x0064_a850 => extern "C" fn e_0064a850(first: u32, last: u32, dst: u32) -> u32 {
+        e::words_copy(&mut mem(), first, last, dst)
+    }
+    /// `StdWords_uninitCopy_0064a880`: the same bytes as `0x0064a850`.
+    StdWords_uninitCopy_0064a880 @ 0x0064_a880 => extern "C" fn e_0064a880(first: u32, last: u32, dst: u32) -> u32 {
+        e::words_copy(&mut mem(), first, last, dst)
+    }
+    /// `StdStrings_uninitCopy_0064a8b0(first, last, dst)`: the strings copied; the end.
+    StdStrings_uninitCopy_0064a8b0 @ 0x0064_a8b0 => extern "C" fn e_0064a8b0(first: u32, last: u32, dst: u32) -> u32 {
+        e::strings_copy(&mut mem(), first, last, dst)
+    }
+    /// `StdVectorU32_copyCtor_0064d570(this; &src)`: the vector copied; `this`.
+    StdVectorU32_copyCtor_0064d570 @ 0x0064_d570 => extern "thiscall" fn e_0064d570(this: u32, src: u32) -> u32 {
+        e::vector_copy_ctor(&mut mem(), this, src, 4, e::VECTOR_BUY_4, e::WORDS_COPY)
+    }
+    /// `StdVectorString_copyCtor_0064d730(this; &src)`: the vector copied; `this`.
+    StdVectorString_copyCtor_0064d730 @ 0x0064_d730 => extern "thiscall" fn e_0064d730(this: u32, src: u32) -> u32 {
+        e::vector_copy_ctor(&mut mem(), this, src, 0x18, e::VECTOR_BUY_24, e::STRINGS_COPY)
+    }
     /// `PSharray_data_004347a0`: the code of `PArray_Data_004d45a0`; the elements.
     PSharray_data_004347a0 @ 0x0043_47a0 => extern "thiscall" fn e_004347a0(this: u32) -> u32 {
         ffx_pcore::small::bridge::array_data(&mut mem(), this)

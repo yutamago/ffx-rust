@@ -620,3 +620,132 @@ fn wp5e_sharray_data_copies() {
         }
     }
 }
+
+/// A symbol map (`std::map<std::string, u32>`) of `count` random keys
+/// (some long) with random values, built by the original `operator[]`
+/// on both sides.
+fn symbol_map(t: &mut Twins, count: u32) -> u32 {
+    use ffx_prender::wp5e as e;
+    let (map, _) = empty_map(t);
+    for _ in 0..count {
+        let n = 1 + t.rng.below(4) + u32::from(t.rng.below(5) == 0) * 16;
+        let k = key(t, n);
+        let v = both(t, e::SYMBOL_INDEX, Conv::Thiscall(map), &[k]);
+        let x = t.rng.next();
+        t.w32(v, x);
+    }
+    map
+}
+
+/// The asset list's map copy: `_Buynode(&pair)` (`0x00649a60`), the
+/// recursive `_Copy` (`0x00649cb0`, from the root and from a subtree),
+/// the map `_Copy` (`0x00649bd0`) and the copy constructor
+/// (`0x0064d050`) on maps of 0..24 keys (inline and heap strings). `eax`
+/// and memory.
+#[test]
+fn wp5e_asset_map_copy() {
+    use ffx_prender::wp5e as e;
+    for (label, mut t) in Twins::all() {
+        for round in 0..12u32 {
+            let head = t.alloc(&[0x66; 0x10]);
+            let tree = t.alloc(&head.to_le_bytes());
+            let n = t.rng.below(24);
+            let pair = key(&mut t, n);
+            t.w32(pair + 0x18, 0x6100 + round);
+            let w = format!("{label} map buy node {round} (n {n})");
+            t.run(&w, e::MAP_BUY_NODE, tree, &[pair], false, |g| {
+                e::map_buy_node(g, tree, pair)
+            });
+        }
+        for round in 0..16u32 {
+            let count = [0, 1, 2, 3][round as usize % 4] + (round / 4) * 6;
+            let src = symbol_map(&mut t, count);
+            let src_head: u32 = Mem::read(&t.b, src);
+            let root: u32 = Mem::read(&t.b, src_head + 4);
+            // the recursive copy under a fresh head, from the root and
+            // from the root's left child
+            for (k, from) in [root, Mem::read(&t.b, root)].into_iter().enumerate() {
+                let (dst, dst_head) = empty_map(&mut t);
+                let w = format!("{label} tree copy {round} ({count} keys) from {k}");
+                t.run(&w, e::TREE_COPY, dst, &[from, dst_head, 0x77], false, |g| {
+                    e::tree_copy(g, dst, from, dst_head)
+                });
+            }
+            let (dst, _) = empty_map(&mut t);
+            let w = format!("{label} map copy {round} ({count} keys)");
+            t.run(&w, e::MAP_COPY, dst, &[src, 0x77], false, |g| {
+                e::map_copy(g, dst, src)
+            });
+            let this = t.alloc(&[0x2e; 8]);
+            let w = format!("{label} map copy ctor {round} ({count} keys)");
+            t.run(&w, 0x0064_d050, this, &[src, 0], false, |g| {
+                e::map_copy_ctor(g, this, src)
+            });
+        }
+    }
+}
+
+/// The vector copies: `std::vector<std::string>`'s `_Buy` (`0x00654e20`,
+/// 0..6 elements), the words' `_Uninit_copy` (`0x0064a850`, `0x0064a880`)
+/// and the strings' (`0x0064a8b0`), with and without a NULL target (one
+/// element), and
+/// the copy constructors (`0x0064d570` words, `0x0064d730` strings) of
+/// vectors of 0..6 elements. `eax` and memory.
+#[test]
+fn wp5e_vector_copies() {
+    use ffx_prender::wp5e as e;
+    for (label, mut t) in Twins::all() {
+        for n in 0..7u32 {
+            let v = t.alloc(&[0x19; 12]);
+            let w = format!("{label} vector buy 24 n {n}");
+            t.run(&w, e::VECTOR_BUY_24, v, &[n], false, |g| {
+                e::vector_buy(g, v, n, 0x18, 0x0aaa_aaaa)
+            });
+        }
+        for round in 0..14u32 {
+            // a NULL target (then the next element at address 4...) only
+            // for one element
+            let n = if round >= 12 { 1 } else { round % 6 };
+            let null = round >= 12;
+            let words: Vec<u8> = (0..4 * n).map(|_| t.rng.next() as u8).collect();
+            let src = t.alloc(&[words.as_slice(), &[0; 4]].concat());
+            for at in [e::WORDS_COPY, 0x0064_a880] {
+                let dst = if null { 0 } else { t.alloc(&[0x44; 0x20]) };
+                let w = format!("{label} words copy {at:#x} {round}");
+                let args = [src, src + 4 * n, dst, 0x1234, 0x5678];
+                t.run_cdecl(&w, at, &args, |g| e::words_copy(g, src, src + 4 * n, dst));
+            }
+            let strings = t.alloc(&vec![0x5a; 0x18 * n as usize + 4]);
+            for i in 0..n {
+                let len = t.rng.below(20);
+                put_string(&mut t, strings + 0x18 * i, len);
+            }
+            let dst = if null { 0 } else { t.alloc(&[0x45; 0x90]) };
+            let end = strings + 0x18 * n;
+            let w = format!("{label} strings copy {round}");
+            let args = [strings, end, dst, 0x1234, 0x5678];
+            t.run_cdecl(&w, e::STRINGS_COPY, &args, |g| {
+                e::strings_copy(g, strings, end, dst)
+            });
+            // the vectors over the same elements
+            let vw = t.alloc(&[0; 12]);
+            t.w32(vw, src);
+            t.w32(vw + 4, src + 4 * n);
+            t.w32(vw + 8, src + 4 * n);
+            let this = t.alloc(&[0x2f; 12]);
+            let w = format!("{label} vector<u32> copy ctor {round}");
+            t.run(&w, 0x0064_d570, this, &[vw], false, |g| {
+                e::vector_copy_ctor(g, this, vw, 4, e::VECTOR_BUY_4, e::WORDS_COPY)
+            });
+            let vs = t.alloc(&[0; 12]);
+            t.w32(vs, strings);
+            t.w32(vs + 4, end);
+            t.w32(vs + 8, end);
+            let this = t.alloc(&[0x2f; 12]);
+            let w = format!("{label} vector<string> copy ctor {round}");
+            t.run(&w, 0x0064_d730, this, &[vs], false, |g| {
+                e::vector_copy_ctor(g, this, vs, 0x18, e::VECTOR_BUY_24, e::STRINGS_COPY)
+            });
+        }
+    }
+}
