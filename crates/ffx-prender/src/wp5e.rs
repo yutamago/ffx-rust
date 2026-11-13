@@ -880,3 +880,95 @@ pub fn tree_distance(h: &mut impl Host, first: u32, last: u32, count: u32) -> u3
     }
     at
 }
+
+/// The VFX render data table's (`std::map<u64, ..>`) `_Insert_at`
+/// (`0x0069c8e0`) and iterator `--` (`std_TreeIterator_dec_0069ed00`,
+/// thiscall on the iterator's slot).
+pub const VFX_INSERT_AT: u32 = 0x0069_c8e0;
+pub const VFX_ITERATOR_DEC: u32 = 0x0069_ed00;
+
+/// `a < b` for the `u64` keys at `a` and `b` (low word first).
+fn key64_less(h: &impl Host, a: u32, b: u32) -> bool {
+    let (ah, bh): (u32, u32) = (h.read(a.wrapping_add(4)), h.read(b.wrapping_add(4)));
+    if ah != bh {
+        return ah < bh;
+    }
+    h.read::<u32>(a) < h.read::<u32>(b)
+}
+
+/// The VFX render data table's `_Insert_nohint(this; &out, leftish,
+/// &value, node)` (`0x0069cfe0`, thiscall, `ret 0x10`;
+/// `ClassVFXRenderDataTable_Insert`'s): down from the root by the `u64`
+/// key (the value's first two words, the node's `+0x10`), left while the
+/// value orders before the node's key (with `leftish`: at most it); at
+/// the leftmost place `_Insert_at(&it, 1, place, value, node)` at once,
+/// else the predecessor (`--` on `slot`, the original's own `leftish`
+/// argument slot, which also takes `_Insert_at`'s iterator) compared:
+/// below the value, `_Insert_at(&it, left, place, ..)` and `out` = (it,
+/// 1); else `node` deleted and `out` = (the predecessor, 0). The original
+/// pushes its `left` byte as a word whose upper bytes it never wrote
+/// (`[ebp-0x14]`); `_Insert_at` reads only the byte, so the port passes
+/// 0 or 1 (junk read: `[ebp-0x13..0x11]` never written; 0, brief
+/// 2026-10-24). Returns `out`.
+pub fn vfx_insert_nohint(
+    h: &mut impl Host,
+    this: u32,
+    out: u32,
+    leftish: u32,
+    value: u32,
+    node: u32,
+    slot: u32,
+) -> u32 {
+    let head: u32 = h.read(this);
+    let mut add_left = true;
+    let mut place = head;
+    let mut at: u32 = h.read(head.wrapping_add(4));
+    while h.read::<u8>(at.wrapping_add(0xd)) == 0 {
+        place = at;
+        let key = at.wrapping_add(0x10);
+        add_left = if leftish & 0xff != 0 {
+            !key64_less(h, key, value)
+        } else {
+            key64_less(h, value, key)
+        };
+        at = h.read(at.wrapping_add(if add_left { 0 } else { 8 }));
+    }
+    h.write(slot, place);
+    if add_left {
+        if place == h.read::<u32>(head) {
+            return vfx_hang(h, this, out, slot, true, place, value, node);
+        }
+        h.call_sym(VFX_ITERATOR_DEC, Conv::Thiscall(slot), &[]);
+    }
+    let before: u32 = h.read(slot);
+    if key64_less(h, before.wrapping_add(0x10), value) {
+        return vfx_hang(h, this, out, slot, add_left, place, value, node);
+    }
+    h.call_sym(OPERATOR_DELETE, Conv::Cdecl, &[node]);
+    h.write(out, before);
+    h.write(out.wrapping_add(4), 0u8);
+    out
+}
+
+/// `_Insert_at(&slot, left, place, value, node)` and `out` = (it, 1).
+#[allow(clippy::too_many_arguments)]
+fn vfx_hang(
+    h: &mut impl Host,
+    this: u32,
+    out: u32,
+    slot: u32,
+    left: bool,
+    place: u32,
+    value: u32,
+    node: u32,
+) -> u32 {
+    let it = h.call_sym(
+        VFX_INSERT_AT,
+        Conv::Thiscall(this),
+        &[slot, u32::from(left), place, value, node],
+    );
+    let it: u32 = h.read(it);
+    h.write(out, it);
+    h.write(out.wrapping_add(4), 1u8);
+    out
+}

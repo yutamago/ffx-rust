@@ -328,6 +328,15 @@ ported! {
     std_Tree_distance_006f3520 @ 0x006f_3520 => extern "C" fn e_006f3520(first: u32, last: u32, count: u32) -> u32 {
         e::tree_distance(&mut mem(), first, last, count)
     }
+    /// `VfxRenderDataTable_insertAt_0069c8e0(this; &out, left, where, value, node)`: `StdTree_insertAt_006993d0`'s code with the limit 0x07fffffe; `out`.
+    VfxRenderDataTable_insertAt_0069c8e0 @ 0x0069_c8e0 => extern "thiscall" fn e_0069c8e0(this: u32, out: u32, add_left: u32, at: u32, _value: u32, node: u32) -> u32 {
+        st::tree_insert_at_limited(&mut mem(), this, out, add_left, at, node, 0x07ff_fffe)
+    }
+    /// `VfxRenderDataTable_insertNohint_0069cfe0(this; &out, leftish, &value, node)`: `node` hung by its `u64` key, or deleted for an equal one; `out`.
+    VfxRenderDataTable_insertNohint_0069cfe0 @ 0x0069_cfe0 => extern "thiscall" fn e_0069cfe0(this: u32, out: u32, leftish: u32, value: u32, node: u32) -> u32 {
+        let mut slot = StackFrame::<1>::new();
+        e::vfx_insert_nohint(&mut mem(), this, out, leftish, value, node, slot.at())
+    }
     /// `PSharray_data_004347a0`: the code of `PArray_Data_004d45a0`; the elements.
     PSharray_data_004347a0 @ 0x0043_47a0 => extern "thiscall" fn e_004347a0(this: u32) -> u32 {
         ffx_pcore::small::bridge::array_data(&mut mem(), this)

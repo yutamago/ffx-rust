@@ -1081,3 +1081,69 @@ fn wp5e_tree_distance() {
         }
     }
 }
+
+/// The VFX render data table's map (`std::map<u64, ..>`): `_Insert_nohint`
+/// (`0x0069cfe0`) growing maps from empty with keys from a small set
+/// (equal low words, equal high words, equal keys: deleted), `leftish` 0
+/// and 1, its `_Insert_at` and `--` the originals; and `_Insert_at`
+/// (`0x0069c8e0`) against `m5b_stl`'s at random leaf places. Nodes by
+/// the original `_Buynode` `0x0069c5f0`. `eax`, `out` and memory.
+#[test]
+fn wp5e_vfx_table_insert() {
+    use ffx_prender::wp5e as e;
+    use ffx_system::m5b_stl::bridge as st;
+    for (label, mut t) in Twins::all() {
+        let slot = t.b.stack_range().start + 0x1000;
+        for leftish in [0u32, 1, 0x100] {
+            for round in 0..4u32 {
+                let (map, _) = empty_map(&mut t);
+                let out = t.alloc(&[0x33; 8]);
+                for i in 0..30u32 {
+                    let lo = t.rng.below(5);
+                    let hi = t.rng.below(3);
+                    let value = t.alloc(&[0; 12]);
+                    t.w32(value, lo);
+                    t.w32(value + 4, hi);
+                    t.w32(value + 8, 0x4400 + i);
+                    let node = both(&mut t, 0x0069_c5f0, Conv::Thiscall(map), &[value]);
+                    let v = node + 0x10;
+                    let w = format!("{label} vfx nohint leftish {leftish:#x} {round} #{i}");
+                    t.run(&w, 0x0069_cfe0, map, &[out, leftish, v, node], false, |g| {
+                        e::vfx_insert_nohint(g, map, out, leftish, v, node, slot)
+                    });
+                }
+            }
+        }
+        for round in 0..4u32 {
+            let (map, head) = empty_map(&mut t);
+            let out = t.alloc(&[0; 8]);
+            let mut nodes: Vec<u32> = Vec::new();
+            for i in 0..30u32 {
+                let value = t.alloc(&[0x21; 12]);
+                let node = both(&mut t, 0x0069_c5f0, Conv::Thiscall(map), &[value]);
+                let (place, left) = if nodes.is_empty() {
+                    (head, 1)
+                } else {
+                    loop {
+                        let p = nodes[t.rng.below(nodes.len() as u32) as usize];
+                        let side = t.rng.below(2);
+                        let child: u32 = Mem::read(&t.b, p + if side == 1 { 0 } else { 8 });
+                        if child == head {
+                            break (p, side | 0x5a00);
+                        }
+                    }
+                };
+                let w = format!("{label} vfx insert_at {round} #{i}");
+                t.run(
+                    &w,
+                    0x0069_c8e0,
+                    map,
+                    &[out, left, place, 0x7a7a, node],
+                    false,
+                    |g| st::tree_insert_at_limited(g, map, out, left, place, node, 0x07ff_fffe),
+                );
+                nodes.push(node);
+            }
+        }
+    }
+}

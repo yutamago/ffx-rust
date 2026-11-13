@@ -134,8 +134,23 @@ pub mod bridge {
         at: u32,
         node: u32,
     ) -> u32 {
+        tree_insert_at_limited(h, this, out, add_left, at, node, 0x0aaa_aaa9)
+    }
+
+    /// [`tree_insert_at`] for a copy whose `max_size()` check is `size >=
+    /// limit` (`0x0069c8e0`, the VFX render data table's: 0x07fffffe;
+    /// m5-wp5e).
+    pub fn tree_insert_at_limited(
+        h: &mut impl Host,
+        this: u32,
+        out: u32,
+        add_left: u32,
+        at: u32,
+        node: u32,
+        limit: u32,
+    ) -> u32 {
         let mut size: u32 = h.read(this.wrapping_add(4));
-        if size >= 0x0aaa_aaa9 {
+        if size >= limit {
             h.call_sym(OPERATOR_DELETE, Conv::Cdecl, &[node]);
             let msg = h.rebase(MAP_TOO_LONG);
             size = import(h, XLENGTH_IAT, Conv::Cdecl, &[msg]);
