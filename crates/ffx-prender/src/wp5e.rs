@@ -309,3 +309,64 @@ pub fn tip_hide(h: &mut impl Host) -> u32 {
     let menu: u32 = h.read(g);
     h.call_sym(SET_ENABLE, Conv::Thiscall(menu), &[0])
 }
+
+/// The copies of `PArray_Data_004d45a0` (`ffx_pcore::small`'s
+/// `array_data`: `PSharray<T>`'s elements, the count word's top bit
+/// masked: more than 1 the pointer at `+4`, 1 the inline element at `+4`,
+/// 0 null; thiscall, no stack words): the same 27 bytes, found by a byte
+/// search of `.text`, each a `PClassDataMemberArrayDynamic`'s array-start
+/// callback (`Cluster_ApplyPointerFixups` calls them through the member's
+/// `+0x38`).
+pub const SHARRAY_DATA_COPIES: [u32; 51] = [
+    0x0043_47a0,
+    0x0043_47c0,
+    0x0044_c350,
+    0x0044_c370,
+    0x0044_c530,
+    0x0045_de30,
+    0x0045_de50,
+    0x0048_32f0,
+    0x0048_5db0,
+    0x0048_c010,
+    0x0048_c030,
+    0x0048_c260,
+    0x004a_0600,
+    0x004a_0620,
+    0x004c_3de0,
+    0x004c_3e00,
+    0x004c_5680,
+    0x004c_56a0,
+    0x004c_6fd0,
+    0x004c_6ff0,
+    0x004d_0650,
+    0x004d_0670,
+    0x004d_0820,
+    0x004d_4030,
+    0x004f_7b10,
+    0x004f_7b30,
+    0x004f_7b50,
+    0x004f_7b70,
+    0x004f_7f50,
+    0x004f_8140,
+    0x0050_2960,
+    0x0050_2980,
+    0x0051_cde0,
+    0x0051_ce00,
+    0x0051_d220,
+    0x0054_ffe0,
+    0x0055_0000,
+    0x0055_02b0,
+    0x0055_b300,
+    0x0056_2a40,
+    0x0056_2a60,
+    0x0057_b130,
+    0x005a_7030,
+    0x005a_7050,
+    0x005a_7070,
+    0x005a_7090,
+    0x005a_7590,
+    0x005f_c7e0,
+    0x005f_c800,
+    0x005f_e400,
+    0x0062_80f0,
+];

@@ -593,3 +593,30 @@ fn wp5e_tip_system() {
         }
     }
 }
+
+/// The 51 copies of `PArray_Data_004d45a0` (`PSharray<T>`'s elements):
+/// counts 0, 1, 2, large, each with and without the top bit. `eax`.
+#[test]
+fn wp5e_sharray_data_copies() {
+    use ffx_prender::wp5e as e;
+    for (label, mut t) in Twins::all() {
+        let arrays: Vec<u32> = [0u32, 1, 2, 7, 0x7fff_ffff]
+            .into_iter()
+            .flat_map(|n| [n, n | 0x8000_0000])
+            .map(|n| {
+                let a = t.alloc(&[0x3d; 8]);
+                t.w32(a, n);
+                t.w32(a + 4, 0x0abc_0000 | n & 0xffff);
+                a
+            })
+            .collect();
+        for &at in &e::SHARRAY_DATA_COPIES {
+            for &a in &arrays {
+                let w = format!("{label} sharray data {at:#x} on {a:#x}");
+                t.run(&w, at, a, &[], false, |g| {
+                    ffx_pcore::small::bridge::array_data(g, a)
+                });
+            }
+        }
+    }
+}

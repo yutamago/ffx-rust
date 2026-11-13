@@ -55,4 +55,208 @@ ported! {
     TipSystem_onHide_006e8760 @ 0x006e_8760 => extern "C" fn e_006e8760() -> u32 {
         e::tip_hide(&mut mem())
     }
+    /// `PSharray_data_004347a0`: the code of `PArray_Data_004d45a0`; the elements.
+    PSharray_data_004347a0 @ 0x0043_47a0 => extern "thiscall" fn e_004347a0(this: u32) -> u32 {
+        ffx_pcore::small::bridge::array_data(&mut mem(), this)
+    }
+    /// `PSharray_data_004347c0`: the code of `PArray_Data_004d45a0`; the elements.
+    PSharray_data_004347c0 @ 0x0043_47c0 => extern "thiscall" fn e_004347c0(this: u32) -> u32 {
+        ffx_pcore::small::bridge::array_data(&mut mem(), this)
+    }
+    /// `PSharray_data_0044c350`: the code of `PArray_Data_004d45a0`; the elements.
+    PSharray_data_0044c350 @ 0x0044_c350 => extern "thiscall" fn e_0044c350(this: u32) -> u32 {
+        ffx_pcore::small::bridge::array_data(&mut mem(), this)
+    }
+    /// `PSharray_data_0044c370`: the code of `PArray_Data_004d45a0`; the elements.
+    PSharray_data_0044c370 @ 0x0044_c370 => extern "thiscall" fn e_0044c370(this: u32) -> u32 {
+        ffx_pcore::small::bridge::array_data(&mut mem(), this)
+    }
+    /// `PSharray_data_0044c530`: the code of `PArray_Data_004d45a0`; the elements.
+    PSharray_data_0044c530 @ 0x0044_c530 => extern "thiscall" fn e_0044c530(this: u32) -> u32 {
+        ffx_pcore::small::bridge::array_data(&mut mem(), this)
+    }
+    /// `PSharray_data_0045de30`: the code of `PArray_Data_004d45a0`; the elements.
+    PSharray_data_0045de30 @ 0x0045_de30 => extern "thiscall" fn e_0045de30(this: u32) -> u32 {
+        ffx_pcore::small::bridge::array_data(&mut mem(), this)
+    }
+    /// `PSharray_data_0045de50`: the code of `PArray_Data_004d45a0`; the elements.
+    PSharray_data_0045de50 @ 0x0045_de50 => extern "thiscall" fn e_0045de50(this: u32) -> u32 {
+        ffx_pcore::small::bridge::array_data(&mut mem(), this)
+    }
+    /// `PSharray_data_004832f0`: the code of `PArray_Data_004d45a0`; the elements.
+    PSharray_data_004832f0 @ 0x0048_32f0 => extern "thiscall" fn e_004832f0(this: u32) -> u32 {
+        ffx_pcore::small::bridge::array_data(&mut mem(), this)
+    }
+    /// `PSharray_data_00485db0`: the code of `PArray_Data_004d45a0`; the elements.
+    PSharray_data_00485db0 @ 0x0048_5db0 => extern "thiscall" fn e_00485db0(this: u32) -> u32 {
+        ffx_pcore::small::bridge::array_data(&mut mem(), this)
+    }
+    /// `PSharray_data_0048c010`: the code of `PArray_Data_004d45a0`; the elements.
+    PSharray_data_0048c010 @ 0x0048_c010 => extern "thiscall" fn e_0048c010(this: u32) -> u32 {
+        ffx_pcore::small::bridge::array_data(&mut mem(), this)
+    }
+    /// `PSharray_data_0048c030`: the code of `PArray_Data_004d45a0`; the elements.
+    PSharray_data_0048c030 @ 0x0048_c030 => extern "thiscall" fn e_0048c030(this: u32) -> u32 {
+        ffx_pcore::small::bridge::array_data(&mut mem(), this)
+    }
+    /// `PSharray_data_0048c260`: the code of `PArray_Data_004d45a0`; the elements.
+    PSharray_data_0048c260 @ 0x0048_c260 => extern "thiscall" fn e_0048c260(this: u32) -> u32 {
+        ffx_pcore::small::bridge::array_data(&mut mem(), this)
+    }
+    /// `PSharray_data_004a0600`: the code of `PArray_Data_004d45a0`; the elements.
+    PSharray_data_004a0600 @ 0x004a_0600 => extern "thiscall" fn e_004a0600(this: u32) -> u32 {
+        ffx_pcore::small::bridge::array_data(&mut mem(), this)
+    }
+    /// `PSharray_data_004a0620`: the code of `PArray_Data_004d45a0`; the elements.
+    PSharray_data_004a0620 @ 0x004a_0620 => extern "thiscall" fn e_004a0620(this: u32) -> u32 {
+        ffx_pcore::small::bridge::array_data(&mut mem(), this)
+    }
+    /// `PSharray_data_004c3de0`: the code of `PArray_Data_004d45a0`; the elements.
+    PSharray_data_004c3de0 @ 0x004c_3de0 => extern "thiscall" fn e_004c3de0(this: u32) -> u32 {
+        ffx_pcore::small::bridge::array_data(&mut mem(), this)
+    }
+    /// `PSharray_data_004c3e00`: the code of `PArray_Data_004d45a0`; the elements.
+    PSharray_data_004c3e00 @ 0x004c_3e00 => extern "thiscall" fn e_004c3e00(this: u32) -> u32 {
+        ffx_pcore::small::bridge::array_data(&mut mem(), this)
+    }
+    /// `PSharray_data_004c5680`: the code of `PArray_Data_004d45a0`; the elements.
+    PSharray_data_004c5680 @ 0x004c_5680 => extern "thiscall" fn e_004c5680(this: u32) -> u32 {
+        ffx_pcore::small::bridge::array_data(&mut mem(), this)
+    }
+    /// `PSharray_data_004c56a0`: the code of `PArray_Data_004d45a0`; the elements.
+    PSharray_data_004c56a0 @ 0x004c_56a0 => extern "thiscall" fn e_004c56a0(this: u32) -> u32 {
+        ffx_pcore::small::bridge::array_data(&mut mem(), this)
+    }
+    /// `PSharray_data_004c6fd0`: the code of `PArray_Data_004d45a0`; the elements.
+    PSharray_data_004c6fd0 @ 0x004c_6fd0 => extern "thiscall" fn e_004c6fd0(this: u32) -> u32 {
+        ffx_pcore::small::bridge::array_data(&mut mem(), this)
+    }
+    /// `PSharray_data_004c6ff0`: the code of `PArray_Data_004d45a0`; the elements.
+    PSharray_data_004c6ff0 @ 0x004c_6ff0 => extern "thiscall" fn e_004c6ff0(this: u32) -> u32 {
+        ffx_pcore::small::bridge::array_data(&mut mem(), this)
+    }
+    /// `PSharray_data_004d0650`: the code of `PArray_Data_004d45a0`; the elements.
+    PSharray_data_004d0650 @ 0x004d_0650 => extern "thiscall" fn e_004d0650(this: u32) -> u32 {
+        ffx_pcore::small::bridge::array_data(&mut mem(), this)
+    }
+    /// `PSharray_data_004d0670`: the code of `PArray_Data_004d45a0`; the elements.
+    PSharray_data_004d0670 @ 0x004d_0670 => extern "thiscall" fn e_004d0670(this: u32) -> u32 {
+        ffx_pcore::small::bridge::array_data(&mut mem(), this)
+    }
+    /// `PSharray_data_004d0820`: the code of `PArray_Data_004d45a0`; the elements.
+    PSharray_data_004d0820 @ 0x004d_0820 => extern "thiscall" fn e_004d0820(this: u32) -> u32 {
+        ffx_pcore::small::bridge::array_data(&mut mem(), this)
+    }
+    /// `PSharray_data_004d4030`: the code of `PArray_Data_004d45a0`; the elements.
+    PSharray_data_004d4030 @ 0x004d_4030 => extern "thiscall" fn e_004d4030(this: u32) -> u32 {
+        ffx_pcore::small::bridge::array_data(&mut mem(), this)
+    }
+    /// `PSharray_data_004f7b10`: the code of `PArray_Data_004d45a0`; the elements.
+    PSharray_data_004f7b10 @ 0x004f_7b10 => extern "thiscall" fn e_004f7b10(this: u32) -> u32 {
+        ffx_pcore::small::bridge::array_data(&mut mem(), this)
+    }
+    /// `PSharray_data_004f7b30`: the code of `PArray_Data_004d45a0`; the elements.
+    PSharray_data_004f7b30 @ 0x004f_7b30 => extern "thiscall" fn e_004f7b30(this: u32) -> u32 {
+        ffx_pcore::small::bridge::array_data(&mut mem(), this)
+    }
+    /// `PSharray_data_004f7b50`: the code of `PArray_Data_004d45a0`; the elements.
+    PSharray_data_004f7b50 @ 0x004f_7b50 => extern "thiscall" fn e_004f7b50(this: u32) -> u32 {
+        ffx_pcore::small::bridge::array_data(&mut mem(), this)
+    }
+    /// `PSharray_data_004f7b70`: the code of `PArray_Data_004d45a0`; the elements.
+    PSharray_data_004f7b70 @ 0x004f_7b70 => extern "thiscall" fn e_004f7b70(this: u32) -> u32 {
+        ffx_pcore::small::bridge::array_data(&mut mem(), this)
+    }
+    /// `PSharray_data_004f7f50`: the code of `PArray_Data_004d45a0`; the elements.
+    PSharray_data_004f7f50 @ 0x004f_7f50 => extern "thiscall" fn e_004f7f50(this: u32) -> u32 {
+        ffx_pcore::small::bridge::array_data(&mut mem(), this)
+    }
+    /// `PSharray_data_004f8140`: the code of `PArray_Data_004d45a0`; the elements.
+    PSharray_data_004f8140 @ 0x004f_8140 => extern "thiscall" fn e_004f8140(this: u32) -> u32 {
+        ffx_pcore::small::bridge::array_data(&mut mem(), this)
+    }
+    /// `PSharray_data_00502960`: the code of `PArray_Data_004d45a0`; the elements.
+    PSharray_data_00502960 @ 0x0050_2960 => extern "thiscall" fn e_00502960(this: u32) -> u32 {
+        ffx_pcore::small::bridge::array_data(&mut mem(), this)
+    }
+    /// `PSharray_data_00502980`: the code of `PArray_Data_004d45a0`; the elements.
+    PSharray_data_00502980 @ 0x0050_2980 => extern "thiscall" fn e_00502980(this: u32) -> u32 {
+        ffx_pcore::small::bridge::array_data(&mut mem(), this)
+    }
+    /// `PSharray_data_0051cde0`: the code of `PArray_Data_004d45a0`; the elements.
+    PSharray_data_0051cde0 @ 0x0051_cde0 => extern "thiscall" fn e_0051cde0(this: u32) -> u32 {
+        ffx_pcore::small::bridge::array_data(&mut mem(), this)
+    }
+    /// `PSharray_data_0051ce00`: the code of `PArray_Data_004d45a0`; the elements.
+    PSharray_data_0051ce00 @ 0x0051_ce00 => extern "thiscall" fn e_0051ce00(this: u32) -> u32 {
+        ffx_pcore::small::bridge::array_data(&mut mem(), this)
+    }
+    /// `PSharray_data_0051d220`: the code of `PArray_Data_004d45a0`; the elements.
+    PSharray_data_0051d220 @ 0x0051_d220 => extern "thiscall" fn e_0051d220(this: u32) -> u32 {
+        ffx_pcore::small::bridge::array_data(&mut mem(), this)
+    }
+    /// `PSharray_data_0054ffe0`: the code of `PArray_Data_004d45a0`; the elements.
+    PSharray_data_0054ffe0 @ 0x0054_ffe0 => extern "thiscall" fn e_0054ffe0(this: u32) -> u32 {
+        ffx_pcore::small::bridge::array_data(&mut mem(), this)
+    }
+    /// `PSharray_data_00550000`: the code of `PArray_Data_004d45a0`; the elements.
+    PSharray_data_00550000 @ 0x0055_0000 => extern "thiscall" fn e_00550000(this: u32) -> u32 {
+        ffx_pcore::small::bridge::array_data(&mut mem(), this)
+    }
+    /// `PSharray_data_005502b0`: the code of `PArray_Data_004d45a0`; the elements.
+    PSharray_data_005502b0 @ 0x0055_02b0 => extern "thiscall" fn e_005502b0(this: u32) -> u32 {
+        ffx_pcore::small::bridge::array_data(&mut mem(), this)
+    }
+    /// `PSharray_data_0055b300`: the code of `PArray_Data_004d45a0`; the elements.
+    PSharray_data_0055b300 @ 0x0055_b300 => extern "thiscall" fn e_0055b300(this: u32) -> u32 {
+        ffx_pcore::small::bridge::array_data(&mut mem(), this)
+    }
+    /// `PSharray_data_00562a40`: the code of `PArray_Data_004d45a0`; the elements.
+    PSharray_data_00562a40 @ 0x0056_2a40 => extern "thiscall" fn e_00562a40(this: u32) -> u32 {
+        ffx_pcore::small::bridge::array_data(&mut mem(), this)
+    }
+    /// `PSharray_data_00562a60`: the code of `PArray_Data_004d45a0`; the elements.
+    PSharray_data_00562a60 @ 0x0056_2a60 => extern "thiscall" fn e_00562a60(this: u32) -> u32 {
+        ffx_pcore::small::bridge::array_data(&mut mem(), this)
+    }
+    /// `PSharray_data_0057b130`: the code of `PArray_Data_004d45a0`; the elements.
+    PSharray_data_0057b130 @ 0x0057_b130 => extern "thiscall" fn e_0057b130(this: u32) -> u32 {
+        ffx_pcore::small::bridge::array_data(&mut mem(), this)
+    }
+    /// `PSharray_data_005a7030`: the code of `PArray_Data_004d45a0`; the elements.
+    PSharray_data_005a7030 @ 0x005a_7030 => extern "thiscall" fn e_005a7030(this: u32) -> u32 {
+        ffx_pcore::small::bridge::array_data(&mut mem(), this)
+    }
+    /// `PSharray_data_005a7050`: the code of `PArray_Data_004d45a0`; the elements.
+    PSharray_data_005a7050 @ 0x005a_7050 => extern "thiscall" fn e_005a7050(this: u32) -> u32 {
+        ffx_pcore::small::bridge::array_data(&mut mem(), this)
+    }
+    /// `PSharray_data_005a7070`: the code of `PArray_Data_004d45a0`; the elements.
+    PSharray_data_005a7070 @ 0x005a_7070 => extern "thiscall" fn e_005a7070(this: u32) -> u32 {
+        ffx_pcore::small::bridge::array_data(&mut mem(), this)
+    }
+    /// `PSharray_data_005a7090`: the code of `PArray_Data_004d45a0`; the elements.
+    PSharray_data_005a7090 @ 0x005a_7090 => extern "thiscall" fn e_005a7090(this: u32) -> u32 {
+        ffx_pcore::small::bridge::array_data(&mut mem(), this)
+    }
+    /// `PSharray_data_005a7590`: the code of `PArray_Data_004d45a0`; the elements.
+    PSharray_data_005a7590 @ 0x005a_7590 => extern "thiscall" fn e_005a7590(this: u32) -> u32 {
+        ffx_pcore::small::bridge::array_data(&mut mem(), this)
+    }
+    /// `PSharray_data_005fc7e0`: the code of `PArray_Data_004d45a0`; the elements.
+    PSharray_data_005fc7e0 @ 0x005f_c7e0 => extern "thiscall" fn e_005fc7e0(this: u32) -> u32 {
+        ffx_pcore::small::bridge::array_data(&mut mem(), this)
+    }
+    /// `PSharray_data_005fc800`: the code of `PArray_Data_004d45a0`; the elements.
+    PSharray_data_005fc800 @ 0x005f_c800 => extern "thiscall" fn e_005fc800(this: u32) -> u32 {
+        ffx_pcore::small::bridge::array_data(&mut mem(), this)
+    }
+    /// `PSharray_data_005fe400`: the code of `PArray_Data_004d45a0`; the elements.
+    PSharray_data_005fe400 @ 0x005f_e400 => extern "thiscall" fn e_005fe400(this: u32) -> u32 {
+        ffx_pcore::small::bridge::array_data(&mut mem(), this)
+    }
+    /// `PSharray_data_006280f0`: the code of `PArray_Data_004d45a0`; the elements.
+    PSharray_data_006280f0 @ 0x0062_80f0 => extern "thiscall" fn e_006280f0(this: u32) -> u32 {
+        ffx_pcore::small::bridge::array_data(&mut mem(), this)
+    }
 }
