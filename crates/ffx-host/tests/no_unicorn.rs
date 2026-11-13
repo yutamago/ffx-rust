@@ -175,8 +175,8 @@ fn boots_until_the_first_unported_address() {
     }
     // the run ends at an unported address, at a C runtime import without
     // a Rust side (the boot got past the code: wp5b), once the table
-    // reaches that far at the presents' milestone, or at the budget when
-    // another thread stopped at an unported address (the main thread
+    // reaches that far at the presents' milestone, or at the budget (when
+    // another thread stopped at an unported address, the main thread
     // waits for the loader's work then)
     let first = match &stop {
         Stop::Failed(why, _) if why.starts_with("unstubbed import ") => {
@@ -192,7 +192,9 @@ fn boots_until_the_first_unported_address() {
             assert_eq!(m, &format!("Present {presents}"), "{report}");
             None
         }
-        Stop::Budget(_) if !all.is_empty() => Some(all[0].0),
+        // (a long run, FFX_NOU_BUDGET, may also just use its budget up
+        // with no stop at all: m5-wp5e's boot plays the field's updates)
+        Stop::Budget(_) => all.first().map(|u| u.0),
         other => panic!("unexpected stop {other:?}\n{report}"),
     };
     let mut out = String::from("# kind\taddress or import\tname\tdetail\n");

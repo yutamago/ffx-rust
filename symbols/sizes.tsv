@@ -2,12 +2,61 @@
 0x0042f7c0	43	0	FFXApplication_pollInputSync
 0x004320c0	8	0	Phyre_PArray_count_004320c0
 0x00432820	531	603	Phyre_PRendering_PUtilityRendering_initialize
+0x004347a0	27	0	
+0x004347c0	27	0	
 0x00440ea0	5	0	RenderTarget_release_00440ea0
+0x0044c350	27	0	
+0x0044c370	27	0	
+0x0044c530	27	0	
+0x0045de30	27	0	
+0x0045de50	27	0	
+0x004832f0	27	0	
+0x00485db0	27	0	
+0x0048c010	27	0	
+0x0048c030	27	0	
+0x0048c260	27	0	
+0x004a0600	27	0	
+0x004a0620	27	0	
+0x004c3de0	27	0	
+0x004c3e00	27	0	
+0x004c5680	27	0	
+0x004c56a0	27	0	
+0x004c6fd0	27	0	
+0x004c6ff0	27	0	
+0x004d0650	27	0	
+0x004d0670	27	0	
+0x004d0820	27	0	
+0x004d4030	27	0	
 0x004e62c0	72	0	PSceneRenderPassType_assignIndices_004e62c0
+0x004f7b10	27	0	
+0x004f7b30	27	0	
+0x004f7b50	27	0	
+0x004f7b70	27	0	
+0x004f8140	27	0	
+0x00502960	27	0	
+0x00502980	27	0	
+0x0051cde0	27	0	
+0x0051ce00	27	0	
+0x0051d220	27	0	
+0x0054ffe0	27	0	
+0x00550000	27	0	
+0x005502b0	27	0	
+0x0055b300	27	0	
+0x00562a40	27	0	
+0x00562a60	27	0	
+0x0057b130	27	0	
+0x005a7030	27	0	
+0x005a7050	27	0	
+0x005a7070	27	0	
+0x005a7090	27	0	
+0x005a7590	27	0	
 0x005c8930	1367	0	Phyre_PDynamicGeometry_skin4Bones_005c8930
 0x005c8e90	1623	0	Phyre_PDynamicGeometry_skin4BonesTangents_005c8e90
 0x005ca0d0	366	0	Phyre_PDynamicGeometry_PMorphModifier_blend2x3_005ca0d0
 0x005ca250	370	0	Phyre_PDynamicGeometry_PMorphModifier_blend2x4_005ca250
+0x005fc7e0	27	0	
+0x005fc800	27	0	
+0x005fe400	27	0	
 0x005ffe40	652	0	Phyre_PPhysics_PUtilityPhysics_initialize
 0x00605720	3	0	Phyre_PPhysics_PUtilityPhysics_slot2
 0x00613f70	64	0	
@@ -15,6 +64,7 @@
 0x00623500	9	0	Steam_Shutdown
 0x006243a0	77	0	Input_InitDirectInput_copy_006243a0
 0x006249b0	8	0	Input_RequestRescan
+0x006280f0	27	0	
 0x0062ac50	27	0	PApplication_Startup_Dead_0062ac50
 0x0062f640	3	0	code_0062f640
 0x0062f980	3	0	code_0062f980
@@ -48,6 +98,7 @@
 0x006c7ca0	16	0	ZeroPair_ctor_006c7ca0
 0x006c7cb0	16	0	ZeroPair_ctor_006c7cb0
 0x006d3600	5	0	BrokenScreenEffect_releaseObjects_thunk_006d3600
+0x006e8760	16	0	
 0x006ed450	5	0	FFXVu0InversMatrix
 0x006ed5c0	5	0	FFXVu0MulMatrix
 0x006f14a0	100	0	StatsAndAchievements_Destroy
@@ -385,6 +436,8 @@
 0x0088d500	5	0	AtelDrawSemiTrans_thunk_0088d500
 0x0088de60	98	0	TkInitScene_LoadShoutStream_0088de60
 0x0088ded0	103	0	TkInitScene_SendShoutStream_0088ded0
+0x0088e5e0	15	0	
+0x0088e5f0	8	0	
 0x0088e780	5	0	MsImportantReset_thunk_0088e780
 0x008a97e0	5	0	eiAbmParaGet
 0x008a9850	6	0	TkVibrateCurve_get_008a9850
