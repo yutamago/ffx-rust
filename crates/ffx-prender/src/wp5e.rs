@@ -775,3 +775,21 @@ pub fn string_map_erase_range(
     h.write(out, at);
     out
 }
+
+/// The byte flag `0x00c58e89` (`Native_01c6_GetGlobal00c58e89`'s).
+pub const FLAG_C58E89: u32 = 0x00c5_8e89;
+
+/// `0x0088e5e0` (cdecl, no words; `Native_01c6_GetGlobal00c58e89`'s tail
+/// jump): the flag byte `0x00c58e89` zero-extended, and the flag cleared.
+pub fn take_flag_c58e89(h: &mut impl Host) -> u32 {
+    let at = h.rebase(FLAG_C58E89);
+    let v: u8 = h.read(at);
+    h.write(at, 0u8);
+    u32::from(v)
+}
+
+/// `0x0088e5f0` (cdecl, no words): the flag byte `0x00c58e89`
+/// zero-extended.
+pub fn peek_flag_c58e89(h: &mut impl Host) -> u32 {
+    u32::from(h.read::<u8>(h.rebase(FLAG_C58E89)))
+}

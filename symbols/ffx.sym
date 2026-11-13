@@ -19534,6 +19534,8 @@
 0x0088e3a0 function TkSqsLoadInfo_0088e3a0 # (load): only when g_GsDefDrawEnv2 (0x00b5ec4f, 1 in the image: never runs) is 0: load ? buf = TkCdReadWithMalloc(0x2d, 1), size = GetCD()+0x10(0x2d), +0x14(1) : 0, 0; +0x10(0x2d), 0x0081d340(buf, size, +4(0)); buf: user_free_thunk, Sg_MemCheck(0/1, tklib.c, 0x1e0/0x1e1); copy of 0x0088e440 with file 0x2d; ported in menu round 30; name ours
 0x0088e440 function TkSqsLoadInfo_0088e440 # (load): TkSqsLoadInfo_0088e3a0 with CD file 0x2c and SqsInitWaveInfo; never runs (g_GsDefDrawEnv2 is 1); ported in menu round 30; name ours
 0x0088e570 function TkInitWork                # (): 0x01330878/7c = 0, TkInitAlarm, TkInitControlerWork, TkInitSyncV, debug menu status 1, flags 0, g_SndStreamTable 0, save +0x2b = 0, save +0x13 = (b & ~4) | 2; returns MsGetSaveEventAddress(); TkInit calls it first; name ours
+0x0088e5e0 function TkFlag_take_0088e5e0 # cdecl() -> movzx of the byte 0x00c58e89, then the byte cleared; Native_01c6_GetGlobal00c58e89 tail-jumps here; name ours; ported M5 wp5e (ffx_prender::wp5e)
+0x0088e5f0 function TkFlag_peek_0088e5f0 # cdecl() -> movzx of the byte 0x00c58e89; name ours; ported M5 wp5e (ffx_prender::wp5e)
 0x0088e610 function TkLoadVibrate             # fh switch:bsim1.00 0x7100490400
 0x0088e650 function TkMalloc                  # fh v3:exact 0x0088e5c0
 0x0088e680 function TkMemLock                 # fh v3:bsim1.00 0x0088e5f0; cdecl() -> Sg_MemCheck(0, 0x00b5e968, 0x1c5), Sg_MemCheck(1, .., 0x1c6); ported M5 menu b4 (ffx_menu::m5m_d)

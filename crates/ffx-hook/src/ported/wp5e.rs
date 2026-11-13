@@ -271,6 +271,14 @@ ported! {
     std_Tree_min_00806dd0 @ 0x0080_6dd0 => extern "C" fn e_00806dd0(node: u32) -> u32 {
         tb::tree_min(&mut mem(), node)
     }
+    /// `TkFlag_take_0088e5e0()`: the flag byte `0x00c58e89`, cleared.
+    TkFlag_take_0088e5e0 @ 0x0088_e5e0 => extern "C" fn e_0088e5e0() -> u32 {
+        e::take_flag_c58e89(&mut mem())
+    }
+    /// `TkFlag_peek_0088e5f0()`: the flag byte `0x00c58e89`.
+    TkFlag_peek_0088e5f0 @ 0x0088_e5f0 => extern "C" fn e_0088e5f0() -> u32 {
+        e::peek_flag_c58e89(&mut mem())
+    }
     /// `PSharray_data_004347a0`: the code of `PArray_Data_004d45a0`; the elements.
     PSharray_data_004347a0 @ 0x0043_47a0 => extern "thiscall" fn e_004347a0(this: u32) -> u32 {
         ffx_pcore::small::bridge::array_data(&mut mem(), this)

@@ -957,3 +957,20 @@ const TREE_HELPER_COPIES: &[(char, u32)] = &[
     ('n', 0x006d_7c00),
     ('n', 0x0080_6dd0),
 ];
+
+/// The flag byte `0x00c58e89`'s take (`0x0088e5e0`) and peek
+/// (`0x0088e5f0`) with values 0, 1, 0x80, 0xff. `eax` and memory.
+#[test]
+fn wp5e_flag_c58e89() {
+    use ffx_prender::wp5e as e;
+    for (label, mut t) in Twins::all() {
+        let at = t.a.rebase(e::FLAG_C58E89);
+        for v in [0u8, 1, 0x80, 0xff] {
+            t.write(at, &[v]);
+            let w = format!("{label} flag peek {v:#x}");
+            t.run_cdecl(&w, 0x0088_e5f0, &[], |g| e::peek_flag_c58e89(g));
+            let w = format!("{label} flag take {v:#x}");
+            t.run_cdecl(&w, 0x0088_e5e0, &[], |g| e::take_flag_c58e89(g));
+        }
+    }
+}

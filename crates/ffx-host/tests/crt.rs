@@ -167,7 +167,7 @@ fn one_instruction_functions_match_unicorn() {
         // the global CharacterTextureAnimationTweakUtil_GetInstance reads
         e.mem().write(0x00cc_cad4, 0x1234_5678u32);
     }
-    let cases: [(u32, Leaf); 8] = [
+    let cases: [(u32, Leaf); 11] = [
         (0x0062_f4c0, Leaf::Void),            // FlushCache: ret
         (0x0069_3530, Leaf::Void),            // degradeResolution: ret 4
         (0x0062_f6e0, Leaf::Const(0)),        // sceDmaGetChan: xor eax, eax
@@ -176,6 +176,9 @@ fn one_instruction_functions_match_unicorn() {
         (0x006b_6340, Leaf::Global(0x00cc_cad4)),
         (0x0063_12e0, Leaf::ThisWord(0)), // getButtonInfo: mov eax, [ecx]
         (0x006d_5670, Leaf::ThisByte(5)), // isActivatedForCurrentFrame: mov al, [ecx+5]
+        (0x006a_2220, Leaf::ThisPlus(0)), // mov eax, ecx
+        (0x006a_2230, Leaf::ThisPlus(0x12d4)), // lea eax, [ecx+0x12d4]
+        (0x0042_7b00, Leaf::ThisPlus(0x78)), // lea eax, [ecx+0x78]
     ];
     for &(addr, want) in &cases {
         assert_eq!(leaf::decode(&ported.mem(), addr), Some(want), "{addr:#x}");
@@ -205,5 +208,5 @@ fn one_instruction_functions_match_unicorn() {
     // not leaves: a real function, alloca_probe's register dance
     assert_eq!(leaf::decode(&ported.mem(), 0x0094_9620), None);
     assert_eq!(leaf::decode(&ported.mem(), 0x0094_966a), None);
-    assert_eq!(ported.stats.leaf_calls, 8);
+    assert_eq!(ported.stats.leaf_calls, 11);
 }
