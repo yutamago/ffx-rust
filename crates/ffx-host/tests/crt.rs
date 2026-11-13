@@ -167,7 +167,7 @@ fn one_instruction_functions_match_unicorn() {
         // the global CharacterTextureAnimationTweakUtil_GetInstance reads
         e.mem().write(0x00cc_cad4, 0x1234_5678u32);
     }
-    let cases: [(u32, Leaf); 11] = [
+    let cases: [(u32, Leaf); 14] = [
         (0x0062_f4c0, Leaf::Void),            // FlushCache: ret
         (0x0069_3530, Leaf::Void),            // degradeResolution: ret 4
         (0x0062_f6e0, Leaf::Const(0)),        // sceDmaGetChan: xor eax, eax
@@ -179,6 +179,9 @@ fn one_instruction_functions_match_unicorn() {
         (0x006a_2220, Leaf::ThisPlus(0)), // mov eax, ecx
         (0x006a_2230, Leaf::ThisPlus(0x12d4)), // lea eax, [ecx+0x12d4]
         (0x0042_7b00, Leaf::ThisPlus(0x78)), // lea eax, [ecx+0x78]
+        (0x006a_06c0, Leaf::ArgPlus(0x10)), // FieldAddr10: [ebp+8] + 0x10, ret 4
+        (0x006a_06d0, Leaf::ArgPlus(0)),  // mov eax, [ebp+8], ret 4
+        (0x006a_0450, Leaf::ArgPlus(0xc)), // FieldAddrc: [ebp+8] + 0xc, ret
     ];
     for &(addr, want) in &cases {
         assert_eq!(leaf::decode(&ported.mem(), addr), Some(want), "{addr:#x}");
@@ -208,5 +211,50 @@ fn one_instruction_functions_match_unicorn() {
     // not leaves: a real function, alloca_probe's register dance
     assert_eq!(leaf::decode(&ported.mem(), 0x0094_9620), None);
     assert_eq!(leaf::decode(&ported.mem(), 0x0094_966a), None);
-    assert_eq!(ported.stats.leaf_calls, 11);
+    assert_eq!(ported.stats.leaf_calls, 14);
+}
+
+/// A trap standing for a store wrapper's target: `a ^ 0x5a5a`.
+fn wrapper_target(_: &mut Exec, _: u32, args: &ffx_host::table::Args) -> ffx_host::table::Ret {
+    ffx_host::table::Ret::eax(args.stack.first().copied().unwrap_or(0) ^ 0x5a5a)
+}
+
+/// A store wrapper (`ffx_host::leaf::store_wrapper`, m5-wp5e) called from
+/// Rust: `0x0048c210` (`*out = 0x0048b390(a)`), its target a trap here
+/// (the real one is a Lua accessor): the target called with `a`, its
+/// `eax` stored and returned, no emulator start.
+#[test]
+fn a_store_wrapper_calls_its_target_and_stores() {
+    let Some((mut ported, _)) = pair() else {
+        return;
+    };
+    assert_eq!(
+        ffx_host::leaf::store_wrapper(&ported.mem(), 0x0048_c210),
+        Some(0x0048_b390)
+    );
+    assert_eq!(
+        ffx_host::leaf::store_wrapper(&ported.mem(), 0x0094_9620),
+        None
+    );
+    ported.shared().add_trap(
+        0x0048_b390,
+        ffx_host::exec::Trap {
+            run: wrapper_target,
+            tag: 0,
+            conv: ffx_host::table::Conv::Cdecl,
+            words: 1,
+        },
+    );
+    let out = ported.alloc(8);
+    let args = ffx_host::table::Args {
+        stack: vec![0x1234, out],
+        ..Default::default()
+    };
+    let calls = ported.stats.unicorn_calls;
+    let r = ported
+        .call(0x0048_c210, ffx_host::table::Conv::Stdcall, &args)
+        .unwrap();
+    assert_eq!(ported.stats.unicorn_calls, calls);
+    assert_eq!(r.eax, 0x1234 ^ 0x5a5a);
+    assert_eq!(ported.mem().read::<u32>(out), 0x1234 ^ 0x5a5a);
 }

@@ -228,7 +228,14 @@ instruction does to `eax`, with no emulator start; Unicorn code calling
 one runs it (a block, no stop). `tests/crt.rs` checks each shape on a
 real function against Unicorn. Since m5-wp5e also `mov eax, ecx` and
 `lea eax, [ecx + d]` (a member's address: about 490 functions; the
-no-Unicorn boot met `0x006a2220` in `PhyreScene_DrawZPrePass`).
+no-Unicorn boot met `0x006a2220` in `PhyreScene_DrawZPrePass`), and
+the framed accessors `push ebp; mov ebp, esp; mov eax, [ebp+8]; (add
+eax, imm;) pop ebp; ret (n)` (the first stack word plus an offset:
+about 370, `FieldAddr10_006a06c0` among them). **Store wrappers**: the
+Phyre class descriptors' `getPointerFromScriptContext` (about 410:
+`push [ebp+8]; call X; mov ecx, [ebp+0xc]; add esp, 4; mov [ecx], eax;
+ret 8`) called from Rust call `X(a)` through `Exec::call` and store its
+`eax` at the second word (`leaf::store_wrapper`).
 
 **Jump thunks** (m5-wp5e). A call from Rust to an address with no table
 entry whose first instruction is `jmp rel32` goes to the jump's target

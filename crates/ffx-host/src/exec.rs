@@ -1635,7 +1635,27 @@ impl Exec {
             .flatten()
         {
             self.stats.leaf_calls += 1;
-            Ok(crate::leaf::run(&self.mem(), leaf, args.ecx))
+            let first = args.stack.first().copied().unwrap_or(0);
+            Ok(crate::leaf::run(&self.mem(), leaf, args.ecx, first))
+        } else if let Some(target) = self
+            .shared
+            .image
+            .is_code(addr)
+            .then(|| crate::leaf::store_wrapper(&self.mem(), addr))
+            .flatten()
+        {
+            // `*out = target(a)`: the call, then the store (m5-wp5e)
+            self.stats.leaf_calls += 1;
+            let a = args.stack.first().copied().unwrap_or(0);
+            let out = args.stack.get(1).copied().unwrap_or(0);
+            let inner = Args {
+                stack: vec![a],
+                ..Args::default()
+            };
+            self.call(target, Conv::Cdecl, &inner).map(|r| {
+                ffx_bridge::Mem::write(&mut self.mem(), out, r.eax);
+                Ret::eax(r.eax)
+            })
         } else {
             self.call_code(addr, conv, args)
         };
@@ -3176,7 +3196,8 @@ impl ffx_bridge::route::Router for Exec {
             && !self.shared.stubs.contains_key(&addr)
             && self.shared.trap(addr).is_none()
             && !(self.shared.image.is_code(addr)
-                && crate::leaf::decode(&self.mem(), addr).is_some());
+                && (crate::leaf::decode(&self.mem(), addr).is_some()
+                    || crate::leaf::store_wrapper(&self.mem(), addr).is_some()));
         let Ok(ret) = Exec::call(self, addr, conv, args) else {
             halted()
         };
