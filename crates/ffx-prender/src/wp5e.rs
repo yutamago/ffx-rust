@@ -995,3 +995,90 @@ pub fn matrix_mul(h: &mut impl Host, out: u32, a: u32, b: u32, frame: u32) -> u3
     h.call_sym(FROM_ROWS, Conv::Thiscall(out), &rows);
     out
 }
+
+/// `IggyMenu_callIggyAS3External(this; target, name, n, values, unused)`
+/// (thiscall `ret 0x14`), `IggyMenu_replay(this)`,
+/// `iggyDataValueSet_00a28d70(v, utf8)` (cdecl: a string value) and
+/// `IggyMenu_callFlashFunction_1(menu, name, value by value)` (cdecl, six
+/// words).
+pub const CALL_AS3: u32 = 0x00a2_8ba0;
+pub const MENU_REPLAY: u32 = 0x00a2_8ee0;
+pub const VALUE_SET_UTF8: u32 = 0x00a2_8d70;
+pub const VALUE_SET_INT: u32 = 0x00a2_8d30;
+pub const CALL_FLASH_1: u32 = 0x0068_dd40;
+/// `"OnPlay"`.
+pub const ON_PLAY: u32 = 0x00b4_b4d8;
+/// The pause overlay's menu (`OverlayMenu_create_006f3130`'s global) and
+/// its texts: `"showPause"`, `"hidePause"`, the argument `"pausa"`
+/// (languages 3 and 5) or `"pause"`.
+pub const PAUSE_MENU: u32 = 0x00ce_81fc;
+pub const SHOW_PAUSE: u32 = 0x00b4_bc14;
+pub const HIDE_PAUSE: u32 = 0x00b4_bc28;
+pub const PAUSA: u32 = 0x00b4_bc0c;
+pub const PAUSE: u32 = 0x00b4_bc20;
+/// `Pause_ShowScreen_006f3240` (thiscall on the menu).
+pub const PAUSE_SHOW: u32 = 0x006f_3240;
+
+/// `TipSystem::PlayTip(this; text)` (`0x006e8810`, thiscall, `ret 4`):
+/// without a movie (`this[0]`) `al` 0 (the port: `eax` 0); else the menu
+/// enabled, two Iggy values in `frame` (0x20 bytes, the original's `ebp -
+/// 0x20`: the integer 0, then the string `text`), the movie's AS3
+/// `"OnPlay"(0, text)`, `IggyMenu_replay`; `al` 1 over the replay's
+/// `eax`.
+pub fn tip_play(h: &mut impl Host, this: u32, text: u32, frame: u32) -> u32 {
+    let menu: u32 = h.read(this);
+    if menu == 0 {
+        return 0;
+    }
+    h.call_sym(SET_ENABLE, Conv::Thiscall(menu), &[1]);
+    h.call_sym(VALUE_SET_INT, Conv::Cdecl, &[frame, 0]);
+    h.call_sym(VALUE_SET_UTF8, Conv::Cdecl, &[frame + 0x10, text]);
+    let menu: u32 = h.read(this);
+    let name = h.rebase(ON_PLAY);
+    h.call_sym(CALL_AS3, Conv::Thiscall(menu), &[0, name, 2, frame, 1]);
+    let menu: u32 = h.read(this);
+    let r = h.call_sym(MENU_REPLAY, Conv::Thiscall(menu), &[]);
+    (r & !0xff) | 1
+}
+
+/// The pause overlay's `"showPause"` (`0x006f3240`, thiscall on the menu):
+/// the menu enabled, a string value (`"pausa"` for the languages 3 and 5,
+/// else `"pause"`) in `frame` (0x10 bytes; the original's `ebp - 0x20` or
+/// `ebp - 0x10` by the branch), then `IggyMenu_callFlashFunction_1(menu,
+/// "showPause", the value's four words)`. Its `eax`.
+pub fn pause_show(h: &mut impl Host, menu: u32, frame: u32) -> u32 {
+    h.call_sym(SET_ENABLE, Conv::Thiscall(menu), &[1]);
+    let lm = h.call_sym(LOCALIZATION_MANAGER, Conv::Cdecl, &[]);
+    let lang: u32 = h.read(lm.wrapping_add(4));
+    let text = h.rebase(if lang == 3 || lang == 5 { PAUSA } else { PAUSE });
+    h.call_sym(VALUE_SET_UTF8, Conv::Cdecl, &[frame, text]);
+    let v: [u32; 4] = std::array::from_fn(|i| h.read(frame + 4 * i as u32));
+    let name = h.rebase(SHOW_PAUSE);
+    h.call_sym(
+        CALL_FLASH_1,
+        Conv::Cdecl,
+        &[menu, name, v[0], v[1], v[2], v[3]],
+    )
+}
+
+/// `0x006f3300` (cdecl): [`pause_show`] on the pause overlay's menu (a
+/// tail jump with `ecx` the global).
+pub fn pause_show_global(h: &mut impl Host) -> u32 {
+    let menu: u32 = h.read(h.rebase(PAUSE_MENU));
+    h.call_sym(PAUSE_SHOW, Conv::Thiscall(menu), &[])
+}
+
+/// `0x006f32d0` (cdecl): the pause overlay's menu disabled
+/// (`IggyMenu_setEnable(menu; 0)`). Its `eax`.
+pub fn pause_disable(h: &mut impl Host) -> u32 {
+    let menu: u32 = h.read(h.rebase(PAUSE_MENU));
+    h.call_sym(SET_ENABLE, Conv::Thiscall(menu), &[0])
+}
+
+/// `Pause_HideScreen` (`0x006f32e0`, cdecl): the pause overlay's AS3
+/// `"hidePause"` with no values. Its `eax`.
+pub fn pause_hide(h: &mut impl Host) -> u32 {
+    let menu: u32 = h.read(h.rebase(PAUSE_MENU));
+    let name = h.rebase(HIDE_PAUSE);
+    h.call_sym(CALL_AS3, Conv::Thiscall(menu), &[0, name, 0, 0, 1])
+}

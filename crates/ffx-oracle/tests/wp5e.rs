@@ -1181,3 +1181,143 @@ fn wp5e_matrix_mul() {
         }
     }
 }
+
+/// A stub that appends to `log` (a count, then 64-byte entries) `tag`,
+/// `ecx`, the stack words `words` (by index) and `deref` words read from
+/// the pointer in stack word `ptr` (when set and not NULL), returns `ret` and pops
+/// `pops` bytes. For callees handed a frame pointer, which differs on
+/// the two sides: what it points at is logged instead.
+fn deref_stub(
+    log: u32,
+    tag: u32,
+    words: &[u8],
+    ptr: Option<(u8, u8)>,
+    pops: u16,
+    ret: u32,
+) -> Vec<u8> {
+    let mut c = vec![0xa1];
+    c.extend(log.to_le_bytes()); // mov eax, [log]
+    c.extend([0x83, 0xe0, 0x1f, 0xc1, 0xe0, 0x06]); // and eax, 31; shl eax, 6
+    c.push(0x05);
+    c.extend((log + 4).to_le_bytes()); // add eax, log + 4
+    c.extend([0xc7, 0x00]);
+    c.extend(tag.to_le_bytes()); // mov [eax], tag
+    c.extend([0x89, 0x48, 0x04]); // mov [eax+4], ecx
+    for (j, &i) in words.iter().enumerate() {
+        c.extend([0x8b, 0x54, 0x24, 4 + 4 * i]); // mov edx, [esp+4+4i]
+        c.extend([0x89, 0x50, 8 + 4 * j as u8]); // mov [eax+8+4j], edx
+    }
+    if let Some((p, n)) = ptr {
+        c.extend([0x8b, 0x4c, 0x24, 4 + 4 * p]); // mov ecx, [esp+4+4p]
+        c.extend([0x85, 0xc9, 0x74, 6 * n]); // test ecx, ecx; jz past the reads
+        for k in 0..n {
+            c.extend([0x8b, 0x51, 4 * k]); // mov edx, [ecx+4k]
+            c.extend([0x89, 0x50, 0x20 + 4 * k]); // mov [eax+0x20+4k], edx
+        }
+    }
+    c.extend([0xff, 0x05]);
+    c.extend(log.to_le_bytes()); // inc dword [log]
+    c.push(0xb8);
+    c.extend(ret.to_le_bytes()); // mov eax, ret
+    if pops == 0 {
+        c.push(0xc3);
+    } else {
+        c.push(0xc2);
+        c.extend(pops.to_le_bytes());
+    }
+    c
+}
+
+/// A value setter stub `(v, x)`: `v` gets `x`, `tag`, `x ^ tag`, `tag + 1`
+/// (cdecl).
+fn value_stub(tag: u32) -> Vec<u8> {
+    let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0x8b, 0x4c, 0x24, 0x08]; // mov eax, [esp+4]; mov ecx, [esp+8]
+    c.extend([0x89, 0x08]); // mov [eax], ecx
+    c.extend([0xc7, 0x40, 0x04]);
+    c.extend(tag.to_le_bytes()); // mov dword [eax+4], tag
+    c.extend([0x81, 0xf1]);
+    c.extend(tag.to_le_bytes()); // xor ecx, tag
+    c.extend([0x89, 0x48, 0x08]); // mov [eax+8], ecx
+    c.extend([0xc7, 0x40, 0x0c]);
+    c.extend((tag + 1).to_le_bytes()); // mov dword [eax+0xc], tag + 1
+    c.push(0xc3);
+    c
+}
+
+/// `TipSystem::PlayTip` (`0x006e8810`: with and without a movie) and the
+/// pause overlay (`0x006f3240` show for the languages 3, 5 and others,
+/// `0x006f32d0` disable, `0x006f32e0` hide, `0x006f3300` show thunk):
+/// every callee a logging stub, the value setters writing their values
+/// (which the AS3 calls' logs read back). `eax` (`al` for `PlayTip`) and
+/// memory.
+#[test]
+fn wp5e_tip_play_and_pause() {
+    use ffx_prender::wp5e as e;
+    for (label, mut t) in Twins::all() {
+        let log = t.alloc(&[0; 4 + 32 * 64]);
+        let lm = t.alloc(&[0x29; 8]);
+        let mut c = vec![0xb8];
+        c.extend(lm.to_le_bytes());
+        c.push(0xc3);
+        jmp_stub(&mut t, e::LOCALIZATION_MANAGER, &c);
+        jmp_stub(
+            &mut t,
+            e::SET_ENABLE,
+            &deref_stub(log, 0xe0, &[0], None, 4, 0xe0e0),
+        );
+        jmp_stub(&mut t, e::VALUE_SET_INT, &value_stub(0x1100));
+        jmp_stub(&mut t, e::VALUE_SET_UTF8, &value_stub(0x2200));
+        let s = deref_stub(log, 0xa3, &[0, 1, 2, 4], Some((3, 8)), 0x14, 0xa3a3);
+        jmp_stub(&mut t, e::CALL_AS3, &s);
+        jmp_stub(
+            &mut t,
+            e::MENU_REPLAY,
+            &deref_stub(log, 0x7e, &[], None, 0, 0x7e7e_7e00),
+        );
+        // (cdecl: the caller's ecx is junk, the logged one 0)
+        let mut s = vec![0x31, 0xc9];
+        s.extend(deref_stub(log, 0xf1, &[0, 1, 2, 3, 4, 5], None, 0, 0xf1f1));
+        jmp_stub(&mut t, e::CALL_FLASH_1, &s);
+        let frame = t.b.stack_range().start + 0x1000;
+        for case in 0..2u32 {
+            let tips = t.alloc(&[0; 4]);
+            if case == 0 {
+                t.w32(tips, 0x4747_0000);
+            }
+            t.w32(log, 0);
+            let w = format!("{label} tip play {case}");
+            let r =
+                t.a.call(t.a.rebase(0x006e_8810), Conv::Thiscall(tips), &[0x5150]);
+            let r = r.unwrap().eax;
+            let p = e::tip_play(&mut G(&mut t.b), tips, 0x5150, frame);
+            assert_eq!(r & 0xff, p & 0xff, "{w}: al");
+            if case == 0 {
+                assert_eq!(r, p, "{w}: eax");
+            }
+            t.same(&w);
+        }
+        let menu = t.alloc(&[0x6d; 0x10]);
+        t.w32(t.a.rebase(e::PAUSE_MENU), menu);
+        for (case, lang) in [3u32, 5, 0, 4, 6].into_iter().enumerate() {
+            t.w32(lm + 4, lang);
+            t.w32(log, 0);
+            let w = format!("{label} pause show {case} (language {lang})");
+            t.run(&w, e::PAUSE_SHOW, menu, &[], false, |g| {
+                e::pause_show(g, menu, frame)
+            });
+        }
+        t.w32(lm + 4, 3);
+        t.run_cdecl(
+            &format!("{label} pause show thunk"),
+            0x006f_3300,
+            &[],
+            |g| e::pause_show_global(g),
+        );
+        t.run_cdecl(&format!("{label} pause disable"), 0x006f_32d0, &[], |g| {
+            e::pause_disable(g)
+        });
+        t.run_cdecl(&format!("{label} pause hide"), 0x006f_32e0, &[], |g| {
+            e::pause_hide(g)
+        });
+    }
+}

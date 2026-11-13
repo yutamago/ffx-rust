@@ -342,6 +342,32 @@ ported! {
         let mut frame = StackFrame::<16>::new();
         e::matrix_mul(&mut mem(), out, a, b, frame.at())
     }
+    /// `TipSystem_PlayTip(this; text)`: the tips' AS3 `"OnPlay"(0, text)`; `al` 1, or 0 without a movie.
+    TipSystem_PlayTip @ 0x006e_8810 => extern "thiscall" fn e_006e8810(this: u32, text: u32) -> u32 {
+        let mut frame = StackFrame::<8>::new();
+        e::tip_play(&mut mem(), this, text, frame.at())
+    }
+    /// `Pause_ShowScreen_006f3240(menu)`: the menu enabled, `"showPause"("pause")`.
+    Pause_ShowScreen_006f3240 @ 0x006f_3240 => extern "thiscall" fn e_006f3240(menu: u32) -> u32 {
+        let mut frame = StackFrame::<4>::new();
+        e::pause_show(&mut mem(), menu, frame.at())
+    }
+    /// `Pause_Disable_006f32d0()`: the pause overlay's menu disabled.
+    Pause_Disable_006f32d0 @ 0x006f_32d0 => extern "C" fn e_006f32d0() -> u32 {
+        e::pause_disable(&mut mem())
+    }
+    /// `Pause_HideScreen()`: the pause overlay's `"hidePause"`.
+    Pause_HideScreen @ 0x006f_32e0 => extern "C" fn e_006f32e0() -> u32 {
+        e::pause_hide(&mut mem())
+    }
+    /// `Pause_ShowScreen_thunk_006f3300()`: `Pause_ShowScreen_006f3240` on the pause overlay's menu.
+    Pause_ShowScreen_thunk_006f3300 @ 0x006f_3300 => extern "C" fn e_006f3300() -> u32 {
+        e::pause_show_global(&mut mem())
+    }
+    /// `std_Tree_const_iterator_inc_006d6ff0`: the code of `std_Tree_const_iterator_inc_006352b0`.
+    std_Tree_const_iterator_inc_006d6ff0 @ 0x006d_6ff0 => extern "fastcall" fn e_006d6ff0(it: u32) -> u32 {
+        stl::tree_iterator_inc(&mut mem(), it)
+    }
     /// `PSharray_data_004347a0`: the code of `PArray_Data_004d45a0`; the elements.
     PSharray_data_004347a0 @ 0x0043_47a0 => extern "thiscall" fn e_004347a0(this: u32) -> u32 {
         ffx_pcore::small::bridge::array_data(&mut mem(), this)
