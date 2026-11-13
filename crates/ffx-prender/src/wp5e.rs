@@ -1186,3 +1186,87 @@ pub fn force_auto_battle_off(h: &mut impl Host) -> u32 {
     h.write(at, 0u32);
     h.call_sym(PUSH_TIP_BY_LOC_ID, Conv::Cdecl, &[0x37d])
 }
+
+/// `SaveDataGetLoc(id, out)` (cdecl: the localized text `id` into `out`).
+pub const SAVE_DATA_GET_LOC: u32 = 0x0064_12d0;
+
+/// `TipSystem::PushTip(this; id)` (`0x006e8770`, thiscall, `ret 4`):
+/// the text `id` into a 0x400-byte buffer (`SaveDataGetLoc`, before the
+/// movie check), then [`tip_play`] with it. `frame`: 0x420 bytes, the
+/// original's `ebp - 0x424` (the two Iggy values at `+0`, the text at
+/// `+0x20`).
+pub fn tip_push(h: &mut impl Host, this: u32, id: u32, frame: u32) -> u32 {
+    let text = frame + 0x20;
+    h.call_sym(SAVE_DATA_GET_LOC, Conv::Cdecl, &[id, text]);
+    tip_play(h, this, text, frame)
+}
+
+/// `0x00821cc0(on)` (cdecl: the free camera's pause), the scene camera's
+/// `Phyre_PCamera_assign_004533b0(this; src)` (thiscall) and the free
+/// camera controller's `0x0067fda0(this; camera)` (thiscall).
+pub const SET_PAUSE: u32 = 0x0082_1cc0;
+pub const CAMERA_ASSIGN: u32 = 0x0045_33b0;
+pub const FREE_CAMERA_TAKE: u32 = 0x0067_fda0;
+
+/// An `f32` copied through the x87 (`fld dword` / `fstp dword`): the
+/// same bits, a signalling NaN quieted.
+fn x87_copy(bits: u32) -> u32 {
+    if bits & 0x7f80_0000 == 0x7f80_0000 && bits & 0x007f_ffff != 0 {
+        bits | 0x0040_0000
+    } else {
+        bits
+    }
+}
+
+/// The free camera takes the scene camera (`FreeCamera_setFreePause`'s and
+/// `_setFreeCameraMode`'s tail): `Phyre_PCamera_assign(this + 0x10;
+/// scene camera + 4, or 0 without one)`, its floats `+0x150`/`+0x154` to
+/// `this + 0xc + ..`, then `0x0067fda0(this + 0x2bc; this + 0xc)`. Its
+/// `eax`.
+fn free_camera_take_scene(h: &mut impl Host, this: u32) -> u32 {
+    let scene: u32 = h.read(h.rebase(PHYRE_SCENE));
+    let cam: u32 = h.read(scene.wrapping_add(0xdc));
+    let own = this.wrapping_add(0xc);
+    let src = if cam == 0 { 0 } else { cam.wrapping_add(4) };
+    h.call_sym(CAMERA_ASSIGN, Conv::Thiscall(own.wrapping_add(4)), &[src]);
+    for off in [0x150u32, 0x154] {
+        let v: u32 = h.read(cam.wrapping_add(off));
+        h.write(own.wrapping_add(off), x87_copy(v));
+    }
+    h.call_sym(
+        FREE_CAMERA_TAKE,
+        Conv::Thiscall(this.wrapping_add(0x2bc)),
+        &[own],
+    )
+}
+
+/// `g_PhyreScene`.
+pub const PHYRE_SCENE: u32 = 0x00cc_b9d8;
+
+/// `FreeCamera::setFreePause(this)` (`0x00680320`, thiscall): the pause
+/// byte `+0x338` toggled and passed to `0x00821cc0`; when it is now set
+/// and the word `+0` is 0, the free camera takes the scene camera. `eax`:
+/// the last call's.
+pub fn free_camera_set_free_pause(h: &mut impl Host, this: u32) -> u32 {
+    let at = this.wrapping_add(0x338);
+    let on = h.read::<u8>(at) == 0;
+    h.write(at, u8::from(on));
+    let r = h.call_sym(SET_PAUSE, Conv::Cdecl, &[u32::from(on)]);
+    if h.read::<u8>(at) == 0 || h.read::<u32>(this) != 0 {
+        return r;
+    }
+    free_camera_take_scene(h, this)
+}
+
+/// `FreeCamera::setFreeCameraMode(this; mode)` (`0x006803a0`, thiscall,
+/// `ret 4`): the byte `+0x33c` = `mode != 0`; when set and the word `+0`
+/// is 0, the free camera takes the scene camera. `eax`: that call's, else
+/// `al` the byte (the upper bytes the caller's: 0 here).
+pub fn free_camera_set_mode(h: &mut impl Host, this: u32, mode: u32) -> u32 {
+    let on = mode != 0;
+    h.write(this.wrapping_add(0x33c), u8::from(on));
+    if !on || h.read::<u32>(this) != 0 {
+        return u32::from(on);
+    }
+    free_camera_take_scene(h, this)
+}

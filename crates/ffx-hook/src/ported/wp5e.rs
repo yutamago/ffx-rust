@@ -472,6 +472,19 @@ ported! {
     StdVectorU32_copyCtor_0064d620 @ 0x0064_d620 => extern "thiscall" fn e_0064d620(this: u32, src: u32) -> u32 {
         e::vector_copy_ctor(&mut mem(), this, src, 4, 0x0065_4db0, 0x0064_a880)
     }
+    /// `TipSystem_PushTip(this; id)`: the tips' `"OnPlay"(0, text id)`; `al` 1, or 0 without a movie.
+    TipSystem_PushTip @ 0x006e_8770 => extern "thiscall" fn e_006e8770(this: u32, id: u32) -> u32 {
+        let mut frame = StackFrame::<0x108>::new();
+        e::tip_push(&mut mem(), this, id, frame.at())
+    }
+    /// `FreeCamera_setFreePause(this)`: the pause toggled (the scene camera taken when on).
+    FreeCamera_setFreePause @ 0x0068_0320 => extern "thiscall" fn e_00680320(this: u32) -> u32 {
+        e::free_camera_set_free_pause(&mut mem(), this)
+    }
+    /// `FreeCamera_setFreeCameraMode(this; mode)`: the mode set (the scene camera taken when on).
+    FreeCamera_setFreeCameraMode @ 0x0068_03a0 => extern "thiscall" fn e_006803a0(this: u32, mode: u32) -> u32 {
+        e::free_camera_set_mode(&mut mem(), this, mode)
+    }
     /// `PSharray_data_004347a0`: the code of `PArray_Data_004d45a0`; the elements.
     PSharray_data_004347a0 @ 0x0043_47a0 => extern "thiscall" fn e_004347a0(this: u32) -> u32 {
         ffx_pcore::small::bridge::array_data(&mut mem(), this)

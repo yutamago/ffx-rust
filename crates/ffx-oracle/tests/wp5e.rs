@@ -1408,3 +1408,113 @@ fn wp5e_free_subtree_words_dup_auto_battle() {
         }
     }
 }
+
+/// `TipSystem::PushTip` (`0x006e8770`, `SaveDataGetLoc` a stub writing a
+/// text; with and without a movie) and the free camera's
+/// `setFreePause` (`0x00680320`) and `setFreeCameraMode` (`0x006803a0`):
+/// the byte off/on, the word `+0` zero or not, a scene camera or none
+/// (setFreePause only reaches it when the camera exists), floats with a
+/// quiet NaN among them. Every callee a logging stub. `eax` (`al`
+/// where the original's upper bytes are the caller's) and memory.
+#[test]
+fn wp5e_tip_push_and_free_camera() {
+    use ffx_prender::wp5e as e;
+    for (label, mut t) in Twins::all() {
+        let log = t.alloc(&[0; 4 + 32 * 64]);
+        jmp_stub(
+            &mut t,
+            e::SET_ENABLE,
+            &deref_stub(log, 0xe0, &[0], None, 4, 0xe0e0),
+        );
+        jmp_stub(&mut t, e::VALUE_SET_INT, &value_stub(0x1100));
+        // SaveDataGetLoc(id, out): out = "T" + the id's low byte, 0
+        let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0x8b, 0x4c, 0x24, 0x08]; // mov eax, [esp+4]; mov ecx, [esp+8]
+        c.extend([
+            0xc6, 0x01, b'T', 0x88, 0x41, 0x01, 0xc6, 0x41, 0x02, 0x00, 0xc3,
+        ]); // mov byte [ecx], 'T'; mov [ecx+1], al; mov byte [ecx+2], 0; ret
+        jmp_stub(&mut t, e::SAVE_DATA_GET_LOC, &c);
+        // the string setter stores the text's first two bytes (and three
+        // more words)
+        let mut c = vec![0x8b, 0x44, 0x24, 0x04, 0x8b, 0x4c, 0x24, 0x08]; // mov eax, [esp+4]; mov ecx, [esp+8]
+        c.extend([0x0f, 0xb7, 0x09, 0x89, 0x08]); // movzx ecx, word [ecx]; mov [eax], ecx
+        for k in [4u8, 8, 0xc] {
+            c.extend([0xc7, 0x40, k]);
+            c.extend((0x2200 + u32::from(k)).to_le_bytes()); // mov dword [eax+k], ..
+        }
+        c.push(0xc3);
+        jmp_stub(&mut t, e::VALUE_SET_UTF8, &c);
+        let s = deref_stub(log, 0xa3, &[0, 1, 2, 4], Some((3, 8)), 0x14, 0xa3a3);
+        jmp_stub(&mut t, e::CALL_AS3, &s);
+        jmp_stub(
+            &mut t,
+            e::MENU_REPLAY,
+            &deref_stub(log, 0x7e, &[], None, 0, 0x7e7e_7e00),
+        );
+        let frame = t.b.stack_range().start + 0x1000;
+        for case in 0..2u32 {
+            let tips = t.alloc(&[0; 4]);
+            if case == 0 {
+                t.w32(tips, 0x4747_0000);
+            }
+            t.w32(log, 0);
+            let w = format!("{label} tip push {case}");
+            let at = t.a.rebase(0x006e_8770);
+            let r =
+                t.a.call(at, Conv::Thiscall(tips), &[0x41 + case])
+                    .unwrap()
+                    .eax;
+            let p = e::tip_push(&mut G(&mut t.b), tips, 0x41 + case, frame);
+            assert_eq!(r & 0xff, p & 0xff, "{w}: al");
+            if case == 0 {
+                assert_eq!(r, p, "{w}: eax");
+            }
+            t.same(&w);
+        }
+        let mut c = vec![0x31, 0xc9]; // the pause: cdecl
+        c.extend(deref_stub(log, 0x9a, &[0], None, 0, 0x9a9a));
+        jmp_stub(&mut t, e::SET_PAUSE, &c);
+        jmp_stub(
+            &mut t,
+            e::CAMERA_ASSIGN,
+            &deref_stub(log, 0xca, &[0], None, 4, 0xcaca),
+        );
+        let s = deref_stub(log, 0xf7, &[0], None, 4, 0xf7f7);
+        jmp_stub(&mut t, e::FREE_CAMERA_TAKE, &s);
+        let scene = t.alloc(&[0; 0x100]);
+        t.w32(t.a.rebase(e::PHYRE_SCENE), scene);
+        let cam = t.alloc(&[0x3e; 0x160]);
+        // (a quiet NaN: the emulator keeps signalling ones, which the CPU
+        // quiets, as the port does)
+        t.w32(cam + 0x150, 0x7fc0_0001);
+        t.w32(cam + 0x154, 0x3f80_0000);
+        for case in 0..16u32 {
+            let fc = t.alloc(&[0x22; 0x340]);
+            t.w32(fc, if case & 1 == 0 { 0 } else { 7 });
+            let has_cam = case & 2 == 0;
+            t.w32(scene + 0xdc, if has_cam { cam } else { 0 });
+            t.write(fc + 0x338, &[u8::from(case & 4 != 0)]);
+            t.w32(log, 0);
+            if has_cam || case & 4 != 0 || case & 1 != 0 {
+                let w = format!("{label} free pause {case}");
+                t.run(&w, 0x0068_0320, fc, &[], false, |g| {
+                    e::free_camera_set_free_pause(g, fc)
+                });
+            }
+            let mode = if case & 8 == 0 { 0 } else { 0x100 };
+            if has_cam || mode == 0 || case & 1 != 0 {
+                t.w32(log, 0);
+                let w = format!("{label} free camera mode {case} ({mode:#x})");
+                let at = t.a.rebase(0x0068_03a0);
+                let r = t.a.call(at, Conv::Thiscall(fc), &[mode]).unwrap().eax;
+                let p = e::free_camera_set_mode(&mut G(&mut t.b), fc, mode);
+                let taken = mode != 0 && case & 1 == 0;
+                if taken {
+                    assert_eq!(r, p, "{w}: eax");
+                } else {
+                    assert_eq!(r & 0xff, p & 0xff, "{w}: al");
+                }
+                t.same(&w);
+            }
+        }
+    }
+}
