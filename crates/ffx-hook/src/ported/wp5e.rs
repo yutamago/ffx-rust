@@ -279,6 +279,30 @@ ported! {
     TkFlag_peek_0088e5f0 @ 0x0088_e5f0 => extern "C" fn e_0088e5f0() -> u32 {
         e::peek_flag_c58e89(&mut mem())
     }
+    /// `StdVector_reallocate_00655920`: the code of `StdVector_reallocate_006f3ee0`; the new end.
+    StdVector_reallocate_00655920 @ 0x0065_5920 => extern "thiscall" fn e_00655920(this: u32, capacity: u32) -> u32 {
+        st::vector_reallocate(&mut mem(), this, capacity)
+    }
+    /// `StdVector_reallocate_006559a0`: the code of `StdVector_reallocate_006f3ee0`; the new end.
+    StdVector_reallocate_006559a0 @ 0x0065_59a0 => extern "thiscall" fn e_006559a0(this: u32, capacity: u32) -> u32 {
+        st::vector_reallocate(&mut mem(), this, capacity)
+    }
+    /// `StdVector_reallocate_006a09b0`: the code of `StdVector_reallocate_006f3ee0`; the new end.
+    StdVector_reallocate_006a09b0 @ 0x006a_09b0 => extern "thiscall" fn e_006a09b0(this: u32, capacity: u32) -> u32 {
+        st::vector_reallocate(&mut mem(), this, capacity)
+    }
+    /// `StdVector_reserve_00655c60`: the code of `StdVector_reserve_006f3f60` (its own `_Reallocate` copy, the same code).
+    StdVector_reserve_00655c60 @ 0x0065_5c60 => extern "thiscall" fn e_00655c60(this: u32, more: u32) -> u32 {
+        st::vector_reserve(&mut mem(), this, more)
+    }
+    /// `StdVector_reserve_00655cd0`: the code of `StdVector_reserve_006f3f60` (its own `_Reallocate` copy, the same code).
+    StdVector_reserve_00655cd0 @ 0x0065_5cd0 => extern "thiscall" fn e_00655cd0(this: u32, more: u32) -> u32 {
+        st::vector_reserve(&mut mem(), this, more)
+    }
+    /// `StdVector_reserve_006a0a30`: the code of `StdVector_reserve_006f3f60` (its own `_Reallocate` copy, the same code).
+    StdVector_reserve_006a0a30 @ 0x006a_0a30 => extern "thiscall" fn e_006a0a30(this: u32, more: u32) -> u32 {
+        st::vector_reserve(&mut mem(), this, more)
+    }
     /// `PSharray_data_004347a0`: the code of `PArray_Data_004d45a0`; the elements.
     PSharray_data_004347a0 @ 0x0043_47a0 => extern "thiscall" fn e_004347a0(this: u32) -> u32 {
         ffx_pcore::small::bridge::array_data(&mut mem(), this)

@@ -974,3 +974,49 @@ fn wp5e_flag_c58e89() {
         }
     }
 }
+
+/// The `std::vector<word>` `_Reallocate` copies (`0x00655920`,
+/// `0x006559a0`, `0x006a09b0`) and `_Reserve` copies (`0x00655c60`,
+/// `0x00655cd0`, `0x006a0a30`, each tail-jumping to its own
+/// `_Reallocate`) against `m5b_stl`'s: vectors of 0..5 words with spare
+/// room 0..2, 1..8 words asked (reserve: 0 too). `eax` and memory.
+#[test]
+fn wp5e_vector_reserve_copies() {
+    use ffx_system::m5b_stl::bridge as st;
+    for (label, mut t) in Twins::all() {
+        for (k, &(reserve, realloc)) in [
+            (0x0065_5c60u32, 0x0065_5920u32),
+            (0x0065_5cd0, 0x0065_59a0),
+            (0x006a_0a30, 0x006a_09b0),
+        ]
+        .iter()
+        .enumerate()
+        {
+            for round in 0..12u32 {
+                let size = t.rng.below(6);
+                let cap = size + t.rng.below(3);
+                let words: Vec<u8> = (0..4 * cap.max(1))
+                    .map(|i| (i as u8).wrapping_mul(7) ^ k as u8)
+                    .collect();
+                let data = t.alloc(&words);
+                let v = t.alloc(&[0; 12]);
+                let put = |t: &mut Twins| {
+                    t.w32(v, data);
+                    t.w32(v + 4, data + 4 * size);
+                    t.w32(v + 8, data + 4 * cap);
+                };
+                put(&mut t);
+                let n = [0u32, 1, 2, 3, 7, 8][(round % 6) as usize];
+                let w =
+                    format!("{label} reserve {reserve:#x} {round} (size {size}, cap {cap}, {n})");
+                t.run(&w, reserve, v, &[n], false, |g| st::vector_reserve(g, v, n));
+                put(&mut t);
+                let n = n.max(size).max(1);
+                let w = format!("{label} reallocate {realloc:#x} {round} (size {size}, {n})");
+                t.run(&w, realloc, v, &[n], false, |g| {
+                    st::vector_reallocate(g, v, n)
+                });
+            }
+        }
+    }
+}
