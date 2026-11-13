@@ -502,6 +502,10 @@ ported! {
     StdWords_uninitCopy_0064a9e0 @ 0x0064_a9e0 => extern "C" fn e_0064a9e0(first: u32, last: u32, dst: u32) -> u32 {
         e::words_copy(&mut mem(), first, last, dst)
     }
+    /// `MapNameTweak_getLineText_006b6ef0(this; n, buf)`: debug line `n` into `buf`.
+    MapNameTweak_getLineText_006b6ef0 @ 0x006b_6ef0 => extern "thiscall" fn e_006b6ef0(this: u32, n: u32, buf: u32) -> u32 {
+        e::map_name_line_text(&mut mem(), this, n, buf)
+    }
     /// `PSharray_data_004347a0`: the code of `PArray_Data_004d45a0`; the elements.
     PSharray_data_004347a0 @ 0x0043_47a0 => extern "thiscall" fn e_004347a0(this: u32) -> u32 {
         ffx_pcore::small::bridge::array_data(&mut mem(), this)

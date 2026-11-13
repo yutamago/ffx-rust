@@ -1425,3 +1425,57 @@ pub fn words_fill(h: &mut impl Host, dst: u32, n: u32, value: u32) -> u32 {
     }
     d
 }
+
+/// MSVCR110's `sprintf_s` import slot and the map-name tweak's texts:
+/// `"init failed"`, the cursor `">"` / `" "`, the formats `"%s%s%s"`,
+/// `"%s%s%d"`, `"%s%s"`, and `"true"` / `"false"`.
+pub const SPRINTF_S_SLOT: u32 = 0x00b0_c394;
+pub const INIT_FAILED: u32 = 0x00b4_8244;
+pub const CURSOR_ON: u32 = 0x00b4_8250;
+pub const CURSOR_OFF: u32 = 0x00b2_0b30;
+pub const FMT_SSS: u32 = 0x00b4_2a3c;
+pub const FMT_SSD: u32 = 0x00b4_88e0;
+pub const FMT_SS: u32 = 0x00b4_0eb0;
+pub const TRUE_TEXT: u32 = 0x00b3_9230;
+pub const FALSE_TEXT: u32 = 0x00b3_9238;
+
+/// The map-name tweak's `getLineText(this; n, buf)` (`0x006b6ef0`,
+/// thiscall, `ret 8`; `MapNameText_Show_006bb480`'s): without the byte
+/// `+0x110`, `"init failed"`; else line `n` (0..5, the cursor `">"` on
+/// the line `+0x1c0`, else `" "`) by `sprintf_s(buf, 0x100, ..)`: 0 the
+/// label `+0x1a4` and the text `+8`, 1 and 2 the labels `+0x1a8`/`+0x1ac`
+/// and the numbers `+0`/`+4`, 3 the label `+0x1b0` and `+0x10c` as
+/// true/false, 4 the label `+0x1b4` alone, 5 the label `+0x1b8` and
+/// `+0x108` as true/false. `eax`: `sprintf_s`'s, or `n` past 5.
+pub fn map_name_line_text<H: Host>(h: &mut H, this: u32, n: u32, buf: u32) -> u32 {
+    let sprintf_s: u32 = h.read(h.rebase(SPRINTF_S_SLOT));
+    let at = |o: u32| this.wrapping_add(o);
+    if h.read::<u8>(at(0x110)) == 0 {
+        let text = h.rebase(INIT_FAILED);
+        return h.call(sprintf_s, Conv::Cdecl, &[buf, 0x100, text]);
+    }
+    let mark = h.rebase(if h.read::<u32>(at(0x1c0)) == n {
+        CURSOR_ON
+    } else {
+        CURSOR_OFF
+    });
+    let flag = |h: &mut H, o: u32| {
+        let v: u32 = h.read(at(o));
+        h.rebase(if v == 0 { FALSE_TEXT } else { TRUE_TEXT })
+    };
+    let word = |h: &mut H, o: u32| -> u32 { h.read(at(o)) };
+    let (fmt, label, last) = match n {
+        0 => (FMT_SSS, word(h, 0x1a4), Some(at(8))),
+        1 => (FMT_SSD, word(h, 0x1a8), Some(word(h, 0))),
+        2 => (FMT_SSD, word(h, 0x1ac), Some(word(h, 4))),
+        3 => (FMT_SSS, word(h, 0x1b0), Some(flag(h, 0x10c))),
+        4 => (FMT_SS, word(h, 0x1b4), None),
+        5 => (FMT_SSS, word(h, 0x1b8), Some(flag(h, 0x108))),
+        _ => return n,
+    };
+    let fmt = h.rebase(fmt);
+    match last {
+        Some(x) => h.call(sprintf_s, Conv::Cdecl, &[buf, 0x100, fmt, mark, label, x]),
+        None => h.call(sprintf_s, Conv::Cdecl, &[buf, 0x100, fmt, mark, label]),
+    }
+}

@@ -1691,3 +1691,48 @@ fn wp5e_words_fill_and_copy() {
         }
     }
 }
+
+/// The map-name tweak's `getLineText` (`0x006b6ef0`): `sprintf_s` a
+/// logging stub (all six words); not initialised, lines 0..7 with the
+/// cursor on and off, the flags 0 and set. `eax` and memory.
+#[test]
+fn wp5e_map_name_line_text() {
+    use ffx_prender::wp5e as e;
+    for (label, mut t) in Twins::all() {
+        let log = t.alloc(&[0; 4 + 32 * 32]);
+        let cells = t.alloc(&[0x2a, 0, 0, 0, 0, 0, 0, 0]);
+        // "init failed" passes three words, line 4 five (the rest is the
+        // caller's stack): a stub of that many words for each
+        let three = import_stub(&mut t, log, 0x5f, 3, None, cells, 0);
+        let five = import_stub(&mut t, log, 0x5f, 5, None, cells, 0);
+        let six = import_stub(&mut t, log, 0x5f, 6, None, cells, 0);
+        let buf = t.alloc(&[0; 0x100]);
+        for case in 0..20u32 {
+            let stub = match case {
+                0 => three,
+                _ if case % 8 == 4 => five,
+                _ => six,
+            };
+            set_import(&mut t, e::SPRINTF_S_SLOT, stub);
+            let this = t.alloc(&[0x31; 0x1d0]);
+            t.write(this + 0x110, &[u8::from(case != 0)]);
+            t.w32(this + 0x1c0, case % 3);
+            t.w32(this + 0x108, case & 4);
+            t.w32(this + 0x10c, case & 8);
+            for (k, o) in [0x1a4u32, 0x1a8, 0x1ac, 0x1b0, 0x1b4, 0x1b8]
+                .into_iter()
+                .enumerate()
+            {
+                t.w32(this + o, 0x6100 + k as u32);
+            }
+            t.w32(this, 0x77 + case);
+            t.w32(this + 4, 0x88 + case);
+            let n = case % 8;
+            t.w32(log, 0);
+            let w = format!("{label} map name line {case} (n {n})");
+            t.run(&w, 0x006b_6ef0, this, &[n, buf], false, |g| {
+                e::map_name_line_text(g, this, n, buf)
+            });
+        }
+    }
+}
