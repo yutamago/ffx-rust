@@ -792,4 +792,265 @@ pub mod bridge {
         }
         0
     }
+
+    /// `mkvparser::Cluster::Load(cluster; &pos, &len)` (thiscall, `ret 8`),
+    /// `ParseBlockGroup(cluster; size, &pos, &len)` and
+    /// `ParseSimpleBlock(cluster; size, &pos, &len)` (thiscall, `ret 0x10`;
+    /// `size` 64-bit).
+    pub const CLUSTER_LOAD: u32 = 0x0042_9e10;
+    pub const PARSE_BLOCK_GROUP: u32 = 0x0042_af10;
+    pub const PARSE_SIMPLE_BLOCK: u32 = 0x0042_aca0;
+    pub const GET_UINT_LENGTH: u32 = 0x0041_e850;
+
+    /// EBML's "unknown size" for a varint of `len` bytes: `2^(7 len) - 1`
+    /// as the original builds it (the bit set in the low word, moved up
+    /// at 32, gone at 64; then minus one).
+    fn unknown_size(len: i32) -> i64 {
+        let bit = len.wrapping_mul(7).cast_unsigned();
+        let low = 1u32 << (bit & 31);
+        let (lo, hi) = if bit >= 64 {
+            (low, 0)
+        } else if bit >= 32 {
+            (0, low)
+        } else {
+            (low, 0)
+        };
+        // at 64 and up the original's xor leaves the low word 0 too
+        let lo = if bit >= 64 { 0 } else { lo };
+        (u64::from(hi) << 32 | u64::from(lo))
+            .wrapping_sub(1)
+            .cast_signed()
+    }
+
+    /// `GetUIntLength(reader, pos, &len)`: [`get_uint_length`] itself, its
+    /// frame at `scratch`.
+    fn uint_length_at(h: &mut impl Host, reader: u32, len: u32, pos: u64, scratch: u32) -> i64 {
+        get_uint_length(h, reader, len, pos, scratch).cast_signed()
+    }
+
+    /// The id or size varint at `*pos`, as `Cluster::Parse` reads each:
+    /// -3 with `*len` 1 when its first byte is not available, the length
+    /// (`GetUIntLength`: an error as it is, a nonzero result -3), -2 past
+    /// the cluster, -3 past the available data; then `ReadUInt` (an error
+    /// as its low word). `Ok(value)` or the status to return.
+    fn parse_varint(
+        h: &mut impl Host,
+        reader: u32,
+        pos: u32,
+        len: u32,
+        cluster_stop: i64,
+        avail: i64,
+        scratch: u32,
+    ) -> Result<i64, u32> {
+        let p = read_i64(h, pos);
+        if p.wrapping_add(1) > avail {
+            h.write(len, 1u32);
+            return Err((-3i32).cast_unsigned());
+        }
+        let r = uint_length_at(h, reader, len, p.cast_unsigned(), scratch);
+        if r < 0 {
+            return Err(r as u32);
+        }
+        if r != 0 {
+            return Err((-3i32).cast_unsigned());
+        }
+        let p = read_i64(h, pos);
+        let end = p.wrapping_add(i64::from(h.read::<i32>(len)));
+        if cluster_stop >= 0 && end > cluster_stop {
+            return Err((-2i32).cast_unsigned());
+        }
+        if end > avail {
+            return Err((-3i32).cast_unsigned());
+        }
+        let v = read_uint(h, reader, len, p.cast_unsigned(), at(scratch, 0x18));
+        let v = v.cast_signed();
+        if v < 0 {
+            return Err(v as u32);
+        }
+        Ok(v)
+    }
+
+    /// `mkvparser::Cluster::Parse(cluster; &pos, &len)` (`0x0042a550`,
+    /// thiscall, `ret 8`): 1 at the cluster's end, 0 after one more block
+    /// entry, -1 when the last entry's block lies past the file, -2 for a
+    /// bad element, -3 (with `*len` the bytes wanted) when the data is not
+    /// there yet; a negative `Load` or reader status as it is. After
+    /// `Load` ([`CLUSTER_LOAD`]) the elements from `m_pos` (`+0x18`) are
+    /// walked to the cluster's stop (`+8` start plus `+0x20` size when
+    /// known): each id and size read (`GetUIntLength`, `ReadUInt`), a
+    /// `BlockGroup` (0x20) or `SimpleBlock` (0x23) handed to
+    /// [`PARSE_BLOCK_GROUP`] / [`PARSE_SIMPLE_BLOCK`] (their status
+    /// returned), anything else skipped; a `Cluster` or `Cues` id, or the
+    /// file's end, ends an unknown-size cluster there (its size set). At
+    /// the end `m_pos` is the position and the last entry's block is
+    /// checked against the file's size. `frame` holds the original's
+    /// `Length` results (+0 total, +8 available: `esp + 0x30` of its
+    /// aligned frame) and the readers' scratch (+0x10..+0x30).
+    #[allow(clippy::too_many_lines)] // the original's loop
+    pub fn cluster_parse(h: &mut impl Host, this: u32, pos: u32, len: u32, frame: u32) -> u32 {
+        const BAD: u32 = (-2i32).cast_unsigned();
+        const MORE: u32 = (-3i32).cast_unsigned();
+        let r = h.call_sym(CLUSTER_LOAD, Conv::Thiscall(this), &[pos, len]);
+        if r.cast_signed() < 0 {
+            return r;
+        }
+        if read_i64(h, at(this, 0x18)) < read_i64(h, at(this, 8)) {
+            wassert(h, 0x00b9_1904, 0x1885);
+        }
+        if read_i64(h, at(this, 0x28)) < 0 {
+            wassert(h, 0x00b9_0ee0, 0x1886);
+        }
+        let size = read_i64(h, at(this, 0x20));
+        let cluster_stop = if size >= 0 {
+            let stop = read_i64(h, at(this, 8)).wrapping_add(size);
+            if stop >= 0 && read_i64(h, at(this, 0x18)) >= stop {
+                return 1;
+            }
+            stop
+        } else {
+            -1
+        };
+        let segment: u32 = h.read(this);
+        let reader: u32 = h.read(segment);
+        let (total_at, avail_at) = (frame, at(frame, 8));
+        let scratch = at(frame, 0x10);
+        let s = length(h, reader, total_at, avail_at);
+        if s.cast_signed() < 0 {
+            return s;
+        }
+        let total = read_i64(h, total_at);
+        let avail = read_i64(h, avail_at);
+        if total >= 0 && avail > total {
+            wassert(h, 0x00b9_05f8, 0x1899);
+        }
+        let m_pos = read_i64(h, at(this, 0x18));
+        write_i64(h, pos, m_pos);
+        loop {
+            let p = read_i64(h, pos);
+            if cluster_stop >= 0 && p >= cluster_stop {
+                break;
+            }
+            if total >= 0 && p >= total {
+                return cluster_parse_end(h, this, pos, cluster_stop, total, true);
+            }
+            let id = match parse_varint(h, reader, pos, len, cluster_stop, avail, scratch) {
+                Ok(v) => v,
+                Err(s) => return s,
+            };
+            if id == 0 {
+                return BAD;
+            }
+            if id == 0x0f43_b675 || id == 0x0c53_bb6b {
+                return cluster_parse_end(h, this, pos, cluster_stop, total, true);
+            }
+            let p = read_i64(h, pos).wrapping_add(i64::from(h.read::<i32>(len)));
+            write_i64(h, pos, p);
+            let size = match parse_varint(h, reader, pos, len, cluster_stop, avail, scratch) {
+                Ok(v) => v,
+                Err(s) => return s,
+            };
+            if size == unknown_size(h.read::<i32>(len)) {
+                return BAD;
+            }
+            let p = read_i64(h, pos).wrapping_add(i64::from(h.read::<i32>(len)));
+            write_i64(h, pos, p);
+            if cluster_stop >= 0 && p > cluster_stop {
+                return BAD;
+            }
+            if size == 0 {
+                continue;
+            }
+            let payload_stop = p.wrapping_add(size);
+            if cluster_stop < 0 {
+                if total >= 0 && payload_stop > total {
+                    let start = read_i64(h, at(this, 8));
+                    write_i64(h, at(this, 0x20), total.wrapping_sub(start));
+                    write_i64(h, pos, total);
+                    return cluster_parse_end(h, this, pos, cluster_stop, total, false);
+                }
+                if payload_stop > avail {
+                    h.write(len, size as u32);
+                    return MORE;
+                }
+            } else if payload_stop > cluster_stop {
+                if id == 0x20 || id == 0x23 {
+                    return BAD;
+                }
+                write_i64(h, pos, cluster_stop);
+                break;
+            }
+            let su = size.cast_unsigned();
+            let args = [su as u32, (su >> 32) as u32, pos, len];
+            if id == 0x20 {
+                return h.call_sym(PARSE_BLOCK_GROUP, Conv::Thiscall(this), &args);
+            }
+            if id == 0x23 {
+                return h.call_sym(PARSE_SIMPLE_BLOCK, Conv::Thiscall(this), &args);
+            }
+            write_i64(h, pos, payload_stop);
+            if cluster_stop >= 0 && payload_stop > cluster_stop {
+                wassert(h, 0x00b9_19d8, 0x1918);
+            }
+        }
+        cluster_parse_end(h, this, pos, cluster_stop, total, false)
+    }
+
+    /// `Cluster::Parse`'s end: an unknown element size set from `*pos`
+    /// when `size_from_pos` (a `Cluster`/`Cues` id or the file's end),
+    /// the size asserted positive, `m_pos = *pos`, then the last entry's
+    /// block checked against the file's total.
+    fn cluster_parse_end(
+        h: &mut impl Host,
+        this: u32,
+        pos: u32,
+        cluster_stop: i64,
+        total: i64,
+        size_from_pos: bool,
+    ) -> u32 {
+        let size = read_i64(h, at(this, 0x20));
+        if size_from_pos && size > 0 {
+            // straight to the m_pos store, no assert
+        } else {
+            if size_from_pos && size < 0 {
+                let p = read_i64(h, pos);
+                let start = read_i64(h, at(this, 8));
+                write_i64(h, at(this, 0x20), p.wrapping_sub(start));
+            }
+            if read_i64(h, at(this, 0x20)) <= 0 {
+                wassert(h, 0x00b9_1a30, 0x191b);
+            }
+        }
+        let p = read_i64(h, pos);
+        write_i64(h, at(this, 0x18), p);
+        if cluster_stop >= 0 && read_i64(h, at(this, 0x18)) > cluster_stop {
+            wassert(h, 0x00b9_1a58, 0x191e);
+        }
+        let count: i32 = h.read(at(this, 0x38));
+        if count <= 0 {
+            return 1;
+        }
+        let entries: u32 = h.read(at(this, 0x30));
+        let last: u32 = h.read(at(entries, (count.cast_unsigned() - 1).wrapping_mul(4)));
+        if last == 0 {
+            wassert(h, 0x00b9_1ab4, 0x1924);
+        }
+        let vt: u32 = h.read(last);
+        let f: u32 = h.read(at(vt, 4));
+        let block = h.call(f, Conv::Thiscall(last), &[]);
+        if block == 0 {
+            wassert(h, 0x00b9_14ec, 0x1927);
+        }
+        let start = read_i64(h, block);
+        if total >= 0 && start > total {
+            return u32::MAX;
+        }
+        let stop = start.wrapping_add(read_i64(h, at(block, 8)));
+        if cluster_stop >= 0 && stop > cluster_stop {
+            wassert(h, 0x00b9_1ac0, 0x1931);
+        }
+        if total >= 0 && stop > total {
+            return u32::MAX;
+        }
+        1
+    }
 }

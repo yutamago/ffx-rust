@@ -358,4 +358,10 @@ ported! {
         let mut f = StackFrame::<8>::new();
         mkv::block_parse(&mut mem(), block, cluster, f.at())
     }
+    /// `mkvparser::Cluster::Parse(&pos, &len)` -> status; `Length`'s
+    /// results and the readers' scratch in a frame.
+    mkvparser_Cluster_Parse_0042a550 @ 0x0042_a550 => extern "thiscall" fn cluster_parse(cl: u32, pos: u32, len: u32) -> u32 {
+        let mut f = StackFrame::<12>::new();
+        mkv::cluster_parse(&mut mem(), cl, pos, len, f.at())
+    }
 }
