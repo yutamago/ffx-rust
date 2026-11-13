@@ -40,11 +40,18 @@ pub const SYMBOL_INDEX: u32 = 0x006f_3ae0;
 /// (the word at `+0xc`) 0, the pair moved into `+0x10` by [`PAIR_MOVE`]
 /// (the source emptied). The node.
 pub fn symbol_buy_node(h: &mut impl Host, this: u32, pair: u32) -> u32 {
-    let node = h.call_sym(BUY_NODE_2C, Conv::Thiscall(this), &[]);
+    buy_node_moved(h, this, pair, BUY_NODE_2C, PAIR_MOVE)
+}
+
+/// A 0x2c-byte node by `buy` (thiscall on the tree), its colour and nil
+/// bytes 0, `pair` moved into `+0x10` by `mv` (thiscall `(src, 0)`, `ret
+/// 8`) unless that address is 0. The node.
+fn buy_node_moved(h: &mut impl Host, this: u32, pair: u32, buy: u32, mv: u32) -> u32 {
+    let node = h.call_sym(buy, Conv::Thiscall(this), &[]);
     h.write(node.wrapping_add(0xc), 0u16);
     let at = node.wrapping_add(0x10);
     if at != 0 {
-        h.call_sym(PAIR_MOVE, Conv::Thiscall(at), &[pair, 0]);
+        h.call_sym(mv, Conv::Thiscall(at), &[pair, 0]);
     }
     node
 }
@@ -792,4 +799,62 @@ pub fn take_flag_c58e89(h: &mut impl Host) -> u32 {
 /// zero-extended.
 pub fn peek_flag_c58e89(h: &mut impl Host) -> u32 {
     u32::from(h.read::<u8>(h.rebase(FLAG_C58E89)))
+}
+
+/// `std_string_grow_00404480(this; n, trim)`, `std_string_append_substr`
+/// `(this; &s, pos, n)` and `std_string_append_ptr(this; p, n)`
+/// (thiscall).
+pub const STRING_GROW: u32 = 0x0040_4480;
+pub const STRING_APPEND_SUBSTR: u32 = 0x0065_75a0;
+pub const STRING_APPEND_PTR: u32 = 0x0065_76d0;
+
+/// The length of the C string at `p`.
+fn c_len(h: &impl Host, p: u32) -> u32 {
+    let mut n = 0u32;
+    while h.read::<u8>(p.wrapping_add(n)) != 0 {
+        n += 1;
+    }
+    n
+}
+
+/// `operator+(const std::string& a, const char* b)` (`0x006495b0`, cdecl
+/// `(out, &a, b)`): `out` made empty, room for `a.size() + strlen(b)`
+/// (`_Grow(n, 1)` unless that is already the capacity; when it grew, the
+/// size set back to 0 and the text terminated), then `append(a, 0, npos)`
+/// and `append(b, strlen(b))`. `out`.
+pub fn string_plus_cstr(h: &mut impl Host, out: u32, a: u32, b: u32) -> u32 {
+    h.write(out.wrapping_add(0x14), 0xfu32);
+    h.write(out.wrapping_add(0x10), 0u32);
+    h.write(out, 0u8);
+    let a_size: u32 = h.read(a.wrapping_add(0x10));
+    let need = c_len(h, b).wrapping_add(a_size);
+    let size: u32 = h.read(out.wrapping_add(0x10));
+    if size <= need
+        && h.read::<u32>(out.wrapping_add(0x14)) != need
+        && h.call_sym(STRING_GROW, Conv::Thiscall(out), &[need, 1]) & 0xff != 0
+    {
+        let at = if h.read::<u32>(out.wrapping_add(0x14)) >= 0x10 {
+            h.read(out)
+        } else {
+            out
+        };
+        h.write(out.wrapping_add(0x10), size);
+        h.write(at.wrapping_add(size), 0u8);
+    }
+    h.call_sym(
+        STRING_APPEND_SUBSTR,
+        Conv::Thiscall(out),
+        &[a, 0, 0xffff_ffff],
+    );
+    let n = c_len(h, b);
+    h.call_sym(STRING_APPEND_PTR, Conv::Thiscall(out), &[b, n]);
+    out
+}
+
+/// `NamedValueMap::_Buynode(&pair)` (`0x00649b30`, thiscall on the tree,
+/// `ret 4`; `PhyreScene_doOnCharacterAllAssetsLoaded`'s): the code of
+/// [`symbol_buy_node`] with `std_Tree_buyNode2c_00654f80` and the move
+/// `NamedValue_moveCtor_006494d0`. The node.
+pub fn named_value_buy_node(h: &mut impl Host, this: u32, pair: u32) -> u32 {
+    buy_node_moved(h, this, pair, 0x0065_4f80, 0x0064_94d0)
 }

@@ -1020,3 +1020,37 @@ fn wp5e_vector_reserve_copies() {
         }
     }
 }
+
+/// `operator+(std::string, const char*)` (`0x006495b0`: inline and heap
+/// results, empty sides) and the named-value map's `_Buynode`
+/// (`0x00649b30`). `eax` and memory.
+#[test]
+fn wp5e_string_plus_and_named_node() {
+    use ffx_prender::wp5e as e;
+    for (label, mut t) in Twins::all() {
+        for round in 0..30u32 {
+            let n = [0, 1, 5, 15, 16, 30][(round % 6) as usize];
+            let a = key(&mut t, n);
+            let m = t.rng.below(24);
+            let mut text = t.text(m);
+            text.push(0);
+            let b = t.alloc(&text);
+            let out = t.alloc(&[0x6c; 0x1c]);
+            let w = format!("{label} string + cstr {round} ({n} + {m})");
+            t.run_cdecl(&w, 0x0064_95b0, &[out, a, b], |g| {
+                e::string_plus_cstr(g, out, a, b)
+            });
+        }
+        for round in 0..12u32 {
+            let head = t.alloc(&[0x66; 0x10]);
+            let tree = t.alloc(&head.to_le_bytes());
+            let n = t.rng.below(24);
+            let pair = key(&mut t, n);
+            t.w32(pair + 0x18, 0x7100 + round);
+            let w = format!("{label} named value buy node {round} (n {n})");
+            t.run(&w, 0x0064_9b30, tree, &[pair], false, |g| {
+                e::named_value_buy_node(g, tree, pair)
+            });
+        }
+    }
+}

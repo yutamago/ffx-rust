@@ -303,6 +303,14 @@ ported! {
     StdVector_reserve_006a0a30 @ 0x006a_0a30 => extern "thiscall" fn e_006a0a30(this: u32, more: u32) -> u32 {
         st::vector_reserve(&mut mem(), this, more)
     }
+    /// `NamedValueMap_buyNode_00649b30(this; &pair)`: a node with the pair moved in.
+    NamedValueMap_buyNode_00649b30 @ 0x0064_9b30 => extern "thiscall" fn e_00649b30(this: u32, pair: u32) -> u32 {
+        e::named_value_buy_node(&mut mem(), this, pair)
+    }
+    /// `std_string_plusCstr_006495b0(out, &a, b)`: `out` = `a + b`; `out`.
+    std_string_plusCstr_006495b0 @ 0x0064_95b0 => extern "C" fn e_006495b0(out: u32, a: u32, b: u32) -> u32 {
+        e::string_plus_cstr(&mut mem(), out, a, b)
+    }
     /// `PSharray_data_004347a0`: the code of `PArray_Data_004d45a0`; the elements.
     PSharray_data_004347a0 @ 0x0043_47a0 => extern "thiscall" fn e_004347a0(this: u32) -> u32 {
         ffx_pcore::small::bridge::array_data(&mut mem(), this)
