@@ -131,6 +131,8 @@ pub enum Out {
     U32(u32),
     /// `edx:eax`.
     U64(u64),
+    /// `al` (a `bool` the original returns with junk above it).
+    U8(u8),
 }
 
 /// A stub's result: one value, or the `k`-th of a list on its `k`-th
@@ -457,6 +459,7 @@ impl Twins {
                 v,
                 "{what}: edx:eax"
             ),
+            Out::U8(v) => assert_eq!(ra.eax & 0xff, u32::from(v), "{what}: al"),
         }
         self.diff(what);
     }

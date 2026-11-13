@@ -1000,3 +1000,167 @@ fn wp5f_opus_tree_clear_matches_the_original() {
         }
     });
 }
+
+/// `graphicGetTime` as a stub leaving `value` in `ST0` (`fld dword`).
+fn time_stub(t: &mut Twins, value: f32) {
+    let cell = t.words(&[value.to_bits()]);
+    let mut c = vec![0xd9, 0x05];
+    c.extend(cell.to_le_bytes()); // fld dword [cell]
+    c.push(0xc3);
+    let code = t.code(&c);
+    t.jump(pr::GRAPHIC_GET_TIME, code);
+}
+
+#[test]
+fn wp5f_skip_prompt_update_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x006e_8540);
+        let times = [0.0f32, 0.5, 1.0, 1.25, 2.0, 3.0, 10.0, f32::NAN];
+        for k in 0..400 {
+            t.reset();
+            let now = rng.pick(&times);
+            time_stub(t, now);
+            let p = t.zeros(0x20);
+            let hold = rng.pick(&[0.0f32, 1.0, 2.0, 3.0, f32::NAN]);
+            let length = rng.pick(&[0.5f32, 1.0, 2.0, 0.0, f32::NAN]);
+            t.w32(p, hold.to_bits());
+            t.w32(p + 4, rng.pick(&[0.0f32, 0.5, 1.0]).to_bits());
+            t.w32(p + 8, rng.pick(&[0.0f32, 0.5, 1.0, 9.0]).to_bits());
+            t.w32(p + 0xc, length.to_bits());
+            t.w32(p + 0x10, rng.next());
+            let showing = rng.chance(2);
+            let hiding = rng.chance(2);
+            t.w8(p + 0x14, 1);
+            t.w8(p + 0x15, u8::from(showing));
+            t.w8(p + 0x16, u8::from(hiding));
+            let what = format!(
+                "skip prompt {k} (now {now}, hold {hold}, length {length}, {showing}/{hiding})"
+            );
+            t.check(&what, 0x006e_8540, Conv::Thiscall(p), &[], |m| {
+                let r = pr::skip_prompt_update(m, p);
+                // the neither case returns the caller's eax
+                if showing || hiding {
+                    Out::U8(r as u8)
+                } else {
+                    Out::None
+                }
+            });
+        }
+    });
+}
+
+#[test]
+fn wp5f_records_maps_and_buffers_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x0051_30f0);
+        for k in 0..120 {
+            t.reset();
+            // the named record copy
+            let fresh = t.zeros(0x40);
+            t.stub(pr::PHYRE_MALLOC, false, 2, 0, rng.pick(&[fresh, fresh, 0]));
+            t.stub(pr::MEMCPY, false, 3, 0, 0x51);
+            let name = t.alloc(rng.pick(&[&b"\0"[..], b"abc\0", b"a longer name\0"]));
+            let tagged = match k % 3 {
+                0 => 0,
+                1 => name,
+                _ => name + 1,
+            };
+            let junk: Vec<u32> = (0..7).map(|_| rng.next()).collect();
+            let src = t.words(&junk);
+            t.w32(src + 0x14, tagged);
+            let dst = t.zeros(0x1c);
+            t.check(
+                &format!("record copy {k}"),
+                0x0051_30f0,
+                Conv::Thiscall(dst),
+                &[src],
+                |m| Out::U32(pr::copy_named_record(m, dst, src)),
+            );
+            // equal_range over a small tree: keys 10, 20, 20, 30
+            let head = t.zeros(0x14);
+            t.w8(head + 0xd, 1);
+            let node = |t: &mut Twins, key: u32| -> u32 {
+                let n = t.zeros(0x14);
+                t.w32(n + 0x10, key);
+                n
+            };
+            let (a, b, c, d) = (node(t, 10), node(t, 20), node(t, 20), node(t, 30));
+            // b is the root: a < b, c and d to its right (c left of d)
+            for (n, l, r, p) in [
+                (b, a, d, head),
+                (a, head, head, b),
+                (d, c, head, b),
+                (c, head, head, d),
+            ] {
+                t.w32(n, l);
+                t.w32(n + 8, r);
+                t.w32(n + 4, p);
+            }
+            let empty = rng.chance(6);
+            t.w32(head + 4, if empty { head } else { b });
+            t.w32(head, if empty { head } else { a });
+            let map = t.words(&[head, 4]);
+            let key = t.words(&[rng.pick(&[5, 10, 15, 20, 25, 30, 35])]);
+            let out = t.zeros(8);
+            t.check(
+                &format!("equal_range {k}"),
+                0x0062_58e0,
+                Conv::Thiscall(map),
+                &[out, key],
+                |m| Out::U32(pr::equal_range_u32(m, map, out, key)),
+            );
+            // the cluster manager's teardown
+            t.stub(pr::CLUSTER_MAP_ERASE, true, 3, 3, 0x52);
+            t.stub(pr::OPERATOR_DELETE, false, 1, 0, 0x53);
+            t.stub(pr::FREE_OWNED_ARRAY, false, 2, 0, 0x54);
+            this_imp_std(t, pr::CLOSE_HANDLE, 1, 1);
+            let ev = if rng.chance(2) { t.words(&[0x77]) } else { 0 };
+            let mhead = t.words(&[0x1234, 0, 0]);
+            let mgr = t.words(&[0, 0, rng.pick(&[3, 0x8000_0003, 0]), 0x4444, mhead, 0, ev]);
+            t.check_framed(
+                &format!("cluster shutdown {k}"),
+                0x0069_9d60,
+                Conv::Thiscall(mgr),
+                &[],
+                4,
+                |m, ebp| {
+                    pr::cluster_manager_shutdown(m, mgr, ebp - 4);
+                    Out::None
+                },
+            );
+            // AtlConvAllocMemory
+            let fixed = t.zeros(0x40);
+            let heap = t.zeros(0x40);
+            let grown = t.zeros(0x80);
+            let calloc_ret = rng.pick(&[grown, grown, 0]);
+            let recalloc_ret = rng.pick(&[grown, grown, 0]);
+            cdecl_imp(t, pr::CALLOC, 2, calloc_ret);
+            cdecl_imp(t, pr::RECALLOC, 3, recalloc_ret);
+            cdecl_imp(t, pr::FREE, 1, 0x55);
+            let cur = rng.pick(&[fixed, heap]);
+            let p = t.words(&[cur]);
+            let n = rng.pick(&[1u32, 0x10, 0x20, 0x21]);
+            let fixed_n = 0x20;
+            // (AtlThrow does not return: the paths that reach it are not run)
+            let fits = n <= fixed_n;
+            if !fits && (cur == heap && recalloc_ret == 0 || cur == fixed && calloc_ret == 0) {
+                continue;
+            }
+            t.check(
+                &format!("conv alloc {k}"),
+                0x0064_96d0,
+                Conv::Cdecl,
+                &[p, n, fixed, fixed_n],
+                |m| {
+                    pr::conv_alloc_memory(m, p, n, fixed, fixed_n);
+                    Out::None
+                },
+            );
+        }
+    });
+}
+
+/// A stdcall import stub popping its `n` words.
+fn this_imp_std(t: &mut Twins, slot: u32, n: u32, ret: u32) {
+    imp(t, slot, false, n, n, &Ret::Fixed(ret), &[]);
+}

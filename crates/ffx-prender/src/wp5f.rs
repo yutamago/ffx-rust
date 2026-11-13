@@ -339,4 +339,234 @@ pub mod bridge {
             h.call_sym(OPERATOR_DELETE, Conv::Cdecl, &[node]);
         }
     }
+
+    /// `graphicGetTime()` (cdecl, `ST0`: an `f32`-exact value) and
+    /// `g_PhyreScene`.
+    pub const GRAPHIC_GET_TIME: u32 = 0x0064_1410;
+    pub const PHYRE_SCENE: u32 = 0x00cc_b9d8;
+
+    /// `graphicGetTime()` as the `ST0` value it leaves (`fld dword`).
+    fn now(h: &mut impl Host) -> f64 {
+        f64::from(h.call_sym_st0(GRAPHIC_GET_TIME, Conv::Cdecl, &[]))
+    }
+
+    fn word(h: &impl Host, p: u32) -> f64 {
+        x87::load(h.read(p))
+    }
+
+    /// `SkipPrompt_update_006e8540(prompt)` (thiscall) -> `al`: whether the
+    /// movie's skip prompt still shows. Showing (`+0x15`): the fade-in
+    /// `(now - shown +4) / length +0xc` (the difference stored as `f32`
+    /// first), at most 1, in `+0x10`; past the hold (`+0` above the
+    /// elapsed time) but within its last `length` (hold - length below
+    /// it), the prompt starts hiding (`+0x15` 0, hide time `+8` = now,
+    /// `+0x16` 1); 1. Hiding (`+0x16`): the fade-out `1 - (now - hidden) /
+    /// length` in `+0x10`; once `length` has passed (or the compare is
+    /// unordered) `+0x16` and `+0x14` are cleared and 0 is returned, else
+    /// one. Neither: nothing; the original returns the `eax` its caller left
+    /// (`PhyFMVPlayerManager_Render`'s, its only caller: `g_PhyreScene`'s
+    /// value), which the port returns. Only `al` is defined (`ah` holds
+    /// the FPU status word in the original).
+    pub fn skip_prompt_update(h: &mut impl Host, p: u32) -> u32 {
+        let length = word(h, at(p, 0xc));
+        if h.read::<u8>(at(p, 0x15)) != 0 {
+            let t = now(h);
+            let d = x87::load(x87::store(x87::sub(t, word(h, at(p, 4)))));
+            let q = x87::div(d, length);
+            // fcom 1.0, q: 1.0 only when below q (a NaN q stays)
+            let fade = if 1.0 < q { 1.0 } else { q };
+            h.write(at(p, 0x10), x87::store(fade));
+            let hold = word(h, p);
+            if hold > d && x87::sub(hold, length) < d {
+                h.write(at(p, 0x15), 0u8);
+                let t = now(h);
+                h.write(at(p, 8), x87::store(t));
+                h.write(at(p, 0x16), 1u8);
+            }
+            return 1;
+        }
+        if h.read::<u8>(at(p, 0x16)) == 0 {
+            return h.read(h.rebase(PHYRE_SCENE));
+        }
+        let t = now(h);
+        let d = x87::load(x87::store(x87::sub(t, word(h, at(p, 8)))));
+        let q = x87::div(d, length);
+        h.write(at(p, 0x10), x87::store(x87::sub(1.0, q)));
+        if length > d {
+            return 1;
+        }
+        h.write(at(p, 0x16), 0u8);
+        h.write(at(p, 0x14), 0u8);
+        0
+    }
+
+    /// `Phyre_PhyreMalloc_0042fb80(size, align)` and the `memcpy` thunk.
+    pub const PHYRE_MALLOC: u32 = 0x0042_fb80;
+    pub const MEMCPY: u32 = 0x0094_9256;
+
+    /// `0x005130f0(this; src)` (thiscall, `ret 4`): a 28-byte record
+    /// copied: five words, the name (`+0x14`, a pointer tagged in bit 0)
+    /// duplicated untagged (`PhyreMalloc(len + 1, 2)`, `memcpy`; 0 when
+    /// there is none or the allocation fails), the last word. Returns
+    /// `this`. (The original keeps `len + 1` in its `src` slot; no caller
+    /// reads it.)
+    pub fn copy_named_record(h: &mut impl Host, this: u32, src: u32) -> u32 {
+        for o in [0, 4, 8, 0xc, 0x10] {
+            let w: u32 = h.read(at(src, o));
+            h.write(at(this, o), w);
+        }
+        let tagged: u32 = h.read(at(src, 0x14));
+        let name = tagged.wrapping_sub(u32::from(h.read::<u8>(at(src, 0x14)) & 1));
+        let mut copy = 0;
+        if name != 0 {
+            let mut len = 0u32;
+            while h.read::<u8>(at(name, len)) != 0 {
+                len = len.wrapping_add(1);
+            }
+            let n = len.wrapping_add(1);
+            copy = h.call_sym(PHYRE_MALLOC, Conv::Cdecl, &[n, 2]);
+            if copy != 0 {
+                h.call_sym(MEMCPY, Conv::Cdecl, &[copy, name, n]);
+            }
+        }
+        h.write(at(this, 0x14), copy);
+        let w: u32 = h.read(at(src, 0x18));
+        h.write(at(this, 0x18), w);
+        this
+    }
+
+    /// `0x006258e0(this; out, key)` (thiscall, `ret 8`): `equal_range` of
+    /// the `u32` key `*key` in a map whose nodes keep it at `+0x10`
+    /// (left `+0`, parent `+4`, right `+8`, nil flag `+0xd`): the lower
+    /// bound (the walk also notes the first node above the key while the
+    /// upper bound is still the head) and the upper bound, searched again
+    /// from that node's left child (else the root). `out` = {lower,
+    /// upper}; returns `out`.
+    pub fn equal_range_u32(h: &mut impl Host, this: u32, out: u32, key: u32) -> u32 {
+        let head: u32 = h.read(this);
+        let root: u32 = h.read(at(head, 4));
+        let mut lower = head;
+        let mut upper = head;
+        let mut p = root;
+        if h.read::<u8>(at(p, 0xd)) == 0 {
+            let k: u32 = h.read(key);
+            loop {
+                let pk: u32 = h.read(at(p, 0x10));
+                if pk < k {
+                    p = h.read(at(p, 8));
+                } else {
+                    if h.read::<u8>(at(upper, 0xd)) != 0 && k < pk {
+                        upper = p;
+                    }
+                    lower = p;
+                    p = h.read(p);
+                }
+                if h.read::<u8>(at(p, 0xd)) != 0 {
+                    break;
+                }
+            }
+        }
+        let mut p = if h.read::<u8>(at(upper, 0xd)) == 0 {
+            h.read(upper)
+        } else {
+            root
+        };
+        while h.read::<u8>(at(p, 0xd)) == 0 {
+            if h.read::<u32>(key) < h.read::<u32>(at(p, 0x10)) {
+                upper = p;
+                p = h.read(p);
+            } else {
+                p = h.read(at(p, 8));
+            }
+        }
+        h.write(out, lower);
+        h.write(at(out, 4), upper);
+        out
+    }
+
+    /// `CloseHandle` (stdcall), the cluster map's range erase
+    /// (`0x0069af70`, thiscall `(map; &out, first, last)`) and
+    /// `FreeOwnedArray_0069a130(p, n)`.
+    pub const CLOSE_HANDLE: u32 = 0x00b0_c0dc;
+    pub const CLUSTER_MAP_ERASE: u32 = 0x0069_af70;
+    pub const FREE_OWNED_ARRAY: u32 = 0x0069_a130;
+
+    /// `0x00699d60(this)` (thiscall): the cluster manager's teardown: the
+    /// event `+0x18` closed (`CloseHandle` of its first word) and deleted,
+    /// the map at `+0x10` erased whole (into `slot`, the original's local
+    /// at `ebp - 4`) and its head deleted, the array `+0xc` freed when
+    /// owned (`+8` bit 31 clear; its count the low 31 bits), `+8`/`+0xc`
+    /// cleared.
+    pub fn cluster_manager_shutdown(h: &mut impl Host, this: u32, slot: u32) {
+        let ev: u32 = h.read(at(this, 0x18));
+        if ev != 0 {
+            let handle: u32 = h.read(ev);
+            let f: u32 = h.read(h.rebase(CLOSE_HANDLE));
+            h.call(f, Conv::Stdcall, &[handle]);
+            h.call_sym(OPERATOR_DELETE, Conv::Cdecl, &[ev]);
+        }
+        let head: u32 = h.read(at(this, 0x10));
+        let first: u32 = h.read(head);
+        h.call_sym(
+            CLUSTER_MAP_ERASE,
+            Conv::Thiscall(at(this, 0x10)),
+            &[slot, first, head],
+        );
+        let head: u32 = h.read(at(this, 0x10));
+        h.call_sym(OPERATOR_DELETE, Conv::Cdecl, &[head]);
+        let n: u32 = h.read(at(this, 8));
+        if n >> 31 == 0 {
+            let p: u32 = h.read(at(this, 0xc));
+            h.call_sym(FREE_OWNED_ARRAY, Conv::Cdecl, &[p, n & 0x7fff_ffff]);
+        }
+        h.write(at(this, 8), 0u32);
+        h.write(at(this, 0xc), 0u32);
+    }
+
+    /// `AtlThrow(hr)` (`0x0064fa50`, does not return), MSVCR110's
+    /// `_recalloc`, `calloc` and `free` (cdecl).
+    pub const ATL_THROW: u32 = 0x0064_fa50;
+    pub const RECALLOC: u32 = 0x00b0_c440;
+    pub const CALLOC: u32 = 0x00b0_c43c;
+    pub const FREE: u32 = 0x00b0_c370;
+
+    /// `0x006496d0(p, n, fixed, fixed_n)`: ATL's `AtlConvAllocMemory` for
+    /// `n` wide characters: `*p` stays the caller's fixed buffer when `n`
+    /// fits its `fixed_n` (a heap block it had is freed), else grows
+    /// (`_recalloc` of a heap block, `calloc` instead of the fixed one).
+    /// `E_INVALIDARG` for a null `p`/`fixed` or a negative `n`,
+    /// `E_OUTOFMEMORY` when nothing came back (`AtlThrow`, which does not
+    /// return; the port returns after it).
+    pub fn conv_alloc_memory(h: &mut impl Host, p: u32, n: u32, fixed: u32, fixed_n: u32) {
+        if p == 0 || n.cast_signed() < 0 || fixed == 0 {
+            h.call_sym(ATL_THROW, Conv::Cdecl, &[0x8007_0057]);
+            return;
+        }
+        let cur: u32 = h.read(p);
+        let fits = n.cast_signed() <= fixed_n.cast_signed();
+        if cur == fixed {
+            if fits {
+                h.write(p, fixed);
+            } else {
+                let f: u32 = h.read(h.rebase(CALLOC));
+                let new = h.call(f, Conv::Cdecl, &[n, 2]);
+                h.write(p, new);
+            }
+        } else if fits {
+            let f: u32 = h.read(h.rebase(FREE));
+            h.call(f, Conv::Cdecl, &[cur]);
+            h.write(p, fixed);
+        } else {
+            let f: u32 = h.read(h.rebase(RECALLOC));
+            let new = h.call(f, Conv::Cdecl, &[cur, n, 2]);
+            if new == 0 {
+                h.call_sym(ATL_THROW, Conv::Cdecl, &[0x8007_000e]);
+                return;
+            }
+            h.write(p, new);
+        }
+        if h.read::<u32>(p) == 0 {
+            h.call_sym(ATL_THROW, Conv::Cdecl, &[0x8007_000e]);
+        }
+    }
 }

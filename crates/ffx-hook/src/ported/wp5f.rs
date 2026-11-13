@@ -274,4 +274,27 @@ ported! {
     FacetList_free_0094a641 @ 0x0094_a641 => extern "C" fn facet_list_free() {
         pr::facet_list_free(&mut mem());
     }
+    /// `SkipPrompt_update_006e8540(prompt)` -> `al`, whether it shows.
+    SkipPrompt_update_006e8540 @ 0x006e_8540 => extern "thiscall" fn skip_prompt_update(prompt: u32) -> u32 {
+        pr::skip_prompt_update(&mut mem(), prompt)
+    }
+    /// `0x005130f0(this; src)` -> `this`: the record copied, its name
+    /// duplicated.
+    CopyNamedRecord_005130f0 @ 0x0051_30f0 => extern "thiscall" fn copy_named_record(this: u32, src: u32) -> u32 {
+        pr::copy_named_record(&mut mem(), this, src)
+    }
+    /// `0x006258e0(this; out, key)` -> `out`: `equal_range` on a `u32` map.
+    MapU32_equalRange_006258e0 @ 0x0062_58e0 => extern "thiscall" fn equal_range_u32(this: u32, out: u32, key: u32) -> u32 {
+        pr::equal_range_u32(&mut mem(), this, out, key)
+    }
+    /// `0x00699d60(this)`: the cluster manager's teardown; the erase's
+    /// result in a frame.
+    ClusterManager_shutdown_00699d60 @ 0x0069_9d60 => extern "thiscall" fn cluster_manager_shutdown(this: u32) {
+        let mut f = StackFrame::<1>::new();
+        pr::cluster_manager_shutdown(&mut mem(), this, f.at());
+    }
+    /// `AtlConvAllocMemory(p, n, fixed, fixed_n)`.
+    AtlConvAllocMemory_006496d0 @ 0x0064_96d0 => extern "C" fn conv_alloc_memory(p: u32, n: u32, fixed: u32, fixed_n: u32) {
+        pr::conv_alloc_memory(&mut mem(), p, n, fixed, fixed_n);
+    }
 }
