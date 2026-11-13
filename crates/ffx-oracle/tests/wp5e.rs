@@ -749,3 +749,211 @@ fn wp5e_vector_copies() {
         }
     }
 }
+
+/// A fresh 0x30-byte node: junk links, red, not nil, a key string of
+/// `n` random characters at `key`.
+fn string_node(t: &mut Twins, key: u32, n: u32) -> u32 {
+    let node = t.new_block(0x30);
+    t.write(node, &[0x3a; 0x30]);
+    t.write(node + 0xc, &[0, 0]);
+    put_string(t, node + key, n);
+    node
+}
+
+/// A red-black tree of `n` string-keyed nodes (the key at `key`, inline
+/// or on the heap), grown at random leaf places by the original
+/// `_Insert_at` `0x006e8a50` (which balances but compares nothing). The
+/// map and its nodes in order.
+fn grown_string_tree(t: &mut Twins, n: u32, key: u32) -> (u32, u32, Vec<u32>) {
+    let (map, head) = empty_map(t);
+    let out = t.alloc(&[0; 8]);
+    let mut nodes: Vec<u32> = Vec::new();
+    for _ in 0..n {
+        let len = t.rng.below(20);
+        let node = string_node(t, key, len);
+        let (place, left) = if nodes.is_empty() {
+            (head, 1)
+        } else {
+            loop {
+                let p = nodes[t.rng.below(nodes.len() as u32) as usize];
+                let side = t.rng.below(2);
+                let child: u32 = Mem::read(&t.b, p + if side == 1 { 0 } else { 8 });
+                if child == head {
+                    break (p, side);
+                }
+            }
+        };
+        for off in [0, 4, 8] {
+            t.w32(node + off, head);
+        }
+        both(
+            t,
+            0x006e_8a50,
+            Conv::Thiscall(map),
+            &[out, left, place, node + key, node],
+        );
+        nodes.push(node);
+    }
+    // in order
+    let mut order = Vec::new();
+    let mut at: u32 = Mem::read(&t.b, head);
+    while at != head {
+        order.push(at);
+        let it = t.alloc(&at.to_le_bytes());
+        both(t, 0x0063_52b0, Conv::Thiscall(it), &[]);
+        at = Mem::read(&t.b, it);
+    }
+    (map, head, order)
+}
+
+/// The string maps' erase copies ([`ffx_prender::wp5e::STRING_MAP_ERASES`]):
+/// `erase(iterator)` (each node of grown trees in turn, until empty: every
+/// fix-up case, the extremes, heap keys freed) against `m5b_stl`'s
+/// `tree_erase_with`, `erase(first, last)` (the whole tree, a middle run,
+/// one node, an empty range) and the subtree frees `0x00635ce0`,
+/// `0x006a04e0`, `0x006d79c0`. `eax`, `out` and memory.
+#[test]
+fn wp5e_string_map_erase() {
+    use ffx_prender::wp5e as e;
+    use ffx_system::m5b_stl as m;
+    for (label, mut t) in Twins::all() {
+        let frame = t.b.stack_range().start + 0x1000;
+        let slot = frame + 0x10;
+        for row in &e::STRING_MAP_ERASES {
+            let calls = m::EraseCalls {
+                rotate_left: row.rotate_left,
+                rotate_right: row.rotate_right,
+                min: row.min,
+                max: row.max,
+                string_key: Some(row.key),
+            };
+            for round in 0..6u32 {
+                let n = 1 + t.rng.below(20);
+                let (map, _, mut nodes) = grown_string_tree(&mut t, n, row.key);
+                let out = t.alloc(&[0x33; 8]);
+                let mut k = 0;
+                while !nodes.is_empty() {
+                    let i = t.rng.below(nodes.len() as u32) as usize;
+                    let wh = nodes.remove(i);
+                    t.b.write(slot, &wh.to_le_bytes()).unwrap();
+                    let w = format!("{label} erase {:#x} {round} ({n}) #{k}", row.erase);
+                    t.run(&w, row.erase, map, &[out, wh], false, |g| {
+                        m::bridge::tree_erase_with(g, map, out, slot, &calls)
+                    });
+                    k += 1;
+                }
+            }
+            for round in 0..12u32 {
+                let n = 1 + t.rng.below(25);
+                let (map, head, nodes) = grown_string_tree(&mut t, n, row.key);
+                let out = t.alloc(&[0x33; 8]);
+                let (first, last) = match round % 4 {
+                    0 => (nodes[0], head),
+                    1 => {
+                        let i = t.rng.below(n);
+                        let j = i + t.rng.below(n - i + 1);
+                        (
+                            nodes[i as usize],
+                            nodes.get(j as usize).copied().unwrap_or(head),
+                        )
+                    }
+                    2 => (
+                        nodes[(n / 2) as usize],
+                        nodes.get((n / 2 + 1) as usize).copied().unwrap_or(head),
+                    ),
+                    _ => (nodes[(n - 1) as usize], nodes[(n - 1) as usize]),
+                };
+                let w = format!("{label} erase range {:#x} {round} ({n})", row.erase_range);
+                t.run(&w, row.erase_range, map, &[out, first, last], false, |g| {
+                    e::string_map_erase_range(g, map, out, first, last, row, frame)
+                });
+            }
+            if row.subtree != 0x0063_5c80 {
+                for round in 0..6u32 {
+                    let n = t.rng.below(16);
+                    let (map, head, _) = grown_string_tree(&mut t, n, row.key);
+                    let root: u32 = Mem::read(&t.b, head + 4);
+                    let w = format!("{label} subtree free {:#x} {round} ({n})", row.subtree);
+                    t.run_any_this1(&w, row.subtree, map, root, |g| {
+                        e::erase_string_subtree(g, root, row.key);
+                    });
+                }
+            }
+        }
+    }
+}
+
+/// The copies of `std_Tree_Lrotate_0069a3f0`, `std_Tree_Rrotate_0069a4f0`,
+/// `std_Tree_max_0069a450` and `std_Tree_min_0069a470` bound in wp5e:
+/// rotations at random nodes with a child on that side, extremes from
+/// random nodes. Memory (and `eax` for the extremes).
+#[test]
+fn wp5e_tree_helper_copies() {
+    use ffx_system::stl::bridge as stl;
+    use ffx_system::wp5_tree::bridge as tb;
+    for (label, mut t) in Twins::all() {
+        for &(kind, at) in TREE_HELPER_COPIES {
+            for round in 0..4u32 {
+                let n = 2 + t.rng.below(14);
+                let (map, head, nodes) = grown_string_tree(&mut t, n, 0x10);
+                // a node with a child on the rotation's side (any for
+                // the extremes); none in this tree: the next round
+                let fits: Vec<u32> = nodes
+                    .iter()
+                    .copied()
+                    .filter(|&p| {
+                        let side: u32 = Mem::read(&t.b, p + if kind == 'l' { 8 } else { 0 });
+                        side != head || kind == 'x' || kind == 'n'
+                    })
+                    .collect();
+                if fits.is_empty() {
+                    continue;
+                }
+                let pick = fits[t.rng.below(fits.len() as u32) as usize];
+                let w = format!("{label} tree helper {kind} {at:#x} {round}");
+                match kind {
+                    'l' => t.run_any_this1(&w, at, map, pick, |g| {
+                        stl::tree_rotate_left(g, map, pick);
+                    }),
+                    'r' => t.run_any_this1(&w, at, map, pick, |g| {
+                        stl::tree_rotate_right(g, map, pick);
+                    }),
+                    'x' => t.run_cdecl(&w, at, &[pick], |g| tb::tree_max(g, pick)),
+                    _ => t.run_cdecl(&w, at, &[pick], |g| tb::tree_min(g, pick)),
+                }
+            }
+        }
+    }
+}
+
+/// The bound copies: (`l` rotate left, `r` right, `x` max, `n` min, address).
+const TREE_HELPER_COPIES: &[(char, u32)] = &[
+    ('l', 0x0062_5a60),
+    ('l', 0x0063_5ec0),
+    ('l', 0x0063_5f20),
+    ('l', 0x006a_0830),
+    ('l', 0x006d_7b80),
+    ('l', 0x0080_6cb0),
+    ('l', 0x0080_6d10),
+    ('r', 0x0062_5b60),
+    ('r', 0x0063_6140),
+    ('r', 0x0063_61a0),
+    ('r', 0x006a_0af0),
+    ('r', 0x006d_7cc0),
+    ('r', 0x0080_6eb0),
+    ('r', 0x0080_6f10),
+    ('x', 0x0062_5ac0),
+    ('x', 0x0063_5f80),
+    ('x', 0x0063_5fa0),
+    ('x', 0x006a_0900),
+    ('x', 0x006a_0920),
+    ('x', 0x006d_7be0),
+    ('x', 0x0080_6d90),
+    ('n', 0x0062_5ae0),
+    ('n', 0x0063_5fc0),
+    ('n', 0x0063_5fe0),
+    ('n', 0x0063_6000),
+    ('n', 0x006a_0940),
+    ('n', 0x006d_7c00),
+    ('n', 0x0080_6dd0),
+];

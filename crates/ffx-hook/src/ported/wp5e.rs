@@ -10,6 +10,18 @@ use ffx_system::m5b_stl::bridge as st;
 use ffx_system::wp5_tree::bridge as tb;
 
 use super::{StackFrame, mem, ported};
+use ffx_system::stl::bridge as stl;
+
+/// A [`e::StringMapErase`] row's callees as `m5b_stl`'s erase takes them.
+fn erase_calls(row: &e::StringMapErase) -> ffx_system::m5b_stl::EraseCalls {
+    ffx_system::m5b_stl::EraseCalls {
+        rotate_left: row.rotate_left,
+        rotate_right: row.rotate_right,
+        min: row.min,
+        max: row.max,
+        string_key: Some(row.key),
+    }
+}
 
 ported! {
     /// `SymbolMap_pairMove_006f33d0`: the code of `StdString_moveWithWord_0069c200`; `this`.
@@ -94,6 +106,170 @@ ported! {
     /// `StdVectorString_copyCtor_0064d730(this; &src)`: the vector copied; `this`.
     StdVectorString_copyCtor_0064d730 @ 0x0064_d730 => extern "thiscall" fn e_0064d730(this: u32, src: u32) -> u32 {
         e::vector_copy_ctor(&mut mem(), this, src, 0x18, e::VECTOR_BUY_24, e::STRINGS_COPY)
+    }
+    /// `StringMap_erase_00636e20(this; &out, where)`: one node erased (its key freed); `out` = the successor.
+    StringMap_erase_00636e20 @ 0x0063_6e20 => extern "thiscall" fn e_00636e20(this: u32, out: u32, _at: u32; slots: u32) -> u32 {
+        let calls = erase_calls(&e::STRING_MAP_ERASES[0]);
+        st::tree_erase_with(&mut mem(), this, out, slots.wrapping_add(4), &calls)
+    }
+    /// `std_Tree_erase_range_00636d60(this; &out, first, last)`: the range erased; `out`.
+    std_Tree_erase_range_00636d60 @ 0x0063_6d60 => extern "thiscall" fn e_00636d60(this: u32, out: u32, first: u32, last: u32) -> u32 {
+        let mut frame = StackFrame::<1>::new();
+        e::string_map_erase_range(&mut mem(), this, out, first, last, &e::STRING_MAP_ERASES[0], frame.at())
+    }
+    /// `StringMap_erase_00637190(this; &out, where)`: one node erased (its key freed); `out` = the successor.
+    StringMap_erase_00637190 @ 0x0063_7190 => extern "thiscall" fn e_00637190(this: u32, out: u32, _at: u32; slots: u32) -> u32 {
+        let calls = erase_calls(&e::STRING_MAP_ERASES[1]);
+        st::tree_erase_with(&mut mem(), this, out, slots.wrapping_add(4), &calls)
+    }
+    /// `StringMap_eraseRange_006370d0(this; &out, first, last)`: the range erased; `out`.
+    StringMap_eraseRange_006370d0 @ 0x0063_70d0 => extern "thiscall" fn e_006370d0(this: u32, out: u32, first: u32, last: u32) -> u32 {
+        let mut frame = StackFrame::<1>::new();
+        e::string_map_erase_range(&mut mem(), this, out, first, last, &e::STRING_MAP_ERASES[1], frame.at())
+    }
+    /// `StdTree_eraseStrings_00635ce0(this; node)`: the code of `StdTree_eraseStrings_00635c80` (key at `+0x10`).
+    StdTree_eraseStrings_00635ce0 @ 0x0063_5ce0 => extern "thiscall" fn e_00635ce0(_this: u32, node: u32) {
+        e::erase_string_subtree(&mut mem(), node, 0x10);
+    }
+    /// `StringMap_erase_006a1720(this; &out, where)`: one node erased (its key freed); `out` = the successor.
+    StringMap_erase_006a1720 @ 0x006a_1720 => extern "thiscall" fn e_006a1720(this: u32, out: u32, _at: u32; slots: u32) -> u32 {
+        let calls = erase_calls(&e::STRING_MAP_ERASES[2]);
+        st::tree_erase_with(&mut mem(), this, out, slots.wrapping_add(4), &calls)
+    }
+    /// `StringMap_eraseRange_006a1660(this; &out, first, last)`: the range erased; `out`.
+    StringMap_eraseRange_006a1660 @ 0x006a_1660 => extern "thiscall" fn e_006a1660(this: u32, out: u32, first: u32, last: u32) -> u32 {
+        let mut frame = StackFrame::<1>::new();
+        e::string_map_erase_range(&mut mem(), this, out, first, last, &e::STRING_MAP_ERASES[2], frame.at())
+    }
+    /// `StdTree_eraseStrings_006a04e0(this; node)`: the code of `StdTree_eraseStrings_00635c80` (key at `+0x10`).
+    StdTree_eraseStrings_006a04e0 @ 0x006a_04e0 => extern "thiscall" fn e_006a04e0(_this: u32, node: u32) {
+        e::erase_string_subtree(&mut mem(), node, 0x10);
+    }
+    /// `std_Tree_erase_006d8a00(this; &out, where)`: one node erased (its key freed); `out` = the successor.
+    std_Tree_erase_006d8a00 @ 0x006d_8a00 => extern "thiscall" fn e_006d8a00(this: u32, out: u32, _at: u32; slots: u32) -> u32 {
+        let calls = erase_calls(&e::STRING_MAP_ERASES[3]);
+        st::tree_erase_with(&mut mem(), this, out, slots.wrapping_add(4), &calls)
+    }
+    /// `std_Tree_erase_range_006d8940(this; &out, first, last)`: the range erased; `out`.
+    std_Tree_erase_range_006d8940 @ 0x006d_8940 => extern "thiscall" fn e_006d8940(this: u32, out: u32, first: u32, last: u32) -> u32 {
+        let mut frame = StackFrame::<1>::new();
+        e::string_map_erase_range(&mut mem(), this, out, first, last, &e::STRING_MAP_ERASES[3], frame.at())
+    }
+    /// `StdTree_eraseStrings_006d79c0(this; node)`: the code of `StdTree_eraseStrings_00635c80` (key at `+0x14`).
+    StdTree_eraseStrings_006d79c0 @ 0x006d_79c0 => extern "thiscall" fn e_006d79c0(_this: u32, node: u32) {
+        e::erase_string_subtree(&mut mem(), node, 0x14);
+    }
+    /// `std_Tree_Lrotate_00625a60`: the code of `std_Tree_Lrotate_0069a3f0`.
+    std_Tree_Lrotate_00625a60 @ 0x0062_5a60 => extern "thiscall" fn e_00625a60(this: u32, node: u32) {
+        stl::tree_rotate_left(&mut mem(), this, node);
+    }
+    /// `std_Tree_Lrotate_00635ec0`: the code of `std_Tree_Lrotate_0069a3f0`.
+    std_Tree_Lrotate_00635ec0 @ 0x0063_5ec0 => extern "thiscall" fn e_00635ec0(this: u32, node: u32) {
+        stl::tree_rotate_left(&mut mem(), this, node);
+    }
+    /// `std_Tree_Lrotate_00635f20`: the code of `std_Tree_Lrotate_0069a3f0`.
+    std_Tree_Lrotate_00635f20 @ 0x0063_5f20 => extern "thiscall" fn e_00635f20(this: u32, node: u32) {
+        stl::tree_rotate_left(&mut mem(), this, node);
+    }
+    /// `std_Tree_Lrotate_006a0830`: the code of `std_Tree_Lrotate_0069a3f0`.
+    std_Tree_Lrotate_006a0830 @ 0x006a_0830 => extern "thiscall" fn e_006a0830(this: u32, node: u32) {
+        stl::tree_rotate_left(&mut mem(), this, node);
+    }
+    /// `std_Tree_Lrotate_copy_006d7b80`: the code of `std_Tree_Lrotate_0069a3f0`.
+    std_Tree_Lrotate_copy_006d7b80 @ 0x006d_7b80 => extern "thiscall" fn e_006d7b80(this: u32, node: u32) {
+        stl::tree_rotate_left(&mut mem(), this, node);
+    }
+    /// `std_Tree_Lrotate_copy_00806cb0`: the code of `std_Tree_Lrotate_0069a3f0`.
+    std_Tree_Lrotate_copy_00806cb0 @ 0x0080_6cb0 => extern "thiscall" fn e_00806cb0(this: u32, node: u32) {
+        stl::tree_rotate_left(&mut mem(), this, node);
+    }
+    /// `std_Tree_Lrotate_copy_00806d10`: the code of `std_Tree_Lrotate_0069a3f0`.
+    std_Tree_Lrotate_copy_00806d10 @ 0x0080_6d10 => extern "thiscall" fn e_00806d10(this: u32, node: u32) {
+        stl::tree_rotate_left(&mut mem(), this, node);
+    }
+    /// `std_Tree_Rrotate_00625b60`: the code of `std_Tree_Rrotate_0069a4f0`.
+    std_Tree_Rrotate_00625b60 @ 0x0062_5b60 => extern "thiscall" fn e_00625b60(this: u32, node: u32) {
+        stl::tree_rotate_right(&mut mem(), this, node);
+    }
+    /// `std_Tree_Rrotate_00636140`: the code of `std_Tree_Rrotate_0069a4f0`.
+    std_Tree_Rrotate_00636140 @ 0x0063_6140 => extern "thiscall" fn e_00636140(this: u32, node: u32) {
+        stl::tree_rotate_right(&mut mem(), this, node);
+    }
+    /// `std_Tree_Rrotate_006361a0`: the code of `std_Tree_Rrotate_0069a4f0`.
+    std_Tree_Rrotate_006361a0 @ 0x0063_61a0 => extern "thiscall" fn e_006361a0(this: u32, node: u32) {
+        stl::tree_rotate_right(&mut mem(), this, node);
+    }
+    /// `std_Tree_Rrotate_006a0af0`: the code of `std_Tree_Rrotate_0069a4f0`.
+    std_Tree_Rrotate_006a0af0 @ 0x006a_0af0 => extern "thiscall" fn e_006a0af0(this: u32, node: u32) {
+        stl::tree_rotate_right(&mut mem(), this, node);
+    }
+    /// `std_Tree_Rrotate_copy_006d7cc0`: the code of `std_Tree_Rrotate_0069a4f0`.
+    std_Tree_Rrotate_copy_006d7cc0 @ 0x006d_7cc0 => extern "thiscall" fn e_006d7cc0(this: u32, node: u32) {
+        stl::tree_rotate_right(&mut mem(), this, node);
+    }
+    /// `std_Tree_Rrotate_copy_00806eb0`: the code of `std_Tree_Rrotate_0069a4f0`.
+    std_Tree_Rrotate_copy_00806eb0 @ 0x0080_6eb0 => extern "thiscall" fn e_00806eb0(this: u32, node: u32) {
+        stl::tree_rotate_right(&mut mem(), this, node);
+    }
+    /// `std_Tree_Rrotate_copy_00806f10`: the code of `std_Tree_Rrotate_0069a4f0`.
+    std_Tree_Rrotate_copy_00806f10 @ 0x0080_6f10 => extern "thiscall" fn e_00806f10(this: u32, node: u32) {
+        stl::tree_rotate_right(&mut mem(), this, node);
+    }
+    /// `std_Tree_max_00625ac0`: the code of `std_Tree_max_0069a450`.
+    std_Tree_max_00625ac0 @ 0x0062_5ac0 => extern "C" fn e_00625ac0(node: u32) -> u32 {
+        tb::tree_max(&mut mem(), node)
+    }
+    /// `std_Tree_max_00635f80`: the code of `std_Tree_max_0069a450`.
+    std_Tree_max_00635f80 @ 0x0063_5f80 => extern "C" fn e_00635f80(node: u32) -> u32 {
+        tb::tree_max(&mut mem(), node)
+    }
+    /// `std_Tree_max_00635fa0`: the code of `std_Tree_max_0069a450`.
+    std_Tree_max_00635fa0 @ 0x0063_5fa0 => extern "C" fn e_00635fa0(node: u32) -> u32 {
+        tb::tree_max(&mut mem(), node)
+    }
+    /// `std_Tree_max_006a0900`: the code of `std_Tree_max_0069a450`.
+    std_Tree_max_006a0900 @ 0x006a_0900 => extern "C" fn e_006a0900(node: u32) -> u32 {
+        tb::tree_max(&mut mem(), node)
+    }
+    /// `std_Tree_max_006a0920`: the code of `std_Tree_max_0069a450`.
+    std_Tree_max_006a0920 @ 0x006a_0920 => extern "C" fn e_006a0920(node: u32) -> u32 {
+        tb::tree_max(&mut mem(), node)
+    }
+    /// `std_Tree_max_006d7be0`: the code of `std_Tree_max_0069a450`.
+    std_Tree_max_006d7be0 @ 0x006d_7be0 => extern "C" fn e_006d7be0(node: u32) -> u32 {
+        tb::tree_max(&mut mem(), node)
+    }
+    /// `std_Tree_max_00806d90`: the code of `std_Tree_max_0069a450`.
+    std_Tree_max_00806d90 @ 0x0080_6d90 => extern "C" fn e_00806d90(node: u32) -> u32 {
+        tb::tree_max(&mut mem(), node)
+    }
+    /// `std_Tree_min_00625ae0`: the code of `std_Tree_min_0069a470`.
+    std_Tree_min_00625ae0 @ 0x0062_5ae0 => extern "C" fn e_00625ae0(node: u32) -> u32 {
+        tb::tree_min(&mut mem(), node)
+    }
+    /// `std_Tree_min_00635fc0`: the code of `std_Tree_min_0069a470`.
+    std_Tree_min_00635fc0 @ 0x0063_5fc0 => extern "C" fn e_00635fc0(node: u32) -> u32 {
+        tb::tree_min(&mut mem(), node)
+    }
+    /// `std_Tree_min_00635fe0`: the code of `std_Tree_min_0069a470`.
+    std_Tree_min_00635fe0 @ 0x0063_5fe0 => extern "C" fn e_00635fe0(node: u32) -> u32 {
+        tb::tree_min(&mut mem(), node)
+    }
+    /// `std_Tree_min_00636000`: the code of `std_Tree_min_0069a470`.
+    std_Tree_min_00636000 @ 0x0063_6000 => extern "C" fn e_00636000(node: u32) -> u32 {
+        tb::tree_min(&mut mem(), node)
+    }
+    /// `std_Tree_min_006a0940`: the code of `std_Tree_min_0069a470`.
+    std_Tree_min_006a0940 @ 0x006a_0940 => extern "C" fn e_006a0940(node: u32) -> u32 {
+        tb::tree_min(&mut mem(), node)
+    }
+    /// `std_Tree_min_006d7c00`: the code of `std_Tree_min_0069a470`.
+    std_Tree_min_006d7c00 @ 0x006d_7c00 => extern "C" fn e_006d7c00(node: u32) -> u32 {
+        tb::tree_min(&mut mem(), node)
+    }
+    /// `std_Tree_min_00806dd0`: the code of `std_Tree_min_0069a470`.
+    std_Tree_min_00806dd0 @ 0x0080_6dd0 => extern "C" fn e_00806dd0(node: u32) -> u32 {
+        tb::tree_min(&mut mem(), node)
     }
     /// `PSharray_data_004347a0`: the code of `PArray_Data_004d45a0`; the elements.
     PSharray_data_004347a0 @ 0x0043_47a0 => extern "thiscall" fn e_004347a0(this: u32) -> u32 {

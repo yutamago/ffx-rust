@@ -615,3 +615,163 @@ pub fn vector_copy_ctor(
     }
     this
 }
+
+/// A `std::string` emptied: its heap block freed (a capacity of 16 or
+/// more), capacity 15, size 0, the first byte 0.
+fn string_tidy(h: &mut impl Host, s: u32) {
+    if h.read::<u32>(s.wrapping_add(0x14)) >= 0x10 {
+        let p: u32 = h.read(s);
+        h.call_sym(OPERATOR_DELETE, Conv::Cdecl, &[p]);
+    }
+    h.write(s.wrapping_add(0x14), 0xfu32);
+    h.write(s.wrapping_add(0x10), 0u32);
+    h.write(s, 0u8);
+}
+
+/// `std::_Tree<.., std::string ..>::_Erase(this; node)` (`0x00635ce0`,
+/// `0x006a04e0` with the key at `+0x10`, `0x006d79c0` at `+0x14`; the
+/// code of `StdTree_eraseStrings_00635c80`, thiscall, `ret 4`; the tree
+/// itself is not read): until a nil node (byte `+0xd`), the right subtree
+/// (the original calls itself), the node's key emptied and the node
+/// deleted, then on to its left child (read before).
+pub fn erase_string_subtree(h: &mut impl Host, node: u32, key: u32) {
+    let mut n = node;
+    while h.read::<u8>(n.wrapping_add(0xd)) == 0 {
+        let right: u32 = h.read(n.wrapping_add(8));
+        erase_string_subtree(h, right, key);
+        let left: u32 = h.read(n);
+        string_tidy(h, n.wrapping_add(key));
+        h.call_sym(OPERATOR_DELETE, Conv::Cdecl, &[n]);
+        n = left;
+    }
+}
+
+/// A string map's `erase(iterator)` and `erase(first, last)` copies and
+/// their callees.
+#[derive(Clone, Copy)]
+pub struct StringMapErase {
+    /// `erase(&out, where)` (thiscall, `ret 8`).
+    pub erase: u32,
+    /// `erase(&out, first, last)` (thiscall, `ret 0xc`).
+    pub erase_range: u32,
+    /// `_Erase(node)`, the subtree free (thiscall, `ret 4`).
+    pub subtree: u32,
+    /// The erase's rotations left and right (thiscall `(this; node)`),
+    /// `_Min` and `_Max` (cdecl `(node)`), and the key's offset (the
+    /// `std::string` the erase frees before the node): the fields of
+    /// `ffx_system::m5b_stl::EraseCalls`.
+    pub rotate_left: u32,
+    pub rotate_right: u32,
+    pub min: u32,
+    pub max: u32,
+    pub key: u32,
+}
+
+/// The four string maps' erase copies (`tools/dupes.py` near families
+/// of `std_Tree_erase_range_00636d60` and `0x00636e20`): the asset
+/// list's symbol map, two more string maps, and the movie player's
+/// (`std_Tree_erase_006d8a00`, its key at `+0x14`).
+pub const STRING_MAP_ERASES: [StringMapErase; 4] = [
+    erase_copy(
+        [0x0063_6e20, 0x0063_6d60, 0x0063_5c80],
+        [0x0063_5ec0, 0x0063_6140, 0x0063_5fc0, 0x0063_5f80],
+        0x10,
+    ),
+    erase_copy(
+        [0x0063_7190, 0x0063_70d0, 0x0063_5ce0],
+        [0x0063_5f20, 0x0063_61a0, 0x0063_5fe0, 0x0063_5fa0],
+        0x10,
+    ),
+    erase_copy(
+        [0x006a_1720, 0x006a_1660, 0x006a_04e0],
+        [0x006a_0830, 0x006a_0af0, 0x0063_6000, 0x006a_0900],
+        0x10,
+    ),
+    erase_copy(
+        [0x006d_8a00, 0x006d_8940, 0x006d_79c0],
+        [0x006d_7b80, 0x006d_7cc0, 0x006d_7c00, 0x006d_7be0],
+        0x14,
+    ),
+];
+
+/// One [`STRING_MAP_ERASES`] row: (erase, range erase, subtree free),
+/// (rotation left, rotation right, `_Min`, `_Max`), the key's offset.
+const fn erase_copy(at: [u32; 3], calls: [u32; 4], key: u32) -> StringMapErase {
+    StringMapErase {
+        erase: at[0],
+        erase_range: at[1],
+        subtree: at[2],
+        rotate_left: calls[0],
+        rotate_right: calls[1],
+        min: calls[2],
+        max: calls[3],
+        key,
+    }
+}
+
+/// The in-order successor of the non-nil `node`.
+fn successor(h: &impl Host, node: u32) -> u32 {
+    let nil = |n: u32| h.read::<u8>(n.wrapping_add(0xd)) != 0;
+    let right: u32 = h.read(node.wrapping_add(8));
+    if nil(right) {
+        let mut cur = node;
+        let mut p: u32 = h.read(node.wrapping_add(4));
+        while !nil(p) && cur == h.read::<u32>(p.wrapping_add(8)) {
+            cur = p;
+            p = h.read(p.wrapping_add(4));
+        }
+        p
+    } else {
+        let mut n = right;
+        loop {
+            let l: u32 = h.read(n);
+            if nil(l) {
+                return n;
+            }
+            n = l;
+        }
+    }
+}
+
+/// A string map's `erase(&out, first, last)` (`0x00636d60` and its
+/// copies, [`STRING_MAP_ERASES`]; thiscall, `ret 0xc`): the whole tree
+/// (`first` the leftmost, `last` the head): `_Erase(root)` (the copy's
+/// subtree free), the head's links itself, the size 0, `out` = the
+/// head's left link; else node by node, each successor found first (in
+/// the original's own `first` slot; a nil node keeps it, and its erase
+/// throws), `erase(&tmp, node)` (`frame`: the original's `ebp - 4`), and
+/// `out` = `last`. Returns `out`.
+pub fn string_map_erase_range(
+    h: &mut impl Host,
+    this: u32,
+    out: u32,
+    first: u32,
+    last: u32,
+    copy: &StringMapErase,
+    frame: u32,
+) -> u32 {
+    let head: u32 = h.read(this);
+    if first == h.read::<u32>(head) && last == head {
+        let root: u32 = h.read(head.wrapping_add(4));
+        h.call_sym(copy.subtree, Conv::Thiscall(this), &[root]);
+        for off in [4u32, 0, 8] {
+            let head: u32 = h.read(this);
+            h.write(head.wrapping_add(off), head);
+        }
+        let head: u32 = h.read(this);
+        h.write(this.wrapping_add(4), 0u32);
+        let l: u32 = h.read(head);
+        h.write(out, l);
+        return out;
+    }
+    let mut at = first;
+    while at != last {
+        let node = at;
+        if h.read::<u8>(node.wrapping_add(0xd)) == 0 {
+            at = successor(h, node);
+        }
+        h.call_sym(copy.erase, Conv::Thiscall(this), &[frame, node]);
+    }
+    h.write(out, at);
+    out
+}
