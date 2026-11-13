@@ -1015,17 +1015,36 @@ fn time_stub(t: &mut Twins, value: f32) {
 fn wp5f_skip_prompt_update_matches_the_original() {
     Twins::each(|t| {
         let mut rng = Rng(0x006e_8540);
-        let times = [0.0f32, 0.5, 1.0, 1.25, 2.0, 3.0, 10.0, f32::NAN];
-        for k in 0..400 {
+        // (3e7 - 0.1 is not an f32: the stored difference rounds)
+        // (1 + 2^-23 less 2^-30 rounds back to 1 + 2^-23 as an f32: equal
+        // to a hold of 1 + 2^-23, below it before the rounding)
+        let one_up = f32::from_bits(0x3f80_0001);
+        let tiny = f32::from_bits(0x3080_0000);
+        let times = [
+            0.0f32,
+            0.5,
+            1.0,
+            1.25,
+            2.0,
+            3.0,
+            10.0,
+            f32::NAN,
+            3.0e7,
+            one_up,
+        ];
+        for k in 0..800 {
             t.reset();
             let now = rng.pick(&times);
             time_stub(t, now);
             let p = t.zeros(0x20);
-            let hold = rng.pick(&[0.0f32, 1.0, 2.0, 3.0, f32::NAN]);
-            let length = rng.pick(&[0.5f32, 1.0, 2.0, 0.0, f32::NAN]);
+            let hold = rng.pick(&[0.0f32, 1.0, 2.0, 3.0, f32::NAN, one_up]);
+            let length = rng.pick(&[0.5f32, 1.0, 2.0, 0.0, f32::NAN, 3.0]);
             t.w32(p, hold.to_bits());
-            t.w32(p + 4, rng.pick(&[0.0f32, 0.5, 1.0]).to_bits());
-            t.w32(p + 8, rng.pick(&[0.0f32, 0.5, 1.0, 9.0]).to_bits());
+            t.w32(p + 4, rng.pick(&[0.0f32, 0.5, 1.0, 0.1, tiny]).to_bits());
+            t.w32(
+                p + 8,
+                rng.pick(&[0.0f32, 0.5, 1.0, 9.0, 0.1, tiny]).to_bits(),
+            );
             t.w32(p + 0xc, length.to_bits());
             t.w32(p + 0x10, rng.next());
             let showing = rng.chance(2);
@@ -1116,7 +1135,15 @@ fn wp5f_records_maps_and_buffers_match_the_original() {
             this_imp_std(t, pr::CLOSE_HANDLE, 1, 1);
             let ev = if rng.chance(2) { t.words(&[0x77]) } else { 0 };
             let mhead = t.words(&[0x1234, 0, 0]);
-            let mgr = t.words(&[0, 0, rng.pick(&[3, 0x8000_0003, 0]), 0x4444, mhead, 0, ev]);
+            let mgr = t.words(&[
+                0,
+                0,
+                rng.pick(&[3, 0x8000_0003, 0, 0x4000_0003]),
+                0x4444,
+                mhead,
+                0,
+                ev,
+            ]);
             t.check_framed(
                 &format!("cluster shutdown {k}"),
                 0x0069_9d60,
