@@ -3123,3 +3123,546 @@ fn dlmalloc_internal_memalign_matches_the_original() {
         }
     });
 }
+
+// ---- m5-wp5f: dlmalloc's heap growth and release ----
+
+/// `VirtualQuery(addr, info, n)` as a stub (stdcall, logged): `info`
+/// gets `addr` as its base, `addr + alloc_off` as its allocation base,
+/// `region` as its size and `state`; returns `ret`.
+fn dl_query_stub(t: &mut Twins, region: u32, state: u32, alloc_off: u32, ret: u32) {
+    let mut c = vec![
+        0x8b, 0x4c, 0x24, 0x08, // mov ecx, [esp + 8]
+        0x8b, 0x54, 0x24, 0x04, // mov edx, [esp + 4]
+        0x89, 0x11, // mov [ecx], edx
+        0x81, 0xc2, // add edx, alloc_off
+    ];
+    c.extend(alloc_off.to_le_bytes());
+    c.extend([0x89, 0x51, 0x04]); // mov [ecx + 4], edx
+    c.extend([0xc7, 0x41, 0x0c]);
+    c.extend(region.to_le_bytes()); // mov dword [ecx + 0xc], region
+    c.extend([0xc7, 0x41, 0x10]);
+    c.extend(state.to_le_bytes()); // mov dword [ecx + 0x10], state
+    let q = t.stub_code(lib::VIRTUAL_QUERY, false, 3, 3, &Ret::Fixed(ret), &c);
+    let at = t.rebase(lib::VIRTUAL_QUERY);
+    t.patch(at, &q.to_le_bytes());
+}
+
+/// The region stubs for a release of `size` bytes: regions of the whole
+/// size, half of it or more than it, failures sometimes.
+fn dl_region_stubs(t: &mut Twins, rng: &mut Rng, size: u32) {
+    let region = rng.pick(&[size, size, size / 2, size + 0x1000, 0x1000]);
+    let state = rng.pick(&[0x1000, 0x1000, 0x1000, 0x2000]);
+    let alloc_off = rng.pick(&[0, 0, 0, 0x1000]);
+    let ret = rng.pick(&[1, 1, 1, 0]);
+    dl_query_stub(t, region, state, alloc_off, ret);
+    t.stub_import(lib::VIRTUAL_FREE, 3, 3, rng.pick(&[1, 1, 1, 0]));
+}
+
+/// A large free chunk `x` (size `size`) put into its tree as dlmalloc's
+/// `insert_large_chunk` does (test scaffolding: builds real trees).
+fn dl_tree_insert(t: &mut Twins, m: u32, x: u32, size: u32) {
+    let rd = |t: &Twins, a: u32| -> u32 { ffx_bridge::Mem::read(&t.a, a) };
+    let i = dl_tree_index(size);
+    let head = m + 0x130 + 4 * i;
+    t.w32(x + 4, size | 1);
+    t.w32(x + 0x1c, i);
+    t.w32(x + 0x10, 0);
+    t.w32(x + 0x14, 0);
+    let map = rd(t, m + 4);
+    if map & 1 << i == 0 {
+        t.w32(m + 4, map | 1 << i);
+        t.w32(head, x);
+        t.w32(x + 0x18, head);
+        t.w32(x + 8, x);
+        t.w32(x + 0xc, x);
+        return;
+    }
+    let mut node = rd(t, head);
+    let mut k = size << if i == 31 { 0 } else { 0x19 - (i >> 1) };
+    loop {
+        if rd(t, node + 4) & !7 == size {
+            let f = rd(t, node + 8);
+            t.w32(f + 0xc, x);
+            t.w32(node + 8, x);
+            t.w32(x + 8, f);
+            t.w32(x + 0xc, node);
+            t.w32(x + 0x18, 0);
+            return;
+        }
+        let c = node + 0x10 + (k >> 31) * 4;
+        k <<= 1;
+        let child = rd(t, c);
+        if child == 0 {
+            t.w32(c, x);
+            t.w32(x + 0x18, node);
+            t.w32(x + 8, x);
+            t.w32(x + 0xc, x);
+            return;
+        }
+        node = child;
+    }
+}
+
+/// `mparams` set for a test: the magic (0 sometimes: `init_mparams` is
+/// a stub then), a 4 KB or 64 KB granularity, the thresholds.
+fn dl_mparams(t: &mut Twins, rng: &mut Rng) -> u32 {
+    t.g32(lib::MPARAMS_MAGIC, rng.pick(&[0, 0x5555_5558, 0x1234_5678]));
+    let unit = rng.pick(&[0x1000, 0x1000, 0x1_0000]);
+    t.g32(lib::GRANULARITY, unit);
+    t.g32(lib::MMAP_THRESHOLD, rng.pick(&[0x4_0000, 0x1000, 0x800]));
+    t.g32(lib::TRIM_THRESHOLD, rng.pick(&[0x20_0000, 0x1234]));
+    t.stub(lib::INIT_MPARAMS, false, 0, 0, 1);
+    unit
+}
+
+#[test]
+fn dlmalloc_init_top_and_segment_holding_match_the_original() {
+    let mut rng = Rng(0x006e_a140);
+    Twins::each(|t| {
+        for k in 0..60 {
+            t.reset();
+            let m = t.zeros(0x200);
+            let area = t.zeros(0x400);
+            t.g32(lib::TRIM_THRESHOLD, rng.next());
+            let p = area + rng.below(16);
+            let psize = rng.pick(&[0x40u32, 0x48, 0x100, 0x1f8]);
+            let what = format!("init_top {k}");
+            t.check(&what, lib::INIT_TOP, Conv::Cdecl, &[m, p, psize], |mm| {
+                lib::init_top(mm, m, p, psize);
+                Out::None
+            });
+            // segment records: the head's, then 0..3 more
+            let mut next = 0;
+            for i in 0..rng.below(4) {
+                next = t.words(&[
+                    0x0100_0000 * (i + 2),
+                    rng.pick(&[0, 0x1000, 0x10_0000]),
+                    next,
+                    0,
+                ]);
+            }
+            for (o, w) in [
+                (0u32, 0x0100_0000u32),
+                (4, rng.pick(&[0, 0x1000])),
+                (8, next),
+            ] {
+                t.w32(m + 0x1c8 + o, w);
+            }
+            let p = rng.pick(&[
+                0x0100_0000u32,
+                0x0100_0fff,
+                0x0100_1000,
+                0x0200_0000,
+                0x0200_0800,
+                0x0300_0000,
+                0x0400_0000,
+                0x0400_0fff,
+                0x0500_0000,
+                0,
+            ]);
+            let what = format!("segment_holding {k} ({p:#x})");
+            t.check(&what, lib::SEGMENT_HOLDING, Conv::Cdecl, &[m, p], |mm| {
+                Out::U32(lib::segment_holding(mm, m, p))
+            });
+        }
+    });
+}
+
+#[test]
+fn dlmalloc_mmap_alloc_matches_the_original() {
+    let mut rng = Rng(0x006e_aa30);
+    Twins::each(|t| {
+        for k in 0..80 {
+            t.reset();
+            let m = t.zeros(0x200);
+            t.g32(lib::GRANULARITY, rng.pick(&[0x1000, 0x2000]));
+            let nb = rng.pick(&[
+                0x10u32,
+                0x800,
+                0xfe0,
+                0x1000,
+                0x2008,
+                0xffff_f000,
+                0xffff_ffe0,
+            ]);
+            let area = t.zeros(0x6000);
+            let mm = rng.pick(&[0, u32::MAX, area, area + 4, area + 0x13]);
+            t.stub_import(lib::VIRTUAL_ALLOC, 4, 4, mm);
+            t.w32(m + 0x10, rng.pick(&[0, 1, u32::MAX, area]));
+            t.w32(m + 0x1b0, rng.pick(&[0, 0x10_0000]));
+            t.w32(m + 0x1b4, rng.pick(&[0, 0x10_0000, 0x10_1000, u32::MAX]));
+            let what = format!("mmap_alloc {k} ({nb:#x}, {mm:#x})");
+            t.check(&what, lib::MMAP_ALLOC, Conv::Cdecl, &[m, nb], |mm| {
+                Out::U32(lib::mmap_alloc(mm, m, nb))
+            });
+        }
+    });
+}
+
+#[test]
+fn dlmalloc_prepend_alloc_matches_the_original() {
+    let mut rng = Rng(0x006e_ab10);
+    Twins::each(|t| {
+        for k in 0..200 {
+            t.reset();
+            let m = t.zeros(0x200);
+            let area = t.zeros(0x8000);
+            t.w32(m + 0x10, rng.pick(&[area, area, 0]));
+            // other free chunks already in the bins
+            for n in 0..rng.below(3) {
+                let x = area + 0x6000 + 0x400 * n;
+                let size = rng.pick(&[0x20u32, 0x80, 0x100, 0x180, 0x300]);
+                t.w32(x + 4, size | 1);
+                if size >= 0x100 {
+                    dl_tree_insert(t, m, x, size);
+                } else {
+                    dl_bin(t, m, x, size);
+                }
+            }
+            let newbase = area + 0x100 + rng.below(8);
+            let nb = rng.pick(&[0x10u32, 0x18, 0x40, 0x200]);
+            let oldbase = area + 0x1000 + rng.below(8);
+            let oldfirst = (oldbase + 7) & !7;
+            let osize = rng.pick(&[0x20u32, 0x80, 0x100, 0x400, 0x408]);
+            let kind = rng.below(5);
+            match kind {
+                0 => {
+                    t.w32(m + 0x18, oldfirst);
+                    t.w32(m + 0xc, osize);
+                    t.w32(oldfirst + 4, osize | 1);
+                }
+                1 => {
+                    t.w32(m + 0x14, oldfirst);
+                    t.w32(m + 8, osize);
+                    t.w32(oldfirst + 4, osize | 1);
+                }
+                2 => {
+                    // free, in its bin
+                    t.w32(oldfirst + 4, osize | 1);
+                    if osize >= 0x100 {
+                        dl_tree_insert(t, m, oldfirst, osize);
+                    } else {
+                        dl_bin(t, m, oldfirst, osize);
+                    }
+                }
+                _ => t.w32(oldfirst + 4, osize | rng.pick(&[3, 2, 0])),
+            }
+            t.w32(oldfirst + osize + 4, rng.pick(&[0x41, 0x43]));
+            let what = format!("prepend_alloc {k} (kind {kind}, {osize:#x})");
+            t.check(
+                &what,
+                lib::PREPEND_ALLOC,
+                Conv::Cdecl,
+                &[m, newbase, oldbase, nb],
+                |mm| Out::U32(lib::prepend_alloc(mm, m, newbase, oldbase, nb)),
+            );
+        }
+    });
+}
+
+#[test]
+fn dlmalloc_add_segment_matches_the_original() {
+    let mut rng = Rng(0x006e_9ae0);
+    Twins::each(|t| {
+        for k in 0..150 {
+            t.reset();
+            let m = t.zeros(0x200);
+            let seg = t.zeros(0x3000);
+            let new = t.zeros(0x2000);
+            t.g32(lib::TRIM_THRESHOLD, rng.next());
+            t.w32(m + 0x10, rng.pick(&[seg, 0]));
+            for n in 0..rng.below(3) {
+                let x = seg + 0x2000 + 0x200 * n;
+                let size = rng.pick(&[0x20u32, 0x100, 0x180]);
+                t.w32(x + 4, size | 1);
+                if size >= 0x100 {
+                    dl_tree_insert(t, m, x, size);
+                } else {
+                    dl_bin(t, m, x, size);
+                }
+            }
+            // the old segment: [seg, seg + size); the old top near its end
+            let size = rng.pick(&[0x1000u32, 0x1004, 0x1013]);
+            let lead = rng.pick(&[0x28u32, 0x38, 0x40, 0x48, 0x60, 0x100, 0x300]);
+            let old_top = seg + size - lead;
+            t.w32(m + 0x18, old_top);
+            t.w32(old_top + 4, lead | 1);
+            // another record first sometimes (segment_holding walks on)
+            let rec = t.words(&[seg, size, 0, rng.pick(&[1, 0])]);
+            if rng.chance(3) {
+                for (o, w) in [(0u32, new + 0x4000), (4, 0x100), (8, rec), (0xc, 1)] {
+                    t.w32(m + 0x1c8 + o, w);
+                }
+            } else {
+                for (o, w) in [(0u32, seg), (4, size), (8, 0), (0xc, rng.pick(&[1, 9]))] {
+                    t.w32(m + 0x1c8 + o, w);
+                }
+            }
+            let tbase = new + rng.below(8);
+            let tsize = rng.pick(&[0x1000u32, 0x1800]);
+            let mmapped = rng.pick(&[0, 1]);
+            let what = format!("add_segment {k} (lead {lead:#x}, size {size:#x})");
+            t.check(
+                &what,
+                lib::ADD_SEGMENT,
+                Conv::Cdecl,
+                &[m, tbase, tsize, mmapped],
+                |mm| {
+                    lib::add_segment(mm, m, tbase, tsize, mmapped);
+                    Out::None
+                },
+            );
+        }
+    });
+}
+
+#[test]
+fn dlmalloc_sys_alloc_matches_the_original() {
+    let mut rng = Rng(0x006e_b1d0);
+    Twins::each(|t| {
+        for k in 0..300 {
+            t.reset();
+            let unit = dl_mparams(t, &mut rng);
+            // the heap inside its own chunk (head at m - 4)
+            let heap = t.zeros(0x400);
+            let m = heap + 8;
+            t.w32(m - 4, rng.pick(&[0x1e3u32, 0x1e0, 0x1f3]));
+            t.w32(m + 0x1b8, rng.pick(&[0, 1, 3]));
+            let mapped = t.zeros(0x100) + 8;
+            t.stub(lib::MMAP_ALLOC, false, 2, 0, rng.pick(&[0, mapped]));
+            t.stub(lib::INIT_TOP, false, 3, 0, 0x61);
+            t.stub(lib::PREPEND_ALLOC, false, 4, 0, 0x62);
+            t.stub(lib::ADD_SEGMENT, false, 4, 0, 0x63);
+            let nb = rng.pick(&[0x10u32, 0x100, 0x800, 0x1000, 0x4_0000, 0xffff_ff00]);
+            // the new memory: right after the top's segment, right before
+            // another segment, or apart
+            let segmem = t.zeros(0x400);
+            let seg = segmem - 0x100;
+            let seg_size = 0x2_0000u32;
+            let asize = unit.wrapping_add(0x2f).wrapping_add(nb) & !(unit - 1);
+            let place = rng.below(4);
+            let tbase = match place {
+                0 => seg + seg_size,
+                1 => 0x0300_0000 - asize,
+                _ => 0x0500_0000,
+            };
+            let va = rng.pick(&[tbase, tbase, tbase, 0, u32::MAX]);
+            t.stub_import(lib::VIRTUAL_ALLOC, 4, 4, va);
+            t.w32(m + 0x1b0, 0x10_0000);
+            t.w32(m + 0x1b4, rng.pick(&[0x10_0000, 0x20_0000]));
+            t.w32(m + 0x10, rng.pick(&[0, 0x0100_0000, 0x0600_0000]));
+            let has_top = !rng.chance(4);
+            if has_top {
+                // the top inside the first record's segment (or not)
+                let top_in = !rng.chance(4);
+                t.w32(m + 0x18, segmem);
+                t.w32(m + 0xc, rng.pick(&[0u32, 0x100, 0x2000, 0x10_0000]));
+                let other = t.words(&[0x0300_0000, 0x1000, 0, rng.pick(&[1, 1, 9, 0])]);
+                for (o, w) in [
+                    (0u32, seg),
+                    (4, seg_size),
+                    (8, other),
+                    (0xc, rng.pick(&[1, 1, 9, 0])),
+                ] {
+                    t.w32(m + 0x1c8 + o, w);
+                }
+                if !top_in {
+                    // the split writes at the top: memory there
+                    let big = t.zeros(0x100);
+                    t.w32(m + 0x18, big);
+                    t.w32(m + 0xc, rng.pick(&[0u32, 0x10, 0x20, 0x80]));
+                }
+            } else {
+                t.w32(m + 0x18, 0);
+                t.w32(m + 0xc, 0);
+            }
+            if va == tbase && !has_top {
+                // the first segment's top is written: real memory there
+                let area = t.zeros(asize.min(0x2_0000) as usize + 0x100);
+                t.stub_import(lib::VIRTUAL_ALLOC, 4, 4, area);
+                let what = format!("sys_alloc {k} (first, {nb:#x})");
+                t.check(&what, lib::SYS_ALLOC, Conv::Cdecl, &[m, nb], |mm| {
+                    Out::U32(lib::sys_alloc(mm, m, nb))
+                });
+                continue;
+            }
+            let what = format!("sys_alloc {k} (place {place}, {nb:#x}, va {va:#x})");
+            t.check(&what, lib::SYS_ALLOC, Conv::Cdecl, &[m, nb], |mm| {
+                Out::U32(lib::sys_alloc(mm, m, nb))
+            });
+        }
+    });
+}
+
+#[test]
+fn dlmalloc_sys_trim_matches_the_original() {
+    let mut rng = Rng(0x006e_b3e0);
+    Twins::each(|t| {
+        for k in 0..250 {
+            t.reset();
+            let unit = dl_mparams(t, &mut rng);
+            let m = t.zeros(0x200);
+            let sp = t.zeros(0x10);
+            let base = 0x0400_0000u32;
+            let size = rng.pick(&[0x1_0000u32, 0x4_0000, 0x1000]);
+            t.w32(sp, base);
+            t.w32(sp + 4, size);
+            t.w32(sp + 8, 0);
+            t.w32(sp + 0xc, rng.pick(&[1, 1, 1, 9, 0]));
+            t.stub(lib::SEGMENT_HOLDING, false, 2, 0, sp);
+            t.stub(lib::INIT_TOP, false, 3, 0, 0x61);
+            t.stub(lib::RELEASE_UNUSED, false, 1, 0, rng.pick(&[0, 0, 0x1000]));
+            // the segment records: one inside the segment sometimes
+            let inside = rng.chance(5);
+            for (o, w) in [
+                (0u32, if inside { base + 0x10 } else { 0x0100_0000 }),
+                (4, 0x1000),
+                (8, if inside { 0 } else { sp }),
+                (0xc, 1),
+            ] {
+                t.w32(m + 0x1c8 + o, w);
+            }
+            t.w32(
+                m + 0x18,
+                rng.pick(&[0, base + 0x100, base + 0x100, base + 0x100]),
+            );
+            let tsize = rng.pick(&[0x100u32, 0x2028, 0x3_0000, 0x1_0028, 0x2_0030]);
+            t.w32(m + 0xc, tsize);
+            t.w32(m + 0x1c, rng.pick(&[0u32, 0x100, u32::MAX]));
+            t.w32(m + 0x1b0, 0x10_0000);
+            let pad = rng.pick(&[0u32, 0x10, 0x1000, 0xffff_ffc0, 0xffff_ffbf]);
+            let want = pad.wrapping_add(0x28);
+            let extra = if tsize > want {
+                (tsize - want)
+                    .div_ceil(unit)
+                    .wrapping_sub(1)
+                    .wrapping_mul(unit)
+            } else {
+                0x1000
+            };
+            dl_region_stubs(t, &mut rng, extra.max(0x1000));
+            let what = format!("sys_trim {k} (pad {pad:#x}, top {tsize:#x}, unit {unit:#x})");
+            t.skip = 0xc;
+            t.check_framed(
+                &what,
+                lib::SYS_TRIM,
+                Conv::Cdecl,
+                &[m, pad],
+                0x28,
+                |mm, ebp| Out::U32(lib::sys_trim(mm, m, pad, ebp - 0x28)),
+            );
+            t.skip = 4;
+        }
+    });
+}
+
+#[test]
+fn dlmalloc_release_unused_segments_matches_the_original() {
+    let mut rng = Rng(0x006e_ae70);
+    Twins::each(|t| {
+        for k in 0..250 {
+            t.reset();
+            let m = t.zeros(0x200);
+            let area = t.zeros(0x8000);
+            t.w32(m + 0x10, rng.pick(&[area, area, 0]));
+            // other tree chunks first (the unlinks and inserts walk them)
+            for n in 0..rng.below(3) {
+                let x = area + 0x6000 + 0x400 * n;
+                dl_tree_insert(t, m, x, rng.pick(&[0x100u32, 0x180, 0x300, 0x400]));
+            }
+            // the segments after the first: a chunk at each base
+            let mut next = 0u32;
+            let mut dv = false;
+            let n = rng.below(4);
+            for i in 0..n {
+                let base = area + 0x1000 * (i + 1) + rng.pick(&[0, 0, 4]);
+                let size = rng.pick(&[0x400u32, 0x300, 0]);
+                let p = (base + 7) & !7;
+                let psize = rng.pick(&[size, size - 0x28 - (p - base), size - 0x30, 0x200]) & !7;
+                let flags = rng.pick(&[1u32, 1, 1, 9, 0]);
+                match rng.below(4) {
+                    0 => t.w32(p + 4, psize | 3),
+                    // one designated victim (an older one would be free in
+                    // no bin)
+                    1 if !dv => {
+                        dv = true;
+                        t.w32(m + 0x14, p);
+                        t.w32(m + 8, psize);
+                        t.w32(p + 4, psize | 1);
+                    }
+                    _ if psize >= 0x100 => dl_tree_insert(t, m, p, psize),
+                    // a free chunk in no bin can't be unlinked
+                    _ => t.w32(p + 4, psize | 3),
+                }
+                next = t.words(&[base, size, next, flags]);
+            }
+            for (o, w) in [(0u32, area), (4, 0x1000), (8, next), (0xc, 1)] {
+                t.w32(m + 0x1c8 + o, w);
+            }
+            if rng.chance(6) && next != 0 {
+                // a long list: the release checks count the segments
+                let mut chain = next;
+                for _ in 0..0x1000 {
+                    chain = t.words(&[0, 0, chain, 0]);
+                }
+                t.w32(m + 0x1d0, chain);
+            }
+            t.w32(m + 0x1b0, 0x10_0000);
+            t.w32(m + 0x20, 5);
+            let rel = rng.pick(&[0x400, 0x300]);
+            dl_region_stubs(t, &mut rng, rel);
+            let what = format!("release_unused_segments {k} ({n} segments)");
+            t.skip = 0x20;
+            t.check_framed(
+                &what,
+                lib::RELEASE_UNUSED,
+                Conv::Cdecl,
+                &[m],
+                0x3c,
+                |mm, ebp| Out::U32(lib::release_unused_segments(mm, m, ebp - 0x3c)),
+            );
+            t.skip = 4;
+        }
+    });
+}
+
+#[test]
+fn dlmalloc_tmalloc_large_matches_the_original() {
+    let mut rng = Rng(0x006e_b540);
+    Twins::each(|t| {
+        for k in 0..400 {
+            t.reset();
+            let m = t.zeros(0x200);
+            let area = t.zeros(0x1_0000);
+            // up to 12 chunks in the trees: sizes around a few bins
+            let sizes = [
+                0x100u32, 0x108, 0x110, 0x180, 0x188, 0x200, 0x208, 0x300, 0x310, 0x400, 0x600,
+                0x800, 0x808,
+            ];
+            for n in 0..rng.below(13) {
+                let x = area + 0x1000 * n;
+                let size = rng.pick(&sizes);
+                dl_tree_insert(t, m, x, size);
+                t.w32(x + size + 4, rng.pick(&[0x41, 0x40]));
+            }
+            t.w32(m + 0x10, rng.pick(&[0, 0, area, area + 0x3000]));
+            t.w32(m + 8, rng.pick(&[0u32, 0x10, 0x200, 0x400, 0x1000]));
+            // small bins for the remainder
+            for i in [4u32, 8, 0x10] {
+                if rng.chance(2) {
+                    let x = area + 0xf000 + 0x100 * (i / 4);
+                    t.w32(x + 4, (i << 3) | 1);
+                    dl_bin(t, m, x, i << 3);
+                }
+            }
+            let nb = rng.pick(&[
+                0x100u32, 0x100, 0x108, 0x110, 0x180, 0x1f0, 0x200, 0x2f8, 0x300, 0x3f0, 0x400,
+                0x500, 0x7f8, 0x800, 0x900, 0x1_0000,
+            ]);
+            let what = format!("tmalloc_large {k} ({nb:#x})");
+            t.check(&what, lib::TMALLOC_LARGE, Conv::Cdecl, &[m, nb], |mm| {
+                Out::U32(lib::tmalloc_large(mm, m, nb))
+            });
+        }
+    });
+}
