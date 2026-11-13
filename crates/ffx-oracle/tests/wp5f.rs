@@ -1433,8 +1433,11 @@ fn varint(v: u64, len: usize) -> Vec<u8> {
 /// A block payload: track 1, a time code, the lacing's header and the
 /// frames (sizes from `sizes`); `bad` breaks one thing.
 fn block_bytes(rng: &mut Rng, lacing: u8, sizes: &[usize], bad: u32) -> Vec<u8> {
-    let mut b = varint(u64::from(rng.pick(&[1u32, 2, 0x7e])), 1);
-    b.extend((rng.next() as u16).to_be_bytes());
+    // (track 0 is a bad block; time codes at and past the short's ends)
+    let mut b = varint(u64::from(rng.pick(&[1u32, 2, 0x7e, 0])), 1);
+    let any = rng.next() as u16;
+    let tc = rng.pick(&[any, 0x8000, 0x7fff, 0xffff]);
+    b.extend(tc.to_be_bytes());
     b.push((lacing << 1) | rng.pick(&[0, 0x80, 0x08]));
     let n = sizes.len();
     match lacing {
