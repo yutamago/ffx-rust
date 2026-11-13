@@ -1409,3 +1409,19 @@ pub fn vfx_event_mesh_pass<H: Host>(h: &mut H, scene: u32, ev: u32, clip: u32) -
     }
     0
 }
+
+/// `std::_Uninitialized_fill_n` of words (`0x0064a970`, cdecl `(dst, n,
+/// &value, ..)`): `n` slots from `dst` each get `*value` (read again for
+/// each; a NULL slot skipped but advanced). `eax`: the end; for `n` 0
+/// the original leaves the caller's `eax` (here `dst`).
+pub fn words_fill(h: &mut impl Host, dst: u32, n: u32, value: u32) -> u32 {
+    let mut d = dst;
+    for _ in 0..n {
+        if d != 0 {
+            let v: u32 = h.read(value);
+            h.write(d, v);
+        }
+        d = d.wrapping_add(4);
+    }
+    d
+}

@@ -494,6 +494,14 @@ ported! {
     PhyreScene_vfxEventMeshPass_006673b0 @ 0x0066_73b0 => extern "thiscall" fn e_006673b0(scene: u32, ev: u32, clip: u32) -> u32 {
         e::vfx_event_mesh_pass(&mut mem(), scene, ev, clip)
     }
+    /// `StdWords_uninitFill_0064a970(dst, n, &value)`: `n` words of `*value`; the end.
+    StdWords_uninitFill_0064a970 @ 0x0064_a970 => extern "C" fn e_0064a970(dst: u32, n: u32, value: u32) -> u32 {
+        e::words_fill(&mut mem(), dst, n, value)
+    }
+    /// `StdWords_uninitCopy_0064a9e0(first, last, dst)`: `0x0064a850`'s copy (other code, the same result); the end.
+    StdWords_uninitCopy_0064a9e0 @ 0x0064_a9e0 => extern "C" fn e_0064a9e0(first: u32, last: u32, dst: u32) -> u32 {
+        e::words_copy(&mut mem(), first, last, dst)
+    }
     /// `PSharray_data_004347a0`: the code of `PArray_Data_004d45a0`; the elements.
     PSharray_data_004347a0 @ 0x0043_47a0 => extern "thiscall" fn e_004347a0(this: u32) -> u32 {
         ffx_pcore::small::bridge::array_data(&mut mem(), this)

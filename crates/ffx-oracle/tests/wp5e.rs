@@ -1653,3 +1653,41 @@ fn wp5e_vfx_event_mesh_pass() {
         }
     }
 }
+
+/// `StdVector_insertN_00655460`'s helpers: the word fill `0x0064a970`
+/// (n 0..5, a NULL target for n 1) and copy `0x0064a9e0` (0..5 words, a
+/// NULL target for one). `eax` (the fill's for n > 0) and memory.
+#[test]
+fn wp5e_words_fill_and_copy() {
+    use ffx_prender::wp5e as e;
+    for (label, mut t) in Twins::all() {
+        for n in 0..6u32 {
+            for null in [false, true] {
+                if null && n > 1 {
+                    continue;
+                }
+                let value = t.alloc(&(0x7700 + n).to_le_bytes());
+                let dst = if null { 0 } else { t.alloc(&[0x44; 0x20]) };
+                let w = format!("{label} words fill n {n} (null {null})");
+                let at = t.a.rebase(0x0064_a970);
+                let r =
+                    t.a.call(at, Conv::Cdecl, &[dst, n, value, 0x99])
+                        .unwrap()
+                        .eax;
+                let p = e::words_fill(&mut G(&mut t.b), dst, n, value);
+                if n > 0 {
+                    assert_eq!(r, p, "{w}: eax");
+                }
+                t.same(&w);
+                let words: Vec<u8> = (0..4 * n.max(1)).map(|i| (i as u8) ^ 0x5c).collect();
+                let src = t.alloc(&words);
+                let dst = if null { 0 } else { t.alloc(&[0x45; 0x20]) };
+                let w = format!("{label} words copy 0x64a9e0 n {n} (null {null})");
+                let last = src + 4 * n;
+                t.run_cdecl(&w, 0x0064_a9e0, &[src, last, dst, 0x99], |g| {
+                    e::words_copy(g, src, last, dst)
+                });
+            }
+        }
+    }
+}
