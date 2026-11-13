@@ -4,6 +4,7 @@
 //! config open step's tail jump) and the main menu's help bar. None is in
 //! the dump; each was read from the machine code.
 
+#[allow(clippy::many_single_char_names, clippy::similar_names)] // the operands, named by their constants
 pub mod bridge {
     use ffx_bridge::Global;
     use ffx_graphic::host::{Conv, Host};

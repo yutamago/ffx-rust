@@ -68,3 +68,4 @@ pub mod vbf;
 pub mod window;
 pub mod wp5_string;
 pub mod wp5_tree;
+pub mod wp5f_sstream;

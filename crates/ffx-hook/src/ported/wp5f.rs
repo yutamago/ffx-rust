@@ -12,6 +12,7 @@
 use super::{StackFrame, mem, ported};
 use ffx_menu::wp5f_menu::bridge as menu;
 use ffx_sg::m5main4_lib::bridge as lib;
+use ffx_system::wp5f_sstream::bridge as ss;
 
 ported! {
     /// `init_top(m, p, psize)`.
@@ -75,5 +76,123 @@ ported! {
     /// `TkVU1SyncPath`'s `eax`.
     TkMenuMain_DrawHelpBar_008a9350 @ 0x008a_9350 => extern "C" fn draw_help_bar(_window: u32) -> u32 {
         menu::draw_help_bar(&mut mem())
+    }
+
+    /// `std::stringstream()` (`this; 2 unread words`) -> `this`.
+    StdStringstream_ctor_00402f00 @ 0x0040_2f00 => extern "thiscall" fn stringstream_ctor(this: u32, _a: u32, _b: u32) -> u32 {
+        ss::stringstream_ctor(&mut mem(), this)
+    }
+    /// The stringstream's vbase destructor (`this` = its `basic_ios`).
+    StdStringstream_vbaseDtor_00402fc0 @ 0x0040_2fc0 => extern "thiscall" fn stringstream_vbase_dtor(this: u32) -> u32 {
+        ss::stream_vbase_dtor(&mut mem(), this, ss::STRINGSTREAM)
+    }
+    /// `stringstream::str()` into `out` -> `out`.
+    StdStringstream_str_00402ff0 @ 0x0040_2ff0 => extern "thiscall" fn stringstream_str(this: u32, out: u32) -> u32 {
+        ss::stream_str(&mut mem(), this, 0x18, out)
+    }
+    /// `~basic_stringbuf()`'s body -> `~basic_streambuf`'s `eax`.
+    StdStringbuf_tidy_00403010 @ 0x0040_3010 => extern "thiscall" fn stringbuf_tidy(this: u32) -> u32 {
+        ss::stringbuf_tidy(&mut mem(), this)
+    }
+    /// `basic_stringbuf::overflow(c)`.
+    StdStringbuf_overflow_00403080 @ 0x0040_3080 => extern "thiscall" fn stringbuf_overflow(this: u32, c: u32) -> u32 {
+        ss::stringbuf_overflow(&mut mem(), this, c)
+    }
+    /// `basic_stringbuf::pbackfail(c)`.
+    StdStringbuf_pbackfail_00403260 @ 0x0040_3260 => extern "thiscall" fn stringbuf_pbackfail(this: u32, c: u32) -> u32 {
+        ss::stringbuf_pbackfail(&mut mem(), this, c)
+    }
+    /// `basic_stringbuf::underflow()`.
+    StdStringbuf_underflow_004032c0 @ 0x0040_32c0 => extern "thiscall" fn stringbuf_underflow(this: u32) -> u32 {
+        ss::stringbuf_underflow(&mut mem(), this)
+    }
+    /// `basic_stringbuf::seekoff(out; off, way, which)` -> `out`.
+    StdStringbuf_seekoff_00403320 @ 0x0040_3320 => extern "thiscall" fn stringbuf_seekoff(this: u32, out: u32, off_lo: u32, off_hi: u32, way: u32, which: u32) -> u32 {
+        let off = u64::from(off_hi) << 32 | u64::from(off_lo);
+        ss::stringbuf_seekoff(&mut mem(), this, out, off, way, which)
+    }
+    /// `basic_stringbuf::seekpos(out; pos, which)` -> `out` (the
+    /// position's state words are not read).
+    StdStringbuf_seekpos_004034f0 @ 0x0040_34f0 => extern "thiscall" fn stringbuf_seekpos(this: u32, out: u32, off_lo: u32, off_hi: u32, fpos_lo: u32, fpos_hi: u32, _state: u32, _pad: u32, which: u32) -> u32 {
+        let off = u64::from(off_hi) << 32 | u64::from(off_lo);
+        let fpos = u64::from(fpos_hi) << 32 | u64::from(fpos_lo);
+        ss::stringbuf_seekpos(&mut mem(), this, out, off, fpos, which)
+    }
+    /// `std::istringstream(str)` (`this; str, 2 unread words`) -> `this`.
+    StdIstringstream_ctor_00403620 @ 0x0040_3620 => extern "thiscall" fn istringstream_ctor(this: u32, s: u32, _a: u32, _b: u32) -> u32 {
+        ss::istringstream_ctor(&mut mem(), this, s)
+    }
+    /// The istringstream's vbase destructor.
+    StdIstringstream_vbaseDtor_00403700 @ 0x0040_3700 => extern "thiscall" fn istringstream_vbase_dtor(this: u32) -> u32 {
+        ss::stream_vbase_dtor(&mut mem(), this, ss::ISTRINGSTREAM)
+    }
+    /// `std::ostringstream()` (`this; 2 unread words`) -> `this`.
+    StdOstringstream_ctor_00403730 @ 0x0040_3730 => extern "thiscall" fn ostringstream_ctor(this: u32, _a: u32, _b: u32) -> u32 {
+        ss::ostringstream_ctor(&mut mem(), this)
+    }
+    /// The ostringstream's vbase destructor.
+    StdOstringstream_vbaseDtor_004037e0 @ 0x0040_37e0 => extern "thiscall" fn ostringstream_vbase_dtor(this: u32) -> u32 {
+        ss::stream_vbase_dtor(&mut mem(), this, ss::OSTRINGSTREAM)
+    }
+    /// `ostringstream::str()` into `out` -> `out`.
+    StdOstringstream_str_00403810 @ 0x0040_3810 => extern "thiscall" fn ostringstream_str(this: u32, out: u32) -> u32 {
+        ss::stream_str(&mut mem(), this, 4, out)
+    }
+    /// The stringstream's deleting destructor (`this` = its `basic_ios`).
+    StdStringstream_deletingDtor_00403830 @ 0x0040_3830 => extern "thiscall" fn stringstream_deleting_dtor(this: u32, flags: u32) -> u32 {
+        ss::stream_deleting_dtor(&mut mem(), this, flags, ss::STRINGSTREAM)
+    }
+    /// The stringbuf's deleting destructor -> `this`.
+    StdStringbuf_deletingDtor_00403890 @ 0x0040_3890 => extern "thiscall" fn stringbuf_deleting_dtor(this: u32, flags: u32) -> u32 {
+        ss::stringbuf_deleting_dtor(&mut mem(), this, flags)
+    }
+    /// The istringstream's deleting destructor.
+    StdIstringstream_deletingDtor_004038c0 @ 0x0040_38c0 => extern "thiscall" fn istringstream_deleting_dtor(this: u32, flags: u32) -> u32 {
+        ss::stream_deleting_dtor(&mut mem(), this, flags, ss::ISTRINGSTREAM)
+    }
+    /// The ostringstream's deleting destructor.
+    StdOstringstream_deletingDtor_00403920 @ 0x0040_3920 => extern "thiscall" fn ostringstream_deleting_dtor(this: u32, flags: u32) -> u32 {
+        ss::stream_deleting_dtor(&mut mem(), this, flags, ss::OSTRINGSTREAM)
+    }
+    /// `basic_stringbuf::str()` into `out` -> `out`; the temporary string
+    /// in a frame.
+    StdStringbuf_str_00403ec0 @ 0x0040_3ec0 => extern "thiscall" fn stringbuf_str(this: u32, out: u32) -> u32 {
+        let mut tmp = StackFrame::<6>::new();
+        ss::stringbuf_str(&mut mem(), this, out, tmp.at())
+    }
+    /// `std::string::push_back(c)` (`this; unread word, c`) -> `this`.
+    StdString_pushBack_004041c0 @ 0x0040_41c0 => extern "thiscall" fn string_push_back(this: u32, _a: u32, c: u32) -> u32 {
+        ss::string_push_back(&mut mem(), this, c)
+    }
+    /// `basic_stringbuf::_Init(p, n)`.
+    StdStringbuf_init_004045d0 @ 0x0040_45d0 => extern "thiscall" fn stringbuf_init(this: u32, p: u32, n: u32) {
+        ss::stringbuf_init(&mut mem(), this, p, n);
+    }
+    /// `use_facet<ctype<char>>(loc)` -> the facet; the lock, the
+    /// `bad_cast` and the cache copy in a frame.
+    StdUseFacet_ctype_004049a0 @ 0x0040_49a0 => extern "fastcall" fn use_ctype(loc: u32) -> u32 {
+        let mut f = StackFrame::<5>::new();
+        ss::use_ctype(&mut mem(), loc, f.at())
+    }
+    /// `os << ','` (`ecx` = the stream) -> `os`.
+    StdOstream_putComma_00404a90 @ 0x0040_4a90 => extern "thiscall" fn put_comma(os: u32) -> u32 {
+        ss::put_comma(&mut mem(), os)
+    }
+    /// `os << s` (a C string) -> `os`.
+    StdOstream_putCstr_00404ca0 @ 0x0040_4ca0 => extern "fastcall" fn put_cstr(os: u32, s: u32) -> u32 {
+        ss::put_cstr(&mut mem(), os, s)
+    }
+    /// `os << s` (a `std::string`) -> `os`.
+    StdOstream_putString_00404ed0 @ 0x0040_4ed0 => extern "fastcall" fn put_string(os: u32, s: u32) -> u32 {
+        ss::put_string(&mut mem(), os, s)
+    }
+    /// `is >> s` (a `std::string`) -> `is`; the locale in a frame.
+    StdIstream_getString_00405800 @ 0x0040_5800 => extern "fastcall" fn get_string(is: u32, s: u32) -> u32 {
+        let mut loc = StackFrame::<1>::new();
+        ss::get_string(&mut mem(), is, s, loc.at())
+    }
+    /// `Facet_Register(f)` -> the list node.
+    Facet_Register @ 0x0094_a684 => extern "C" fn facet_register(facet: u32) -> u32 {
+        ss::facet_register(&mut mem(), facet)
     }
 }
