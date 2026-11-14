@@ -605,14 +605,14 @@ impl Shared {
         if !self.image.is_code(addr) {
             return None;
         }
-        let mem = ArenaMem {
-            arena: Arc::clone(&self.arena),
-        };
         let mut b = [0u8; 6];
-        ffx_bridge::Mem::read_bytes(&mem, addr, &mut b);
+        self.arena.read_bytes(addr, &mut b);
         let slot = u32::from_le_bytes([b[2], b[3], b[4], b[5]]);
-        (b[..2] == [0xff, 0x25] && self.iat.contains(&slot))
-            .then(|| ffx_bridge::Mem::read(&mem, slot))
+        (b[..2] == [0xff, 0x25] && self.iat.contains(&slot)).then(|| {
+            let mut w = [0u8; 4];
+            self.arena.read_bytes(slot, &mut w);
+            u32::from_le_bytes(w)
+        })
     }
 
     /// Where a call to `addr` from Rust goes: through import thunks
@@ -623,9 +623,8 @@ impl Shared {
     /// m5-wp5e). At most 8 steps.
     #[must_use]
     pub fn resolve_call(&self, addr: u32) -> u32 {
-        let mem = ArenaMem {
-            arena: Arc::clone(&self.arena),
-        };
+        // (no `ArenaMem`: its `Arc` clone on every call was a cache line
+        // all the game threads fought over; m5-perf1)
         let mut at = addr;
         for _ in 0..8 {
             if self.table.get(at).is_some() {
@@ -639,7 +638,7 @@ impl Shared {
                 break;
             }
             let mut b = [0u8; 5];
-            ffx_bridge::Mem::read_bytes(&mem, at, &mut b);
+            self.arena.read_bytes(at, &mut b);
             if b[0] != 0xe9 {
                 break;
             }

@@ -4,8 +4,11 @@
 //! so a wait here blocks that host thread as the original's wait blocks
 //! its thread.
 //!
-//! One lock and one condition variable cover every object: a change
-//! wakes all waiters, each re-checks its own objects. Waits also wake
+//! One lock and one condition variable cover every object: a change to
+//! an object some thread waits on wakes all waiters, each re-checks its
+//! own objects (a change nobody waits on wakes nobody: m5-perf1, the
+//! game's critical sections and events woke every blocked thread at every
+//! leave and reset, a third of the headless boot's CPU in futex calls). Waits also wake
 //! every [`SLICE`] to see whether the run is ending
 //! ([`Objects::stopping`]), so no host thread outlives the run blocked.
 
@@ -107,6 +110,29 @@ struct Inner {
     sections: HashMap<u32, Section>,
     /// Threads `TerminateThread` ended, by game thread id: the exit code.
     killed: HashMap<u32, u32>,
+    /// Blocked waits per object handle ([`Objects::wait`]).
+    waiting: HashMap<u32, u32>,
+    /// Blocked `EnterCriticalSection`s per section.
+    section_waiting: HashMap<u32, u32>,
+}
+
+impl Inner {
+    /// Whether a wait blocks on `handle` now.
+    fn awaited(&self, handle: u32) -> bool {
+        self.waiting.get(&handle).is_some_and(|&n| n > 0)
+    }
+}
+
+/// Counts `key` in or out of a waiting map.
+fn note_wait(map: &mut HashMap<u32, u32>, key: u32, on: bool) {
+    if on {
+        *map.entry(key).or_default() += 1;
+    } else if let Some(n) = map.get_mut(&key) {
+        *n -= 1;
+        if *n == 0 {
+            map.remove(&key);
+        }
+    }
 }
 
 /// Every object, shared by the game's threads.
@@ -201,8 +227,12 @@ impl Objects {
             }
             _ => false,
         };
+        // a reset satisfies no wait
+        let wake = to && g.awaited(handle);
         drop(g);
-        self.changed.notify_all();
+        if wake {
+            self.changed.notify_all();
+        }
         ok
     }
 
@@ -218,8 +248,11 @@ impl Objects {
             }
             _ => None,
         };
+        let wake = g.awaited(handle);
         drop(g);
-        self.changed.notify_all();
+        if wake {
+            self.changed.notify_all();
+        }
         r
     }
 
@@ -236,8 +269,11 @@ impl Objects {
             }
             _ => false,
         };
+        let wake = g.awaited(handle);
         drop(g);
-        self.changed.notify_all();
+        if wake {
+            self.changed.notify_all();
+        }
         ok
     }
 
@@ -304,11 +340,17 @@ impl Objects {
                 }
                 None => SLICE,
             };
+            for &h in handles {
+                note_wait(&mut g.waiting, h, true);
+            }
             g = self
                 .changed
                 .wait_timeout(g, slice)
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .0;
+            for &h in handles {
+                note_wait(&mut g.waiting, h, false);
+            }
         }
     }
 
@@ -336,11 +378,13 @@ impl Objects {
             if self.stopping() || g.killed.contains_key(&me) {
                 return false;
             }
+            note_wait(&mut g.section_waiting, at, true);
             g = self
                 .changed
                 .wait_timeout(g, SLICE)
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .0;
+            note_wait(&mut g.section_waiting, at, false);
         }
     }
 
@@ -367,8 +411,10 @@ impl Objects {
             s.count -= 1;
             if s.count == 0 {
                 s.owner = 0;
-                drop(g);
-                self.changed.notify_all();
+                if g.section_waiting.contains_key(&at) {
+                    drop(g);
+                    self.changed.notify_all();
+                }
             }
         }
     }

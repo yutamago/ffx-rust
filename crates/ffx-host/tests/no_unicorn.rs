@@ -165,6 +165,9 @@ fn boots_until_the_first_unported_address() {
         gfx: ffx_host::gfx::Config {
             backend: ffx_host::gfx::Choice::Null,
             stop_after_presents: Some(presents),
+            // as ffx-rust.exe without --gfx-out (the speed line measures
+            // the release's work); FFX_NOU_RECORD=1 keeps the recording
+            no_record: !std::env::var("FFX_NOU_RECORD").is_ok_and(|v| v == "1"),
             ..ffx_host::gfx::Config::default()
         },
         ..ffx_host::Options::default()

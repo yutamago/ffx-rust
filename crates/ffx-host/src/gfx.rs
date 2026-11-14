@@ -1258,6 +1258,13 @@ impl Gfx {
     /// The stream's `UpdateBuffer` for a non-constant buffer whose
     /// contents changed: the changed span.
     fn buffer_changed(&mut self, e: &Exec, id: u32) {
+        // only the recording reads `UpdateBuffer` (gate captures skip it):
+        // without one, no copy and compare of the whole buffer at every
+        // unmap (m5-perf1: 11 % of the headless boot's CPU, and most of
+        // its memcpy and memset)
+        if self.config.no_record {
+            return;
+        }
         let Some(r) = self.resources.get_mut(&id) else {
             return;
         };
