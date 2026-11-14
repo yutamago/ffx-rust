@@ -1,9 +1,10 @@
-# Mixer coverage (M5 WP4, 2026-11-12): the Shout channel and a 32 kHz
-# battle voice, which no other replay plays (docs/formats/audio-platform.md,
-# "Residue"). battle-attack's start: save slot 1 (ffx_001), the salvage
-# ship's first battle (battle field 3, Tidus and Rikku), its first command
-# window (phase byte 0x0112a8e0 = 1); the battle then waits for input, so
-# nothing but the two lines changes the mix.
+# Mixer coverage (M5 WP4, 2026-11-12): the Shout channel and its 32 kHz
+# battle line, which no other replay plays, and a battle voice
+# (docs/formats/audio-platform.md, "Residue"). battle-attack's start: save
+# slot 1 (ffx_001), the salvage ship's first battle (battle field 3, Tidus
+# and Rikku), its first command window (phase byte 0x0112a8e0 = 1); the
+# battle then waits for input, so nothing but the two lines changes the
+# mix.
 #
 # 1. A shout: `MsSoundStreamPlay(0, 0)` (0x007a0820, the battle's own path,
 #    system_01 worker 4 through Native_706d): speaker 0 (Tidus), line 0,
@@ -12,12 +13,19 @@
 #    `210101td` (ffx_us_voice_btl_iop_bank00.fsb, System::playSound on the
 #    Shout channel). The reply is the function's eax: 0x0 played,
 #    0xffffffff a shout still loading.
-# 2. A battle voice: `SndStandbyStream(0x23)` (0x00887570; VoiceIDMapper
-#    0x23 = 210701rk, Rikku, ffx_us_voice_btl), then `SndStartStream()`
-#    (0x00887630), as Native_VoiceStandby_End and Native_7065_BtlStreamStart
-#    run a party line. The 2101xx..2108xx lines are the 32 kHz voice samples
-#    (resampled to 48 kHz by the mixer).
-#
+# 2. A battle voice: `SndStandbyStream(0x423c548b)` (0x00887570; the
+#    VoiceIDMapper key of Rikku's `271301rk`, 48 kHz, which battle
+#    bika01_10's script reads with Native_7064_BtlStreamStandby), then
+#    `SndStartStream()` (0x00887630), as Native_7064's result and
+#    Native_7065_BtlStreamStart run a party line. Battle lines are ids from
+#    0x33000001: FmodVoice_read takes them from the battle project
+#    (ffx_us_voice_btl, FmodVoice +0x1c). The 32 kHz `2101xx..2108xx`
+#    lines are reached only as shouts (item 1): their keys 1..0x2c are
+#    small, so FmodVoice_read would take them from numbered group 21 of
+#    FmodVoice +0xc, a 21-word array (groups 0..20), and call through the
+#    word past its end; no script passes them to SndStandbyStream (the
+#    first version of this replay did with 0x23 and crashed the original
+#    in one run of two, 2026-11-14).
 # Traced: g_TkSndVoiceFlags and the next three words (0x0132ff10: voice
 # read, shout busy, stream busy, standby voice), the battle phase.
 # Record with `tools/replays/run-all.sh --audio --record battle-shout`
@@ -38,7 +46,7 @@ read 0x00c42510 8
 call 0x007a0820 0 0
 wait 150
 read 0x0132ff10 16
-call 0x00887570 0x23
+call 0x00887570 0x423c548b
 wait 90
 read 0x0132ff10 16
 call 0x00887630

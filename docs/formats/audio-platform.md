@@ -516,10 +516,20 @@ What is left:
   are the keys of `210101td`..`210802sm`. In the game only `system_01`'s
   worker 4 plays shouts (`Native_706d`, eight calls: lines 0-7 of the
   acting party member, picked by `Btl.GetParsedCommand`, `Random16` and the
-  voice event flag). The same replay plays Rikku's `210701rk` (key 0x23)
-  as a battle voice (`SndStandbyStream`, `SndStartStream`): a 32 kHz
-  sample. Its references are to record (`run-all.sh --audio --record
-  battle-shout`).
+  voice event flag). The shout's sample is the 32 kHz one. The same
+  replay plays Rikku's `271301rk` (`0x423c548b`, 48 kHz, battle
+  `bika01_10`'s line) as a battle voice (`SndStandbyStream`,
+  `SndStartStream`). The 32 kHz battle lines are never battle voices:
+  their keys 1-0x2c are below `0x33000001`, so `FmodVoice_read` would
+  look them up in numbered group 21 of `FmodVoice +0xc`, a 0x54-byte
+  array of 21 groups (`FmodVoice_ctor_0070a1a0`), and call through the
+  word past its end. No battle script passes one to `SndStandbyStream`
+  (`Native_7064`'s ids in the battle scripts: 214 distinct constants and
+  `system_01`'s computed ones, all from `0x33000001`, or 0 for none).
+  The replay's first version passed key 0x23 and crashed in one of two
+  original runs (the FMOD thread in `FmodVoice_read`, 2026-11-14);
+  without Unicorn ffx-rust stopped there at the call to address 0. Its
+  references are to record (`run-all.sh --audio --record battle-shout`).
 - Voices at 32 kHz (100 voice samples; the replays' voice is 48 kHz).
 - `maxplaybacks` stealing: the game's own limits (5 a sequence, 30 for
   sequence 114, `canStartNewEvent`) stop it before FMOD's in every log.
