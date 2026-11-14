@@ -251,6 +251,7 @@ impl Clock {
     /// critical sections, e.g. for the render thread) and sleeps
     /// (`main_sleep_ms`: the limiter's among them), what is left busy
     /// (`main_busy_ms`); the render thread's waits and busy time per flip.
+    /// The first `timing` only opens the window (no wall time yet: busy 0).
     #[must_use]
     pub fn timing(&self) -> String {
         let (un, ua, um) = self.update_time.take();
@@ -280,9 +281,9 @@ impl Clock {
              render_wait_ms {:.3} render_busy_ms {:.3}",
             per(mw, un),
             per(ms, un),
-            per(wall - mw - ms, un),
+            per((wall - mw - ms).max(0.0), un),
             per(rw, fl),
-            per(wall - rw, fl),
+            per((wall - rw).max(0.0), fl),
         )
     }
 
