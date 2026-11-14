@@ -1725,7 +1725,8 @@ fn wp5f_mkv_cluster_load_matches_the_original() {
                 data.truncate(cut);
             }
             let size = data.len() as u32;
-            let avail = rng.pick(&[size, size, size.saturating_sub(2)]);
+            // (an available count past the data makes the reads fail)
+            let avail = rng.pick(&[size, size, size.saturating_sub(2), size + 4]);
             let reader = fake_reader(t, &data, rng.pick(&[u32::MAX, u32::MAX - 4]), avail);
             let segment = t.words(&[reader]);
             let cl = t.zeros(0x40);
@@ -1735,7 +1736,7 @@ fn wp5f_mkv_cluster_load_matches_the_original() {
             t.w32(cl + 0x20, u32::MAX);
             t.w32(cl + 0x24, u32::MAX);
             // loaded already sometimes
-            let tc = if rng.chance(6) { 3u64 } else { u64::MAX };
+            let tc = if rng.chance(6) { rng.pick(&[3u64, 0]) } else { u64::MAX };
             t.w32(cl + 0x28, tc as u32);
             t.w32(cl + 0x2c, (tc >> 32) as u32);
             let pos = t.words(&[0x1111, 0x2222]);
