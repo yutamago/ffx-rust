@@ -454,3 +454,196 @@ fn wp5g_encounter_draw_steps_match_the_original() {
         }
     });
 }
+
+/// x87 stand-ins for `graphicUiRemapX2` (`-x`) and `graphicUiRemapY2`
+/// (`2y`), logging their argument.
+fn remap_stubs(t: &mut Twins) {
+    use ffx_menu::wp5g_menu::bridge as mn;
+    let fixed = m5_main3_common::Ret::Fixed;
+    t.stub_ex(
+        mn::UI_REMAP_X2,
+        false,
+        1,
+        0,
+        &fixed(0x81),
+        &[0xd9, 0x44, 0x24, 0x04, 0xd9, 0xe0],
+    );
+    t.stub_ex(
+        mn::UI_REMAP_Y2,
+        false,
+        1,
+        0,
+        &fixed(0x82),
+        &[0xd9, 0x44, 0x24, 0x04, 0xdc, 0xc0],
+    );
+}
+
+#[test]
+fn wp5g_menu_callbacks_match_the_original() {
+    use ffx_menu::wp5g_menu::bridge as mn;
+    Twins::each(|t| {
+        let mut rng = Rng(0x008a_91d0);
+        for k in 0..40u32 {
+            // the battle cursors
+            t.reset();
+            t.stub(mn::TO_MAKE_PKT_SHAPE_CURSOR, false, 3, 0, 0xa1);
+            let n = rng.pick(&[0i16, 1, 3, 5, -1]);
+            t.write(t.rebase(mn::BTL_CURSOR_COUNT), &n.to_le_bytes());
+            let recs = t.rebase(mn::BTL_CURSORS);
+            for i in 0..6 {
+                let w = rng.next();
+                t.w32(recs + 8 * i, w);
+                let w = rng.next();
+                t.w32(recs + 8 * i + 4, w);
+            }
+            t.check(
+                &format!("btl cursors {k}"),
+                0x0089_30f0,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(mn::btl_draw_cursors(m)),
+            );
+
+            // the top window's control
+            t.reset();
+            t.stub(mn::GET_CMD_SLIDE, false, 0, 0, 0xa2);
+            for (g, v) in [
+                (
+                    mn::TOP_FADE,
+                    rng.pick(&[0u32, 0xaab, 0xaac, 0x1000, 0x7fff_fffe]),
+                ),
+                (mn::TOP_SLIDE, rng.pick(&[0u32, 0x100, 0xf00, 0x1000])),
+                (
+                    mn::TOP_SLIDE_STEP,
+                    rng.pick(&[0u32, 0x100, 0xffff_ff00, 0x200, 0xffff_e000]),
+                ),
+            ] {
+                t.g32(g, v);
+            }
+            t.check(
+                &format!("top ctrl {k}"),
+                0x008a_91d0,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(mn::top_window_ctrl(m)),
+            );
+
+            // the password close, the summon test, the customize clear,
+            // the module files' close
+            t.reset();
+            let lang = rng.pick(&[0u32, 9, 10, 11]);
+            t.stub_ex(
+                mn::TO_GET_FFX_LANG_JMP,
+                false,
+                0,
+                0,
+                &m5_main3_common::Ret::Seq(vec![lang, rng.pick(&[9u32, 10, 3])]),
+                &[],
+            );
+            t.stub(mn::PASSWORD_TEXT_DISPOSE, false, 0, 0, 0xa3);
+            t.check(
+                &format!("password close {k}"),
+                0x008c_4490,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(mn::password_close(m)),
+            );
+            let w = if k % 4 == 0 { 0 } else { t.zeros(0x60) };
+            if w != 0 {
+                let row = rng.below(8) as i16;
+                t.write(w + 0x48, &row.to_le_bytes());
+            }
+            t.g32(mn::SUMMON_CURSOR_WINDOW, w);
+            let rows = t.rebase(mn::SUMMON_ROW_BYTES);
+            for i in 0..8 {
+                t.w8(rows + i, rng.pick(&[0u8, 1, 1, 2]));
+            }
+            t.stub(
+                mn::TK_MENU_GET_CURRENT_SUMMON,
+                false,
+                0,
+                0,
+                rng.pick(&[0u32, 13, 14, 20, u32::MAX]),
+            );
+            t.check(
+                &format!("summon test {k}"),
+                0x008c_cad0,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(mn::summon_row_test(m)),
+            );
+            t.g32(0x0186_aa68, rng.next());
+            t.check(
+                &format!("kaizou clear {k}"),
+                0x008d_56e0,
+                Conv::Cdecl,
+                &[],
+                |m| {
+                    mn::kaizou_clear(m);
+                    Out::None
+                },
+            );
+            t.stub(mn::READ_MODULE_FILES, false, 0, 0, 0xa4);
+            t.g32(0x023c_c130, rng.next());
+            t.check(
+                &format!("module files close {k}"),
+                0x008e_2910,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(mn::module_files_close(m)),
+            );
+
+            // the draws
+            t.reset();
+            remap_stubs(t);
+            for (f, n) in [
+                (mn::TO_DRAW_MENU_BG, 0),
+                (mn::MENU_DRAW_DIVIDER_SHAPES, 1),
+                (mn::TK_MENU_DRAW_KICK, 0),
+                (mn::TK_MN2_DRAW_INIT_PACKET, 0),
+                (mn::MENU_STATUS_DRAW_PAGE, 9),
+                (mn::TK_MN2_MAIN_STATUS_PLAYER_STATUS, 4),
+                (mn::TO_MENU_DRAW_CHR_STATUS_PLATE, 3),
+                (mn::TK_MN2_DRAW_STATUS_BG, 2),
+                (mn::TK_MN2_DRAW_KICK_SYNC_PACKET, 0),
+                (mn::TK_VU1_SYNC_PATH_THUNK, 0),
+                (mn::TK_MN2_DRAW_GILL_PLATE, 5),
+                (mn::TO_MKP_SHAPE_XYWH_UV, 9),
+                (mn::TO_MKP_ROTATE_SHAPE_XYWH_UVC2, 12),
+                (mn::MENU_ITEM_DRAW_CHR_SMALL_PLATE, 3),
+                (mn::MENU_WSHOP_DRAW_COMPARE, 2),
+            ] {
+                t.stub(f, false, n, 0, 0xb000 + f % 0x1000);
+            }
+            t.stub(mn::TK_MENU_GET_CURRENT_SUMMON, false, 0, 0, rng.below(18));
+            t.stub(mn::TK_MN2_GET_STATUS_BG, false, 0, 0, rng.next());
+            t.stub(mn::MS_GET_GIL, false, 0, 0, rng.next());
+            t.check(
+                &format!("summon status draw {k}"),
+                0x008c_d080,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(mn::summon_status_draw(m)),
+            );
+            t.check(
+                &format!("wshop window 3 draw {k}"),
+                0x008d_a6b0,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(mn::wshop_window3_draw(m)),
+            );
+            t.g32(mn::WSHOP_CHR, rng.below(8));
+            let c0 = rng.pick(&[0u32, 0, 0x1234]);
+            t.g32(mn::WSHOP_COMPARE[0], c0);
+            let c1 = rng.pick(&[0u32, 0x5678]);
+            t.g32(mn::WSHOP_COMPARE[1], c1);
+            t.check(
+                &format!("wshop sub window 4 draw {k}"),
+                0x008d_7f50,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(mn::wshop_sub_window4_draw(m)),
+            );
+        }
+    });
+}

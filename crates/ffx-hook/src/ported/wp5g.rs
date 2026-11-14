@@ -84,4 +84,40 @@ ported! {
         let frame = f.at().wrapping_add(enc4::FRAME);
         enc4::encount4_draw(&mut mem(), enc, cmd, frame, false, &mut cdecl)
     }
+    /// `TOBtlDrawCursors_008930f0()`: the battle cursors; 0.
+    TOBtlDrawCursors_008930f0 @ 0x0089_30f0 => extern "C" fn btl_draw_cursors() -> u32 {
+        menu::btl_draw_cursors(&mut mem())
+    }
+    /// The main top window's control callback; the new fade.
+    TOMenuTopWindow_ctrl_008a91d0 @ 0x008a_91d0 => extern "C" fn top_window_ctrl() -> u32 {
+        menu::top_window_ctrl(&mut mem())
+    }
+    /// A window's close callback: the password text disposed; 1.
+    MenuPasswordClose_008c4490 @ 0x008c_4490 => extern "C" fn password_close() -> u32 {
+        menu::password_close(&mut mem())
+    }
+    /// The summon window's `+0x1c` test; 0 or 1.
+    MenuSummonRowTest_008ccad0 @ 0x008c_cad0 => extern "C" fn summon_row_test() -> u32 {
+        menu::summon_row_test(&mut mem())
+    }
+    /// The summon status window's draw; the kick's `eax`.
+    MenuSummonStatus_draw_008cd080 @ 0x008c_d080 => extern "C" fn summon_status_draw() -> u32 {
+        menu::summon_status_draw(&mut mem())
+    }
+    /// A customize window's `+8` callback.
+    MenuKaizouClear_008d56e0 @ 0x008d_56e0 => extern "C" fn kaizou_clear() {
+        menu::kaizou_clear(&mut mem());
+    }
+    /// The weapon shop's sub window 4 draw; the kick's `eax`.
+    MenuWShopSubWindow4_draw_008d7f50 @ 0x008d_7f50 => extern "C" fn wshop_sub_window4_draw() -> u32 {
+        menu::wshop_sub_window4_draw(&mut mem())
+    }
+    /// The weapon shop's window 3 draw; the kick's `eax`.
+    MenuWShopWindow3_draw_008da6b0 @ 0x008d_a6b0 => extern "C" fn wshop_window3_draw() -> u32 {
+        menu::wshop_window3_draw(&mut mem())
+    }
+    /// A window's close step: the module files read; its `eax`.
+    MenuModuleFilesClose_008e2910 @ 0x008e_2910 => extern "C" fn module_files_close() -> u32 {
+        menu::module_files_close(&mut mem())
+    }
 }
