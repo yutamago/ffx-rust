@@ -1856,7 +1856,7 @@ pub mod bridge {
             }
             let mut args = vec![this, index];
             args.extend(w);
-            h.call_sym(BLOCK_GROUP_CTOR, Conv::Thiscall(mem), &args)
+            h.call_sym(BLOCK_GROUP_CTOR, Conv::Thiscall(mem), &args) // call width: 14
         };
         h.write(slot, e);
         if e == 0 {

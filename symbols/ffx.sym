@@ -72,6 +72,7 @@
 0x00403810 function StdOstringstream_str_00403810 # thiscall(this; out) ret 4 -> out: stringbuf (+4) str(); ported M5 wp5f (ffx_system::wp5f_sstream)
 0x00403830 function StdStringstream_deletingDtor_00403830 # thiscall(ios; flags) ret 4 -> the object: the stringstream's deleting destructor through its basic_ios (vtable 0x00b7cb6c); ported M5 wp5f (ffx_system::wp5f_sstream)
 0x00403890 function StdStringbuf_deletingDtor_00403890 # thiscall(sb; flags) ret 4 -> sb: stringbuf deleting destructor (slot 0); ported M5 wp5f (ffx_system::wp5f_sstream)
+0x004038c0 function StdIstringstream_deletingDtor_004038c0 # thiscall(ios; flags) ret 4 -> the object: the istringstream's deleting destructor through its basic_ios (vtable 0x00b8f790; 0x00405a83 jumps here); ported M5 wp5f (ffx_system::wp5f_sstream)
 0x00403920 function StdOstringstream_deletingDtor_00403920 # thiscall(ios; flags) ret 4 -> the object: the ostringstream's deleting destructor through its basic_ios (vtable 0x00b7cb1c); ported M5 wp5f (ffx_system::wp5f_sstream)
 0x004039b0 function std_string_moveAssign_004039b0 # thiscall(s; from) ret 4: MSVC basic_string move: inline text memmoved or the heap pointer taken, size/capacity copied, from left empty (cap 15); name ours; ported M5 wp5b (ffx_system::wp5_string)
 0x00403a10 function StdString_assignSubstr_00403a10 # thiscall(this; src std::string*, pos, n) ret 0xc: std::string::assign(src, pos, n) (_Xout_of_range "invalid string position"); called by ClassLoadedCharacterTable_makeEntry_0069da20; name ours (m4 h4 r2); ported M5 wp5b (ffx_system::wp5_string)
