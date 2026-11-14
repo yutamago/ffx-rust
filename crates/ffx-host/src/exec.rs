@@ -321,6 +321,9 @@ pub struct Shared {
     pub cmdline: u32,
     stop: Mutex<Option<Stop>>,
     stop_at: RwLock<BTreeSet<String>>,
+    /// Some milestone was asked for ([`Exec::stop_at`]): imports look
+    /// them up only then.
+    any_stop_at: AtomicBool,
     deadline: Mutex<Option<Instant>>,
     lenient: AtomicBool,
     cover: AtomicBool,
@@ -464,6 +467,7 @@ impl Shared {
             cmdline: 0,
             stop: Mutex::new(None),
             stop_at: RwLock::new(BTreeSet::new()),
+            any_stop_at: AtomicBool::new(false),
             deadline: Mutex::new(None),
             lenient: AtomicBool::new(false),
             cover: AtomicBool::new(false),
@@ -1460,6 +1464,7 @@ impl Exec {
     /// Stops the run when the import `name` (`USER32.dll!CreateWindowExW`)
     /// is first called: a milestone.
     pub fn stop_at(&mut self, name: &str) {
+        self.shared.any_stop_at.store(true, Ordering::Release);
         if let Ok(mut s) = self.shared.stop_at.write() {
             s.insert(name.to_string());
         }
@@ -2575,20 +2580,30 @@ impl Exec {
     }
 
     fn run_import(&mut self, i: usize, args: &Args) -> Result<Ret> {
-        let Some(b) = self.shared.imports.bound(i).cloned() else {
+        // (no clone of the binding and no new name string per call: the
+        // C runtime's memcpy alone is called millions of times; m5-perf1)
+        let Some(b) = self.shared.imports.bound(i) else {
             return Err(Error::Interrupt(3, 0));
         };
-        *self.stats.imports.entry(b.name.clone()).or_default() += 1;
-        let stop = self
-            .shared
-            .stop_at
-            .read()
-            .is_ok_and(|s| s.contains(&b.name));
-        if stop {
-            self.end(Stop::Milestone(b.name.clone()));
+        let run = b.run;
+        match self.stats.imports.get_mut(b.name.as_str()) {
+            Some(n) => *n += 1,
+            None => {
+                self.stats.imports.insert(b.name.clone(), 1);
+            }
+        }
+        if self.shared.any_stop_at.load(Ordering::Acquire)
+            && self
+                .shared
+                .stop_at
+                .read()
+                .is_ok_and(|s| s.contains(&b.name))
+        {
+            let name = b.name.clone();
+            self.end(Stop::Milestone(name));
             return Err(Error::Stopped);
         }
-        match b.run {
+        match run {
             Some(f) => {
                 let ret = f(self, args);
                 if self.halted() {
@@ -2597,6 +2612,9 @@ impl Exec {
                 Ok(ret)
             }
             None => {
+                let Some(b) = self.shared.imports.bound(i).cloned() else {
+                    return Err(Error::Interrupt(3, 0));
+                };
                 let shown = match &b.from {
                     Some(d) => format!("{} (from {d})", b.name),
                     None => b.name.clone(),

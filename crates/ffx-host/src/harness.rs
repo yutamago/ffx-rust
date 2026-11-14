@@ -340,9 +340,30 @@ fn cloth_order(e: &Exec) {
             ));
             return;
         }
-        std::thread::sleep(Duration::from_micros(200));
+        nap(Duration::from_micros(200));
     }
 }
+
+/// The harness's holds wait here (the main thread at its boundary, the
+/// flip, the cloth order, a lockstep request): at most `limit`, or until
+/// [`wake`]. A sleep of `limit` polled before (m5-perf1): `FFX.exe` sets
+/// the Windows timer to 5 ms (`timeBeginPeriod(5)`), so every 1 ms poll
+/// slept 5 ms there, a frame's flip and boundary each.
+fn nap(limit: Duration) {
+    let (lock, cv) = &*HOLD;
+    if let Ok(g) = lock.lock() {
+        let _ = cv.wait_timeout(g, limit);
+    }
+}
+
+/// A flag a hold waits on changed ([`nap`]).
+fn wake() {
+    HOLD.1.notify_all();
+}
+
+/// [`nap`]'s condition variable.
+static HOLD: std::sync::LazyLock<(Mutex<()>, std::sync::Condvar)> =
+    std::sync::LazyLock::new(|| (Mutex::new(()), std::sync::Condvar::new()));
 
 /// `Ch_CalcMiddle_Batch(chars, &pass, &count)` (`0x00833530`, cdecl):
 /// `*count` records from `chars`, seeded (kind 2, the pass above it).
@@ -471,9 +492,12 @@ pub fn boundary(e: &mut Exec, frame: u32) {
     }
     if LOCKSTEP_REQUEST.swap(false, Ordering::AcqRel) {
         ALLOWED.store(frame, Ordering::Release);
+        wake();
         LOCKSTEP.store(true, Ordering::Release);
+        wake();
     }
     REACHED.store(frame + 1, Ordering::Release);
+    wake();
     trace_frame(e, frame);
     run_main_jobs(e, frame);
     while LOCKSTEP.load(Ordering::Acquire)
@@ -481,10 +505,11 @@ pub fn boundary(e: &mut Exec, frame: u32) {
         && !e.shared().overdue()
         && e.stopped().is_none()
     {
-        std::thread::sleep(Duration::from_millis(1));
+        nap(Duration::from_millis(1));
         run_main_jobs(e, frame);
     }
     PASSED.store(frame + 1, Ordering::Release);
+    wake();
     JOB_EVENTS.store(e.mem().read::<u32>(0x0132_5d94), Ordering::Release);
 }
 
@@ -560,8 +585,11 @@ fn run_main_jobs(e: &mut Exec, frame: u32) {
                 crate::log::note(&format!("harness: loadsave {spec} at frame {frame}: {r:?}"));
                 if lockstep && r.is_ok() {
                     LOCKSTEP_REQUEST.store(false, Ordering::Release);
+                    wake();
                     ALLOWED.store(frame, Ordering::Release);
+                    wake();
                     LOCKSTEP.store(true, Ordering::Release);
+                    wake();
                 }
                 let _ = reply.send(r.map_or_else(|e| format!("err {e}"), |s| format!("ok {s}")));
             }
@@ -571,8 +599,11 @@ fn run_main_jobs(e: &mut Exec, frame: u32) {
                 // as for loadsave: the map's load in lockstep from here
                 if lockstep && r.is_ok() {
                     LOCKSTEP_REQUEST.store(false, Ordering::Release);
+                    wake();
                     ALLOWED.store(frame, Ordering::Release);
+                    wake();
                     LOCKSTEP.store(true, Ordering::Release);
+                    wake();
                 }
                 let _ = reply.send(r.map_or_else(|e| format!("err {e}"), |s| format!("ok {s}")));
             }
@@ -581,6 +612,7 @@ fn run_main_jobs(e: &mut Exec, frame: u32) {
                 // hold here, before the next update runs
                 if LOCKSTEP.load(Ordering::Acquire) {
                     ALLOWED.store(frame, Ordering::Release);
+                    wake();
                 }
                 let _ = reply.send(if hit {
                     format!("ok {frame}")
@@ -593,12 +625,15 @@ fn run_main_jobs(e: &mut Exec, frame: u32) {
                 let lockstep = LOCKSTEP.load(Ordering::Acquire);
                 if lockstep {
                     ALLOWED.store(frame, Ordering::Release);
+                    wake();
                 }
                 if !hit {
                     PINNED.fetch_sub(1, Ordering::AcqRel);
+                    wake();
                     let _ = reply.send(format!("err timeout at {frame}"));
                 } else if !lockstep && first == Some(frame) {
                     PINNED.fetch_sub(1, Ordering::AcqRel);
+                    wake();
                     let _ = reply.send(format!(
                         "err matched at {frame}, the first frame it was checked: wait for an \
                          earlier state first"
@@ -613,6 +648,7 @@ fn run_main_jobs(e: &mut Exec, frame: u32) {
                     });
                 } else {
                     PINNED.fetch_sub(1, Ordering::AcqRel);
+                    wake();
                 }
             }
             Job::HoldFor(r, value, mask, _) => {
@@ -694,7 +730,7 @@ pub fn before_present_flip(shared: &Shared) {
                 take_shots(label, || g.back_buffer_image());
             }
         }
-        std::thread::sleep(Duration::from_millis(1));
+        nap(Duration::from_millis(1));
     }
     if waited && LOCKSTEP.load(Ordering::Acquire) && REACHED.load(Ordering::Acquire) <= label {
         crate::log::note(&format!(
@@ -707,6 +743,7 @@ pub fn before_present_flip(shared: &Shared) {
 pub fn after_present_flip() {
     PRESENT_LABEL.store(NO_LABEL, Ordering::Release);
     FLIPS_DONE.fetch_add(1, Ordering::AcqRel);
+    wake();
 }
 
 fn has_shots(label: u32) -> bool {
@@ -730,6 +767,7 @@ fn take_shots(label: u32, mut image: impl FnMut() -> Option<(u32, u32, Vec<u8>)>
     for shot in due {
         if shot.pinned {
             PINNED.fetch_sub(1, Ordering::AcqRel);
+            wake();
             if label != shot.want {
                 let shown = if label == NO_LABEL {
                     "an unknown update".to_owned()
@@ -1171,6 +1209,7 @@ fn run(shared: &Arc<Shared>, line: &str) -> Result<String, String> {
         "wait" => {
             let until = now() + parse(arg(1)?)?;
             ALLOWED.fetch_max(until, Ordering::AcqRel);
+            wake();
             Ok(on_game_thread(shared, Job::WaitUntil(until)))
         }
         "waitfor" => {
@@ -1178,6 +1217,7 @@ fn run(shared: &Arc<Shared>, line: &str) -> Result<String, String> {
             let (value, mask) = value_mask(&words, r, false)?;
             let limit = now() + words.get(4).map_or(Ok(600), |w| parse(w))?;
             ALLOWED.fetch_max(limit, Ordering::AcqRel);
+            wake();
             Ok(on_game_thread(shared, Job::WaitFor(r, value, mask, limit)))
         }
         "holdfor" => {
@@ -1204,7 +1244,9 @@ fn run(shared: &Arc<Shared>, line: &str) -> Result<String, String> {
                 return Err("the game has not presented a frame yet".into());
             }
             ALLOWED.fetch_max(limit, Ordering::AcqRel);
+            wake();
             PINNED.fetch_add(1, Ordering::AcqRel);
+            wake();
             Ok(on_game_thread(
                 shared,
                 Job::ShotWhen(r, value, mask, limit, path, None),
@@ -1216,21 +1258,26 @@ fn run(shared: &Arc<Shared>, line: &str) -> Result<String, String> {
                 // the main thread takes hold at its next boundary; one that
                 // does not get there in time is held at once
                 LOCKSTEP_REQUEST.store(true, Ordering::Release);
+                wake();
                 let start = Instant::now();
                 while LOCKSTEP_REQUEST.load(Ordering::Acquire)
                     && start.elapsed() < Duration::from_secs(60)
                     && shared.stopped().is_none()
                 {
-                    std::thread::sleep(Duration::from_millis(1));
+                    nap(Duration::from_millis(1));
                 }
                 if LOCKSTEP_REQUEST.swap(false, Ordering::AcqRel) {
                     ALLOWED.store(now(), Ordering::Release);
+                    wake();
                     LOCKSTEP.store(true, Ordering::Release);
+                    wake();
                 }
                 return Ok(format!("ok {}", ALLOWED.load(Ordering::Acquire)));
             }
             ALLOWED.store(now(), Ordering::Release);
+            wake();
             LOCKSTEP.store(on, Ordering::Release);
+            wake();
             Ok(format!("ok {}", now()))
         }
         "read" | "readabs" => read(&mem, parse(arg(1)?)?, parse(arg(2)?)?),
@@ -1290,6 +1337,7 @@ fn run(shared: &Arc<Shared>, line: &str) -> Result<String, String> {
             set_keys(&codes);
             let release = now() + hold;
             ALLOWED.fetch_max(release + gap, Ordering::AcqRel);
+            wake();
             Ok(on_game_thread(shared, Job::Release(release, release + gap)))
         }
         "pad" => {
@@ -1304,6 +1352,7 @@ fn run(shared: &Arc<Shared>, line: &str) -> Result<String, String> {
             shared.clock.buttons.store(mask, Ordering::Release);
             let release = now() + hold;
             ALLOWED.fetch_max(release + gap, Ordering::AcqRel);
+            wake();
             Ok(on_game_thread(shared, Job::Release(release, release + gap)))
         }
         "call" | "callnext" => {
@@ -1326,6 +1375,7 @@ fn run(shared: &Arc<Shared>, line: &str) -> Result<String, String> {
                 calls.push_back((address, args, tx));
             }
             ALLOWED.fetch_max(now() + 1, Ordering::AcqRel);
+            wake();
             Ok(wait_reply(shared, &rx))
         }
         "pin" => Ok(on_game_thread(shared, Job::Pin)),
