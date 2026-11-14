@@ -159,8 +159,23 @@ fn boots_until_the_first_unported_address() {
     };
     let mut exec = ffx_host::boot_opts(&exe, ffx_host::ports::table(), &opts).unwrap();
     exec.set_budget(Duration::from_secs(env_or("FFX_NOU_BUDGET", 120)));
+    let sampler = ffx_host::sample::start(exec.shared());
+    let started = std::time::Instant::now();
     let stop = exec.run_entry().unwrap();
+    let wall = started.elapsed();
     exec.join_threads(Duration::from_secs(5));
+    if let Some(s) = sampler {
+        s.finish(exec.shared());
+    }
+    // the speed (m5-perf1): updates and flips per host second
+    let updates = exec.shared().clock.frame();
+    let flips = exec.shared().clock.flips();
+    eprintln!(
+        "speed: {updates} updates, {flips} flips in {:.1} s: {:.2} updates/s, {:.2} flips/s",
+        wall.as_secs_f64(),
+        f64::from(updates) / wall.as_secs_f64(),
+        f64::from(flips) / wall.as_secs_f64()
+    );
     let syms = syms();
     let report = ffx_host::report::text(&exec, &syms, &format!("{stop}"));
     eprintln!("{report}");

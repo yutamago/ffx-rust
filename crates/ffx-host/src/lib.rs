@@ -53,6 +53,7 @@ pub mod ports;
 pub mod replay;
 pub mod report;
 pub mod rsrc;
+pub mod sample;
 pub mod stacks;
 pub mod stand_ins;
 pub mod steam;
