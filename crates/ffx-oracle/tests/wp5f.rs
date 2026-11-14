@@ -1569,7 +1569,7 @@ fn wp5f_mkv_cluster_parse_matches_the_original() {
                 true,
                 2,
                 2,
-                rng.pick(&[0, 0, 0, 1, u32::MAX - 1]),
+                rng.pick(&[0, 0, 0, 1, u32::MAX - 1, u32::MAX]),
             );
             t.stub(
                 mkv::PARSE_BLOCK_GROUP,
@@ -1675,4 +1675,76 @@ fn wp5f_mkv_cluster_parse_matches_the_original() {
 
 fn rd32(t: &Twins, a: u32) -> u32 {
     Mem::read(&t.a, a)
+}
+
+#[test]
+fn wp5f_mkv_cluster_load_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x0042_9e10);
+        for k in 0..600 {
+            t.reset();
+            cdecl_imp(t, mkv::WASSERT, 3, 0x61);
+            // the children: a time code, blocks, others
+            let mut body = Vec::new();
+            for _ in 0..rng.below(5) {
+                let payload: Vec<u8> = (0..rng.pick(&[0u32, 1, 2, 4, 9, 30]))
+                    .map(|_| rng.next() as u8)
+                    .collect();
+                let sl = rng.pick(&[1usize, 2, 8]);
+                let e = match rng.below(9) {
+                    0 | 1 => element(&[0xe7], &payload, sl),
+                    2 => element(&[0xa3], &payload, sl),
+                    3 => element(&[0xa0], &payload, sl),
+                    4 => element(&[0xec], &payload, sl),
+                    5 => element(&[0x1f, 0x43, 0xb6, 0x75], &payload, sl),
+                    6 => element(&[0x1c, 0x53, 0xbb, 0x6b], &payload, sl),
+                    7 => vec![0x80, 0x81, 0x00],
+                    _ => vec![0xe7, 0xff],
+                };
+                body.extend(e);
+            }
+            // the cluster element around it: its id (or another), a size
+            let id: &[u8] = rng.pick(&[
+                &[0x1f, 0x43, 0xb6, 0x75][..],
+                &[0x1f, 0x43, 0xb6, 0x75],
+                &[0xec],
+                &[0x00],
+            ]);
+            let mut data = vec![0u8; rng.below(4) as usize];
+            let start = data.len() as u32;
+            data.extend(id);
+            match rng.below(5) {
+                0 => data.push(0xff), // unknown size
+                1 => data.push(0x80), // size 0
+                2 => data.extend(varint(body.len() as u64 / 2, 2)),
+                _ => data.extend(varint(body.len() as u64, rng.pick(&[1, 4, 8]))),
+            }
+            data.extend(&body);
+            if rng.chance(5) {
+                let cut = rng.below(data.len() as u32 + 1) as usize;
+                data.truncate(cut);
+            }
+            let size = data.len() as u32;
+            let avail = rng.pick(&[size, size, size.saturating_sub(2)]);
+            let reader = fake_reader(t, &data, rng.pick(&[u32::MAX, u32::MAX - 4]), avail);
+            let segment = t.words(&[reader]);
+            let cl = t.zeros(0x40);
+            t.w32(cl, segment);
+            t.w32(cl + 8, start);
+            t.w32(cl + 0x18, start);
+            t.w32(cl + 0x20, u32::MAX);
+            t.w32(cl + 0x24, u32::MAX);
+            // loaded already sometimes
+            let tc = if rng.chance(6) { 3u64 } else { u64::MAX };
+            t.w32(cl + 0x28, tc as u32);
+            t.w32(cl + 0x2c, (tc >> 32) as u32);
+            let pos = t.words(&[0x1111, 0x2222]);
+            let len = t.words(&[0x3333]);
+            let what = format!("Cluster::Load {k} ({data:02x?})");
+            let scratch = t.frame_ebp(2) - 0x400;
+            t.check(&what, 0x0042_9e10, Conv::Thiscall(cl), &[pos, len], |m| {
+                Out::U32(mkv::cluster_load(m, cl, pos, len, scratch))
+            });
+        }
+    });
 }

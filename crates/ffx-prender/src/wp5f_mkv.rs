@@ -842,6 +842,22 @@ pub mod bridge {
         avail: i64,
         scratch: u32,
     ) -> Result<i64, u32> {
+        parse_varint_or(h, reader, pos, len, cluster_stop, avail, scratch, None)
+    }
+
+    /// [`parse_varint`] with `read_err` (when given) returned for a
+    /// negative `ReadUInt` result instead of its low word.
+    #[allow(clippy::too_many_arguments)] // the parser's state, as the original's locals
+    fn parse_varint_or(
+        h: &mut impl Host,
+        reader: u32,
+        pos: u32,
+        len: u32,
+        cluster_stop: i64,
+        avail: i64,
+        scratch: u32,
+        read_err: Option<u32>,
+    ) -> Result<i64, u32> {
         let p = read_i64(h, pos);
         if p.wrapping_add(1) > avail {
             h.write(len, 1u32);
@@ -865,7 +881,7 @@ pub mod bridge {
         let v = read_uint(h, reader, len, p.cast_unsigned(), at(scratch, 0x18));
         let v = v.cast_signed();
         if v < 0 {
-            return Err(v as u32);
+            return Err(read_err.unwrap_or(v as u32));
         }
         Ok(v)
     }
@@ -1052,5 +1068,166 @@ pub mod bridge {
             return u32::MAX;
         }
         1
+    }
+
+    /// `mkvparser::Cluster::Load(cluster; &pos, &len)` (`0x00429e10`,
+    /// thiscall, `ret 8`): 0 once loaded (a time code `+0x28` set);
+    /// else, from the element's start, the `Cluster` id and size are read
+    /// (`GetUIntLength`, `ReadUInt`: -3 with `*len` 1 or -3 when the data
+    /// is not there, -2 for another id or a zero size, -1 for a bad size),
+    /// then the children until the first `BlockGroup` (0x20) or
+    /// `SimpleBlock` (0x23), a `Cluster` or `Cues` id, or the cluster's
+    /// stop: the `Timecode` (0x67) read (`UnserializeUInt`; `*len` its size
+    /// first). Without a time code or a block, -2; else `m_pos` is the
+    /// time code's end, `m_timecode` set and, for a known size, the
+    /// element size; 0. `frame` holds `Length`'s results (+0, +8) and the
+    /// readers' scratch (+0x10..+0x30).
+    #[allow(clippy::too_many_lines)] // the original's loop
+    pub fn cluster_load(h: &mut impl Host, this: u32, pos: u32, len: u32, frame: u32) -> u32 {
+        const BAD: u32 = (-2i32).cast_unsigned();
+        const MORE: u32 = (-3i32).cast_unsigned();
+        if h.read::<u32>(this) == 0 {
+            wassert(h, 0x00b9_18ec, 0x178f);
+        }
+        if read_i64(h, at(this, 0x18)) < read_i64(h, at(this, 8)) {
+            wassert(h, 0x00b9_1904, 0x1790);
+        }
+        if read_i64(h, at(this, 0x28)) >= 0 {
+            return 0;
+        }
+        if read_i64(h, at(this, 0x18)) != read_i64(h, at(this, 8)) {
+            wassert(h, 0x00b9_1938, 0x1795);
+        }
+        if read_i64(h, at(this, 0x20)) >= 0 {
+            wassert(h, 0x00b9_196c, 0x1796);
+        }
+        let segment: u32 = h.read(this);
+        let reader: u32 = h.read(segment);
+        let (total_at, avail_at) = (frame, at(frame, 8));
+        let scratch = at(frame, 0x10);
+        let s = length(h, reader, total_at, avail_at);
+        if s.cast_signed() < 0 {
+            return s;
+        }
+        let total = read_i64(h, total_at);
+        let avail = read_i64(h, avail_at);
+        if total >= 0 {
+            if avail > total {
+                wassert(h, 0x00b9_05f8, 0x17a1);
+            }
+            if read_i64(h, at(this, 0x18)) > total {
+                wassert(h, 0x00b9_1998, 0x17a2);
+            }
+        }
+        let m_pos = read_i64(h, at(this, 0x18));
+        write_i64(h, pos, m_pos);
+        // the cluster's own id and size: no cluster stop yet
+        let id = match parse_varint(h, reader, pos, len, -1, avail, scratch) {
+            Ok(v) => v,
+            Err(s) => return s,
+        };
+        if id != 0x0f43_b675 {
+            return BAD;
+        }
+        let p = read_i64(h, pos).wrapping_add(i64::from(h.read::<i32>(len)));
+        write_i64(h, pos, p);
+        // a bad size gives -1 (the original returns its cluster size, -1)
+        let size = match parse_varint_or(h, reader, pos, len, -1, avail, scratch, Some(u32::MAX)) {
+            Ok(v) => v,
+            Err(s) => return s,
+        };
+        if size == 0 {
+            return BAD;
+        }
+        let p = read_i64(h, pos).wrapping_add(i64::from(h.read::<i32>(len)));
+        write_i64(h, pos, p);
+        let cluster_size = if size == unknown_size(h.read::<i32>(len)) {
+            -1
+        } else {
+            size
+        };
+        let cluster_stop = if cluster_size < 0 {
+            -1
+        } else {
+            p.wrapping_add(cluster_size)
+        };
+        let mut timecode = -1i64;
+        let mut new_pos = -1i64;
+        let mut block = false;
+        loop {
+            let p = read_i64(h, pos);
+            if cluster_stop >= 0 && p >= cluster_stop {
+                break;
+            }
+            let id = match parse_varint(h, reader, pos, len, cluster_stop, avail, scratch) {
+                Ok(v) => v,
+                Err(s) => return s,
+            };
+            if id == 0 {
+                return BAD;
+            }
+            if id == 0x0f43_b675 || id == 0x0c53_bb6b {
+                break;
+            }
+            let p = read_i64(h, pos).wrapping_add(i64::from(h.read::<i32>(len)));
+            write_i64(h, pos, p);
+            let size = match parse_varint(h, reader, pos, len, cluster_stop, avail, scratch) {
+                Ok(v) => v,
+                Err(s) => return s,
+            };
+            if size == unknown_size(h.read::<i32>(len)) {
+                return BAD;
+            }
+            let p = read_i64(h, pos).wrapping_add(i64::from(h.read::<i32>(len)));
+            write_i64(h, pos, p);
+            if cluster_stop >= 0 && p > cluster_stop {
+                return BAD;
+            }
+            if size == 0 {
+                continue;
+            }
+            if cluster_stop >= 0 && p.wrapping_add(size) > cluster_stop {
+                return BAD;
+            }
+            if id == 0x67 {
+                h.write(len, size as u32);
+                if p.wrapping_add(size) > avail {
+                    return MORE;
+                }
+                timecode = unserialize_uint(
+                    h,
+                    reader,
+                    p.cast_unsigned(),
+                    size.cast_unsigned(),
+                    at(scratch, 0x18),
+                )
+                .cast_signed();
+                if timecode < 0 {
+                    return timecode as u32;
+                }
+                new_pos = p.wrapping_add(size);
+            } else if id == 0x20 || id == 0x23 {
+                block = true;
+                break;
+            }
+            let p = p.wrapping_add(size);
+            write_i64(h, pos, p);
+            if cluster_stop >= 0 && p > cluster_stop {
+                wassert(h, 0x00b9_19d8, 0x186b);
+            }
+        }
+        if cluster_stop >= 0 && read_i64(h, pos) > cluster_stop {
+            wassert(h, 0x00b9_19d8, 0x186e);
+        }
+        if timecode < 0 || !block {
+            return BAD;
+        }
+        write_i64(h, at(this, 0x18), new_pos);
+        write_i64(h, at(this, 0x28), timecode);
+        if cluster_size >= 0 {
+            let start = read_i64(h, at(this, 8));
+            write_i64(h, at(this, 0x20), cluster_stop.wrapping_sub(start));
+        }
+        0
     }
 }
