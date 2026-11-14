@@ -49,7 +49,7 @@
 //!   seed) register with these.
 
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
-use std::sync::{Condvar, Mutex};
+use std::sync::{Condvar, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use ffx_bridge::Mem as _;
@@ -88,6 +88,10 @@ const PATIENCE: Duration = Duration::from_secs(120);
 /// How long the boundary waits for the render thread to let the lock go.
 const LOCK_PATIENCE: Duration = Duration::from_secs(20);
 
+/// `createVsyncEmuThread`, `endVsyncEmuThread`, `VsyncEmu_Wake`.
+const VSYNC_START: u32 = 0x0067_9e60;
+const VSYNC_END: u32 = 0x0067_9f20;
+const VSYNC_WAKE: u32 = 0x0067_9f80;
 /// `Game_Main`'s limiter `call [Sleep]` returns here.
 const LIMITER_RETURN: u32 = 0x0062_f3c1;
 /// `PhyreScene_renderOpeningScreen`'s `call SleepThreadInMillisecond`
@@ -159,15 +163,44 @@ pub struct Clock {
     pub app: AtomicU32,
     /// The replay script (`--replay`).
     pub script: Mutex<Option<crate::replay::Script>>,
+    /// The real clock ([`Clock::set_real`]): game time follows the
+    /// host's from `epoch` on, as in the original.
+    real: AtomicBool,
+    epoch: OnceLock<Instant>,
     wake: Mutex<()>,
     changed: Condvar,
 }
 
 impl Clock {
-    /// The game time now, in seconds.
+    /// The game time now, in seconds: [`VIRTUAL_START`] plus the time
+    /// skipped, plus on the real clock the host's time since it started.
     #[must_use]
     pub fn now(&self) -> f64 {
-        VIRTUAL_START + f64::from_bits(self.skipped.load(Ordering::Acquire))
+        let skipped = f64::from_bits(self.skipped.load(Ordering::Acquire));
+        let real = if self.is_real() {
+            self.epoch.get().map_or(0.0, |t| t.elapsed().as_secs_f64())
+        } else {
+            0.0
+        };
+        VIRTUAL_START + skipped + real
+    }
+
+    /// Runs the game on the real clock (before the boot; `ffx-rust`
+    /// outside the harness's fast mode, `docs/host.md` "The clock"): game
+    /// time is the host's, every `Sleep` sleeps for real, and the game's
+    /// threads (vsync, FMOD, the loader) run free as in the original. No
+    /// lockstep, no turns, the opening logos play.
+    pub fn set_real(&self, real: bool) {
+        if real {
+            let _ = self.epoch.set(Instant::now());
+        }
+        self.real.store(real, Ordering::Release);
+    }
+
+    /// Whether the clock is the real one ([`Clock::set_real`]).
+    #[must_use]
+    pub fn is_real(&self) -> bool {
+        self.real.load(Ordering::Relaxed)
     }
 
     /// Moves the clock on by `seconds`.
@@ -348,7 +381,7 @@ pub fn tick_count64(e: &mut Exec, _: &Args) -> Ret {
 /// loader's turn.
 pub fn sleep(e: &mut Exec, args: &Args) -> bool {
     let ms = args.stack.first().copied().unwrap_or(0);
-    if caller(e, args) == LIMITER_RETURN {
+    if caller(e, args) == LIMITER_RETURN && !clock(e).is_real() {
         limiter_sleep(e, ms);
         return true;
     }
@@ -368,8 +401,16 @@ pub fn woke(e: &Exec) {
 
 /// The limiter's `Sleep(ms)` from `Game_Main`'s Rust side
 /// (`crate::crt_start`), which calls it where the original calls `Sleep`.
-pub(crate) fn limiter(e: &Exec, ms: u32) {
-    limiter_sleep(e, ms);
+pub(crate) fn limiter(e: &mut Exec, ms: u32) {
+    if clock(e).is_real() {
+        let sleep = Args {
+            stack: vec![ms],
+            ..Args::default()
+        };
+        crate::win32::real_sleep(e, &sleep);
+    } else {
+        limiter_sleep(e, ms);
+    }
 }
 
 /// The limiter's `Sleep(ms)` (`Game_Main` `0x0062f2a0`..`0x0062f3bb`): the
@@ -404,7 +445,7 @@ fn get_time(e: &mut Exec, _: &Args) -> Ret {
 /// sleeping; any other sleeps for real.
 fn sleep_ms(e: &mut Exec, args: &Args) -> Ret {
     let ms = args.stack.first().copied().unwrap_or(0);
-    if caller(e, args) == BOOT_SLEEP_RETURN {
+    if caller(e, args) == BOOT_SLEEP_RETURN && !clock(e).is_real() {
         clock(e).skip(f64::from(ms.max(1)) / 1000.0);
         return Ret::eax(0);
     }
@@ -421,15 +462,18 @@ fn sleep_ms(e: &mut Exec, args: &Args) -> Ret {
 fn animate(e: &mut Exec, args: &Args) -> Ret {
     let c = clock(e);
     let frame = c.frame();
+    let real = c.is_real();
     c.app.store(args.ecx, Ordering::Release);
-    c.lockstep.store(true, Ordering::Release);
+    c.lockstep.store(!real, Ordering::Release);
     c.at_boundary.store(true, Ordering::Release);
     c.notify();
     crate::replay::boundary(e, frame);
     crate::harness::boundary(e, frame);
-    loader_turn(e, frame);
-    run_vsync(e);
-    fmod_turn(e);
+    if !real {
+        loader_turn(e, frame);
+        run_vsync(e);
+        fmod_turn(e);
+    }
     crate::harness::update_calls(e);
     let c = clock(e);
     c.at_boundary.store(false, Ordering::Release);
@@ -453,6 +497,9 @@ fn present_flip(e: &mut Exec, args: &Args) -> Ret {
     crate::harness::after_present_flip();
     let c = clock(e);
     c.flips.fetch_add(1, Ordering::AcqRel);
+    if c.is_real() {
+        return r.unwrap_or(Ret::eax(0));
+    }
     let mut mem = e.mem();
     if mem.read::<u8>(OPENING_PLAYING) != 0 {
         mem.write(OPENING_PLAYING, 0u8);
@@ -470,6 +517,11 @@ fn present_flip(e: &mut Exec, args: &Args) -> Ret {
 /// `createVsyncEmuThread(handler)` (`0x00679e60`, cdecl): no thread; the
 /// handler runs at the boundary as game time passes.
 fn vsync_start(e: &mut Exec, args: &Args) -> Ret {
+    if clock(e).is_real() {
+        return e
+            .call_original(VSYNC_START, Conv::Cdecl, args)
+            .unwrap_or(Ret::eax(0));
+    }
     let c = clock(e);
     c.vsync_ticks.store(c.vsync_ticks_now(), Ordering::Release);
     c.vsync
@@ -478,13 +530,23 @@ fn vsync_start(e: &mut Exec, args: &Args) -> Ret {
 }
 
 /// `endVsyncEmuThread()` (`0x00679f20`).
-fn vsync_end(e: &mut Exec, _: &Args) -> Ret {
+fn vsync_end(e: &mut Exec, args: &Args) -> Ret {
+    if clock(e).is_real() {
+        return e
+            .call_original(VSYNC_END, Conv::Cdecl, args)
+            .unwrap_or(Ret::eax(0));
+    }
     clock(e).vsync.store(0, Ordering::Release);
     Ret::eax(0)
 }
 
 /// `VsyncEmu_Wake()` (`0x00679f80`): no thread to wake.
-fn vsync_wake(_: &mut Exec, _: &Args) -> Ret {
+fn vsync_wake(e: &mut Exec, args: &Args) -> Ret {
+    if clock(e).is_real() {
+        return e
+            .call_original(VSYNC_WAKE, Conv::Cdecl, args)
+            .unwrap_or(Ret::eax(0));
+    }
     Ret::VOID
 }
 
@@ -648,6 +710,11 @@ fn loader_turn(e: &Exec, frame: u32) {
 /// boundary on, runs once per turn the main thread gives, serving the
 /// synchronous commands in between.
 fn fmod_tick(e: &mut Exec, args: &Args) -> Ret {
+    if clock(e).is_real() {
+        return e
+            .call_original(0x006f_a700, Conv::Thiscall, args)
+            .unwrap_or(Ret::eax(0));
+    }
     let manager = args.ecx;
     let c = clock(e);
     c.fmod.store(manager, Ordering::Release);
@@ -786,17 +853,23 @@ pub fn register(t: &mut Table) {
         0x0061_c220,
         entry("FileSys_SubmitRead", Conv::Cdecl, 1, submit_read),
     );
-    t.register(
-        0x0067_9e60,
+    // wrapped: on the real clock the thread runs as in the original
+    // (the `ported!` entries there). push ebp; mov ebp, esp; sub esp, 0x68
+    t.wrap(
+        VSYNC_START,
         entry("createVsyncEmuThread", Conv::Cdecl, 1, vsync_start),
+        &[0x55, 0x8b, 0xec, 0x83, 0xec, 0x68],
     );
-    t.register(
-        0x0067_9f20,
+    // mov eax, [0x00ccc7c0] (both)
+    t.wrap(
+        VSYNC_END,
         entry("endVsyncEmuThread", Conv::Cdecl, 0, vsync_end),
+        &[0xa1, 0xc0, 0xc7, 0xcc, 0x00],
     );
-    t.register(
-        0x0067_9f80,
+    t.wrap(
+        VSYNC_WAKE,
         entry("VsyncEmu_Wake", Conv::Cdecl, 0, vsync_wake),
+        &[0xa1, 0xc0, 0xc7, 0xcc, 0x00],
     );
     // cmp byte [0x00cc9cf5], 0; push esi; mov esi, ecx
     t.wrap(

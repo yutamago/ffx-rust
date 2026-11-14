@@ -5,8 +5,16 @@
 //!          [--lenient] [--count] [--stop-at DLL!name]... [--no-dlls]
 //!          [--documents DIR] [--profile FILE] [--routes FILE] [--ports FILE]
 //!          [--gfx-out DIR] [--gfx-null] [--presents N] [--replay FILE]
-//!          [--audio-wav FILE]
+//!          [--audio-wav FILE] [--clock real|virtual]
 //! ```
+//!
+//! The clock (docs/host.md, "The clock"): the real one, as `FFX.exe`
+//! runs (the frame limiter holds 30 updates a second), for a player's run
+//! (no harness, a window) and a harness game outside fast mode (a
+//! `realtime` replay: no `FFX_HARNESS_FAST=1`); the virtual one (as fast as
+//! the host goes) for fast-mode harness games, `--replay`, and runs on the
+//! null device without the harness. `--clock` (else `FFX_HOST_CLOCK`)
+//! picks one.
 //!
 //! `FFX_HOST_GFX=null` picks the null device as `--gfx-null` does (harness
 //! runs pass no arguments).
@@ -57,6 +65,9 @@ fn main() -> ExitCode {
     let mut gfx_out: Option<PathBuf> = None;
     let mut replay: Option<PathBuf> = None;
     let mut audio_wav: Option<PathBuf> = None;
+    let mut clock: Option<String> = std::env::var("FFX_HOST_CLOCK")
+        .ok()
+        .filter(|v| !v.is_empty());
     while let Some(a) = args.next() {
         match a.as_str() {
             "--game-dir" => game = args.next().map(PathBuf::from),
@@ -82,6 +93,7 @@ fn main() -> ExitCode {
             "--gfx-out" => gfx_out = args.next().map(PathBuf::from),
             "--replay" => replay = args.next().map(PathBuf::from),
             "--audio-wav" => audio_wav = args.next().map(PathBuf::from),
+            "--clock" => clock = args.next(),
             "--gfx-null" => opts.gfx.backend = ffx_host::gfx::Choice::Null,
             "--presents" => {
                 opts.gfx.stop_after_presents = args.next().and_then(|s| s.parse().ok());
@@ -119,6 +131,18 @@ fn main() -> ExitCode {
     }
     // a harness game runs until the test quits it
     let harness = std::env::var_os("FFX_HARNESS").is_some();
+    let fast = std::env::var("FFX_HARNESS_FAST").is_ok_and(|v| v == "1");
+    let null = matches!(opts.gfx.backend, ffx_host::gfx::Choice::Null);
+    opts.real_clock = match clock.as_deref() {
+        Some("real") => true,
+        Some("virtual") => false,
+        Some(other) => {
+            eprintln!("--clock {other}: real or virtual");
+            return ExitCode::FAILURE;
+        }
+        None if harness => !fast,
+        None => replay.is_none() && !null,
+    };
     let budget = budget.unwrap_or(Duration::from_secs(if harness { 7 * 86_400 } else { 60 }));
     let t = Instant::now();
     let table = ffx_host::ports::table();

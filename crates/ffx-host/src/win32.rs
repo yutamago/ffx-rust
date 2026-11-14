@@ -242,10 +242,16 @@ pub(crate) fn real_sleep(e: &mut Exec, args: &Args) -> Ret {
     // at most REAL_SLEEP_CAP: the game's sleeps only yield (the clock
     // that times it is the virtual one), and under the emulator a long
     // one only stretches the run
+    // (on the real clock, `crate::clock::Clock::set_real`, the whole of it)
+    let cap = if e.shared().clock.is_real() {
+        Duration::MAX
+    } else {
+        REAL_SLEEP_CAP
+    };
     let mut left = if ms == INFINITE {
         Duration::MAX
     } else {
-        Duration::from_millis(ms.into()).min(REAL_SLEEP_CAP)
+        Duration::from_millis(ms.into()).min(cap)
     };
     while !left.is_zero() && !e.shared().sync.stopping() {
         let step = left.min(SLICE);

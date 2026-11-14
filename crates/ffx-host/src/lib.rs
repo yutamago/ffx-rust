@@ -166,6 +166,10 @@ pub struct Options {
     pub documents: Option<std::path::PathBuf>,
     /// The D3D11 layer's back end and stop (`crate::gfx`).
     pub gfx: gfx::Config,
+    /// The real clock (`clock::Clock::set_real`): game time is the host's
+    /// and the frame limiter sleeps, as `FFX.exe` runs. `false`: the
+    /// virtual clock (every run as fast as the host goes, the tests').
+    pub real_clock: bool,
 }
 
 /// [`boot_with`] with [`Options`]: maps the image and (unless
@@ -190,6 +194,7 @@ pub fn boot_opts(exe: &Path, table: table::Table, opts: &Options) -> Result<exec
     files.documents.clone_from(&opts.documents);
     let shared = exec::Shared::new(arena, image, dlls, table, files)?;
     shared.gfx.configure(opts.gfx.clone());
+    shared.clock.set_real(opts.real_clock);
     let mut exec = exec::Exec::new(shared)?;
     match exec.attach_dlls(1) {
         Ok(()) => Ok(exec),
