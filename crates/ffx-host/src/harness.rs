@@ -1507,7 +1507,9 @@ fn run(shared: &Arc<Shared>, line: &str) -> Result<String, String> {
             {
                 Ok("ok".into())
             }
-            _ => Err("sample reset|stop [name]: no sampler (FFX_HOST_SAMPLE)".into()),
+            // without FFX_HOST_SAMPLE the script plays on (no files)
+            Some("reset" | "stop") => Ok("ok no sampler (FFX_HOST_SAMPLE)".into()),
+            _ => Err("sample reset|stop [name]".into()),
         },
         // the replay player's closing line: no call log here
         "calllog" if words.get(1) == Some(&"off") => Ok("ok".into()),
