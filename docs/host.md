@@ -532,7 +532,7 @@ machine with other work running):
 | | to 1,000 flips | to 2,000 flips (the field) |
 |---|---|---|
 | before | 567 updates in 80 s: 7.1 updates/s, 171 s CPU | 1,184 updates in 448 s: 2.6 updates/s, 1,089 s CPU |
-| after | about 910 updates in 11–13 s: 73–84 updates/s, 20 s CPU | about 1,910 updates in 31–33 s: 57–62 updates/s, 64 s CPU |
+| after | about 920 updates in 10.5–13 s: 73–88 updates/s, 18–21 s CPU | about 1,920 updates in 26–33 s: 57–74 updates/s, 49–64 s CPU |
 
 (Before, the test kept the draw recording, and the flips per update
 depend on speed, so compare updates per second.)
