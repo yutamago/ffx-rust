@@ -986,3 +986,177 @@ fn wp5g_grid_ui_and_task_steps_match_the_original() {
         }
     });
 }
+
+/// Machine code for a recording stub's `extra`: copies `n` words from
+/// the pointer argument `arg` into the log entry from `+at`, then (when
+/// `matrix` is set) the 16 words behind the word at `+matrix` of that
+/// pointer into the next 64-byte slot of `dump` (counter `cnt`).
+fn copy_extra(arg: u8, n: u8, at: u8, matrix: Option<(u8, u32, u32)>) -> Vec<u8> {
+    copy_extra_n(arg, n, at, matrix.map(|(o, c, d)| (vec![o], c, d)))
+}
+
+/// [`copy_extra`] with several matrices (one dump slot each, in order).
+fn copy_extra_n(arg: u8, n: u8, at: u8, matrices: Option<(Vec<u8>, u32, u32)>) -> Vec<u8> {
+    let mut x = vec![0x56, 0x8b, 0x74, 0x24, 8 + 4 * arg];
+    for i in 0..n {
+        x.extend([0x8b, 0x4e, 4 * i, 0x89, 0x48, at + 4 * i]);
+    }
+    if let Some((offs, cnt, dump)) = matrices {
+        for off in offs {
+            x.extend([0x8b, 0x74, 0x24, 8 + 4 * arg]);
+            x.extend([0x8b, 0x76, off, 0x8b, 0x0d]);
+            x.extend(cnt.to_le_bytes());
+            x.extend([0xc1, 0xe1, 0x06, 0x81, 0xc1]);
+            x.extend(dump.to_le_bytes());
+            x.extend([
+                0x33, 0xd2, 0x8b, 0x04, 0x96, 0x89, 0x04, 0x91, 0x42, 0x83, 0xfa, 0x10, 0x72, 0xf4,
+                0xff, 0x05,
+            ]);
+            x.extend(cnt.to_le_bytes());
+        }
+    }
+    x.push(0x5e);
+    x
+}
+
+/// The grid's pulsing node shapes against the original, the port's frame
+/// at the original's aligned `ebp`; the node matrices run as the
+/// originals, the eamap draw is a stub that copies the request and its
+/// matrix.
+#[test]
+fn wp5g_grid_node_shapes_pulse_matches_the_original() {
+    use ffx_prender::wp5g::bridge as ms;
+    Twins::each(|t| {
+        let mut rng = Rng(0x00a4_ffd0);
+        let g = t.zeros(0x1_1800);
+        for k in 0..32u32 {
+            t.reset();
+            t.g32(ms::ABMAP, g);
+            let (cnt, dump) = (t.zeros(4), t.zeros(0x400));
+            let x = copy_extra(1, 8, 0x18, Some((0x10, cnt, dump)));
+            t.stub_ex(
+                ms::SHAPE_DRAW_EAMAP,
+                false,
+                4,
+                0,
+                &m5_main3_common::Ret::Fixed(0xf1),
+                &x,
+            );
+            let count = rng.pick(&[0i16, 1, 2, 4]);
+            t.write(g + 2, &count.to_le_bytes());
+            for i in 0..4u32 {
+                let n = g + 0x808 + 0x28 * i;
+                for w in 0..10 {
+                    let v = small_float(&mut rng);
+                    t.w32(n + 4 * w, v);
+                }
+                let e = rng.pick(&[0u16, 3, 0xffff, 9]);
+                t.write(n + 6, &e.to_le_bytes());
+                t.w8(n + 0x22, rng.pick(&[0u8, 2, 3, 0xfd]));
+            }
+            for e in 0..10u32 {
+                let v = rng.next();
+                t.w32(g + 0xf828 + 48 * e + 8, v);
+            }
+            for i in 0..16 {
+                let v = small_float(&mut rng);
+                t.w32(g + 0x113e0 + 4 * i, v);
+            }
+            t.w8(g + 0x115bc, rng.below(5) as u8);
+            let v = rng.next();
+            t.w32(g + 0x1169c, v);
+            t.w32(g + 0x116a0, rng.pick(&[0u32, 5, 15, 16, 100]));
+            let v = rng.next();
+            t.w32(g + 0x116a4, v);
+            let entry = t.frame_ebp(0) + 4;
+            let ebp = (entry - 12) & !15;
+            let lo = ebp - ms::NODE_SHAPES_FRAME;
+            t.write(lo, &vec![0; ms::NODE_SHAPES_FRAME as usize]);
+            t.b.set_call_top(Some(lo - 0x100));
+            t.check(
+                &format!("node shapes pulse {k} ({count})"),
+                0x00a4_ffd0,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(ms::abmap_draw_node_shapes_pulse(m, ebp)),
+            );
+            t.b.set_call_top(None);
+        }
+    });
+}
+
+/// The grid's lit node spheres against the original, the port's frame
+/// at the original's aligned `ebp`; the node matrices run as the
+/// originals, the sphere draw is a stub that copies the request and its
+/// matrix.
+#[test]
+fn wp5g_grid_node_spheres_lit_matches_the_original() {
+    use ffx_prender::wp5g::bridge as ms;
+    Twins::each(|t| {
+        let mut rng = Rng(0x00a5_0b50);
+        let g = t.zeros(0x1_1800);
+        for k in 0..32u32 {
+            t.reset();
+            t.g32(ms::ABMAP, g);
+            let (cnt, dump) = (t.zeros(4), t.zeros(0x4000));
+            let x = copy_extra_n(1, 10, 0x18, Some((vec![0x20, 0x44], cnt, dump)));
+            t.stub_ex(
+                ms::DRAW_EIABM_SPHERE,
+                false,
+                4,
+                0,
+                &m5_main3_common::Ret::Fixed(0xf2),
+                &x,
+            );
+            let v = rng.next();
+            t.g32(0x0230_57ec, v);
+            t.w8(g + 0x115c9, rng.pick(&[0u8, 0x7f, 0x15, 0xff]));
+            let count = rng.pick(&[0i16, 1, 2, 4]);
+            t.write(g + 2, &count.to_le_bytes());
+            for i in 0..4u32 {
+                let n = g + 0x808 + 0x28 * i;
+                for w in 0..10 {
+                    let v = small_float(&mut rng);
+                    t.w32(n + 4 * w, v);
+                }
+                let e = rng.pick(&[0u16, 3, 0xffff, 9]);
+                t.write(n + 6, &e.to_le_bytes());
+                t.w8(n + 0x21, rng.pick(&[0u8, 0x7f, 0x42, 0xff]));
+            }
+            for e in 0..10u32 {
+                for w in 0..12 {
+                    let v = small_float(&mut rng);
+                    t.w32(g + 0xf828 + 48 * e + 4 * w, v);
+                }
+                let mark = rng.pick(&[0u16, 0x1000]);
+                t.write(g + 0xf828 + 48 * e + 0x14, &mark.to_le_bytes());
+            }
+            for i in 0..16 {
+                let v = small_float(&mut rng);
+                t.w32(g + 0x113e0 + 4 * i, v);
+            }
+            t.w8(g + 0x115bc, rng.below(5) as u8);
+            let v = rng.next();
+            t.w32(g + 0x11698, v);
+
+            let v = rng.next();
+            t.w32(g + 0x116a4, v);
+            let entry = t.frame_ebp(0) + 4;
+            let ebp = (entry - 12) & !15;
+            let lo = ebp - ms::NODE_SPHERES_FRAME;
+            t.write(lo, &vec![0; ms::NODE_SPHERES_FRAME as usize]);
+            t.b.set_call_top(Some(lo - 0x100));
+            t.check(
+                &format!("node spheres lit {k} ({count})"),
+                0x00a5_0b50,
+                Conv::Cdecl,
+                &[],
+                |m| {
+                    ms::abmap_draw_node_spheres_lit(m, ebp);
+                    Out::None
+                },
+            );
+            t.b.set_call_top(None);
+        }
+    });
+}

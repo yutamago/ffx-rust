@@ -493,4 +493,223 @@ pub mod bridge {
             cdecl(h, SCENE_DEBUG_OVERLAY, &[]);
         }
     }
+
+    fn konst(h: &impl Host, a: u32) -> f64 {
+        f64::from_bits(h.read(h.rebase(a)))
+    }
+
+    pub const MAKE_NODE_MATRIX: u32 = 0x00a5_ad30;
+    pub const VU0_MUL_MATRIX: u32 = 0x006e_d5c0;
+    pub const SHAPE_DRAW_EAMAP: u32 = 0x007f_49e0;
+    /// The sine table (`f32`, 4096 entries) and the node colours (20-byte
+    /// records, the colour word first).
+    pub const SINE_TABLE: u32 = 0x00c4_4bf0;
+    pub const NODE_COLOURS: u32 = 0x00c8_65bc;
+    /// The emulated VU0 register `vf0`'s four words (`0x00c8f508`).
+    pub const VF0: u32 = 0x00c8_f508;
+
+    /// Frame bytes `0x00a4ffd0` uses below its `ebp` (`sub esp, 0x118`).
+    pub const NODE_SHAPES_FRAME: u32 = 0x118;
+
+    /// `AbmapDrawNodeShapesPulse_00a4ffd0()` (draw job 3's tail): every
+    /// node (`i16 +2` of them, 0x28 bytes from `+0x808`) but the empty
+    /// ones (`u16 +6` = 0xffff) drawn as its link's eamap shape
+    /// (`op_shape_draw_eamap(link +8, &request, i - count, +0x116a4)`,
+    /// `i` counting down from `count - 1`) through its matrix
+    /// (`AbmapMakeNodeMatrix(m, node, 1.0)`, `FFXVu0MulMatrix(m', +0x113e0,
+    /// m)`); the request's colour is the node colour (`+0x115bc`'s record)
+    /// scaled by a pulse (`ftol((sin(+0x1169c) + a) * b + c)`, faded in by
+    /// `+0x116a0` / 16 below 16), halved, for nodes with bit 1 of `+0x22`,
+    /// else 0. Returns 0x14 with no nodes, else 0xffff (the original's
+    /// `eax`). `frame` is the original's (aligned) `ebp`; the request
+    /// words `-0x100` (2 bytes) and `-0xec` are never written (junk read:
+    /// 0, brief 2026-10-24).
+    #[allow(clippy::too_many_lines)]
+    pub fn abmap_draw_node_shapes_pulse(h: &mut impl Host, frame: u32) -> u32 {
+        use ffx_bridge::x87::{add, ftol, load, mul};
+        let l = |o: u32| frame.wrapping_sub(o);
+        let g = abmap(h);
+        let at = |o: u32| g.wrapping_add(o);
+        let links = at(0xf828);
+        let phase: u32 = h.read(at(0x1169c));
+        let idx = ((phase << 11).wrapping_sub(0x3ff1).cast_signed() >> 4).cast_unsigned() & 0xfff;
+        let s = load(h.read(h.rebase(SINE_TABLE).wrapping_add(4 * idx)));
+        let pulse = add(
+            mul(add(s, konst(h, 0x00b9_2248)), konst(h, 0x00b5_83a8)),
+            konst(h, 0x00b4_c170),
+        );
+        let mut v = ftol(h, pulse);
+        let fade: u32 = h.read(at(0x116a0));
+        if fade.cast_signed() < 0x10 {
+            v = (v.wrapping_mul(fade).cast_signed() / 16).cast_unsigned();
+        }
+        let v = v & 0xff;
+        let z: u32 = h.read(h.rebase(0x00b7_b708));
+        h.write(l(0xf8), 0u32);
+        h.write(l(0xf4), 0u32);
+        let kind = u32::from(h.read::<u8>(at(0x115bc)));
+        let c: u32 = h.read(h.rebase(NODE_COLOURS).wrapping_add(20 * kind));
+        let part =
+            |c: u32, shift: u32| ((((c >> shift) & 0xff).wrapping_mul(v)) >> 7) & 0x01ff_ffff;
+        let packed = (((part(c, 24) << 8).wrapping_add(part(c, 16)) << 8).wrapping_add(part(c, 8))
+            << 8)
+            .wrapping_add(part(c, 0));
+        h.write(l(0x104), packed);
+        let (req, xform, node_m, base) = (l(0x100), l(0x88), l(0xc8), l(0x48));
+        h.write(l(0xf0), xform);
+        h.write(l(0xe4), base);
+        let vf0: [u32; 4] = h.read(h.rebase(VF0));
+        h.write(base, vf0);
+        h.write(base.wrapping_add(0x10), vf0);
+        h.write(base.wrapping_add(0x20), vf0);
+        let one = 1.0f32.to_bits();
+        h.write(
+            base.wrapping_add(0x30),
+            [vf0[0], vf0[1], ffx_bridge::x87::store(load(z)), one],
+        );
+        h.write(l(0xe8), 0u8);
+        h.write(l(0xfe), 0x14u16);
+        let count = i32::from(h.read::<i16>(at(2))).cast_unsigned();
+        if count == 0 {
+            return 0x14;
+        }
+        let mut left = count;
+        let mut node = at(0x808);
+        loop {
+            left = left.wrapping_sub(1);
+            let e = h.read::<u16>(node.wrapping_add(6));
+            if e != 0xffff {
+                h.call_sym(MAKE_NODE_MATRIX, Conv::Cdecl, &[node_m, node, one]);
+                let g = abmap(h);
+                h.call_sym(
+                    VU0_MUL_MATRIX,
+                    Conv::Cdecl,
+                    &[xform, g.wrapping_add(0x113e0), node_m],
+                );
+                let e = u32::from(h.read::<u16>(node.wrapping_add(6)));
+                let link = links.wrapping_add(48 * e);
+                let lit = h.read::<u8>(node.wrapping_add(0x22)) & 2 != 0;
+                let colour = if lit { packed } else { 0 };
+                let halved = (colour >> 1) & 0x7f7f_7f7f;
+                h.write(l(0xfc), halved);
+                let g = abmap(h);
+                let count_now = i32::from(h.read::<i16>(g.wrapping_add(2))).cast_unsigned();
+                let slot = left.wrapping_sub(count_now);
+                let key: u32 = h.read(g.wrapping_add(0x116a4));
+                let shape: u32 = h.read(link.wrapping_add(8));
+                h.call_sym(SHAPE_DRAW_EAMAP, Conv::Cdecl, &[shape, req, slot, key]);
+            }
+            node = node.wrapping_add(0x28);
+            if left == 0 {
+                return 0xffff;
+            }
+        }
+    }
+
+    pub const MAKE_LINK_MATRIX: u32 = 0x00a5_a360;
+    pub const DRAW_EIABM_SPHERE: u32 = 0x00a6_8140;
+    /// The node sphere colours (7 words, `0x00c8659c`).
+    pub const SPHERE_COLOURS: u32 = 0x00c8_659c;
+    /// Frame bytes `0x00a50b50` uses below its `ebp` (`sub esp, 0x1c8`).
+    pub const NODE_SPHERES_FRAME: u32 = 0x1c8;
+
+    /// `AbmapDrawNodeSpheresLit_00a50b50()` (draw job 2's tail): the seven
+    /// sphere colours dimmed by a pulse (`0x6c - ftol(sin(x) * a * b)`,
+    /// `x` from `+0x11698` and the first node's `+0x26`) into four words
+    /// each (packed, then the green, blue and alpha parts); then for every
+    /// node with a link (`u16 +6`) whose `+0x14` word is not 0x1000, each
+    /// of the 7 sphere slots the mask `+0x115c9 & node +0x21` has (bit
+    /// `k`) drawn (`op1_md_draw_eiabm_sphe([0x023057ec], &request, i, w)`
+    /// with `i = count - left - 1`, `w = -1 - k`) with the node matrix
+    /// (`AbmapMakeNodeMatrix(m, node, link +0x10)`), the slot's link
+    /// matrix (`AbmapMakeLinkMatrix(m, node, link +0x14 + 4k, s)`) and the
+    /// grid's (`FFXVu0MulMatrix`). No result (its caller, draw job 2,
+    /// reads none). `frame` is the
+    /// original's aligned `ebp`; the request words `-0x180`, `-0x17c` and
+    /// the byte `-0x1a5` are never written (junk read: 0, brief
+    /// 2026-10-24).
+    #[allow(clippy::too_many_lines)]
+    pub fn abmap_draw_node_spheres_lit(h: &mut impl Host, frame: u32) {
+        use ffx_bridge::x87::{ftol, load, mul};
+        let l = |o: u32| frame.wrapping_sub(o);
+        let g = abmap(h);
+        let count = i32::from(h.read::<i16>(g.wrapping_add(2))).cast_unsigned();
+        let nodes = g.wrapping_add(0x808);
+        let phase: u32 = h.read(g.wrapping_add(0x11698));
+        let first = u32::from(h.read::<u16>(nodes.wrapping_add(0x26)));
+        let idx = ((phase << 11).wrapping_add(first).cast_signed() >> 4).cast_unsigned() & 0xfff;
+        let s = load(h.read(h.rebase(SINE_TABLE).wrapping_add(4 * idx)));
+        let v = ftol(h, mul(mul(s, konst(h, 0x00b5_9870)), konst(h, 0x00b7_b718)));
+        let dim = 0x6cu32.wrapping_sub(v) & 0xff;
+        let recs = l(0x138);
+        for k in 0..7u32 {
+            let c: u32 = h.read(h.rebase(SPHERE_COLOURS).wrapping_add(4 * k));
+            let part = |shift: u32| ((((c >> shift) & 0xff).wrapping_mul(dim)) >> 7) & 0x01ff_ffff;
+            let (a, b, gg, r) = (part(24), part(16), part(8), part(0));
+            let packed = (((a << 8).wrapping_add(b) << 8).wrapping_add(gg) << 8).wrapping_add(r);
+            h.write(recs.wrapping_add(0x10 * k), [packed, gg, b, a]);
+        }
+        let (req, xform, node_m, base) = (l(0x1b0), l(0xc8), l(0x88), l(0x48));
+        let vf0: [u32; 4] = h.read(h.rebase(VF0));
+        let one = 1.0f32.to_bits();
+        h.write(l(0x190), xform);
+        h.write(l(0x16c), base);
+        h.write(l(0x184), node_m);
+        for o in [
+            0x194u32, 0x174, 0x178, 0x1a4, 0x1a0, 0x19c, 0x170, 0x188, 0x18c,
+        ] {
+            h.write(l(o), 0u32);
+        }
+        h.write(l(0x1a6), 0u8);
+        h.write(l(0x1ac), h.rebase(0x0174_0870));
+        h.write(base, vf0);
+        h.write(base.wrapping_add(0x10), vf0);
+        h.write(base.wrapping_add(0x20), vf0);
+        h.write(base.wrapping_add(0x30), [vf0[0], vf0[1], vf0[2], one]);
+        let mut left = count;
+        let mut node = nodes;
+        while left != 0 {
+            let e = h.read::<u16>(node.wrapping_add(6));
+            left = left.wrapping_sub(1);
+            if e != 0xffff {
+                let g = abmap(h);
+                let link = g.wrapping_add(0xf828 + 48 * u32::from(e));
+                if h.read::<u16>(link.wrapping_add(0x14)) != 0x1000 {
+                    let mut mask = h.read::<u8>(g.wrapping_add(0x115c9))
+                        & h.read::<u8>(node.wrapping_add(0x21));
+                    h.write(l(0x1a8), 0x8064u16);
+                    for k in 0..7u32 {
+                        if mask & 1 != 0 {
+                            let colour: u32 = h.read(recs.wrapping_add(0x10 * k));
+                            h.write(base.wrapping_add(0x38), one);
+                            h.write(l(0x198), colour);
+                            h.write(l(0x195), 0x80u8);
+                            h.write(req, 0x2cu32);
+                            let scale =
+                                ffx_bridge::x87::store(load(h.read(link.wrapping_add(0x10))));
+                            h.call_sym(MAKE_NODE_MATRIX, Conv::Cdecl, &[node_m, node, scale]);
+                            let kk = ffx_bridge::x87::store(load(h.read(h.rebase(0x00b7_b5d4))));
+                            let slot = link.wrapping_add(0x14 + 4 * k);
+                            h.call_sym(MAKE_LINK_MATRIX, Conv::Cdecl, &[node_m, node, slot, kk]);
+                            let g = abmap(h);
+                            h.call_sym(
+                                VU0_MUL_MATRIX,
+                                Conv::Cdecl,
+                                &[xform, g.wrapping_add(0x113e0), node_m],
+                            );
+                            let g = abmap(h);
+                            let count_now =
+                                i32::from(h.read::<i16>(g.wrapping_add(2))).cast_unsigned();
+                            let i = count_now.wrapping_sub(left).wrapping_sub(1);
+                            let sphere: u32 = h.read(h.rebase(0x0230_57ec));
+                            let which = (-1i32 - k.cast_signed()).cast_unsigned();
+                            h.call_sym(DRAW_EIABM_SPHERE, Conv::Cdecl, &[sphere, req, i, which]);
+                        }
+                        mask >>= 1;
+                    }
+                }
+            }
+            node = node.wrapping_add(0x28);
+        }
+    }
 }

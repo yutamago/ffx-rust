@@ -281,4 +281,18 @@ ported! {
     Yn_SceneStep_00922060 @ 0x0092_2060 => extern "C" fn yn_scene_step() {
         misc::yn_scene_step(&mut mem());
     }
+    /// The grid's pulsing node shapes (draw job 3's tail); its frame a
+    /// `StackFrame` (0x120 bytes).
+    AbmapDrawNodeShapesPulse_00a4ffd0 @ 0x00a4_ffd0 => extern "C" fn abmap_draw_node_shapes_pulse() -> u32 {
+        let mut f = StackFrame::<0x48>::new();
+        let frame = f.at().wrapping_add(misc::NODE_SHAPES_FRAME);
+        misc::abmap_draw_node_shapes_pulse(&mut mem(), frame)
+    }
+    /// The grid's lit node spheres (draw job 2's tail); its frame a
+    /// `StackFrame` (0x1d0 bytes).
+    AbmapDrawNodeSpheresLit_00a50b50 @ 0x00a5_0b50 => extern "C" fn abmap_draw_node_spheres_lit() {
+        let mut f = StackFrame::<0x74>::new();
+        let frame = f.at().wrapping_add(misc::NODE_SPHERES_FRAME);
+        misc::abmap_draw_node_spheres_lit(&mut mem(), frame);
+    }
 }
