@@ -477,6 +477,104 @@ ran 1,392 updates and 1,836 flips (46.5 s of game time) and used its
 budget up with no unported address. The test takes a budget stop with
 no unported address as a pass.
 
+## Speed
+
+The release build without Unicorn played replays at 1 to 3 frames a
+second on Windows (2026-11-12), with about 4 cores busy, where `FFX.exe`
+plays the same replay in about 2 minutes. On Linux the headless boot
+showed the same thing: 7.1 updates a second, 214 % CPU, 30 s of its 80 s
+in the kernel. The cause was the executor, not the ports (m5-perf1,
+2026-11-14). The fixes, in order of effect:
+
+- **The arena's mapped check took a lock.** Every game memory access a
+  port makes (`RawMem` → the router → `Arena::is_mapped`) locked the
+  region list's `Mutex`, which every game thread shares. That was 90 % of
+  the CPU: the check, `futex` and `lock_contended`. The check is now a page
+  bitmap (`Arena::pages`, one bit a page, set by `Arena::map`; regions
+  are whole pages and never unmapped), read without a lock.
+- **An `Arc` clone at every access.** `Exec::mem()` built an `ArenaMem`,
+  cloning the arena's `Arc`. Every thread incremented and decremented the
+  same reference count, a cache line they fought over: 12 % of the CPU
+  after the lock was gone. `Exec::mem()` now borrows the arena
+  (`ArenaRef`); `Exec::mem_owned()` is the old `ArenaMem`, for a holder
+  that outlives the borrow. `Shared::resolve_call` and `Shared::thunk`
+  read the arena directly too.
+- **The sync objects woke every waiter.** One condition variable covers
+  every event, semaphore, mutex and critical section (`src/sync.rs`).
+  Every `LeaveCriticalSection`, `ResetEvent` and `ReleaseMutex` woke every
+  blocked game thread, which then re-locked the one mutex and slept again.
+  That was a third of the CPU, in `futex` calls. Now a change wakes the
+  waiters only when some wait is on the object that changed: `waiting`
+  and `section_waiting` count them, and a reset wakes no one.
+- **The draw recording without a recording.** Each draw copied every
+  bound constant buffer into a `Cmd::Draw`, and each unmap copied and
+  compared the whole buffer for `UpdateBuffer` (the game's 12 MB vertex
+  ring, about 20 MB a frame). Only the recording (`capture.ffxgfx`) and
+  gate captures read them. Without either (`ffx-rust` without
+  `--gfx-out`), draws only count. Unmap hands the back end the bytes in
+  place (`Arena::slice`) instead of a copy.
+- **Dispatch.** Each call made up to three lookups in the 15,000-entry
+  `BTreeMap` and the `SipHash` maps. The table now has an index
+  (`AddrMap`, a one-multiply hasher for addresses), which the stub,
+  thunk and trap maps and `Stats::ports` also use, and `Exec::call` looks
+  a port's address up once. An import call no longer clones its binding
+  and name, and it takes the milestone lock only once a milestone has
+  been asked for.
+- **The harness's holds.** In lockstep, the main thread's boundary, the
+  flip's wait for it, the cloth order and a lockstep request polled with
+  1 ms sleeps. `FFX.exe` sets the Windows timer to 5 ms
+  (`timeBeginPeriod(5)`), so each poll slept 5 ms there. They now wait
+  on a condition variable that the flags' writers notify.
+
+Headless boot (`tests/no_unicorn.rs`, release, null device, this
+machine with other work running):
+
+| | to 1,000 flips | to 2,000 flips (the field) |
+|---|---|---|
+| before | 567 updates in 80 s: 7.1 updates/s, 171 s CPU | 1,184 updates in 448 s: 2.6 updates/s, 1,089 s CPU |
+| after | about 920 updates in 10.5–13 s: 73–88 updates/s, 18–21 s CPU | about 1,920 updates in 26–33 s: 57–74 updates/s, 49–64 s CPU |
+
+(Before, the test kept the draw recording, and the flips per update
+depend on speed, so compare updates per second.)
+
+The game runs 30 updates a second. Most of the main thread's time is
+now the ports' own work and its memory reads. The main thread is what
+the frame rate waits on: 27 of its 32 s were busy on the boot to 2,000
+flips, while the render thread used 19 s and each job thread about 3.5 s.
+None of them spins.
+
+Under Unicorn the watchdog now also ends a run whose threads stay in
+Rust past their budget (2 s of grace, then as without the emulator):
+`boot.rs`' run without the DLLs went on for 30 minutes past its minute
+once the ports reached that far.
+
+Two things are left. The software x87 (`ffx_bridge::x87`) is a few
+percent. A `WRITE_DISCARD` map of the 12 MB vertex ring still uploads
+the whole ring on Windows (about 20 MB a frame): the game maps it only
+with `DISCARD`, so the bytes it did not write are undefined and every
+byte has to go up.
+
+**Measuring.** The sampler is built in: `FFX_HOST_SAMPLE=<prefix>` on
+any run that calls `ffx_host::sample::start` (the no-Unicorn boot test
+does) writes two files. `<prefix>.entries.tsv` holds each thread's host
+entries every 1 ms of wall time. `<prefix>.pc.tsv` holds instruction
+addresses every 1 ms of CPU time (`SIGPROF`, Linux) and the word at
+`rsp` (a leaf function's caller). Each game thread also notes its CPU
+time as it ends. `FFX_HOST_SAMPLE_MAIN=1` (or
+`FFX_HOST_SAMPLE_THREAD=<id>`) keeps one thread's samples.
+`tools/host-profile.py <prefix>.pc.tsv` names the addresses with `nm`;
+add `--callers memcpy` to see who calls a leaf.
+
+```bash
+cd crates/ffx-host
+FFX_GAME_DIR=~/steam-games/FFX-X2-HD FFX_NOU_PRESENTS=2000 FFX_NOU_BUDGET=300 FFX_HOST_SAMPLE=/tmp/s \
+  cargo test --release --no-default-features --features swf --test no_unicorn -- --exact boots_until_the_first_unported_address --nocapture
+python3 -I ../../tools/host-profile.py /tmp/s.pc.tsv --top 40
+```
+
+The test prints `speed: N updates, M flips in S s` and runs without the
+recording, as `ffx-rust.exe` does (`FFX_NOU_RECORD=1` keeps it).
+
 ## x87
 
 Unicorn (QEMU) computes `fsin`, `fcos`, `fsincos`, `fptan`, `fpatan`,

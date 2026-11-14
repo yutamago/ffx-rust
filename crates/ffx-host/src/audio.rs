@@ -107,7 +107,7 @@ impl GameFiles {
             return None;
         }
         let out = scratch + u32::try_from(name.len()).ok()?.next_multiple_of(4);
-        let mut mem = e.mem();
+        let mut mem = e.mem_owned();
         mem.write_bytes(scratch, name.as_bytes());
         mem.write_bytes(out, &[0u8; 12]);
         let r = e.call_stdcall(self.open, &[scratch, 0, out, out + 4, out + 8]);

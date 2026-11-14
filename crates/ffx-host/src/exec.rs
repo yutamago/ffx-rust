@@ -151,8 +151,9 @@ impl Profile {
 /// What the executor saw on the way, for the report.
 #[derive(Debug, Default, Clone)]
 pub struct Stats {
-    /// Port entries by address (from Unicorn or from Rust).
-    pub ports: BTreeMap<u32, u64>,
+    /// Port entries by address (from Unicorn or from Rust; counted at
+    /// every call, so a fast map: sort for a listing).
+    pub ports: crate::table::AddrMap<u64>,
     /// Import calls by name.
     pub imports: BTreeMap<String, u64>,
     /// Unstubbed imports, in the order first called.
@@ -304,7 +305,7 @@ pub struct Shared {
     table: Table,
     imports: Imports,
     /// Import stub address → index into `imports`' bound list.
-    stubs: HashMap<u32, usize>,
+    stubs: crate::table::AddrMap<usize>,
     /// Every import of `FFX.exe` and the DLLs: `DLL!name` (`(from X)` for a
     /// DLL's), and where it went.
     pub routes: Vec<(String, Route)>,
@@ -320,6 +321,9 @@ pub struct Shared {
     pub cmdline: u32,
     stop: Mutex<Option<Stop>>,
     stop_at: RwLock<BTreeSet<String>>,
+    /// Some milestone was asked for ([`Exec::stop_at`]): imports look
+    /// them up only then.
+    any_stop_at: AtomicBool,
     deadline: Mutex<Option<Instant>>,
     lenient: AtomicBool,
     cover: AtomicBool,
@@ -348,7 +352,7 @@ pub struct Shared {
     /// Possible ones in modules of unknown builds (a code hook each).
     x87_watch: Vec<(u32, Op)>,
     /// Traps placed at run time ([`Shared::add_trap`]).
-    traps: RwLock<HashMap<u32, Trap>>,
+    traps: RwLock<crate::table::AddrMap<Trap>>,
     /// The D3D11 device and DXGI (`crate::gfx`), once created.
     pub gfx: crate::gfx::Slot,
     /// Trampolines to the originals that ports wrap: address → trampoline
@@ -359,7 +363,7 @@ pub struct Shared {
     /// and 492 more): thunk → what its slot holds (an import's stub or a
     /// DLL export). Patched to `int3`; a call or jump to one goes straight
     /// to the import ([`Shared::thunk`]).
-    thunks: HashMap<u32, u32>,
+    thunks: crate::table::AddrMap<u32>,
     /// `FFX.exe`'s IAT slots, for the thunks [`Shared::thunk`] finds when
     /// a port calls one the scan left alone.
     iat: HashSet<u32>,
@@ -454,7 +458,7 @@ impl Shared {
             dlls,
             table,
             imports: Imports::new(),
-            stubs: HashMap::new(),
+            stubs: crate::table::AddrMap::default(),
             routes: Vec::new(),
             heap: Mutex::new(heap),
             files: Mutex::new(files),
@@ -463,6 +467,7 @@ impl Shared {
             cmdline: 0,
             stop: Mutex::new(None),
             stop_at: RwLock::new(BTreeSet::new()),
+            any_stop_at: AtomicBool::new(false),
             deadline: Mutex::new(None),
             lenient: AtomicBool::new(false),
             cover: AtomicBool::new(false),
@@ -481,11 +486,11 @@ impl Shared {
             running: AtomicU32::new(0),
             x87: Arc::new(HashMap::new()),
             x87_watch: Vec::new(),
-            traps: RwLock::new(HashMap::new()),
+            traps: RwLock::new(crate::table::AddrMap::default()),
             gfx: crate::gfx::Slot::default(),
             #[cfg(feature = "dev-unicorn")]
             originals: HashMap::new(),
-            thunks: HashMap::new(),
+            thunks: crate::table::AddrMap::default(),
             iat: HashSet::new(),
             x87_imports: HashMap::new(),
             crt_data,
@@ -605,14 +610,14 @@ impl Shared {
         if !self.image.is_code(addr) {
             return None;
         }
-        let mem = ArenaMem {
-            arena: Arc::clone(&self.arena),
-        };
         let mut b = [0u8; 6];
-        ffx_bridge::Mem::read_bytes(&mem, addr, &mut b);
+        self.arena.read_bytes(addr, &mut b);
         let slot = u32::from_le_bytes([b[2], b[3], b[4], b[5]]);
-        (b[..2] == [0xff, 0x25] && self.iat.contains(&slot))
-            .then(|| ffx_bridge::Mem::read(&mem, slot))
+        (b[..2] == [0xff, 0x25] && self.iat.contains(&slot)).then(|| {
+            let mut w = [0u8; 4];
+            self.arena.read_bytes(slot, &mut w);
+            u32::from_le_bytes(w)
+        })
     }
 
     /// Where a call to `addr` from Rust goes: through import thunks
@@ -623,9 +628,8 @@ impl Shared {
     /// m5-wp5e). At most 8 steps.
     #[must_use]
     pub fn resolve_call(&self, addr: u32) -> u32 {
-        let mem = ArenaMem {
-            arena: Arc::clone(&self.arena),
-        };
+        // (no `ArenaMem`: its `Arc` clone on every call was a cache line
+        // all the game threads fought over; m5-perf1)
         let mut at = addr;
         for _ in 0..8 {
             if self.table.get(at).is_some() {
@@ -639,7 +643,7 @@ impl Shared {
                 break;
             }
             let mut b = [0u8; 5];
-            ffx_bridge::Mem::read_bytes(&mem, at, &mut b);
+            self.arena.read_bytes(at, &mut b);
             if b[0] != 0xe9 {
                 break;
             }
@@ -1005,9 +1009,14 @@ impl Shared {
 }
 
 /// Stops every emulator (at its next block) when the run ends or runs out
-/// of time, so the threads see it; they resume or unwind themselves.
+/// of time, so the threads see it; they resume or unwind themselves. A
+/// run whose threads stay in Rust (ports calling ports, no emulator to
+/// stop) is ended as without the emulator once it is [`GRACE`] overdue:
+/// the boot test without the DLLs ran on for 30 minutes past its minute
+/// once the ports reached that far (m5-perf1).
 #[cfg(feature = "dev-unicorn")]
 fn watchdog(shared: &std::sync::Weak<Shared>) {
+    let mut late: Option<Instant> = None;
     loop {
         std::thread::sleep(WATCH);
         let Some(s) = shared.upgrade() else { return };
@@ -1023,7 +1032,36 @@ fn watchdog(shared: &std::sync::Weak<Shared>) {
                 }
             }
         }
+        if s.overdue() && !s.sync.stopping() {
+            let since = *late.get_or_insert_with(Instant::now);
+            if since.elapsed() >= GRACE {
+                budget_stop(&s);
+            }
+        } else {
+            late = None;
+        }
     }
+}
+
+/// How long past its budget a run with the emulator may take to see it
+/// itself (at the emulator's next block, with the exact `eip`).
+#[cfg(feature = "dev-unicorn")]
+const GRACE: Duration = Duration::from_secs(2);
+
+/// Ends the run for its budget at the main thread's innermost host entry
+/// (every thread sees it at its next call, [`Exec::halted`]).
+fn budget_stop(s: &Shared) {
+    let at = s
+        .spots
+        .lock()
+        .ok()
+        .and_then(|l| {
+            l.iter()
+                .find(|p| p.id == MAIN_THREAD)
+                .and_then(|p| p.frames().0.last().map(|f| f.what))
+        })
+        .unwrap_or(0);
+    s.stop_all(Stop::Budget(at));
 }
 
 /// Ends the run when it runs out of time (without the emulator nothing
@@ -1036,17 +1074,7 @@ fn watchdog(shared: &std::sync::Weak<Shared>) {
         std::thread::sleep(WATCH);
         let Some(s) = shared.upgrade() else { return };
         if s.overdue() && !s.sync.stopping() {
-            let at = s
-                .spots
-                .lock()
-                .ok()
-                .and_then(|l| {
-                    l.iter()
-                        .find(|p| p.id == MAIN_THREAD)
-                        .and_then(|p| p.frames().0.last().map(|f| f.what))
-                })
-                .unwrap_or(0);
-            s.stop_all(Stop::Budget(at));
+            budget_stop(&s);
         }
     }
 }
@@ -1303,7 +1331,14 @@ impl Exec {
 
     /// The arena as [`ffx_bridge::Mem`].
     #[must_use]
-    pub fn mem(&self) -> ArenaMem {
+    pub fn mem(&self) -> crate::arena::ArenaRef<'_> {
+        crate::arena::ArenaRef(&self.shared.arena)
+    }
+
+    /// The game's memory as an owned [`ArenaMem`] (an `Arc` clone: for a
+    /// holder that outlives a borrow of the executor).
+    #[must_use]
+    pub fn mem_owned(&self) -> ArenaMem {
         ArenaMem {
             arena: Arc::clone(&self.shared.arena),
         }
@@ -1453,6 +1488,7 @@ impl Exec {
     /// Stops the run when the import `name` (`USER32.dll!CreateWindowExW`)
     /// is first called: a milestone.
     pub fn stop_at(&mut self, name: &str) {
+        self.shared.any_stop_at.store(true, Ordering::Release);
         if let Ok(mut s) = self.shared.stop_at.write() {
             s.insert(name.to_string());
         }
@@ -1576,9 +1612,16 @@ impl Exec {
         if self.halted() {
             return Err(Error::Stopped);
         }
-        let addr = self.shared.resolve_call(addr);
+        // a port's address first: one lookup for the common case (m5-perf1)
+        let (addr, port) = match self.shared.table.get(addr) {
+            Some(&e) => (addr, Some(e)),
+            None => {
+                let to = self.shared.resolve_call(addr);
+                (to, self.shared.table.get(to).copied())
+            }
+        };
         let esp = self.reg(RegisterX86::ESP).unwrap_or(0);
-        let r = if let Some(entry) = self.shared.table.get(addr).copied() {
+        let r = if let Some(entry) = port {
             *self.stats.ports.entry(addr).or_default() += 1;
             self.spot.enter(spot::Kind::Port, addr, esp);
             let ret = if args.slots == 0 && matches!(entry.port, Port::Routed(_)) {
@@ -2406,7 +2449,7 @@ impl Exec {
         // call eax; movsd [cell], xmm0; ret
         let at = self.sentinel + X87_STUBS + X87_STUB * self.x87_depth;
         let cell = at + 0x40;
-        let mut mem = self.mem();
+        let mut mem = self.mem_owned();
         mem.write(cell, x);
         mem.write(cell + 8, y);
         let mut code = vec![0xf2, 0x0f, 0x10, 0x05];
@@ -2462,7 +2505,7 @@ impl Exec {
         // movsd xmm0, [cell]; mov eax, addr; call eax; movsd [cell], xmm0; ret
         let at = self.sentinel + X87_STUBS + X87_STUB * self.x87_depth;
         let cell = at + 0x40;
-        let mut mem = self.mem();
+        let mut mem = self.mem_owned();
         mem.write(cell, x);
         let mut code = vec![0xf2, 0x0f, 0x10, 0x05];
         code.extend_from_slice(&cell.to_le_bytes());
@@ -2561,20 +2604,30 @@ impl Exec {
     }
 
     fn run_import(&mut self, i: usize, args: &Args) -> Result<Ret> {
-        let Some(b) = self.shared.imports.bound(i).cloned() else {
+        // (no clone of the binding and no new name string per call: the
+        // C runtime's memcpy alone is called millions of times; m5-perf1)
+        let Some(b) = self.shared.imports.bound(i) else {
             return Err(Error::Interrupt(3, 0));
         };
-        *self.stats.imports.entry(b.name.clone()).or_default() += 1;
-        let stop = self
-            .shared
-            .stop_at
-            .read()
-            .is_ok_and(|s| s.contains(&b.name));
-        if stop {
-            self.end(Stop::Milestone(b.name.clone()));
+        let run = b.run;
+        match self.stats.imports.get_mut(b.name.as_str()) {
+            Some(n) => *n += 1,
+            None => {
+                self.stats.imports.insert(b.name.clone(), 1);
+            }
+        }
+        if self.shared.any_stop_at.load(Ordering::Acquire)
+            && self
+                .shared
+                .stop_at
+                .read()
+                .is_ok_and(|s| s.contains(&b.name))
+        {
+            let name = b.name.clone();
+            self.end(Stop::Milestone(name));
             return Err(Error::Stopped);
         }
-        match b.run {
+        match run {
             Some(f) => {
                 let ret = f(self, args);
                 if self.halted() {
@@ -2583,6 +2636,9 @@ impl Exec {
                 Ok(ret)
             }
             None => {
+                let Some(b) = self.shared.imports.bound(i).cloned() else {
+                    return Err(Error::Interrupt(3, 0));
+                };
                 let shown = match &b.from {
                     Some(d) => format!("{} (from {d})", b.name),
                     None => b.name.clone(),
@@ -2726,7 +2782,7 @@ impl Exec {
     fn thread_block(&mut self, at: u32) -> Result<()> {
         let teb = at + PAGE;
         let peb = at + 2 * PAGE;
-        let mut mem = self.mem();
+        let mut mem = self.mem_owned();
         let w = |m: &mut ArenaMem, a: u32, v: u32| ffx_bridge::Mem::write(m, a, v);
         w(&mut mem, teb, u32::MAX);
         w(&mut mem, teb + 4, self.stack.1);
@@ -3029,6 +3085,7 @@ fn start_thread(shared: &Arc<Shared>, handle: u32) {
 }
 
 fn thread_main(shared: &Arc<Shared>, handle: u32, id: u32, entry: u32, param: u32) {
+    crate::sample::thread_started(id);
     let mut ex = match Exec::on_thread(Arc::clone(shared), id, THREAD_STACK_SIZE) {
         Ok(e) => e,
         Err(e) => {
@@ -3046,6 +3103,13 @@ fn thread_main(shared: &Arc<Shared>, handle: u32, id: u32, entry: u32, param: u3
         (Err(_), Some(s)) => (0, s.to_string()),
         (Err(e), None) => (0, e.to_string()),
     };
+    if let Some(t) = crate::sample::thread_cpu() {
+        let name = shared.port_name(entry).unwrap_or("?");
+        eprintln!(
+            "sample: thread {id:#x} ({name}) used {:.2} s of CPU",
+            t.as_secs_f64()
+        );
+    }
     ex.stats.instructions = ex.instructions();
     ex.stats.x87 = ex.x87_steps();
     ex.stats.exceptions = ex.exceptions_raised();
@@ -3190,6 +3254,9 @@ impl ffx_bridge::route::Router for Exec {
         float: ffx_bridge::route::Float,
     ) -> ffx_bridge::route::Raw {
         use ffx_bridge::route::{Float, Raw};
+        // (Exec::call resolves thunks itself; the emulator's check below
+        // needs the target)
+        #[cfg(feature = "dev-unicorn")]
         let addr = self.shared.resolve_call(addr);
         #[cfg(feature = "dev-unicorn")]
         let emulated = self.shared.table.get(addr).is_none()
@@ -3241,11 +3308,11 @@ impl ffx_bridge::route::Router for Exec {
     }
 
     fn read_bytes(&mut self, addr: u32, out: &mut [u8]) {
-        ffx_bridge::Mem::read_bytes(&self.mem(), addr, out);
+        self.shared.arena.read_bytes(addr, out);
     }
 
     fn write_bytes(&mut self, addr: u32, data: &[u8]) {
-        ffx_bridge::Mem::write_bytes(&mut self.mem(), addr, data);
+        self.shared.arena.write_bytes(addr, data);
     }
 
     fn scratch(&mut self, slot: ffx_bridge::route::Scratch) -> u32 {
@@ -3316,7 +3383,7 @@ impl Exec {
         let cells = at + 0x40;
         let out = cells + 0x38;
         let mut code = Vec::new();
-        let mut mem = self.mem();
+        let mut mem = self.mem_owned();
         for (i, &v) in (0u32..).zip(st) {
             mem.write(cells + 8 * i, v);
             code.extend_from_slice(&[0xdd, 0x05]);

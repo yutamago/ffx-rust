@@ -5,7 +5,8 @@
 //! Unicorn otherwise. Later this is the modding seam: a mod replaces an
 //! entry.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
+use std::hash::{BuildHasherDefault, Hasher};
 
 use crate::exec::Exec;
 
@@ -37,10 +38,39 @@ pub struct Entry {
     pub port: Port,
 }
 
+/// A hasher for game addresses (`u32` keys): one multiply, for the maps
+/// every call looks up (m5-perf1; `std`'s `SipHash` and the 15,000-entry
+/// `BTreeMap` were a measurable part of each call's dispatch).
+#[derive(Debug, Default, Clone, Copy)]
+pub struct AddrHasher(u64);
+
+impl Hasher for AddrHasher {
+    fn finish(&self) -> u64 {
+        self.0
+    }
+    fn write(&mut self, bytes: &[u8]) {
+        for &b in bytes {
+            self.0 = (self.0.rotate_left(8) ^ u64::from(b)).wrapping_mul(0x9e37_79b9_7f4a_7c15);
+        }
+    }
+    fn write_u32(&mut self, n: u32) {
+        // the high bits carry the mix: hashbrown takes its tag from them
+        self.0 = (self.0 ^ u64::from(n)).wrapping_mul(0x9e37_79b9_7f4a_7c15);
+    }
+    fn write_usize(&mut self, n: usize) {
+        self.0 = (self.0 ^ n as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15);
+    }
+}
+
+/// A map keyed by game address with [`AddrHasher`].
+pub type AddrMap<V> = HashMap<u32, V, BuildHasherDefault<AddrHasher>>;
+
 /// Every port by original address.
 #[derive(Debug, Default, Clone)]
 pub struct Table {
     entries: BTreeMap<u32, Entry>,
+    /// The same entries for [`Table::get`] (every call looks one up).
+    index: AddrMap<Entry>,
     /// Ports that wrap their original: address → the original's first
     /// instructions (whole ones, position-independent), which the executor
     /// copies into a trampoline ([`crate::exec::Exec::call_original`]).
@@ -58,6 +88,7 @@ impl Table {
 
     /// Registers `entry` at `addr`, replacing (and returning) an earlier one.
     pub fn register(&mut self, addr: u32, entry: Entry) -> Option<Entry> {
+        self.index.insert(addr, entry);
         self.entries.insert(addr, entry)
     }
 
@@ -69,6 +100,7 @@ impl Table {
     /// its original.
     pub fn wrap(&mut self, addr: u32, entry: Entry, prologue: &'static [u8]) -> Option<Entry> {
         self.wraps.insert(addr, prologue);
+        self.index.insert(addr, entry);
         let replaced = self.entries.insert(addr, entry);
         if let Some(e) = replaced {
             self.wrapped_ports.insert(addr, e);
@@ -90,7 +122,7 @@ impl Table {
     /// The port at `addr`.
     #[must_use]
     pub fn get(&self, addr: u32) -> Option<&Entry> {
-        self.entries.get(&addr)
+        self.index.get(&addr)
     }
 
     /// Every address with a port.

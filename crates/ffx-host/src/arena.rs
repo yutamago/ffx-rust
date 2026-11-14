@@ -17,6 +17,10 @@ use crate::{Error, Result};
 
 /// One page.
 pub const PAGE: u32 = 0x1000;
+/// `log2(PAGE)`.
+const PAGE_SHIFT: u32 = 12;
+/// Words of [`Arena`]'s page bitmap (4 GB of pages, 64 a word).
+const PAGE_WORDS: usize = (1 << (32 - PAGE_SHIFT)) / 64;
 
 /// A mapped range of the arena.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -41,6 +45,11 @@ impl Region {
 pub struct Arena {
     base: *mut u8,
     regions: Mutex<Vec<Region>>,
+    /// One bit per page, set once the page is mapped (regions are whole
+    /// pages and never unmapped): [`Arena::is_mapped`] without the lock,
+    /// which every game memory access checks (m5-perf1: the lock was
+    /// shared by every game thread's every read and write).
+    pages: Box<[AtomicU64]>,
     /// Bumped by every [`Arena::map`]: each thread's emulator maps the
     /// regions it hasn't seen when this moved (docs/host.md, "Threads").
     generation: AtomicU64,
@@ -58,7 +67,7 @@ impl std::fmt::Debug for Arena {
             .field("base", &self.base)
             .field("regions", &self.regions())
             .field("generation", &self.generation())
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
@@ -71,6 +80,7 @@ impl Arena {
         Ok(Self {
             base: sys::reserve()?,
             regions: Mutex::new(Vec::new()),
+            pages: (0..PAGE_WORDS).map(|_| AtomicU64::new(0)).collect(),
             generation: AtomicU64::new(0),
         })
     }
@@ -124,6 +134,10 @@ impl Arena {
             return Err(Error::Map(start, size, format!("overlaps {}", r.name)));
         }
         sys::commit(self.base, start, size)?;
+        let last = u32::try_from((end - 1) >> PAGE_SHIFT).unwrap_or(u32::MAX);
+        for page in start / PAGE..=last {
+            self.pages[(page / 64) as usize].fetch_or(1 << (page % 64), Ordering::Release);
+        }
         regions.push(Region {
             start,
             size,
@@ -168,20 +182,21 @@ impl Arena {
 
     /// Whether `addr..addr + len` lies in mapped regions.
     #[must_use]
+    #[inline]
     pub fn is_mapped(&self, addr: u32, len: usize) -> bool {
-        let Ok(regions) = self.regions.lock() else {
-            return false;
-        };
-        let mut at = u64::from(addr);
-        let end = at + len as u64;
-        while at < end {
-            let i = regions.partition_point(|r| r.end() <= at);
-            match regions.get(i) {
-                Some(r) if u64::from(r.start) <= at => at = r.end(),
-                _ => return false,
-            }
+        if len == 0 {
+            return true;
         }
-        true
+        let last = u64::from(addr) + len as u64 - 1;
+        if last >= 1 << 32 {
+            return false;
+        }
+        let first = addr >> PAGE_SHIFT;
+        #[allow(clippy::cast_possible_truncation)] // below 4 GB: checked
+        let last = (last >> PAGE_SHIFT) as u32;
+        (first..=last).all(|page| {
+            self.pages[(page / 64) as usize].load(Ordering::Acquire) & (1 << (page % 64)) != 0
+        })
     }
 
     /// Copies `data` into the arena at `addr` (no mapping check: the
@@ -209,27 +224,92 @@ pub struct ArenaMem {
     pub arena: std::sync::Arc<Arena>,
 }
 
-impl ffx_bridge::Mem for ArenaMem {
-    fn read_bytes(&self, addr: u32, out: &mut [u8]) {
-        if self.arena.is_mapped(addr, out.len()) {
-            // SAFETY: inside mapped regions.
+impl Arena {
+    /// Reads game memory at `addr` ([`ArenaMem`]'s read, for callers that
+    /// hold the arena: no `Arc` to clone on the hot path).
+    #[inline]
+    pub fn read_bytes(&self, addr: u32, out: &mut [u8]) {
+        if self.is_mapped(addr, out.len()) {
+            let src = self.ptr(addr);
+            // SAFETY: inside mapped regions; `[u8; N]` has alignment 1. The
+            // word sizes as single loads (no `memcpy` call for the ports'
+            // scalar reads; m5-perf1).
             unsafe {
-                std::ptr::copy_nonoverlapping(self.arena.ptr(addr), out.as_mut_ptr(), out.len());
+                match out.len() {
+                    1 => out[0] = src.read(),
+                    2 => out.copy_from_slice(&src.cast::<[u8; 2]>().read()),
+                    4 => out.copy_from_slice(&src.cast::<[u8; 4]>().read()),
+                    8 => out.copy_from_slice(&src.cast::<[u8; 8]>().read()),
+                    n => std::ptr::copy_nonoverlapping(src, out.as_mut_ptr(), n),
+                }
             }
         } else {
             crate::log::bad_access(addr, out.len(), false);
             out.fill(0);
         }
     }
-    fn write_bytes(&mut self, addr: u32, data: &[u8]) {
-        if self.arena.is_mapped(addr, data.len()) {
-            // SAFETY: inside mapped regions.
+
+    /// The game memory at `addr..addr + len` in place, when mapped (for a
+    /// reader that hands it on at once, as the D3D11 layer's unmap: no
+    /// copy). The game's threads may write it meanwhile, as they may
+    /// write what [`Arena::read_bytes`] copies.
+    #[must_use]
+    pub fn slice(&self, addr: u32, len: u32) -> Option<&[u8]> {
+        // SAFETY: inside mapped regions, which stay mapped while the arena
+        // lives.
+        self.is_mapped(addr, len as usize)
+            .then(|| unsafe { std::slice::from_raw_parts(self.ptr(addr), len as usize) })
+    }
+
+    /// Writes game memory at `addr` ([`ArenaMem`]'s write).
+    #[inline]
+    pub fn write_bytes(&self, addr: u32, data: &[u8]) {
+        if self.is_mapped(addr, data.len()) {
+            let dst = self.ptr(addr);
+            // SAFETY: inside mapped regions; alignment 1, as above.
             unsafe {
-                std::ptr::copy_nonoverlapping(data.as_ptr(), self.arena.ptr(addr), data.len());
+                match data.len() {
+                    1 => dst.write(data[0]),
+                    2 => dst.cast::<[u8; 2]>().write([data[0], data[1]]),
+                    4 => dst
+                        .cast::<[u8; 4]>()
+                        .write([data[0], data[1], data[2], data[3]]),
+                    8 => dst
+                        .cast::<[u8; 8]>()
+                        .write(data.try_into().unwrap_or([0; 8])),
+                    n => std::ptr::copy_nonoverlapping(data.as_ptr(), dst, n),
+                }
             }
         } else {
             crate::log::bad_access(addr, data.len(), true);
         }
+    }
+}
+
+/// Game memory borrowed from the arena ([`crate::exec::Exec::mem`]): an
+/// [`ArenaMem`] without the `Arc`, whose clone at every access was a
+/// cache line all the game threads fought over (m5-perf1).
+#[derive(Debug, Clone, Copy)]
+pub struct ArenaRef<'a>(pub &'a Arena);
+
+impl ffx_bridge::Mem for ArenaRef<'_> {
+    fn read_bytes(&self, addr: u32, out: &mut [u8]) {
+        self.0.read_bytes(addr, out);
+    }
+    fn write_bytes(&mut self, addr: u32, data: &[u8]) {
+        self.0.write_bytes(addr, data);
+    }
+    fn image_base(&self) -> u32 {
+        ffx_bridge::IMAGE_BASE
+    }
+}
+
+impl ffx_bridge::Mem for ArenaMem {
+    fn read_bytes(&self, addr: u32, out: &mut [u8]) {
+        self.arena.read_bytes(addr, out);
+    }
+    fn write_bytes(&mut self, addr: u32, data: &[u8]) {
+        self.arena.write_bytes(addr, data);
     }
     fn image_base(&self) -> u32 {
         ffx_bridge::IMAGE_BASE
@@ -336,5 +416,32 @@ mod sys {
         unsafe {
             VirtualFree(base.cast(), 0, MEM_RELEASE);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mapped_pages_are_seen_without_the_lock() {
+        let a = Arena::new().unwrap();
+        a.map(0x0040_0000, 0x2000, "a").unwrap();
+        a.map(0x0040_2000, 0x1000, "b").unwrap();
+        a.map(0xffff_f000, 0x1000, "top").unwrap();
+        assert!(a.is_mapped(0x0040_0000, 0x3000));
+        assert!(a.is_mapped(0x0040_1ffe, 4), "across two regions");
+        assert!(a.is_mapped(0x0040_2ffc, 4));
+        assert!(!a.is_mapped(0x0040_2ffe, 4), "past the end");
+        assert!(!a.is_mapped(0x003f_fffe, 4), "before the start");
+        assert!(a.is_mapped(0x0050_0000, 0), "nothing to read");
+        assert!(a.is_mapped(0xffff_fffc, 4), "the last word");
+        assert!(!a.is_mapped(0xffff_fffe, 4), "past 4 GB");
+        let mut w = [0u8; 4];
+        a.write_bytes(0x0040_1ffe, &[1, 2, 3, 4]);
+        a.read_bytes(0x0040_1ffe, &mut w);
+        assert_eq!(w, [1, 2, 3, 4]);
+        a.read_bytes(0x0040_2ffe, &mut w);
+        assert_eq!(w, [0; 4], "an unmapped read is zeros");
     }
 }

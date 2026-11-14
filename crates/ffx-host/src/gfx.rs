@@ -1192,6 +1192,16 @@ impl Gfx {
 
     fn draw(&mut self, e: &Exec, kind: ffx_gfx::DrawKind, p: [u32; 5]) {
         use ffx_gfx::DrawKind as K;
+        // the draw's record (its constant buffers' bytes, its bindings)
+        // only for the recording or a gate capture (m5-perf1: copying every
+        // bound constant buffer at every draw was a tenth of the headless
+        // boot's CPU); the frame's draw count goes on
+        if self.config.no_record && self.gate.is_none() {
+            if let Some(s) = self.frame_sizes.last_mut() {
+                s.0 += 1;
+            }
+            return;
+        }
         let (count, instances, start, base, first) = match kind {
             K::Indexed => (p[0], 1, p[1], p[2], 0),
             K::Plain => (p[0], 1, p[1], 0, 0),
@@ -1258,6 +1268,13 @@ impl Gfx {
     /// The stream's `UpdateBuffer` for a non-constant buffer whose
     /// contents changed: the changed span.
     fn buffer_changed(&mut self, e: &Exec, id: u32) {
+        // only the recording reads `UpdateBuffer` (gate captures skip it):
+        // without one, no copy and compare of the whole buffer at every
+        // unmap (m5-perf1: 11 % of the headless boot's CPU, and most of
+        // its memcpy and memset)
+        if self.config.no_record {
+            return;
+        }
         let Some(r) = self.resources.get_mut(&id) else {
             return;
         };
@@ -1329,14 +1346,27 @@ impl Gfx {
         let Some(&(off, row, slice, size)) = r.subs.get(sub as usize) else {
             return;
         };
-        let data = bytes(&e.mem(), r.copy + off, size);
+        // the bytes where they are (m5-perf1: a copy of the whole
+        // subresource at every unmap was most of the layer's time)
+        let arena = Arc::clone(e.arena());
+        let owned;
+        let data = match (r.copy != 0)
+            .then(|| arena.slice(r.copy + off, size))
+            .flatten()
+        {
+            Some(d) => d,
+            None => {
+                owned = bytes(&e.mem(), r.copy + off, size);
+                &owned[..]
+            }
+        };
         if r.dims == 2
             && row != 0
             && let Some(g) = self.gate.as_mut()
         {
-            g.texture_rows(id, sub, 0, 0, &data, row, row, size / row);
+            g.texture_rows(id, sub, 0, 0, data, row, row, size / row);
         }
-        self.backend.op(&Op::Unmapped(id, sub, row, slice, &data));
+        self.backend.op(&Op::Unmapped(id, sub, row, slice, data));
         self.buffer_changed(e, id);
     }
 

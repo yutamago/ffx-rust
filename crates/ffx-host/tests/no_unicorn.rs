@@ -144,6 +144,18 @@ fn env_or(name: &str, default: u64) -> u64 {
         .unwrap_or(default)
 }
 
+/// The speed line (m5-perf1): updates and flips per host second.
+fn speed(exec: &Exec, wall: Duration) {
+    let updates = exec.shared().clock.frame();
+    let flips = exec.shared().clock.flips();
+    let s = wall.as_secs_f64();
+    eprintln!(
+        "speed: {updates} updates, {flips} flips in {s:.1} s: {:.2} updates/s, {:.2} flips/s",
+        f64::from(updates) / s,
+        f64::from(flips) / s
+    );
+}
+
 #[test]
 fn boots_until_the_first_unported_address() {
     let Some(exe) = exe() else { return };
@@ -153,14 +165,24 @@ fn boots_until_the_first_unported_address() {
         gfx: ffx_host::gfx::Config {
             backend: ffx_host::gfx::Choice::Null,
             stop_after_presents: Some(presents),
+            // as ffx-rust.exe without --gfx-out (the speed line measures
+            // the release's work); FFX_NOU_RECORD=1 keeps the recording
+            no_record: !std::env::var("FFX_NOU_RECORD").is_ok_and(|v| v == "1"),
             ..ffx_host::gfx::Config::default()
         },
         ..ffx_host::Options::default()
     };
     let mut exec = ffx_host::boot_opts(&exe, ffx_host::ports::table(), &opts).unwrap();
     exec.set_budget(Duration::from_secs(env_or("FFX_NOU_BUDGET", 120)));
+    let sampler = ffx_host::sample::start(exec.shared());
+    let started = std::time::Instant::now();
     let stop = exec.run_entry().unwrap();
+    let wall = started.elapsed();
     exec.join_threads(Duration::from_secs(5));
+    if let Some(s) = sampler {
+        s.finish(exec.shared());
+    }
+    speed(&exec, wall);
     let syms = syms();
     let report = ffx_host::report::text(&exec, &syms, &format!("{stop}"));
     eprintln!("{report}");
