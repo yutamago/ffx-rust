@@ -916,6 +916,17 @@ impl Shared {
             self.sync.thread_done(handle, code);
             return (true, None);
         }
+        // where it stands, in the log at once: a section it holds is never
+        // left (docs/host.md, "Hangs")
+        let at = self
+            .spots
+            .lock()
+            .ok()
+            .and_then(|l| l.iter().find(|p| p.id == id).map(|p| self.spot_chain(p)))
+            .unwrap_or_else(|| "an unknown place".into());
+        let line = format!("thread {me:#x} terminates thread {id:#x} ({code:#x}) in {at}");
+        eprintln!("ffx-host: {line}");
+        crate::log::note(&line);
         // its waits end now; its emulator, if it spins, at the watchdog's
         // next look (`stop_killed`)
         self.sync.kill(id, code);
