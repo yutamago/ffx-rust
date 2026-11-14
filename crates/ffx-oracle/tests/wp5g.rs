@@ -647,3 +647,342 @@ fn wp5g_menu_callbacks_match_the_original() {
         }
     });
 }
+
+#[test]
+fn wp5g_misc_gap_functions_match_the_original() {
+    use ffx_prender::wp5g::bridge as ms;
+    Twins::each(|t| {
+        let mut rng = Rng(0x0087_e6f0);
+        for k in 0..24u32 {
+            // the event debug copy pair (memcpy and dbgPrintf as stubs)
+            t.reset();
+            let e = t.zeros(0x1200);
+            t.stub(ms::TK_GET_SAVE_EVENT_ADDRESS, false, 0, 0, e);
+            t.stub(ms::MEMCPY, false, 3, 0, 0xc1);
+            t.stub(ms::DBG_PRINTF, false, 1, 0, 0xc2);
+            for (addr, restore) in [(0x0087_e6f0, true), (0x0087_e720, false)] {
+                t.check(
+                    &format!("event debug {addr:#x} {k}"),
+                    addr,
+                    Conv::Cdecl,
+                    &[],
+                    |m| Out::U32(ms::event_debug_copy(m, restore)),
+                );
+            }
+            t.stub(ms::SG_DISPOSE_MOTION_GROUP, false, 3, 0, 0xc3);
+            t.stub(ms::CACHE_DISPOSE, false, 3, 0, 0xc4);
+            t.check(
+                &format!("mgrp dispose {k}"),
+                0x0083_7690,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(ms::system_mgrp_dispose(m)),
+            );
+
+            // the semaphore queue's destructor: the import and the iterator
+            t.reset();
+            let slot = ms::CLOSE_HANDLE_SLOT;
+            let close = t.stub_code(slot, false, 1, 1, &m5_main3_common::Ret::Fixed(0xc5), &[]);
+            let at = t.rebase(slot);
+            t.patch(at, &close.to_le_bytes());
+            t.stub(ms::EH_VECTOR_DTOR, false, 4, 4, 0xc6);
+            let q: Vec<u32> = (0..0x80).map(|_| rng.next()).collect();
+            let q = t.words(&q);
+            t.check(
+                &format!("semaphore queue dtor {k}"),
+                0x006d_b6f0,
+                Conv::Thiscall(q),
+                &[],
+                |m| Out::U32(ms::semaphore_queue_dtor(m, q)),
+            );
+
+            // the battle position lists
+            t.reset();
+            t.stub_ex(
+                ms::MS_MALLOC,
+                false,
+                1,
+                0,
+                &m5_main3_common::Ret::Seq(vec![0x0110_0000 + k, 0x0120_0000 + k]),
+                &[],
+            );
+            t.stub(ms::MS_STRUCT_CLEAR, false, 2, 0, 0xc7);
+            let pos: Vec<u32> = (0..0x20).map(|_| rng.next() % 64).collect();
+            let pos = t.words(&pos);
+            t.g32(ms::BTL_POS, pos);
+            t.check(
+                &format!("btl pos 0x30 {k}"),
+                0x007c_91a0,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(ms::btl_pos_alloc_lists(m, 0x30, 0x34, 0x4c)),
+            );
+            t.check(
+                &format!("btl pos 0xc {k}"),
+                0x007c_c180,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(ms::btl_pos_alloc_lists(m, 0xc, 0x10, 0x28)),
+            );
+
+            // the scene's wave draws
+            t.reset();
+            t.stub(0x0092_0740, false, 1, 0, 0xc8);
+            t.stub(0x0092_0780, false, 1, 0, 0xc9);
+            let rec = t.words(&[rng.next(), rng.next(), rng.next()]);
+            let list = match k % 3 {
+                0 => 0,
+                1 => t.words(&[0]),
+                _ => t.words(&[rec]),
+            };
+            t.g32(ms::SCENE_WAVES, list);
+            for (addr, draw) in [(0x0092_15e0, 0x0092_0740), (0x0092_1610, 0x0092_0780)] {
+                t.check(&format!("{addr:#x} {k}"), addr, Conv::Cdecl, &[], |m| {
+                    Out::U32(ms::scene_wave_draw(m, draw))
+                });
+            }
+            for (addr, body) in [(0x0092_1a10, 0x0092_15e0), (0x0092_1a30, 0x0092_1610)] {
+                t.check(&format!("{addr:#x} {k}"), addr, Conv::Cdecl, &[], |m| {
+                    Out::U32(ms::scene_wave_draw_if_any(m, body))
+                });
+            }
+
+            // the standby's end, the request list, the debug list, HDD
+            t.reset();
+            let w = t.words(&[rng.next()]);
+            t.g32(0x00c4_9464, w);
+            t.g32(0x012f_4e74, rng.next());
+            t.check(
+                &format!("standby done {k}"),
+                0x0081_fcb0,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(ms::sqs_standby_done(m)),
+            );
+            t.stub(ms::USER_FREE, false, 1, 0, 0xca);
+            let p = if k % 3 == 0 { 0 } else { rng.next() };
+            let list = t.words(&[0, 0, p]);
+            t.check(
+                &format!("request list dtor {k}"),
+                0x0069_0a30,
+                Conv::Thiscall(list),
+                &[],
+                |m| Out::U32(ms::request_list_dtor(m, list)),
+            );
+            t.stub(ms::TK_IS_DEBUG, false, 0, 0, rng.pick(&[0u32, 1]));
+            t.stub(ms::ATEL_REMOVE_PS2_DEBUG, false, 0, 0, 0xcb);
+            t.stub(ms::FLUSH_CACHE, false, 1, 0, 0xcc);
+            t.stub(ms::TK_FREE, false, 1, 0, 0xcd);
+            let blocks = t.rebase(ms::DEBUG_BLOCKS);
+            for i in 0..2 {
+                let v = rng.pick(&[0u32, 0x0123_4560]);
+                t.w32(blocks + 4 * i, v);
+            }
+            t.check(
+                &format!("debug list release {k}"),
+                0x0087_3d60,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(ms::release_debug_list(m)),
+            );
+            t.stub(ms::HDD_MODE_REFRESH, false, 1, 0, 0xce);
+            t.g32(0x0132_f570, rng.pick(&[0u32, 1, 5, u32::MAX]));
+            t.check(
+                &format!("hdd refresh {k}"),
+                0x0088_5560,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(ms::hdd_mode_refresh(m)),
+            );
+
+            // the battle menu's scene steps
+            t.reset();
+            t.stub(ms::TO_SEQ_STOP_EXEC_SCENE, false, 1, 0, 0xcf);
+            t.stub(ms::TO_SEQ_START_SCENE, false, 2, 0, 0xd0);
+            t.stub(ms::TO_BTL_DRAW_TARGET_CURSOR, false, 0, 0, 0xd1);
+            for a in (0x008a_2a40..0x008a_2ac0).step_by(0x10) {
+                t.check(&format!("scene stop {a:#x}"), a, Conv::Cdecl, &[], |m| {
+                    Out::U32(ms::btl_scene_stop(m))
+                });
+            }
+            for (a, name) in [
+                (0x008a_86b0, 0x00b5_f088),
+                (0x008a_86f0, 0x00b5_f088),
+                (0x008a_8710, 0x00b5_f088),
+                (0x008a_8730, 0x00b5_f088),
+                (0x008a_8780, 0x00b5_f094),
+            ] {
+                t.check(&format!("scene start {a:#x}"), a, Conv::Cdecl, &[], |m| {
+                    Out::U32(ms::btl_scene_start(m, name))
+                });
+            }
+            t.check("target cursor 0", 0x008a_84c0, Conv::Cdecl, &[], |m| {
+                Out::U32(ms::btl_target_cursor_0(m))
+            });
+        }
+    });
+}
+
+/// A void step and its original's address.
+type Step = (u32, fn(&mut G));
+
+#[test]
+fn wp5g_grid_ui_and_task_steps_match_the_original() {
+    use ffx_prender::wp5g::bridge as ms;
+    Twins::each(|t| {
+        let mut rng = Rng(0x00a5_3450);
+        let g = t.zeros(0x1_1800);
+        let menu = t.zeros(0x2800);
+        for k in 0..32u32 {
+            t.reset();
+            t.g32(ms::ABMAP, g);
+            t.g32(ms::ABMAP_MENU, menu);
+            for f in [
+                ms::DRAW_LINKS,
+                ms::DRAW_NODE_HALOS,
+                ms::DRAW_CHR_RINGS,
+                ms::DRAW_SPHERE_JOB_TAIL,
+                ms::DRAW_NODES_EAMAP,
+                ms::DRAW_NODE_SHAPES_TAIL,
+                ms::DRAW_NODE_SHAPES,
+                ms::STATE_HOME_ON_NODE,
+                ms::MARK_EMPTY_MENUS,
+            ] {
+                t.stub(f, false, 0, 0, 0xe000 + f % 0x100);
+            }
+            for f in [
+                ms::RESET_LAYERS,
+                ms::DRAW_NODE_SPHERES,
+                ms::DRAW_NODE_HIGHLIGHT,
+                ms::HELP_MESSAGE_STEP,
+                ms::RUN_PART,
+            ] {
+                t.stub(f, false, 1, 0, 0xe100 + f % 0x100);
+            }
+            let node = rng.pick(&[u32::MAX, 0xffff_fffe, 0, 7, 0x8000_0000]);
+            t.w32(g + 0x116a8, node);
+            t.w32(g + 0x116ac, rng.pick(&[0u32, 1, 2, 3, 4, u32::MAX]));
+            t.w32(g + 0x116b0, rng.pick(&[0u32, 2, 0xffff_fffe, 5, u32::MAX]));
+            t.w8(g + 0x115c3, rng.pick(&[0u8, 1, 2]));
+            t.w8(g + 0x1164c, rng.pick(&[0u8, 1, 2, 3]));
+            for o in [0x115a8u32, 0x115ac, 0x115b0, 0x115b4] {
+                let v = rng.next();
+                t.w32(g + o, v);
+            }
+            let progress = rng.pick(&[0.5f32, 0.999, 1.0, 1.5, f32::NAN]).to_bits();
+            t.w32(g + 0x11620, progress);
+            t.w32(menu + 0x16e4, rng.next());
+            let panel = rng.pick(&[0u16, 1]);
+            t.write(t.rebase(0x01a8_607e), &panel.to_le_bytes());
+            let jobs: [Step; 4] = [
+                (0x00a5_3450, |m| ms::abmap_job_links(m)),
+                (0x00a5_34b0, |m| ms::abmap_job_halos(m)),
+                (0x00a5_34c0, |m| ms::abmap_job_spheres(m)),
+                (0x00a5_3510, |m| ms::abmap_job_shapes(m)),
+            ];
+            for (addr, port) in jobs {
+                t.check(&format!("{addr:#x} {k}"), addr, Conv::Cdecl, &[], |m| {
+                    port(m);
+                    Out::None
+                });
+            }
+            let hooks: [Step; 3] = [
+                (0x00a4_8280, |m| ms::abmap_restore_state(m)),
+                (0x00a4_c430, |m| ms::abmap_warp_draw(m)),
+                (0x00a5_a020, |m| ms::abmap_select_homing(m)),
+            ];
+            for (addr, port) in hooks {
+                t.check(&format!("{addr:#x} {k}"), addr, Conv::Cdecl, &[], |m| {
+                    port(m);
+                    Out::None
+                });
+            }
+            t.check(
+                &format!("help draw {k}"),
+                0x00a5_1700,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(ms::abmap_help_draw(m)),
+            );
+
+            // the PC UI steps: a fake context with a logging ClearDepthStencilView
+            t.reset();
+            let ui = t.zeros(0xc00);
+            let ctx = t.zeros(0x10);
+            let clear = t.stub_code(0x5d4, false, 5, 5, &m5_main3_common::Ret::Fixed(0xe2), &[]);
+            let vt = t.zeros(0x100);
+            t.w32(vt + ms::CLEAR_DSV_SLOT, clear);
+            t.w32(ctx, vt);
+            t.w32(ui + 4, ctx);
+            let v = rng.next();
+            t.w32(ui + 0x784, v);
+            let v2 = rng.pick(&[0u32, 0x55]);
+            t.w32(ui + 0x788, v2);
+            let r = rng.next();
+            t.w32(ui + 0xab0, r);
+            let r = rng.next();
+            t.w32(ui + 0xab4, r);
+            t.g32(ms::PCUI, ui);
+            t.stub(ms::NODE_REQUEUE_ALL, false, 1, 0, 0xe3);
+            t.check(
+                &format!("pcui clear depth {k}"),
+                0x00a3_73c0,
+                Conv::Cdecl,
+                &[],
+                |m| {
+                    ms::pcui_clear_depth(m);
+                    Out::None
+                },
+            );
+            t.check(
+                &format!("pcui requeue {k}"),
+                0x00a3_b090,
+                Conv::Stdcall,
+                &[0x77],
+                |m| Out::U32(ms::pcui_requeue_nodes(m)),
+            );
+
+            // the read task, the field scene step
+            t.reset();
+            t.stub(ms::CD_DECODE_DATA, false, 1, 0, 0xe4);
+            t.stub(ms::HD_FILE_READ_TH_MAIN, false, 0, 0, 0xe5);
+            t.g8(ms::READ_REQUEST, rng.pick(&[0u8, 1, 2, 3, 0xff]));
+            t.g32(0x0231_0c2c, rng.next());
+            t.check(
+                &format!("read task {k}"),
+                0x0076_e5f0,
+                Conv::Cdecl,
+                &[],
+                |m| {
+                    ms::read_task_step(m);
+                    Out::None
+                },
+            );
+            let debug = rng.pick(&[0u32, 1]);
+            t.stub(ms::FFX_IS_DEBUG, false, 0, 0, debug);
+            t.stub(ms::DEBUG_DRAW_ENV, false, 0, 0, rng.pick(&[0u32, 1]));
+            for f in [
+                ms::YN_BATTLE_CAPTURE_NUM,
+                ms::RCBG_PRE_ADD_FP_OBJECTS,
+                ms::YN_SCENE_PROC,
+                ms::SCENE_DEBUG_OVERLAY,
+            ] {
+                t.stub(f, false, 0, 0, 0xe600 + f % 0x100);
+            }
+            let rec = rng.pick(&[0u32, 0x1234]);
+            let objs = rng.pick(&[0u32, 1]);
+            let list = t.words(&[rec, 0, objs]);
+            t.g32(ms::SCENE_WAVES, list);
+            t.check(
+                &format!("scene step {k}"),
+                0x0092_2060,
+                Conv::Cdecl,
+                &[],
+                |m| {
+                    ms::yn_scene_step(m);
+                    Out::None
+                },
+            );
+        }
+    });
+}
