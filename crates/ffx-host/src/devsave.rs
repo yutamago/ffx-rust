@@ -13,12 +13,14 @@
 //! `fiosIsFileExist`, `fiosOpen(path, 1)`, `fiosRead`, `fiosClose`), with
 //! the original's results (0 and the file's bytes at the buffer's start,
 //! the rest of the buffer as it was; -1 when there is no such file).
-//! Without the harness it runs the original. [`load`] then calls the
-//! original `TkDebugLoadViewerSave` (Unicorn, or its port when one exists),
+//! Without the harness it runs the original's port
+//! (`ffx_system::wp5h_devsave`). [`load`] then calls
+//! `TkDebugLoadViewerSave` (its `ported!` entry, the same module's),
 //! with the control taken and, on the title, the title script's part around
 //! its Load menu run first, as `loadsave` does.
 
 use ffx_bridge::Mem;
+use ffx_system::wp5h_devsave::bridge as dv;
 
 use crate::exec::Exec;
 use crate::table::{Args, Conv, Entry, Port, Ret, Table};
@@ -64,14 +66,34 @@ pub fn register(t: &mut Table) {
 /// file's bytes (at most `size`) at `buffer`, -1 when the archive has no
 /// save `n`; without it, the original.
 fn load_for_viewer(e: &mut Exec, args: &Args) -> Ret {
-    if !crate::harness::enabled() {
-        return e
-            .call_original(DEBUG_LOAD_FOR_VIEWER, Conv::Cdecl, args)
-            .unwrap_or(Ret::eax(u32::MAX));
-    }
     let a = |i| args.stack.get(i).copied().unwrap_or(0);
-    let (n, buffer, size) = (a(0).cast_signed(), a(1), a(2));
-    Ret::eax(read(e, n, buffer, size).map_or(u32::MAX, |_| 0))
+    let (n, buffer, size) = (a(0), a(1), a(2));
+    if !crate::harness::enabled() {
+        return Ret::eax(original(e, n, buffer, size));
+    }
+    Ret::eax(read(e, n.cast_signed(), buffer, size).map_or(u32::MAX, |_| 0))
+}
+
+/// The original `debugLoadForViewer` (its port,
+/// `ffx_system::wp5h_devsave`), its frame in the arena: the C runtime's
+/// `fopen` of the save, which finds no file outside the archive; -1 (and
+/// the message to `crossAssertOutput`), or 0 with the file read.
+fn original(e: &mut Exec, n: u32, buffer: u32, size: u32) -> u32 {
+    let frame = e.alloc(dv::FRAME);
+    if frame == 0 {
+        return u32::MAX;
+    }
+    let mut mem = e.mem();
+    let r = dv::debug_load_for_viewer(
+        &mut mem,
+        frame + dv::FRAME,
+        n,
+        buffer,
+        size,
+        &mut |_, f, args| e.call_cdecl(f, args).unwrap_or(0),
+    );
+    e.release(frame);
+    r
 }
 
 /// Reads developer save `n` into `buffer` through the game's file layer;
@@ -176,7 +198,7 @@ mod tests {
         let entry = t.get(DEBUG_LOAD_FOR_VIEWER).expect("an entry");
         assert_eq!(entry.name, "debugLoadForViewer");
         assert_eq!((entry.conv, entry.words), (Conv::Cdecl, 3));
-        // the original stays callable (call_original) without the harness
+        // the original's prologue is checked against the image
         assert!(t.wrapped().any(|(a, _)| a == DEBUG_LOAD_FOR_VIEWER));
     }
 
@@ -187,5 +209,12 @@ mod tests {
             t.get(DEBUG_LOAD_FOR_VIEWER).map(|e| e.name),
             Some("debugLoadForViewer")
         );
+        // the loader runs as its port, without the emulator too
+        assert_eq!(
+            t.get(TK_DEBUG_LOAD_VIEWER_SAVE).map(|e| e.name),
+            Some("TkDebugLoadViewerSave")
+        );
+        assert_eq!(dv::TK_DEBUG_LOAD_VIEWER_SAVE, TK_DEBUG_LOAD_VIEWER_SAVE);
+        assert_eq!(dv::DEBUG_LOAD_FOR_VIEWER, DEBUG_LOAD_FOR_VIEWER);
     }
 }

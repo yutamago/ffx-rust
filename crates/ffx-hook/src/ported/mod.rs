@@ -167,6 +167,7 @@ mod wp5d;
 mod wp5e;
 mod wp5f;
 mod wp5g;
+mod wp5h;
 mod wrapped_ports;
 
 pub(crate) use battle::ms_screen_process;
@@ -336,6 +337,7 @@ pub fn hooks() -> Vec<Hook> {
     all.extend(wp5e::hooks());
     all.extend(wp5f::hooks());
     all.extend(wp5g::hooks());
+    all.extend(wp5h::hooks());
     all.extend(wrapped_ports::hooks());
     all
 }
