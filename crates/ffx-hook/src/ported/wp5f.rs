@@ -370,4 +370,22 @@ ported! {
         let mut f = StackFrame::<12>::new();
         mkv::cluster_load(&mut mem(), cl, pos, len, f.at())
     }
+    /// `mkvparser::Cluster::ParseSimpleBlock(size, &pos, &len)` -> status;
+    /// `Length`'s results, the readers' scratch and the flags in a frame.
+    mkvparser_Cluster_ParseSimpleBlock_0042aca0 @ 0x0042_aca0 => extern "thiscall" fn parse_simple_block(cl: u32, size_lo: u32, size_hi: u32, pos: u32, len: u32) -> u32 {
+        let mut f = StackFrame::<13>::new();
+        let size = (u64::from(size_hi) << 32 | u64::from(size_lo)).cast_signed();
+        mkv::parse_simple_block(&mut mem(), cl, size, pos, len, f.at())
+    }
+    /// `mkvparser::Cluster::CreateBlock(id, start, size, discard)` ->
+    /// status.
+    mkvparser_Cluster_CreateBlock_0042c130 @ 0x0042_c130 => extern "thiscall" fn create_block(cl: u32, id_lo: u32, id_hi: u32, start_lo: u32, start_hi: u32, size_lo: u32, size_hi: u32, d_lo: u32, d_hi: u32) -> u32 {
+        let w = |lo: u32, hi: u32| (u64::from(hi) << 32 | u64::from(lo)).cast_signed();
+        mkv::create_block(&mut mem(), cl, w(id_lo, id_hi), w(start_lo, start_hi), w(size_lo, size_hi), w(d_lo, d_hi))
+    }
+    /// `mkvparser::Cluster::CreateSimpleBlock(start, size)` -> status.
+    mkvparser_Cluster_CreateSimpleBlock_0042c740 @ 0x0042_c740 => extern "thiscall" fn create_simple_block(cl: u32, start_lo: u32, start_hi: u32, size_lo: u32, size_hi: u32) -> u32 {
+        let w = |lo: u32, hi: u32| (u64::from(hi) << 32 | u64::from(lo)).cast_signed();
+        mkv::create_simple_block(&mut mem(), cl, w(start_lo, start_hi), w(size_lo, size_hi))
+    }
 }

@@ -1230,4 +1230,281 @@ pub mod bridge {
         }
         0
     }
+
+    /// `mkvparser::Cluster::CreateBlock(cluster; id, start, size, discard)`
+    /// (thiscall, `ret 0x20`; four 64-bit words), `CreateBlockGroup(cluster;
+    /// start, size, discard)` (`ret 0x18`), the movie allocator's `free`
+    /// and the `SimpleBlock` vtable.
+    pub const CREATE_BLOCK: u32 = 0x0042_c130;
+    pub const CREATE_BLOCK_GROUP: u32 = 0x0042_c300;
+    pub const CREATE_SIMPLE_BLOCK: u32 = 0x0042_c740;
+    pub const BLOCK_PARSE: u32 = 0x0042_d470;
+    pub const DEALLOCATOR: u32 = 0x022f_b514;
+    pub const SIMPLE_BLOCK_VTABLE: u32 = 0x00b9_20cc;
+
+    fn free(h: &mut impl Host, p: u32) {
+        let f: u32 = h.read(h.rebase(DEALLOCATOR));
+        h.call(f, Conv::Cdecl, &[p]);
+    }
+
+    fn words64(v: i64) -> [u32; 2] {
+        let v = v.cast_unsigned();
+        [v as u32, (v >> 32) as u32]
+    }
+
+    /// `mkvparser::Cluster::ParseSimpleBlock(cluster; size, &pos, &len)`
+    /// (`0x0042aca0`, thiscall, `ret 0x10`; `size` 64-bit): the block's
+    /// track number (`GetUIntLength`/`ReadUInt`), time code and flags
+    /// checked against the block's stop and the available data (-2 bad,
+    /// -3 with `*len` the bytes wanted), a laced block wholly available;
+    /// then `CreateBlock(0x23, start, size, 0)` ([`CREATE_BLOCK`], its
+    /// error returned) and `m_pos` past the block; 0. `frame`: `Length`'s
+    /// results (+0, +8), the readers' scratch (+0x10..+0x30) and the flags
+    /// byte (+0x30; the original's is the top byte of its `pos` slot).
+    #[allow(clippy::too_many_lines)] // the original's checks
+    pub fn parse_simple_block(
+        h: &mut impl Host,
+        this: u32,
+        size: i64,
+        pos: u32,
+        len: u32,
+        frame: u32,
+    ) -> u32 {
+        const BAD: u32 = (-2i32).cast_unsigned();
+        const MORE: u32 = (-3i32).cast_unsigned();
+        let start = read_i64(h, pos);
+        let stop = start.wrapping_add(size);
+        let segment: u32 = h.read(this);
+        let reader: u32 = h.read(segment);
+        let (total_at, avail_at) = (frame, at(frame, 8));
+        let scratch = at(frame, 0x10);
+        let s = length(h, reader, total_at, avail_at);
+        if s.cast_signed() < 0 {
+            return s;
+        }
+        let total = read_i64(h, total_at);
+        let avail = read_i64(h, avail_at);
+        if total >= 0 && avail > total {
+            wassert(h, 0x00b9_05f8, 0x1948);
+        }
+        let p = read_i64(h, pos);
+        if p.wrapping_add(1) > avail {
+            h.write(len, 1u32);
+            return MORE;
+        }
+        let r = uint_length_at(h, reader, len, p.cast_unsigned(), scratch);
+        if r < 0 {
+            return r as u32;
+        }
+        if r != 0 {
+            return MORE;
+        }
+        let p = read_i64(h, pos);
+        let end = p.wrapping_add(i64::from(h.read::<i32>(len)));
+        if end > stop {
+            return BAD;
+        }
+        if end > avail {
+            return MORE;
+        }
+        let track = read_uint(h, reader, len, p.cast_unsigned(), at(scratch, 0x18)).cast_signed();
+        if track < 0 {
+            return track as u32;
+        }
+        if track == 0 {
+            return BAD;
+        }
+        let p = read_i64(h, pos).wrapping_add(i64::from(h.read::<i32>(len)));
+        write_i64(h, pos, p);
+        if p.wrapping_add(2) > stop {
+            return BAD;
+        }
+        if p.wrapping_add(2) > avail {
+            h.write(len, 2u32);
+            return MORE;
+        }
+        let p = p.wrapping_add(2);
+        write_i64(h, pos, p);
+        if p.wrapping_add(1) > stop {
+            return BAD;
+        }
+        if p.wrapping_add(1) > avail {
+            h.write(len, 1u32);
+            return MORE;
+        }
+        let flags = at(frame, 0x30);
+        let s = read(h, reader, p.cast_unsigned(), 1, flags);
+        if s.cast_signed() < 0 {
+            h.write(len, 1u32);
+            return s;
+        }
+        let p = p.wrapping_add(1);
+        write_i64(h, pos, p);
+        if p > avail {
+            wassert(h, 0x00b9_1b1c, 0x19a3);
+        }
+        if p >= stop {
+            return BAD;
+        }
+        if h.read::<u8>(flags) & 6 != 0 && stop > avail {
+            h.write(len, stop.wrapping_sub(p) as u32);
+            return MORE;
+        }
+        let [s0, s1] = words64(start);
+        let [z0, z1] = words64(size);
+        let s = h.call_sym(
+            CREATE_BLOCK,
+            Conv::Thiscall(this),
+            &[0x23, 0, s0, s1, z0, z1, 0, 0],
+        );
+        if s != 0 {
+            return s;
+        }
+        write_i64(h, at(this, 0x18), stop);
+        0
+    }
+
+    /// `mkvparser::Cluster::CreateBlock(cluster; id, start, size, discard)`
+    /// (`0x0042c130`): the entry array made (0x400 entries, 0x1000 bytes,
+    /// from the movie allocator) when the cluster has none (count `+0x38`
+    /// negative), else doubled when full (the old entries copied, the old
+    /// array freed); then `CreateBlockGroup(start, size, discard)` for a
+    /// `BlockGroup` (0x20) or `CreateSimpleBlock(start, size)` (their
+    /// results). The ids and the array's state are asserted as the
+    /// original does.
+    pub fn create_block(
+        h: &mut impl Host,
+        this: u32,
+        id: i64,
+        start: i64,
+        size: i64,
+        discard: i64,
+    ) -> u32 {
+        if id != 0x20 && id != 0x23 {
+            wassert(h, 0x00b9_1c40, 0x1c66);
+        }
+        if h.read::<i32>(at(this, 0x38)) < 0 {
+            if h.read::<u32>(at(this, 0x30)) != 0 {
+                wassert(h, 0x00b9_1c7c, 0x1c69);
+            }
+            if h.read::<u32>(at(this, 0x34)) != 0 {
+                wassert(h, 0x00b9_1ca0, 0x1c6a);
+            }
+            h.write(at(this, 0x34), 0x400u32);
+            let a = alloc(h, 0x1000);
+            h.write(at(this, 0x30), a);
+            h.write(at(this, 0x38), 0u32);
+        } else {
+            if h.read::<u32>(at(this, 0x30)) == 0 {
+                wassert(h, 0x00b9_1b88, 0x1c71);
+            }
+            if h.read::<i32>(at(this, 0x34)) <= 0 {
+                wassert(h, 0x00b9_1b9c, 0x1c72);
+            }
+            if h.read::<i32>(at(this, 0x38)) > h.read::<i32>(at(this, 0x34)) {
+                wassert(h, 0x00b9_1bc8, 0x1c73);
+            }
+            let cap: i32 = h.read(at(this, 0x34));
+            if h.read::<i32>(at(this, 0x38)) >= cap {
+                let n = cap.wrapping_add(cap).cast_unsigned();
+                let bytes = u64::from(n) * 4;
+                let a = alloc(
+                    h,
+                    if bytes > u64::from(u32::MAX) {
+                        u32::MAX
+                    } else {
+                        bytes as u32
+                    },
+                );
+                if a == 0 {
+                    wassert(h, 0x00b9_1cc8, 0x1c79);
+                }
+                let old: u32 = h.read(at(this, 0x30));
+                let count: u32 = h.read(at(this, 0x38));
+                for i in 0..count {
+                    let e: u32 = h.read(at(old, 4 * i));
+                    h.write(at(a, 4 * i), e);
+                }
+                let old: u32 = h.read(at(this, 0x30));
+                if old != 0 {
+                    free(h, old);
+                }
+                h.write(at(this, 0x30), a);
+                h.write(at(this, 0x34), n);
+            }
+        }
+        let [s0, s1] = words64(start);
+        let [z0, z1] = words64(size);
+        if id == 0x20 {
+            let [d0, d1] = words64(discard);
+            return h.call_sym(
+                CREATE_BLOCK_GROUP,
+                Conv::Thiscall(this),
+                &[s0, s1, z0, z1, d0, d1],
+            );
+        }
+        h.call_sym(CREATE_SIMPLE_BLOCK, Conv::Thiscall(this), &[s0, s1, z0, z1])
+    }
+
+    /// `mkvparser::Cluster::CreateSimpleBlock(cluster; start, size)`
+    /// (`0x0042c740`, thiscall, `ret 0x10`): a `SimpleBlock` (0x40 bytes
+    /// from the movie allocator: vtable, cluster, index, the block at
+    /// `+0x10` with its start and size, no track, time code -1, no
+    /// frames) in the next entry, its block parsed ([`BLOCK_PARSE`] with
+    /// the cluster): on success the count grows and 0; else the entry is
+    /// deleted (vtable slot 0, 1) and cleared and the status returned; -1
+    /// when the allocation fails.
+    pub fn create_simple_block(h: &mut impl Host, this: u32, start: i64, size: i64) -> u32 {
+        if h.read::<u32>(at(this, 0x30)) == 0 {
+            wassert(h, 0x00b9_1b88, 0x1cf5);
+        }
+        if h.read::<i32>(at(this, 0x34)) <= 0 {
+            wassert(h, 0x00b9_1b9c, 0x1cf6);
+        }
+        if h.read::<i32>(at(this, 0x38)) < 0 {
+            wassert(h, 0x00b9_1cd8, 0x1cf7);
+        }
+        if h.read::<i32>(at(this, 0x38)) >= h.read::<i32>(at(this, 0x34)) {
+            wassert(h, 0x00b9_1d08, 0x1cf8);
+        }
+        let index: u32 = h.read(at(this, 0x38));
+        let entries: u32 = h.read(at(this, 0x30));
+        let slot = at(entries, index.wrapping_mul(4));
+        let e = alloc(h, 0x40);
+        if e != 0 {
+            h.write(at(e, 4), this);
+            h.write(at(e, 8), index);
+            let vt = h.rebase(SIMPLE_BLOCK_VTABLE);
+            h.write(e, vt);
+            write_i64(h, at(e, 0x10), start);
+            write_i64(h, at(e, 0x18), size);
+            h.write(at(e, 0x20), 0u32);
+            h.write(at(e, 0x24), 0u32);
+            h.write(at(e, 0x28), 0xffffu16);
+            h.write(at(e, 0x2a), 0u8);
+            h.write(at(e, 0x2c), 0u32);
+            h.write(at(e, 0x30), u32::MAX);
+            h.write(at(e, 0x38), 0u32);
+            h.write(at(e, 0x3c), 0u32);
+        }
+        h.write(slot, e);
+        if e == 0 {
+            return u32::MAX;
+        }
+        let cluster: u32 = h.read(at(e, 4));
+        let s = h.call_sym(BLOCK_PARSE, Conv::Thiscall(at(e, 0x10)), &[cluster]);
+        if s == 0 {
+            let n = h.read::<u32>(at(this, 0x38)).wrapping_add(1);
+            h.write(at(this, 0x38), n);
+            return 0;
+        }
+        let e: u32 = h.read(slot);
+        if e != 0 {
+            let vt: u32 = h.read(e);
+            let f: u32 = h.read(vt);
+            h.call(f, Conv::Thiscall(e), &[1]);
+        }
+        h.write(slot, 0u32);
+        s
+    }
 }

@@ -1736,7 +1736,11 @@ fn wp5f_mkv_cluster_load_matches_the_original() {
             t.w32(cl + 0x20, u32::MAX);
             t.w32(cl + 0x24, u32::MAX);
             // loaded already sometimes
-            let tc = if rng.chance(6) { rng.pick(&[3u64, 0]) } else { u64::MAX };
+            let tc = if rng.chance(6) {
+                rng.pick(&[3u64, 0])
+            } else {
+                u64::MAX
+            };
             t.w32(cl + 0x28, tc as u32);
             t.w32(cl + 0x2c, (tc >> 32) as u32);
             let pos = t.words(&[0x1111, 0x2222]);
@@ -1746,6 +1750,153 @@ fn wp5f_mkv_cluster_load_matches_the_original() {
             t.check(&what, 0x0042_9e10, Conv::Thiscall(cl), &[pos, len], |m| {
                 Out::U32(mkv::cluster_load(m, cl, pos, len, scratch))
             });
+        }
+    });
+}
+
+/// The movie allocator and deallocator as a bump allocator and a logging
+/// stub; the allocator returns 0 when `fail`.
+fn movie_alloc(t: &mut Twins, fail: bool) {
+    let area = t.zeros(0x6000);
+    let cell = t.words(&[if fail { 0 } else { area }]);
+    let mut bump = vec![0xa1];
+    bump.extend(cell.to_le_bytes()); // mov eax, [cell]
+    bump.extend([0x85, 0xc0, 0x74, 0x0a]); // test eax, eax; jz +10
+    bump.extend([0x8b, 0x4c, 0x24, 0x04]); // mov ecx, [esp + 4]
+    bump.extend([0x01, 0x0d]);
+    bump.extend(cell.to_le_bytes()); // add [cell], ecx
+    bump.push(0xc3);
+    let bump = t.code(&bump);
+    let slot = t.rebase(mkv::ALLOCATOR);
+    t.patch(slot, &bump.to_le_bytes());
+    let free = t.stub_code(mkv::DEALLOCATOR, false, 1, 0, &Ret::Fixed(0x71), &[]);
+    let slot = t.rebase(mkv::DEALLOCATOR);
+    t.patch(slot, &free.to_le_bytes());
+}
+
+#[test]
+fn wp5f_mkv_simple_blocks_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x0042_aca0);
+        for k in 0..500 {
+            t.reset();
+            cdecl_imp(t, mkv::WASSERT, 3, 0x61);
+            movie_alloc(t, rng.chance(20));
+            // ParseSimpleBlock over a synthetic block
+            t.stub(
+                mkv::CREATE_BLOCK,
+                true,
+                8,
+                8,
+                rng.pick(&[0, 0, 0, u32::MAX - 1]),
+            );
+            let lacing = rng.pick(&[0u8, 0, 1, 3]);
+            let n = if lacing == 0 { 1 } else { 2 };
+            let sizes = vec![rng.pick(&[0usize, 3, 20]); n];
+            let bad = rng.pick(&[0u32, 0, 0, 1, 2, 3]);
+            let mut data = vec![0u8; rng.below(4) as usize];
+            let start = data.len() as u32;
+            let b = block_bytes(&mut rng, lacing, &sizes, bad);
+            let bsize = match rng.below(6) {
+                0 => b.len().saturating_sub(2),
+                1 => 3,
+                _ => b.len(),
+            } as u64;
+            data.extend(b);
+            let size = data.len() as u32;
+            let avail = rng.pick(&[size, size, size.saturating_sub(3), start + 2]);
+            let reader = fake_reader(t, &data, rng.pick(&[u32::MAX, u32::MAX - 4]), avail);
+            let segment = t.words(&[reader]);
+            let cl = t.zeros(0x40);
+            t.w32(cl, segment);
+            let pos = t.words(&[start, 0]);
+            let len = t.words(&[0x3333]);
+            let scratch = t.frame_ebp(4) - 0x400;
+            let what = format!("ParseSimpleBlock {k} ({data:02x?}, size {bsize}, avail {avail})");
+            t.check(
+                &what,
+                0x0042_aca0,
+                Conv::Thiscall(cl),
+                &[bsize as u32, 0, pos, len],
+                |m| {
+                    Out::U32(mkv::parse_simple_block(
+                        m,
+                        cl,
+                        bsize.cast_signed(),
+                        pos,
+                        len,
+                        scratch,
+                    ))
+                },
+            );
+            // CreateBlock over an entry array: none, room, full (its stub
+            // above out of the way; an allocation that fails here faults
+            // in the original)
+            t.reset();
+            cdecl_imp(t, mkv::WASSERT, 3, 0x61);
+            movie_alloc(t, false);
+            t.stub(mkv::CREATE_BLOCK_GROUP, true, 6, 6, 0x72);
+            t.stub(mkv::CREATE_SIMPLE_BLOCK, true, 4, 4, 0x73);
+            let cl = t.zeros(0x40);
+            match rng.below(3) {
+                0 => t.w32(cl + 0x38, u32::MAX),
+                1 => {
+                    let arr = t.words(&[1, 2, 3, 4]);
+                    t.w32(cl + 0x30, arr);
+                    t.w32(cl + 0x34, 4);
+                    t.w32(cl + 0x38, rng.below(4));
+                }
+                _ => {
+                    let arr = t.words(&[1, 2, 3]);
+                    t.w32(cl + 0x30, arr);
+                    t.w32(cl + 0x34, 3);
+                    t.w32(cl + 0x38, 3);
+                }
+            }
+            let id = rng.pick(&[0x20u32, 0x23, 0x23, 0x21]);
+            let (s, z) = (rng.next(), rng.next());
+            t.check(
+                &format!("CreateBlock {k}"),
+                0x0042_c130,
+                Conv::Thiscall(cl),
+                &[id, 0, s, 0, z, 0, 7, 0],
+                |m| {
+                    Out::U32(mkv::create_block(
+                        m,
+                        cl,
+                        i64::from(id),
+                        i64::from(s),
+                        i64::from(z),
+                        7,
+                    ))
+                },
+            );
+            t.reset();
+            cdecl_imp(t, mkv::WASSERT, 3, 0x61);
+            movie_alloc(t, rng.chance(20));
+            // CreateSimpleBlock: the block parse stubbed (0 or an error);
+            // the entry's deleting destructor a stub through the real
+            // vtable's slot 0
+            t.stub(mkv::BLOCK_PARSE, true, 1, 1, rng.pick(&[0, u32::MAX - 1]));
+            let vt = t.rebase(mkv::SIMPLE_BLOCK_VTABLE);
+            let del: u32 = Mem::read(&t.a, vt);
+            // back to its ffx.sym address (the snapshots load elsewhere)
+            let del = del - t.rebase(0x0040_0000) + 0x0040_0000;
+            let stub = t.stub_code(del, true, 1, 1, &Ret::Fixed(0x74), &[]);
+            t.jump(del, stub);
+            let cl = t.zeros(0x40);
+            let arr = t.words(&[9, 9, 9, 9]);
+            t.w32(cl + 0x30, arr);
+            t.w32(cl + 0x34, 4);
+            t.w32(cl + 0x38, rng.below(4));
+            let (s, z) = (rng.next(), rng.next());
+            t.check(
+                &format!("CreateSimpleBlock {k}"),
+                0x0042_c740,
+                Conv::Thiscall(cl),
+                &[s, 0, z, 0],
+                |m| Out::U32(mkv::create_simple_block(m, cl, i64::from(s), i64::from(z))),
+            );
         }
     });
 }
