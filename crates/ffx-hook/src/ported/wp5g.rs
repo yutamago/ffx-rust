@@ -1,12 +1,17 @@
 //! M5 finish, WP5 part 6 (wp5g): functions in gaps of the dump that the
-//! script natives jump to, the event loader queues, or a battle CD read
-//! calls back (`ffx_script::wp5g`, `ffx_battle::read`; parity tests in
+//! script natives jump to, the event loader queues, a battle CD read
+//! calls back, the main menu's command window calls or the OT draw runs
+//! (`ffx_script::wp5g`, `ffx_battle::read`, `ffx_menu::wp5g_menu`,
+//! `ffx_vfx::wp5g_encount`; parity tests in
 //! `crates/ffx-oracle/tests/wp5g.rs`). All run on the main thread (the
-//! script VM, the CD completion); no shim keeps state.
+//! script VM, the CD completion, the menu, the battle draw); no shim keeps
+//! state. The encounter draw steps' frame is a `StackFrame` (0x240 bytes).
 
-use super::{call_cdecl, mem, ported};
+use super::{StackFrame, call_cdecl, mem, ported};
 use ffx_battle::read::bridge as read;
+use ffx_menu::wp5g_menu::bridge as menu;
 use ffx_script::wp5g::bridge as sc;
+use ffx_vfx::wp5g_encount::bridge as enc4;
 
 fn cdecl<M>(_: &mut M, f: u32, args: &[u32]) -> u32 {
     call_cdecl(f, args)
@@ -57,5 +62,26 @@ ported! {
     /// `0x0091a900()`: `rcbgSceneWaveC0Stop` of the scene's first wave.
     SceneWaveC0Stop_0091a900 @ 0x0091_a900 => extern "C" fn scene_wave_c0_stop() -> u32 {
         sc::scene_wave_stop(&mut mem(), &mut cdecl, sc::WAVE_C0_STOP)
+    }
+    /// `MenuSummon_InitLayout_008ceef0()`: the summon screen's layout;
+    /// the row count.
+    MenuSummon_InitLayout_008ceef0 @ 0x008c_eef0 => extern "C" fn summon_init_layout() -> u32 {
+        menu::summon_init_layout(&mut mem())
+    }
+    /// The main command window's control callback.
+    TkMenuMainCmdWindow_ctrl_008e2040 @ 0x008e_2040 => extern "C" fn cmd_window_ctrl() -> u32 {
+        menu::cmd_window_ctrl(&mut mem())
+    }
+    /// The broken-screen encounter's op-10 draw step `(enc, cmd)`; `enc`.
+    Encount4_DrawLit_007f75e0 @ 0x007f_75e0 => extern "C" fn encount4_draw_lit(enc: u32, cmd: u32) -> u32 {
+        let mut f = StackFrame::<0x90>::new();
+        let frame = f.at().wrapping_add(enc4::FRAME);
+        enc4::encount4_draw(&mut mem(), enc, cmd, frame, true, &mut cdecl)
+    }
+    /// The broken-screen encounter's op-11 draw step `(enc, cmd)`; `enc`.
+    Encount4_DrawFog_007f7a40 @ 0x007f_7a40 => extern "C" fn encount4_draw_fog(enc: u32, cmd: u32) -> u32 {
+        let mut f = StackFrame::<0x90>::new();
+        let frame = f.at().wrapping_add(enc4::FRAME);
+        enc4::encount4_draw(&mut mem(), enc, cmd, frame, false, &mut cdecl)
     }
 }

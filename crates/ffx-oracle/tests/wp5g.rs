@@ -8,7 +8,8 @@
 #![allow(
     clippy::cast_possible_truncation,
     clippy::too_many_lines,
-    clippy::similar_names
+    clippy::similar_names,
+    clippy::many_single_char_names
 )]
 
 mod m5_main3_common;
@@ -144,7 +145,20 @@ fn wp5g_native_targets_match_the_original() {
                 0x8000_0000,
                 0x7fff_ffff,
             ];
-            let words: Vec<u32> = (0..0x40).map(|_| rng.pick(&choice)).collect();
+            let mut words: Vec<u32> = (0..0x40).map(|_| rng.pick(&choice)).collect();
+            if k % 4 == 0 {
+                // -1 first, a 0 later: the scan's start value decides
+                words[11..19].copy_from_slice(&[
+                    u32::MAX,
+                    0xffff_fffe,
+                    0,
+                    u32::MAX,
+                    0,
+                    0,
+                    0xffff_fffe,
+                    0,
+                ]);
+            }
             let e = t.words(&words);
             t.stub(sc::TK_SAVE_EVENT, false, 0, 0, e);
             t.check(
@@ -207,6 +221,236 @@ fn wp5g_native_targets_match_the_original() {
                     Out::U32(sc::scene_wave_stop(m, &mut cdecl, stop))
                 });
             }
+        }
+    });
+}
+
+#[test]
+fn wp5g_menu_layout_and_cmd_window_match_the_original() {
+    use ffx_menu::wp5g_menu::bridge as mn;
+    Twins::each(|t| {
+        let mut rng = Rng(0x008e_2040);
+        for k in 0..48u32 {
+            t.reset();
+            t.stub(mn::TK_MN2_GET_COMMON_PLATE, false, 6, 0, 0x71);
+            t.stub(mn::TK_MN2_SEQ_GET_POS, false, 2, 0, 0x72);
+            t.stub(mn::TK_MN2_SEQ_GET_RECT, false, 2, 0, 0x73);
+            t.stub(mn::TK_MN2_SEQ_GET_NUM, false, 1, 0, 0x7400 + k);
+            t.check(
+                &format!("summon layout {k}"),
+                0x008c_eef0,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(mn::summon_init_layout(m)),
+            );
+            assert_eq!(t.calls(), 17);
+
+            // the control callback
+            t.reset();
+            let r = rng.next();
+            t.g32(mn::CMD_DONE, rng.pick(&[0, 0, 1, r]));
+            let r = rng.next();
+            let slide = rng.pick(&[
+                0u32,
+                0x100,
+                0x155,
+                0xeab,
+                0xf00,
+                0x1000,
+                0x2000,
+                0x8000_0000,
+                r,
+            ]);
+            t.g32(mn::CMD_SLIDE, slide);
+            t.g32(mn::CMD_BUSY, rng.next());
+            for i in 0..8 {
+                let d = rng.pick(&[0u16, 0, 1, 2, 0xffff]);
+                let s = rng.pick(&[0u16, 0xe3, 0xf1d, 0xf1e, 0x1000, 0x7fff, 0x8000, 0xffff]);
+                let at = t.rebase(mn::ROW_DELAY) + 2 * i;
+                t.write(at, &d.to_le_bytes());
+                let at = t.rebase(mn::ROW_SLIDE) + 2 * i;
+                t.write(at, &s.to_le_bytes());
+            }
+            t.check(
+                &format!("cmd ctrl {k} ({slide:#x})"),
+                0x008e_2040,
+                Conv::Cdecl,
+                &[],
+                |m| Out::U32(mn::cmd_window_ctrl(m)),
+            );
+        }
+    });
+}
+
+/// A float word in -64..64 (sixteenths).
+fn small_float(rng: &mut Rng) -> u32 {
+    #[allow(clippy::cast_precision_loss)]
+    let v = (rng.below(2048) as f32 - 1024.0) / 16.0;
+    v.to_bits()
+}
+
+/// The broken-screen encounter's draw steps against the original: the
+/// port's frame at the original's (aligned) `ebp`, so the callees see the
+/// same addresses. The renderer's calls and the lights query are recording
+/// stubs that also copy what they read through their pointers (the vertex
+/// values, the light values, the block matrices, the lights request) into
+/// memory the diff compares; the matrix operations run as the originals.
+#[test]
+fn wp5g_encounter_draw_steps_match_the_original() {
+    use ffx_vfx::wp5g_encount::bridge as en;
+    Twins::each(|t| {
+        let mut rng = Rng(0x007f_75e0);
+        for k in 0..32u32 {
+            t.reset();
+            let lit = k % 2 == 0;
+            // the unit, a, b
+            let unit_words: Vec<u32> = (0..0x40).map(|_| small_float(&mut rng)).collect();
+            let unit = t.words(&unit_words);
+            let oef_words: Vec<u32> = (0..0x40).map(|_| rng.next()).collect();
+            let a = t.words(&oef_words);
+            let b = t.zeros(0x40);
+            t.w8(b + 0x1e, rng.below(4) as u8);
+            t.stub(en::OPUS_NO_GET, false, 3, 0, unit);
+            t.stub(en::OEF2_A_GET, false, 3, 0, 0x91);
+            // the lights query: copies the request, writes its answers
+            let req_copy = t.zeros(0x50);
+            let mut x = vec![0x8b, 0x54, 0x24, 0x04];
+            for i in 0..20u32 {
+                x.extend([0x8b, 0x4a, (4 * i) as u8, 0x89, 0x0d]);
+                x.extend((req_copy + 4 * i).to_le_bytes());
+            }
+            x.extend([0xc6, 0x42, 0x4d, rng.next() as u8]);
+            x.extend([0x8b, 0x4a, 0x28]);
+            for o in [0x30u8, 0x34, 0x38] {
+                x.extend([0xc7, 0x41, o]);
+                x.extend(small_float(&mut rng).to_le_bytes());
+            }
+            x.extend([0x8b, 0x4a, 0x24]);
+            for o in [0u8, 4, 8] {
+                x.extend([0xc7, 0x41, o]);
+                x.extend(small_float(&mut rng).to_le_bytes());
+            }
+            t.stub_ex(
+                en::MDC_LIGHTS_GET,
+                false,
+                5,
+                0,
+                &m5_main3_common::Ret::Fixed(0x92),
+                &x,
+            );
+            // the light parameters: the four values behind args 3..6
+            let mut x = Vec::new();
+            for i in 0..4u8 {
+                x.extend([
+                    0x8b,
+                    0x4c,
+                    0x24,
+                    0x10 + 4 * i,
+                    0x8b,
+                    0x09,
+                    0x89,
+                    0x48,
+                    0x24 + 4 * i,
+                ]);
+            }
+            t.stub_ex(
+                en::LIGHT_PARAMETERS,
+                false,
+                7,
+                0,
+                &m5_main3_common::Ret::Fixed(0x93),
+                &x,
+            );
+            // a polygon's vertex: x, y, z behind args 3..5
+            let mut x = Vec::new();
+            for i in 0..3u8 {
+                x.extend([
+                    0x8b,
+                    0x4c,
+                    0x24,
+                    0x10 + 4 * i,
+                    0x8b,
+                    0x09,
+                    0x89,
+                    0x48,
+                    0x34 + 4 * i,
+                ]);
+            }
+            t.stub_ex(
+                en::POLYGON_DATA,
+                false,
+                11,
+                0,
+                &m5_main3_common::Ret::Fixed(0x94),
+                &x,
+            );
+            // a block's matrix (arg 2) into the next of the matrix dumps
+            let (cnt, dump) = (t.zeros(4), t.zeros(0x400));
+            let mut x = vec![0x56, 0x8b, 0x74, 0x24, 0x10, 0x8b, 0x0d];
+            x.extend(cnt.to_le_bytes());
+            x.extend([0xc1, 0xe1, 0x06, 0x81, 0xc1]);
+            x.extend(dump.to_le_bytes());
+            x.extend([
+                0x33, 0xd2, 0x8b, 0x04, 0x96, 0x89, 0x04, 0x91, 0x42, 0x83, 0xfa, 0x10, 0x72, 0xf4,
+                0xff, 0x05,
+            ]);
+            x.extend(cnt.to_le_bytes());
+            x.push(0x5e);
+            t.stub_ex(
+                en::POLYGON_W_MATRIX,
+                false,
+                3,
+                0,
+                &m5_main3_common::Ret::Fixed(0x95),
+                &x,
+            );
+            // the blocks
+            let count = rng.pick(&[0u32, 1, 2, 3, 4]);
+            let enc = t.zeros(0x110 + 0x70 * 4);
+            t.w32(enc + 0x10, a);
+            t.w32(enc + 0x14, b);
+            t.write(enc + 6, &(count as u16).to_le_bytes());
+            for i in 0..16 {
+                let v = small_float(&mut rng);
+                t.w32(enc + 0x60 + 4 * i, v);
+            }
+            for i in 0..count {
+                let blk = enc + 0x110 + 0x70 * i;
+                t.w8(blk, rng.pick(&[0u8, 1, 1, 0x80]));
+                t.write(blk + 2, &(rng.below(0x1_0000) as u16).to_le_bytes());
+                let nv = rng.pick(&[0i16, 1, 3, 4, -1]);
+                let rec = t.zeros(0x20);
+                t.write(rec + 0x12, &nv.to_le_bytes());
+                t.w32(blk + 4, rec);
+                let verts: Vec<u32> = (0..16).map(|_| small_float(&mut rng)).collect();
+                let v = t.words(&verts);
+                t.w32(blk + 8, v);
+                let normals: Vec<u32> = (0..16).map(|_| rng.next()).collect();
+                let n = t.words(&normals);
+                t.w32(blk + 0xc, n);
+                for o in [0x10u32, 0x14, 0x18, 0x50, 0x54, 0x58] {
+                    let v = small_float(&mut rng);
+                    t.w32(blk + o, v);
+                }
+            }
+            let cmd = t.zeros(0x20);
+            t.write(cmd + 4, &(rng.below(8) as u16).to_le_bytes());
+            t.write(cmd + 6, &rng.pick(&[2i16, 8, 0x10]).to_le_bytes());
+            // the original's ebp: `push ebx`, then esp - 8 aligned to 16
+            let entry = t.frame_ebp(2) + 4;
+            let ebp = (entry - 12) & !15;
+            let lo = ebp - en::FRAME;
+            t.write(lo, &vec![0; en::FRAME as usize]);
+            t.b.set_call_top(Some(lo - 0x100));
+            let step = if lit { en::STEP_LIT } else { en::STEP_FOG };
+            t.check(
+                &format!("encount4 draw {k} (lit {lit}, {count} blocks)"),
+                step,
+                Conv::Cdecl,
+                &[enc, cmd],
+                |m| Out::U32(en::encount4_draw(m, enc, cmd, ebp, lit, &mut cdecl)),
+            );
+            t.b.set_call_top(None);
         }
     });
 }

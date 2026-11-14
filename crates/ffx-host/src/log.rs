@@ -28,6 +28,14 @@ pub fn bad_access(addr: u32, len: usize, write: bool) {
             "bad access: {} of {len} bytes at {addr:#010x} (outside the arena's regions)",
             if write { "write" } else { "read" }
         ));
+        // `FFX_HOST_BAD_ACCESS_TRACE=1`: the Rust stack of each first one
+        // on stderr (which port made it)
+        if std::env::var_os("FFX_HOST_BAD_ACCESS_TRACE").is_some() {
+            eprintln!(
+                "bad access at {addr:#010x}:\n{}",
+                std::backtrace::Backtrace::force_capture()
+            );
+        }
     }
 }
 
