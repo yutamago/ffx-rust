@@ -259,8 +259,12 @@ pub enum Op<'a> {
     /// `UpdateSubresource(dst, sub, box, data, row pitch, depth pitch)`.
     Update(u32, u32, Option<[u32; 6]>, &'a [u8], u32, u32),
     /// The CPU's writes to a mapped subresource, at `Unmap` (resource,
-    /// subresource, row pitch, depth pitch, bytes).
-    Unmapped(u32, u32, u32, u32, &'a [u8]),
+    /// subresource, row pitch, depth pitch, bytes), and for a buffer's
+    /// discarding map the runs of the bytes on pages the game wrote since
+    /// the `Map` (offset, length; the arena's write watch): the rest is
+    /// undefined after a `WRITE_DISCARD`, so only they need to go up.
+    /// `None`: every byte.
+    Unmapped(u32, u32, u32, u32, &'a [u8], Option<&'a [(u32, u32)]>),
     /// `Begin(query)`.
     Begin(u32),
     /// `End(query)`.
@@ -460,6 +464,19 @@ impl Default for Bound {
 #[derive(Debug, Clone, Copy)]
 struct Mapping {
     kind: u32,
+    /// A buffer's `WRITE_DISCARD` map whose writes the arena watches
+    /// ([`crate::arena::Arena::watch`]).
+    watched: bool,
+}
+
+/// `D3D11_MAP_WRITE_DISCARD`.
+const MAP_WRITE_DISCARD: u32 = 4;
+
+/// Discarding maps of buffers upload only the pages written
+/// ([`Op::Unmapped`]) unless `FFX_HOST_UNMAP_ALL=1`.
+fn watch_discards() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("FFX_HOST_UNMAP_ALL").map_or(true, |v| v != "1"))
 }
 
 /// The layer: the objects, the bound state, the stream and the log.
@@ -1327,7 +1344,13 @@ impl Gfx {
             mem.write(out + 4, if dims == 0 { size } else { row });
             mem.write(out + 8, if dims == 0 { size } else { slice });
         }
-        self.maps.insert((id, sub), Mapping { kind });
+        // a buffer's discarding map: the bytes not written are undefined,
+        // so the unmap sends only the pages written from here on
+        let watched = kind == MAP_WRITE_DISCARD
+            && dims == 0
+            && watch_discards()
+            && e.arena().watch(copy + off, size);
+        self.maps.insert((id, sub), Mapping { kind, watched });
         S_OK
     }
 
@@ -1366,7 +1389,13 @@ impl Gfx {
         {
             g.texture_rows(id, sub, 0, 0, data, row, row, size / row);
         }
-        self.backend.op(&Op::Unmapped(id, sub, row, slice, data));
+        let spans = if m.watched {
+            arena.written(r.copy + off, size)
+        } else {
+            None
+        };
+        self.backend
+            .op(&Op::Unmapped(id, sub, row, slice, data, spans.as_deref()));
         self.buffer_changed(e, id);
     }
 

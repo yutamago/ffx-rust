@@ -550,8 +550,8 @@ impl D3d11 {
                         );
                     }
                 }
-                Op::Unmapped(id, sub, row, depth, data) => {
-                    self.write(c, *id, *sub, *row, *depth, data);
+                Op::Unmapped(id, sub, row, depth, data, spans) => {
+                    self.write(c, *id, *sub, *row, *depth, data, *spans);
                 }
                 Op::Begin(q) => {
                     if let Some(q) = self.get::<ID3D11Asynchronous>(*q) {
@@ -576,7 +576,20 @@ impl D3d11 {
 
     /// The CPU's writes to a mapped subresource reach the resource: a
     /// discarding map of a dynamic resource, else `UpdateSubresource`.
-    fn write(&self, c: &ID3D11DeviceContext, id: u32, sub: u32, row: u32, depth: u32, data: &[u8]) {
+    /// With `spans` (a buffer's discarding map: [`Op::Unmapped`]) only
+    /// those runs are copied into the discarding map; the rest of the
+    /// driver's fresh buffer stays undefined, as the game's was.
+    #[allow(clippy::too_many_arguments)] // the op's fields
+    fn write(
+        &self,
+        c: &ID3D11DeviceContext,
+        id: u32,
+        sub: u32,
+        row: u32,
+        depth: u32,
+        data: &[u8],
+        spans: Option<&[(u32, u32)]>,
+    ) {
         let Some(o) = self.objects.get(&id) else {
             return;
         };
@@ -592,7 +605,18 @@ impl D3d11 {
                     .is_ok()
                     && !m.pData.is_null()
                 {
-                    copy_pitched(data, row, m.pData.cast::<u8>(), m.RowPitch);
+                    let dst = m.pData.cast::<u8>();
+                    match spans {
+                        Some(spans) => {
+                            for &(off, n) in spans {
+                                let (off, n) = (off as usize, n as usize);
+                                if let Some(src) = data.get(off..off + n) {
+                                    std::ptr::copy_nonoverlapping(src.as_ptr(), dst.add(off), n);
+                                }
+                            }
+                        }
+                        None => copy_pitched(data, row, dst, m.RowPitch),
+                    }
                     c.Unmap(&r, sub);
                 }
             } else {
