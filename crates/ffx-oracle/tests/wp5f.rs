@@ -3427,7 +3427,10 @@ fn wp5f_string_tree_insert_matches_the_original() {
                     0 => 0,
                     1 => 1, // a null key with its tag bit
                     _ => {
-                        let s = t.alloc(words[rng.below(words.len() as u32) as usize]);
+                        // at an address with bit 1 set or not (bit 0 the tag)
+                        let mut w = vec![b'#', b'#'];
+                        w.extend(words[rng.below(words.len() as u32) as usize]);
+                        let s = t.alloc(&w) + 2 * rng.below(2);
                         s | rng.below(2)
                     }
                 }
