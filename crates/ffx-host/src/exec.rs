@@ -1106,6 +1106,21 @@ impl Shared {
         };
         eprintln!("ffx-host: {stop}");
         crate::log::note(&stop.to_string());
+        // every other game thread's place too: whom the main thread waits
+        // for may wait in turn
+        if let Ok(l) = self.spots.lock() {
+            for p in l.iter().filter(|p| p.id != MAIN_THREAD) {
+                let blocked = self
+                    .sync
+                    .blocked(p.id)
+                    .map_or_else(String::new, |b| format!("; it {b}"));
+                eprintln!(
+                    "ffx-host: at the hang, thread {:#x} is in {}{blocked}",
+                    p.id,
+                    self.spot_chain(p)
+                );
+            }
+        }
         self.stop_all(stop);
     }
 }
