@@ -305,8 +305,13 @@ pub mod bridge {
         h.read_bytes(base + 0x280, &mut owners);
         h.read_bytes(base, &mut values);
         let slot = slot.to_le_bytes();
-        for (v, o) in values.chunks_exact_mut(4).zip(owners.chunks_exact(4)) {
-            if o == slot {
+        for (v, o) in values
+            .as_chunks_mut::<4>()
+            .0
+            .iter_mut()
+            .zip(owners.as_chunks::<4>().0)
+        {
+            if *o == slot {
                 v.fill(0);
             }
         }
