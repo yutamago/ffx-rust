@@ -582,4 +582,14 @@ ported! {
     eh_vector_destructor_iterator @ 0x0094_96d2 => extern "stdcall" fn eh_vector_dtor_iterator(ptr: u32, size: u32, count: u32, dtor: u32) -> u32 {
         pr::eh_vector_dtor_iterator(&mut mem(), ptr, size, count, dtor)
     }
+
+    /// `std::locale::_Fac_node::~_Fac_node()` -> the deleting destructor's
+    /// result or 0.
+    Fac_node_dtor_0094a62c @ 0x0094_a62c => extern "thiscall" fn fac_node_dtor(node: u32) -> u32 {
+        pr::fac_node_dtor(&mut mem(), node)
+    }
+    /// `mkvparser::SimpleBlock`'s deleting destructor -> `this`.
+    mkvparser_SimpleBlock_deletingDtor_0042d0f0 @ 0x0042_d0f0 => extern "thiscall" fn simple_block_deleting_dtor(this: u32, flags: u32) -> u32 {
+        mkv::simple_block_deleting_dtor(&mut mem(), this, flags)
+    }
 }

@@ -2953,4 +2953,27 @@ pub mod bridge {
         h.write(at(atom, 0x20), 0u32);
         h.write(at(atom, 0x24), 0u32);
     }
+
+    /// `mkvparser::SimpleBlock`'s deleting destructor and the `Block`
+    /// vtable it leaves.
+    pub const SIMPLE_BLOCK_DELETING_DTOR: u32 = 0x0042_d0f0;
+    pub const BLOCK_ENTRY_VTABLE: u32 = 0x00b9_20dc;
+
+    /// `mkvparser::SimpleBlock`'s deleting destructor (`0x0042d0f0`,
+    /// thiscall, `ret 4`) -> `this`: the block's frames (`+0x2c`) freed
+    /// (the movie allocator's `free`), the base vtable set, `this` freed
+    /// when `flags` bit 0 is set. (The original's exception frame has
+    /// nothing to unwind here.)
+    pub fn simple_block_deleting_dtor(h: &mut impl Host, this: u32, flags: u32) -> u32 {
+        let frames: u32 = h.read(at(this, 0x2c));
+        if frames != 0 {
+            free(h, frames);
+        }
+        let vt = h.rebase(BLOCK_ENTRY_VTABLE);
+        h.write(this, vt);
+        if flags & 1 != 0 {
+            free(h, this);
+        }
+        this
+    }
 }

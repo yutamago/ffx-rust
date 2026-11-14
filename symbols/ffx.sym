@@ -175,6 +175,7 @@
 0x0042c880 function mkvparser_Cluster_GetFirst # (platform census 2026-10-25, docs/formats/platform.md; movie); ported M5 wp5f (ffx_prender::wp5f_mkv)
 0x0042c9d0 function mkvparser_Cluster_GetNext # "Error parsing next block of cluster" on < 0 (platform census 2026-10-25, docs/formats/platform.md; movie); ported M5 wp5f (ffx_prender::wp5f_mkv)
 0x0042d050 function mkvparser_BlockEntry_EOS # GetKind() == 0 (platform census 2026-10-25, docs/formats/platform.md; movie); ported M5 wp5f (ffx_prender::wp5f_mkv)
+0x0042d0f0 function mkvparser_SimpleBlock_deletingDtor_0042d0f0 # thiscall(this; flags) ret 4 -> this: the Block's frames (+0x2c) freed (movie deallocator), vtable 0x00b920dc, this freed when flags bit 0; SEH frame; ported M5 wp5f (ffx_prender::wp5f_mkv)
 0x0042d200 function mkvparser_BlockGroup_ctor_0042d200 # thiscall(this; cluster, index, bpos64, bsize64, prev64, next64, duration64, discard64) -> this: vtable 0x00b920ac, the block at +0x10, prev +0x40, next +0x48, duration +0x50, discard +0x38; ported M5 wp5f (ffx_prender::wp5f_mkv)
 0x0042d370 function OggPage_end_0042d370 # thiscall(state) -> eax: 0x0042d470(+0x10; +4); when it returns 0, +0x2a bit 7 = (i64 +0x40 > 0 && i64 +0x48 <= 0), then 0; name ours; ported (ffx_ps2::m5_ps2, m5 small b7)
 0x0042d3c0 function ReturnConst2_0042d3c0        # auto-port shape (return constant, cdecl): return 0x2; callers: no direct caller; name ours
@@ -22810,6 +22811,7 @@
 0x00949f50 function crt_vprintf_thunk         # g_MagicImports slot 726 (142 overlays): jmp [0x00b0c48c] (MSVCR110 vprintf); hidden from the dump
 0x00949ff0 function SEH_prolog4               # fh v3:cg2 0x949ff0 __SEH_prolog4
 0x0094a035 function SEH_epilog4               # fh v3:cg2 0x94a035 __SEH_epilog4
+0x0094a62c function Fac_node_dtor_0094a62c # thiscall(node) -> the deleting dtor's eax or 0: std::locale::_Fac_node::~_Fac_node: the facet (+4) _Decref (vslot 2); a facet handed back deleted (vslot 0, 1); ported M5 wp5f (ffx_prender::wp5f)
 0x0094a641 function FacetList_free_0094a641 # cdecl(): the facet list 0x0193ed28 freed node by node (~_Fac_node 0x0094a62c, delete); name ours; ported M5 wp5f (ffx_prender::wp5f)
 0x0094a684 function Facet_Register            # fh v3:cg2 0x94a684; ported M5 wp5f (ffx_system::wp5f_sstream: node {next, facet} pushed on 0x0193ed28)
 0x0094ab80 function lua_atpanic               # fh switch:bsim1.00 0x710076c3d4

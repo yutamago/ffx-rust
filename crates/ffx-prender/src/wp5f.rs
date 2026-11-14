@@ -1117,4 +1117,21 @@ pub mod bridge {
         }
         1
     }
+
+    /// `_Fac_node::~_Fac_node(node)` (`0x0094a62c`, thiscall) -> the
+    /// deleting destructor's result, or 0: the node's facet (`+4`) loses a
+    /// reference (vtable slot 2, `_Decref`, thiscall); a facet it hands
+    /// back is deleted (slot 0, flags 1).
+    pub fn fac_node_dtor(h: &mut impl Host, node: u32) -> u32 {
+        let facet: u32 = h.read(at(node, 4));
+        let vt: u32 = h.read(facet);
+        let f: u32 = h.read(at(vt, 8));
+        let r = h.call(f, Conv::Thiscall(facet), &[]);
+        if r == 0 {
+            return 0;
+        }
+        let vt: u32 = h.read(r);
+        let f: u32 = h.read(vt);
+        h.call(f, Conv::Thiscall(r), &[1])
+    }
 }

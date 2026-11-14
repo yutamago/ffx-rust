@@ -3514,3 +3514,44 @@ fn wp5f_eh_vector_iterators_match_the_original() {
         }
     });
 }
+
+#[test]
+fn wp5f_fac_node_and_simple_block_dtors_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x0094_a62c);
+        for k in 0..100 {
+            // ~_Fac_node: _Decref hands back the facet to delete, or 0
+            t.reset();
+            let del = t.stub_code(0xdede, true, 1, 1, &Ret::Fixed(0x77), &[]);
+            let vt2 = t.words(&[del, 0, 0]);
+            let gone = t.words(&[vt2, 0]);
+            let back = rng.pick(&[0, gone]);
+            let decref = t.stub_code(0xdec0, true, 0, 0, &Ret::Fixed(back), &[]);
+            let vt = t.words(&[0, 0, decref]);
+            let facet = t.words(&[vt, 1]);
+            let node = t.words(&[0, facet]);
+            t.check(
+                &format!("~_Fac_node {k}"),
+                pr::FAC_NODE_DTOR,
+                Conv::Thiscall(node),
+                &[],
+                |m| Out::U32(pr::fac_node_dtor(m, node)),
+            );
+            // SimpleBlock's deleting destructor
+            t.reset();
+            movie_alloc(t, false);
+            let block = t.zeros(0x40);
+            t.w32(block, 0x1234);
+            let frames = rng.pick(&[0, 0x0500_0000]);
+            t.w32(block + 0x2c, frames);
+            let flags = rng.pick(&[0u32, 1, 2, 3]);
+            t.check(
+                &format!("SimpleBlock deleting dtor {k} ({flags})"),
+                mkv::SIMPLE_BLOCK_DELETING_DTOR,
+                Conv::Thiscall(block),
+                &[flags],
+                |m| Out::U32(mkv::simple_block_deleting_dtor(m, block, flags)),
+            );
+        }
+    });
+}
