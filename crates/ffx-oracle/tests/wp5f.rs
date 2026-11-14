@@ -3224,7 +3224,7 @@ fn wp5f_button_quad_matches_the_original() {
             extra.extend(store_arg(1, 0, out));
             extra.push(0x59);
             t.stub_ex(pr::RING_SUBMIT, true, 1, 1, &Ret::Fixed(0x15), &extra);
-            t.stub(pr::RING_UNMAP_COPY, true, 2, 2, rng.pick(&[0, 0, 1]));
+            t.stub(pr::RING_UNMAP_COPY, true, 2, 2, rng.pick(&[0, 0, 1, 2]));
             let desc = t.words(&[7, 7, 0x0707_0707]);
             let vbbase = t.zeros(0x80);
             let vb = vbbase + 0x40;
@@ -3239,7 +3239,7 @@ fn wp5f_button_quad_matches_the_original() {
                 vb + 0x18,
                 rng.pick(&[idx + 1, idx + 2, 0x8000_0000 | (idx + 1)]),
             );
-            t.w32(vb + 0x38, rng.pick(&[a * b, 99]));
+            t.w32(vb + 0x38, rng.pick(&[a * b, 99, 5]));
             let mesh = t.zeros(0x30);
             t.w32(mesh + 0x28, rng.pick(&[2, 0, 1]));
             t.w32(mesh + 0x2c, vbbase);
