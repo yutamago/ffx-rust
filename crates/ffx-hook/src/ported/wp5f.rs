@@ -558,4 +558,8 @@ ported! {
     Input_resetDeviceMap_00630730 @ 0x0063_0730 => extern "C" fn input_reset_devices() {
         pr::input_reset_devices(&mut mem());
     }
+    /// The script heap's realloc `(p, old, new)` -> the block.
+    ScriptHeap_realloc_0061d030 @ 0x0061_d030 => extern "thiscall" fn script_realloc(heap: u32, p: u32, old: u32, new: u32) -> u32 {
+        pr::script_realloc(&mut mem(), heap, p, old, new)
+    }
 }

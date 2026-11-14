@@ -912,4 +912,39 @@ pub mod bridge {
         let f: u32 = h.read(h.rebase(RELEASE_MUTEX));
         h.call(f, Conv::Stdcall, &[mutex]);
     }
+
+    /// The script heap's realloc (`0x0061d030`), `memcpy` and
+    /// `PhyrePrintf(level, format, ...)` (cdecl) with its out-of-memory
+    /// format.
+    pub const SCRIPT_REALLOC: u32 = 0x0061_d030;
+    pub const PHYRE_PRINTF: u32 = 0x0043_52f0;
+    pub const SCRIPT_OOM_FORMAT: u32 = 0x00b3_fa68;
+
+    /// The script heap's realloc (`0x0061d030`, thiscall `(heap; p, old,
+    /// new)`, `ret 0xc`) -> the block: `p` when `new` is 0 or not above
+    /// `old`; else `new` rounded up to 16 bytes taken from the bump pointer
+    /// (`+0`) once aligned to 16 up to the end (`+4`), the old bytes copied
+    /// to the bump pointer as it was (not the aligned one, as the original)
+    /// and that returned; past the end the failure is printed (level 1,
+    /// the rounded size) and 0 returned.
+    pub fn script_realloc(h: &mut impl Host, heap: u32, p: u32, old: u32, new: u32) -> u32 {
+        if new == 0 || new <= old {
+            return p;
+        }
+        let cur: u32 = h.read(heap);
+        let size = new.wrapping_add(0xf) & !0xf;
+        let end = (cur.wrapping_neg() & 0xf)
+            .wrapping_add(cur)
+            .wrapping_add(size);
+        if end > h.read::<u32>(at(heap, 4)) {
+            let format = h.rebase(SCRIPT_OOM_FORMAT);
+            h.call_sym(PHYRE_PRINTF, Conv::Cdecl, &[1, format, size]);
+            return 0;
+        }
+        h.write(heap, end);
+        if old != 0 {
+            h.call_sym(MEMCPY, Conv::Cdecl, &[cur, p, old]);
+        }
+        cur
+    }
 }

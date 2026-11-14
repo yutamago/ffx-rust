@@ -3351,3 +3351,32 @@ fn wp5f_input_reset_devices_matches_the_original() {
         }
     });
 }
+
+#[test]
+fn wp5f_script_realloc_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x0061_d030);
+        for k in 0..300 {
+            t.reset();
+            t.stub(pr::MEMCPY, false, 3, 0, 0x31);
+            t.stub(pr::PHYRE_PRINTF, false, 3, 0, 0x32);
+            let cur = 0x0100_0000 + rng.below(0x40);
+            let room = rng.pick(&[0u32, 0x10, 0x40, 0x100, 0x1000]);
+            let heap = t.words(&[cur, cur + room]);
+            let r = rng.next();
+            let p = rng.pick(&[0, 0x2000, r]);
+            let old = rng.pick(&[0u32, 1, 0x10, 0x30, 0x200]);
+            let new = rng.pick(&[0u32, 1, 0x10, 0x11, 0x40, 0x3f0, 0x2000, u32::MAX - 3]);
+            let what = format!(
+                "script realloc {k} (cur {cur:#x}, room {room:#x}, old {old:#x}, new {new:#x})"
+            );
+            t.check(
+                &what,
+                pr::SCRIPT_REALLOC,
+                Conv::Thiscall(heap),
+                &[p, old, new],
+                |m| Out::U32(pr::script_realloc(m, heap, p, old, new)),
+            );
+        }
+    });
+}
