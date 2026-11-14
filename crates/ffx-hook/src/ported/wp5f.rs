@@ -1,0 +1,595 @@
+//! M5 finish, WP5 part 5 (wp5f): the last `FFX.exe` frontier: dlmalloc's
+//! heap growth and release (`ffx_sg::m5main4_lib`; parity tests in
+//! `crates/ffx-oracle/tests/m5_main4.rs`, `dlmalloc_*`), the menu screens'
+//! layout reads and the main menu's help bar (`ffx_menu::wp5f_menu`;
+//! `crates/ffx-oracle/tests/m5_menu.rs`, `wp5f_*`).
+//!
+//! Threads: the heaps are the game's `mspace`s (the cloth heap on the
+//! cloth workers, the graphics heap on the main thread); the menu runs on
+//! the main thread. No shim keeps state; the region queries' buffers are
+//! `StackFrame`s (7 words).
+
+use super::{StackFrame, mem, ported};
+use ffx_menu::wp5f_menu::bridge as menu;
+use ffx_prender::wp5f::bridge as pr;
+use ffx_prender::wp5f_mkv::bridge as mkv;
+use ffx_prender::wp5f_sort::bridge as sort;
+use ffx_sg::m5main4_lib::bridge as lib;
+use ffx_system::wp5f_sstream::bridge as ss;
+
+ported! {
+    /// `init_top(m, p, psize)`.
+    dlmalloc_init_top_006ea140 @ 0x006e_a140 => extern "C" fn init_top(m: u32, p: u32, psize: u32) {
+        lib::init_top(&mut mem(), m, p, psize);
+    }
+    /// `segment_holding(m, p)` -> the segment record or 0.
+    dlmalloc_segment_holding_006eb1a0 @ 0x006e_b1a0 => extern "C" fn segment_holding(m: u32, p: u32) -> u32 {
+        lib::segment_holding(&mut mem(), m, p)
+    }
+    /// `mmap_alloc(m, nb)` -> the chunk's memory or 0.
+    dlmalloc_mmap_alloc_006eaa30 @ 0x006e_aa30 => extern "C" fn mmap_alloc(m: u32, nb: u32) -> u32 {
+        lib::mmap_alloc(&mut mem(), m, nb)
+    }
+    /// `prepend_alloc(m, newbase, oldbase, nb)` -> the chunk's memory.
+    dlmalloc_prepend_alloc_006eab10 @ 0x006e_ab10 => extern "C" fn prepend_alloc(m: u32, newbase: u32, oldbase: u32, nb: u32) -> u32 {
+        lib::prepend_alloc(&mut mem(), m, newbase, oldbase, nb)
+    }
+    /// `add_segment(m, tbase, tsize, mmapped)`.
+    dlmalloc_add_segment_006e9ae0 @ 0x006e_9ae0 => extern "C" fn add_segment(m: u32, tbase: u32, tsize: u32, mmapped: u32) {
+        lib::add_segment(&mut mem(), m, tbase, tsize, mmapped);
+    }
+    /// `sys_alloc(m, nb)` -> the chunk's memory or 0.
+    dlmalloc_sys_alloc_006eb1d0 @ 0x006e_b1d0 => extern "C" fn sys_alloc(m: u32, nb: u32) -> u32 {
+        lib::sys_alloc(&mut mem(), m, nb)
+    }
+    /// `sys_trim(m, pad)` -> 1 when memory went back; the region query in
+    /// a frame.
+    dlmalloc_sys_trim_006eb3e0 @ 0x006e_b3e0 => extern "C" fn sys_trim(m: u32, pad: u32) -> u32 {
+        let mut f = StackFrame::<7>::new();
+        lib::sys_trim(&mut mem(), m, pad, f.at())
+    }
+    /// `release_unused_segments(m)` -> the bytes released; the region
+    /// query in a frame.
+    dlmalloc_release_unused_segments_006eae70 @ 0x006e_ae70 => extern "C" fn release_unused_segments(m: u32) -> u32 {
+        let mut f = StackFrame::<7>::new();
+        lib::release_unused_segments(&mut mem(), m, f.at())
+    }
+    /// `tmalloc_large(m, nb)` -> the chunk's memory or 0.
+    dlmalloc_tmalloc_large_006eb540 @ 0x006e_b540 => extern "C" fn tmalloc_large(m: u32, nb: u32) -> u32 {
+        lib::tmalloc_large(&mut mem(), m, nb)
+    }
+
+    /// `MenuConfig_InitLayout_008cc050()` -> the last colour.
+    MenuConfig_InitLayout_008cc050 @ 0x008c_c050 => extern "C" fn config_init_layout() -> u32 {
+        menu::config_init_layout(&mut mem())
+    }
+    /// `MenuEquip_InitLayout_008cfc40()` -> the last call's `eax`.
+    MenuEquip_InitLayout_008cfc40 @ 0x008c_fc40 => extern "C" fn equip_init_layout() -> u32 {
+        menu::equip_init_layout(&mut mem())
+    }
+    /// `MenuLimit_InitLayout_008d0cd0()` -> the last call's `eax`.
+    MenuLimit_InitLayout_008d0cd0 @ 0x008d_0cd0 => extern "C" fn limit_init_layout() -> u32 {
+        menu::limit_init_layout(&mut mem())
+    }
+    /// `MenuKaizou_InitLayout_008d6be0()` -> the last call's `eax`.
+    MenuKaizou_InitLayout_008d6be0 @ 0x008d_6be0 => extern "C" fn kaizou_init_layout() -> u32 {
+        menu::kaizou_init_layout(&mut mem())
+    }
+    /// `TkMenuMain_DrawHelpBar_008a9350(window)` -> the mask or
+    /// `TkVU1SyncPath`'s `eax`.
+    TkMenuMain_DrawHelpBar_008a9350 @ 0x008a_9350 => extern "C" fn draw_help_bar(_window: u32) -> u32 {
+        menu::draw_help_bar(&mut mem())
+    }
+
+    /// `std::stringstream()` (`this; 2 unread words`) -> `this`.
+    StdStringstream_ctor_00402f00 @ 0x0040_2f00 => extern "thiscall" fn stringstream_ctor(this: u32, _a: u32, _b: u32) -> u32 {
+        ss::stringstream_ctor(&mut mem(), this)
+    }
+    /// The stringstream's vbase destructor (`this` = its `basic_ios`).
+    StdStringstream_vbaseDtor_00402fc0 @ 0x0040_2fc0 => extern "thiscall" fn stringstream_vbase_dtor(this: u32) -> u32 {
+        ss::stream_vbase_dtor(&mut mem(), this, ss::STRINGSTREAM)
+    }
+    /// `stringstream::str()` into `out` -> `out`.
+    StdStringstream_str_00402ff0 @ 0x0040_2ff0 => extern "thiscall" fn stringstream_str(this: u32, out: u32) -> u32 {
+        ss::stream_str(&mut mem(), this, 0x18, out)
+    }
+    /// `~basic_stringbuf()`'s body -> `~basic_streambuf`'s `eax`.
+    StdStringbuf_tidy_00403010 @ 0x0040_3010 => extern "thiscall" fn stringbuf_tidy(this: u32) -> u32 {
+        ss::stringbuf_tidy(&mut mem(), this)
+    }
+    /// `basic_stringbuf::overflow(c)`.
+    StdStringbuf_overflow_00403080 @ 0x0040_3080 => extern "thiscall" fn stringbuf_overflow(this: u32, c: u32) -> u32 {
+        ss::stringbuf_overflow(&mut mem(), this, c)
+    }
+    /// `basic_stringbuf::pbackfail(c)`.
+    StdStringbuf_pbackfail_00403260 @ 0x0040_3260 => extern "thiscall" fn stringbuf_pbackfail(this: u32, c: u32) -> u32 {
+        ss::stringbuf_pbackfail(&mut mem(), this, c)
+    }
+    /// `basic_stringbuf::underflow()`.
+    StdStringbuf_underflow_004032c0 @ 0x0040_32c0 => extern "thiscall" fn stringbuf_underflow(this: u32) -> u32 {
+        ss::stringbuf_underflow(&mut mem(), this)
+    }
+    /// `basic_stringbuf::seekoff(out; off, way, which)` -> `out`.
+    StdStringbuf_seekoff_00403320 @ 0x0040_3320 => extern "thiscall" fn stringbuf_seekoff(this: u32, out: u32, off_lo: u32, off_hi: u32, way: u32, which: u32) -> u32 {
+        let off = u64::from(off_hi) << 32 | u64::from(off_lo);
+        ss::stringbuf_seekoff(&mut mem(), this, out, off, way, which)
+    }
+    /// `basic_stringbuf::seekpos(out; pos, which)` -> `out` (the
+    /// position's state words are not read).
+    StdStringbuf_seekpos_004034f0 @ 0x0040_34f0 => extern "thiscall" fn stringbuf_seekpos(this: u32, out: u32, off_lo: u32, off_hi: u32, fpos_lo: u32, fpos_hi: u32, _state: u32, _pad: u32, which: u32) -> u32 {
+        let off = u64::from(off_hi) << 32 | u64::from(off_lo);
+        let fpos = u64::from(fpos_hi) << 32 | u64::from(fpos_lo);
+        ss::stringbuf_seekpos(&mut mem(), this, out, off, fpos, which)
+    }
+    /// `std::istringstream(str)` (`this; str, 2 unread words`) -> `this`.
+    StdIstringstream_ctor_00403620 @ 0x0040_3620 => extern "thiscall" fn istringstream_ctor(this: u32, s: u32, _a: u32, _b: u32) -> u32 {
+        ss::istringstream_ctor(&mut mem(), this, s)
+    }
+    /// The istringstream's vbase destructor.
+    StdIstringstream_vbaseDtor_00403700 @ 0x0040_3700 => extern "thiscall" fn istringstream_vbase_dtor(this: u32) -> u32 {
+        ss::stream_vbase_dtor(&mut mem(), this, ss::ISTRINGSTREAM)
+    }
+    /// `std::ostringstream()` (`this; 2 unread words`) -> `this`.
+    StdOstringstream_ctor_00403730 @ 0x0040_3730 => extern "thiscall" fn ostringstream_ctor(this: u32, _a: u32, _b: u32) -> u32 {
+        ss::ostringstream_ctor(&mut mem(), this)
+    }
+    /// The ostringstream's vbase destructor.
+    StdOstringstream_vbaseDtor_004037e0 @ 0x0040_37e0 => extern "thiscall" fn ostringstream_vbase_dtor(this: u32) -> u32 {
+        ss::stream_vbase_dtor(&mut mem(), this, ss::OSTRINGSTREAM)
+    }
+    /// `ostringstream::str()` into `out` -> `out`.
+    StdOstringstream_str_00403810 @ 0x0040_3810 => extern "thiscall" fn ostringstream_str(this: u32, out: u32) -> u32 {
+        ss::stream_str(&mut mem(), this, 4, out)
+    }
+    /// The stringstream's deleting destructor (`this` = its `basic_ios`).
+    StdStringstream_deletingDtor_00403830 @ 0x0040_3830 => extern "thiscall" fn stringstream_deleting_dtor(this: u32, flags: u32) -> u32 {
+        ss::stream_deleting_dtor(&mut mem(), this, flags, ss::STRINGSTREAM)
+    }
+    /// The stringbuf's deleting destructor -> `this`.
+    StdStringbuf_deletingDtor_00403890 @ 0x0040_3890 => extern "thiscall" fn stringbuf_deleting_dtor(this: u32, flags: u32) -> u32 {
+        ss::stringbuf_deleting_dtor(&mut mem(), this, flags)
+    }
+    /// The istringstream's deleting destructor.
+    StdIstringstream_deletingDtor_004038c0 @ 0x0040_38c0 => extern "thiscall" fn istringstream_deleting_dtor(this: u32, flags: u32) -> u32 {
+        ss::stream_deleting_dtor(&mut mem(), this, flags, ss::ISTRINGSTREAM)
+    }
+    /// The ostringstream's deleting destructor.
+    StdOstringstream_deletingDtor_00403920 @ 0x0040_3920 => extern "thiscall" fn ostringstream_deleting_dtor(this: u32, flags: u32) -> u32 {
+        ss::stream_deleting_dtor(&mut mem(), this, flags, ss::OSTRINGSTREAM)
+    }
+    /// `basic_stringbuf::str()` into `out` -> `out`; the temporary string
+    /// in a frame.
+    StdStringbuf_str_00403ec0 @ 0x0040_3ec0 => extern "thiscall" fn stringbuf_str(this: u32, out: u32) -> u32 {
+        let mut tmp = StackFrame::<6>::new();
+        ss::stringbuf_str(&mut mem(), this, out, tmp.at())
+    }
+    /// `std::string::push_back(c)` (`this; unread word, c`) -> `this`.
+    StdString_pushBack_004041c0 @ 0x0040_41c0 => extern "thiscall" fn string_push_back(this: u32, _a: u32, c: u32) -> u32 {
+        ss::string_push_back(&mut mem(), this, c)
+    }
+    /// `basic_stringbuf::_Init(p, n)`.
+    StdStringbuf_init_004045d0 @ 0x0040_45d0 => extern "thiscall" fn stringbuf_init(this: u32, p: u32, n: u32) {
+        ss::stringbuf_init(&mut mem(), this, p, n);
+    }
+    /// `use_facet<ctype<char>>(loc)` -> the facet; the lock, the
+    /// `bad_cast` and the cache copy in a frame.
+    StdUseFacet_ctype_004049a0 @ 0x0040_49a0 => extern "fastcall" fn use_ctype(loc: u32) -> u32 {
+        let mut f = StackFrame::<5>::new();
+        ss::use_ctype(&mut mem(), loc, f.at())
+    }
+    /// `os << ','` (`ecx` = the stream) -> `os`.
+    StdOstream_putComma_00404a90 @ 0x0040_4a90 => extern "thiscall" fn put_comma(os: u32) -> u32 {
+        ss::put_comma(&mut mem(), os)
+    }
+    /// `os << s` (a C string) -> `os`.
+    StdOstream_putCstr_00404ca0 @ 0x0040_4ca0 => extern "fastcall" fn put_cstr(os: u32, s: u32) -> u32 {
+        ss::put_cstr(&mut mem(), os, s)
+    }
+    /// `os << s` (a `std::string`) -> `os`.
+    StdOstream_putString_00404ed0 @ 0x0040_4ed0 => extern "fastcall" fn put_string(os: u32, s: u32) -> u32 {
+        ss::put_string(&mut mem(), os, s)
+    }
+    /// `is >> s` (a `std::string`) -> `is`; the locale in a frame.
+    StdIstream_getString_00405800 @ 0x0040_5800 => extern "fastcall" fn get_string(is: u32, s: u32) -> u32 {
+        let mut loc = StackFrame::<1>::new();
+        ss::get_string(&mut mem(), is, s, loc.at())
+    }
+    /// `Facet_Register(f)` -> the list node.
+    Facet_Register @ 0x0094_a684 => extern "C" fn facet_register(facet: u32) -> u32 {
+        ss::facet_register(&mut mem(), facet)
+    }
+
+    /// `0x006b60f0()`: the singleton at `0x00cccad0` freed.
+    GraphicFinalize_freeSingleton_006b60f0 @ 0x006b_60f0 => extern "C" fn free_singleton_cccad0() {
+        pr::free_singleton_cccad0(&mut mem());
+    }
+    /// `0x006b6180()`: the singleton at `0x00cccae0` freed.
+    GraphicFinalize_freeSingleton_006b6180 @ 0x006b_6180 => extern "C" fn free_singleton_6180() {
+        pr::free_singleton(&mut mem(), pr::SINGLETONS[0].1);
+    }
+    /// `0x006b61b0()`: the singleton at `0x00cccad8` freed.
+    GraphicFinalize_freeSingleton_006b61b0 @ 0x006b_61b0 => extern "C" fn free_singleton_61b0() {
+        pr::free_singleton(&mut mem(), pr::SINGLETONS[1].1);
+    }
+    /// `0x006b61e0()`: the singleton at `0x00cccadc` freed.
+    GraphicFinalize_freeSingleton_006b61e0 @ 0x006b_61e0 => extern "C" fn free_singleton_61e0() {
+        pr::free_singleton(&mut mem(), pr::SINGLETONS[2].1);
+    }
+    /// `0x006b6210()`: the singleton at `0x00cccac4` freed.
+    GraphicFinalize_freeSingleton_006b6210 @ 0x006b_6210 => extern "C" fn free_singleton_6210() {
+        pr::free_singleton(&mut mem(), pr::SINGLETONS[3].1);
+    }
+    /// `0x006b6240()`: the singleton at `0x00cccad4` freed.
+    GraphicFinalize_freeSingleton_006b6240 @ 0x006b_6240 => extern "C" fn free_singleton_6240() {
+        pr::free_singleton(&mut mem(), pr::SINGLETONS[4].1);
+    }
+    /// `0x006b6270()`: the singleton at `0x00cccae4` freed.
+    GraphicFinalize_freeSingleton_006b6270 @ 0x006b_6270 => extern "C" fn free_singleton_6270() {
+        pr::free_singleton(&mut mem(), pr::SINGLETONS[5].1);
+    }
+    /// `0x006b62a0()`: the singleton at `0x00cccac8` freed.
+    GraphicFinalize_freeSingleton_006b62a0 @ 0x006b_62a0 => extern "C" fn free_singleton_62a0() {
+        pr::free_singleton(&mut mem(), pr::SINGLETONS[6].1);
+    }
+    /// `0x006b62d0()`: the object at `0x00cccac0` deleted.
+    GraphicFinalize_freeObject_006b62d0 @ 0x006b_62d0 => extern "C" fn free_object_cccac0() {
+        pr::free_object_cccac0(&mut mem());
+    }
+    /// `0x006dc870()` -> `Input_ShutdownDevice`'s `eax` (0 without a block).
+    FreeBlock_cdede8_006dc870 @ 0x006d_c870 => extern "C" fn free_block_cdede8() -> u32 {
+        pr::free_block_cdede8(&mut mem())
+    }
+    /// `0x0041e6a0(this)`: the `IMkvReader` vtable stored.
+    MkvReader_baseDtor_0041e6a0 @ 0x0041_e6a0 => extern "thiscall" fn mkv_reader_base_dtor(this: u32) {
+        pr::mkv_reader_base_dtor(&mut mem(), this);
+    }
+    /// `SqsSePlayState()` -> 0.
+    SqsSePlayState @ 0x0081_e530 => extern "C" fn sqs_se_play_state() -> u32 {
+        pr::sqs_se_play_state(&mut mem())
+    }
+    /// `0x005f0950(array, n)`.
+    ClearRecords_005f0950 @ 0x005f_0950 => extern "C" fn clear_records(array: u32, n: u32) {
+        pr::clear_records(&mut mem(), array, n);
+    }
+    /// `0x006058b0(this; a, xyz, f)` -> `0x006058e0`'s `eax`.
+    SetPositionThen_006058b0 @ 0x0060_58b0 => extern "thiscall" fn set_position_then(this: u32, a: u32, xyz: u32, f: u32) -> u32 {
+        pr::set_position_then(&mut mem(), this, a, xyz, f)
+    }
+    /// `SectionVector_grow_006b6500(this; n)` -> `_Reallocate`'s `eax` (the
+    /// spare count when there is room).
+    SectionVector_grow_006b6500 @ 0x006b_6500 => extern "thiscall" fn section_vector_grow(this: u32, n: u32) -> u32 {
+        pr::section_vector_grow(&mut mem(), this, n)
+    }
+    /// `std::string::find_first_of(set, pos, n)` -> the position or -1.
+    std_string_findFirstOf_006b68c0 @ 0x006b_68c0 => extern "thiscall" fn find_first_of(this: u32, set: u32, pos: u32, n: u32) -> u32 {
+        pr::find_first_of(&mut mem(), this, set, pos, n)
+    }
+    /// `0x006b6730(this; name)`: the map name set and changed.
+    SetMapName_006b6730 @ 0x006b_6730 => extern "thiscall" fn set_map_name(this: u32, name: u32) {
+        pr::set_map_name(&mut mem(), this, name);
+    }
+    /// `0x00807120(tree)`: the opus tree cleared.
+    opusTree_clear_00807120 @ 0x0080_7120 => extern "thiscall" fn opus_tree_clear(tree: u32) {
+        pr::opus_tree_clear(&mut mem(), tree);
+    }
+    /// `0x0094a641()`: the facet list freed.
+    FacetList_free_0094a641 @ 0x0094_a641 => extern "C" fn facet_list_free() {
+        pr::facet_list_free(&mut mem());
+    }
+    /// `SkipPrompt_update_006e8540(prompt)` -> `al`, whether it shows.
+    SkipPrompt_update_006e8540 @ 0x006e_8540 => extern "thiscall" fn skip_prompt_update(prompt: u32) -> u32 {
+        pr::skip_prompt_update(&mut mem(), prompt)
+    }
+    /// `0x005130f0(this; src)` -> `this`: the record copied, its name
+    /// duplicated.
+    CopyNamedRecord_005130f0 @ 0x0051_30f0 => extern "thiscall" fn copy_named_record(this: u32, src: u32) -> u32 {
+        pr::copy_named_record(&mut mem(), this, src)
+    }
+    /// `0x006258e0(this; out, key)` -> `out`: `equal_range` on a `u32` map.
+    MapU32_equalRange_006258e0 @ 0x0062_58e0 => extern "thiscall" fn equal_range_u32(this: u32, out: u32, key: u32) -> u32 {
+        pr::equal_range_u32(&mut mem(), this, out, key)
+    }
+    /// `0x00699d60(this)`: the cluster manager's teardown; the erase's
+    /// result in a frame.
+    ClusterManager_shutdown_00699d60 @ 0x0069_9d60 => extern "thiscall" fn cluster_manager_shutdown(this: u32) {
+        let mut f = StackFrame::<1>::new();
+        pr::cluster_manager_shutdown(&mut mem(), this, f.at());
+    }
+    /// `AtlConvAllocMemory(p, n, fixed, fixed_n)`.
+    AtlConvAllocMemory_006496d0 @ 0x0064_96d0 => extern "C" fn conv_alloc_memory(p: u32, n: u32, fixed: u32, fixed_n: u32) {
+        pr::conv_alloc_memory(&mut mem(), p, n, fixed, fixed_n);
+    }
+    /// `mkvparser::Segment::GetFirst()` -> the first cluster or the end.
+    mkvparser_Segment_GetFirst @ 0x0042_3840 => extern "thiscall" fn segment_get_first(seg: u32) -> u32 {
+        mkv::segment_get_first(&mut mem(), seg)
+    }
+    /// `mkvparser::Tracks::GetTrackByNumber(n)` -> the track or 0.
+    mkvparser_Tracks_GetTrackByNumber @ 0x0042_9da0 => extern "thiscall" fn tracks_get_track_by_number(tracks: u32, n: u32) -> u32 {
+        mkv::tracks_get_track_by_number(&mut mem(), tracks, n)
+    }
+    /// `mkvparser::BlockEntry::EOS()` -> 1 for the end-of-stream entry.
+    mkvparser_BlockEntry_EOS @ 0x0042_d050 => extern "thiscall" fn block_entry_eos(entry: u32) -> u32 {
+        mkv::block_entry_eos(&mut mem(), entry)
+    }
+    /// `mkvparser::Cluster::GetFirst(&out)` -> status; the parse's `pos`
+    /// and `len` in a frame.
+    mkvparser_Cluster_GetFirst @ 0x0042_c880 => extern "thiscall" fn cluster_get_first(cl: u32, out: u32) -> u32 {
+        let mut f = StackFrame::<3>::new();
+        let pos = f.at();
+        mkv::cluster_get_first(&mut mem(), cl, out, pos, pos + 8)
+    }
+    /// `mkvparser::Cluster::GetNext(cur, &out)` -> status; `pos` in a
+    /// frame, `len` in the caller's `cur` slot (as the original).
+    mkvparser_Cluster_GetNext @ 0x0042_c9d0 => extern "thiscall" fn cluster_get_next(cl: u32, cur: u32, out: u32; slots: u32) -> u32 {
+        let mut f = StackFrame::<2>::new();
+        mkv::cluster_get_next(&mut mem(), cl, cur, out, f.at(), slots)
+    }
+    /// `mkvparser::ReadUInt(reader, pos, &len)` -> the value (`edx:eax`);
+    /// the byte read in a frame.
+    mkvparser_ReadUInt_0041e710 @ 0x0041_e710 => extern "fastcall-caller-pops" fn read_uint(reader: u32, len: u32, pos_lo: u32, pos_hi: u32) -> u64 {
+        let mut f = StackFrame::<1>::new();
+        let pos = u64::from(pos_hi) << 32 | u64::from(pos_lo);
+        mkv::read_uint(&mut mem(), reader, len, pos, f.at())
+    }
+    /// `mkvparser::GetUIntLength(reader, pos, &len)` -> status
+    /// (`edx:eax`); `Length`'s two results and the byte in a frame.
+    mkvparser_GetUIntLength_0041e850 @ 0x0041_e850 => extern "fastcall-caller-pops" fn get_uint_length(reader: u32, len: u32, pos_lo: u32, pos_hi: u32) -> u64 {
+        let mut f = StackFrame::<6>::new();
+        let pos = u64::from(pos_hi) << 32 | u64::from(pos_lo);
+        mkv::get_uint_length(&mut mem(), reader, len, pos, f.at())
+    }
+    /// `mkvparser::UnserializeUInt(reader, pos, size)` -> the value
+    /// (`edx:eax`); the byte in a frame.
+    mkvparser_UnserializeUInt_0041e980 @ 0x0041_e980 => extern "fastcall-caller-pops" fn unserialize_uint(reader: u32, _edx: u32, pos_lo: u32, pos_hi: u32, size_lo: u32, size_hi: u32) -> u64 {
+        let mut f = StackFrame::<2>::new();
+        let pos = u64::from(pos_hi) << 32 | u64::from(pos_lo);
+        let size = u64::from(size_hi) << 32 | u64::from(size_lo);
+        mkv::unserialize_uint(&mut mem(), reader, pos, size, f.at())
+    }
+    /// `mkvparser::UnserializeInt(reader, size, pos, &result)` -> status;
+    /// the byte in a frame.
+    mkvparser_UnserializeInt_0041ec10 @ 0x0041_ec10 => extern "fastcall-caller-pops" fn unserialize_int(reader: u32, size: u32, pos_lo: u32, pos_hi: u32, result: u32) -> u32 {
+        let mut f = StackFrame::<2>::new();
+        let pos = u64::from(pos_hi) << 32 | u64::from(pos_lo);
+        mkv::unserialize_int(&mut mem(), reader, size, pos, result, f.at())
+    }
+    /// `mkvparser::Block::Parse(cluster)` -> status; the varint length,
+    /// the time code and the lace and count bytes in a frame.
+    mkvparser_Block_Parse_0042d470 @ 0x0042_d470 => extern "thiscall" fn block_parse(block: u32, cluster: u32) -> u32 {
+        let mut f = StackFrame::<8>::new();
+        mkv::block_parse(&mut mem(), block, cluster, f.at())
+    }
+    /// `mkvparser::Cluster::Parse(&pos, &len)` -> status; `Length`'s
+    /// results and the readers' scratch in a frame.
+    mkvparser_Cluster_Parse_0042a550 @ 0x0042_a550 => extern "thiscall" fn cluster_parse(cl: u32, pos: u32, len: u32) -> u32 {
+        let mut f = StackFrame::<12>::new();
+        mkv::cluster_parse(&mut mem(), cl, pos, len, f.at())
+    }
+    /// `mkvparser::Cluster::Load(&pos, &len)` -> status; `Length`'s
+    /// results and the readers' scratch in a frame.
+    mkvparser_Cluster_Load_00429e10 @ 0x0042_9e10 => extern "thiscall" fn cluster_load(cl: u32, pos: u32, len: u32) -> u32 {
+        let mut f = StackFrame::<12>::new();
+        mkv::cluster_load(&mut mem(), cl, pos, len, f.at())
+    }
+    /// `mkvparser::Cluster::ParseSimpleBlock(size, &pos, &len)` -> status;
+    /// `Length`'s results, the readers' scratch and the flags in a frame.
+    mkvparser_Cluster_ParseSimpleBlock_0042aca0 @ 0x0042_aca0 => extern "thiscall" fn parse_simple_block(cl: u32, size_lo: u32, size_hi: u32, pos: u32, len: u32) -> u32 {
+        let mut f = StackFrame::<13>::new();
+        let size = (u64::from(size_hi) << 32 | u64::from(size_lo)).cast_signed();
+        mkv::parse_simple_block(&mut mem(), cl, size, pos, len, f.at())
+    }
+    /// `mkvparser::Cluster::CreateBlock(id, start, size, discard)` ->
+    /// status.
+    mkvparser_Cluster_CreateBlock_0042c130 @ 0x0042_c130 => extern "thiscall" fn create_block(cl: u32, id_lo: u32, id_hi: u32, start_lo: u32, start_hi: u32, size_lo: u32, size_hi: u32, d_lo: u32, d_hi: u32) -> u32 {
+        let w = |lo: u32, hi: u32| (u64::from(hi) << 32 | u64::from(lo)).cast_signed();
+        mkv::create_block(&mut mem(), cl, w(id_lo, id_hi), w(start_lo, start_hi), w(size_lo, size_hi), w(d_lo, d_hi))
+    }
+    /// `mkvparser::Cluster::CreateSimpleBlock(start, size)` -> status.
+    mkvparser_Cluster_CreateSimpleBlock_0042c740 @ 0x0042_c740 => extern "thiscall" fn create_simple_block(cl: u32, start_lo: u32, start_hi: u32, size_lo: u32, size_hi: u32) -> u32 {
+        let w = |lo: u32, hi: u32| (u64::from(hi) << 32 | u64::from(lo)).cast_signed();
+        mkv::create_simple_block(&mut mem(), cl, w(start_lo, start_hi), w(size_lo, size_hi))
+    }
+    /// `mkvparser::Cluster::ParseBlockGroup(size, &pos, &len)` -> status;
+    /// `Length`'s results, the readers' scratch, the flags and the discard
+    /// padding in a frame.
+    mkvparser_Cluster_ParseBlockGroup_0042af10 @ 0x0042_af10 => extern "thiscall" fn parse_block_group(cl: u32, size_lo: u32, size_hi: u32, pos: u32, len: u32) -> u32 {
+        let mut f = StackFrame::<16>::new();
+        let size = (u64::from(size_hi) << 32 | u64::from(size_lo)).cast_signed();
+        mkv::parse_block_group(&mut mem(), cl, size, pos, len, f.at())
+    }
+    /// `mkvparser::BlockGroup`'s constructor -> `this`.
+    mkvparser_BlockGroup_ctor_0042d200 @ 0x0042_d200 => extern "thiscall" fn block_group_ctor(this: u32, cluster: u32, index: u32, w0: u32, w1: u32, w2: u32, w3: u32, w4: u32, w5: u32, w6: u32, w7: u32, w8: u32, w9: u32, w10: u32, w11: u32) -> u32 {
+        let w = [w0, w1, w2, w3, w4, w5, w6, w7, w8, w9, w10, w11];
+        mkv::block_group_ctor(&mut mem(), this, cluster, index, &w)
+    }
+    /// `mkvparser::Cluster::CreateBlockGroup(start, size, discard)` ->
+    /// status; the varint length, the reference time and the readers'
+    /// scratch in a frame.
+    mkvparser_Cluster_CreateBlockGroup_0042c300 @ 0x0042_c300 => extern "thiscall" fn create_block_group(cl: u32, s_lo: u32, s_hi: u32, z_lo: u32, z_hi: u32, d_lo: u32, d_hi: u32) -> u32 {
+        let mut f = StackFrame::<12>::new();
+        let w = |lo: u32, hi: u32| (u64::from(hi) << 32 | u64::from(lo)).cast_signed();
+        mkv::create_block_group(&mut mem(), cl, w(s_lo, s_hi), w(z_lo, z_hi), w(d_lo, d_hi), f.at())
+    }
+    /// `mkvparser::Cluster::Create(segment, idx, off)` -> the new cluster.
+    mkvparser_Cluster_Create_0042b620 @ 0x0042_b620 => extern "fastcall-caller-pops" fn cluster_create(segment: u32, idx: u32, off_lo: u32, off_hi: u32) -> u32 {
+        let off = (u64::from(off_hi) << 32 | u64::from(off_lo)).cast_signed();
+        mkv::cluster_create(&mut mem(), segment, idx, off)
+    }
+    /// `mkvparser::Cluster::HasBlockEntries(segment, off, &pos, &len)` ->
+    /// status; `Length`'s results and the readers' scratch in a frame.
+    mkvparser_Cluster_HasBlockEntries_0042b8a0 @ 0x0042_b8a0 => extern "fastcall-caller-pops" fn has_block_entries(segment: u32, pos: u32, off_lo: u32, off_hi: u32, len: u32) -> u32 {
+        let mut f = StackFrame::<12>::new();
+        let off = (u64::from(off_hi) << 32 | u64::from(off_lo)).cast_signed();
+        mkv::has_block_entries(&mut mem(), segment, off, pos, len, f.at())
+    }
+    /// `mkvparser::Segment::PreloadCluster(cluster, idx)`.
+    mkvparser_Segment_PreloadCluster_00421270 @ 0x0042_1270 => extern "thiscall" fn segment_preload_cluster(seg: u32, cluster: u32, idx: u32) {
+        mkv::segment_preload_cluster(&mut mem(), seg, cluster, idx.cast_signed());
+    }
+    /// `mkvparser::Segment::GetNext(cur)` -> the next cluster; the varint
+    /// length, `HasBlockEntries`' `pos`, `len` and frame and the readers'
+    /// scratch in a frame.
+    mkvparser_Segment_GetNext @ 0x0042_38d0 => extern "thiscall" fn segment_get_next(seg: u32, cur: u32) -> u32 {
+        let mut f = StackFrame::<24>::new();
+        mkv::segment_get_next(&mut mem(), seg, cur, f.at())
+    }
+    /// `mkvparser::Segment::DoLoadClusterUnknownSize(&pos, &len)` -> status.
+    mkvparser_Segment_DoLoadClusterUnknownSize_00420f70 @ 0x0042_0f70 => extern "thiscall" fn segment_do_load_cluster_unknown_size(seg: u32, pos: u32, len: u32) -> u32 {
+        mkv::segment_do_load_cluster_unknown_size(&mut mem(), seg, pos, len)
+    }
+    /// `mkvparser::Segment::AppendCluster(cluster)`.
+    mkvparser_Segment_AppendCluster_00421060 @ 0x0042_1060 => extern "thiscall" fn segment_append_cluster(seg: u32, cluster: u32) {
+        mkv::segment_append_cluster(&mut mem(), seg, cluster);
+    }
+    /// `mkvparser::Segment::DoLoadCluster(&pos, &len)` -> status;
+    /// `Length`'s results, the readers' scratch and `HasBlockEntries`'
+    /// `pos`, `len` and frame in a frame.
+    mkvparser_Segment_DoLoadCluster_00420730 @ 0x0042_0730 => extern "thiscall" fn segment_do_load_cluster(seg: u32, pos: u32, len: u32) -> u32 {
+        let mut f = StackFrame::<28>::new();
+        mkv::segment_do_load_cluster(&mut mem(), seg, pos, len, f.at())
+    }
+    /// `mkvparser::Segment::~Segment()`.
+    mkvparser_Segment_dtor_0041fa80 @ 0x0041_fa80 => extern "thiscall" fn segment_dtor(seg: u32) {
+        mkv::segment_dtor(&mut mem(), seg);
+    }
+    /// `mkvparser::Tracks`' deleting destructor -> `this`.
+    mkvparser_Tracks_deletingDtor_0041fbe0 @ 0x0041_fbe0 => extern "thiscall" fn tracks_deleting_dtor(tracks: u32, _flags: u32) -> u32 {
+        mkv::tracks_deleting_dtor(&mut mem(), tracks)
+    }
+    /// `mkvparser::SegmentInfo`'s deleting destructor -> `this`.
+    mkvparser_SegmentInfo_deletingDtor_0041fc30 @ 0x0041_fc30 => extern "thiscall" fn info_deleting_dtor(info: u32, _flags: u32) -> u32 {
+        mkv::info_deleting_dtor(&mut mem(), info)
+    }
+    /// `mkvparser::Cues::~Cues()`.
+    mkvparser_Cues_dtor_00421fe0 @ 0x0042_1fe0 => extern "thiscall" fn cues_dtor(cues: u32) {
+        mkv::cues_dtor(&mut mem(), cues);
+    }
+    /// `mkvparser::Chapters::~Chapters()`.
+    mkvparser_Chapters_dtor_004252f0 @ 0x0042_52f0 => extern "thiscall" fn chapters_dtor(ch: u32) {
+        mkv::chapters_dtor(&mut mem(), ch);
+    }
+    /// `mkvparser::Chapters::Atom::Clear()`.
+    mkvparser_Chapters_Atom_Clear_00425d20 @ 0x0042_5d20 => extern "thiscall" fn atom_clear(atom: u32) {
+        mkv::atom_clear(&mut mem(), atom);
+    }
+    /// The occluder sort's introsort loop `(first, last, ideal, pred)`.
+    std_sort_occluders_009f16c0 @ 0x009f_16c0 => extern "C" fn sort_occluders(first: u32, last: u32, ideal: u32, p0: u32, p1: u32) {
+        sort::sort(&mut mem(), first, last, ideal.cast_signed(), [p0, p1]);
+    }
+    /// The occluder sort's partition `(&out, first, last, pred)` -> `&out`.
+    std_sort_occluders_partition_009f1a30 @ 0x009f_1a30 => extern "C" fn sort_partition(out: u32, first: u32, last: u32, p0: u32, p1: u32) -> u32 {
+        sort::partition_out(&mut mem(), out, first, last, [p0, p1])
+    }
+    /// The occluder sort's median `(first, mid, last, pred)`.
+    std_sort_occluders_median_009f1180 @ 0x009f_1180 => extern "C" fn sort_median(first: u32, mid: u32, last: u32, p0: u32, p1: u32) {
+        sort::median(&mut mem(), first, mid, last, [p0, p1]);
+    }
+    /// The occluder sort's median of three `(a, b, c)`.
+    std_sort_occluders_med3_009f1060 @ 0x009f_1060 => extern "C" fn sort_med3(a: u32, b: u32, c: u32) {
+        sort::med3(&mut mem(), a, b, c, [0, 0]);
+    }
+    /// The occluder sort's insertion sort `(first, last)`.
+    std_sort_occluders_insertion_009f0c80 @ 0x009f_0c80 => extern "C" fn sort_insertion(first: u32, last: u32) {
+        sort::insertion_sort(&mut mem(), first, last, [0, 0]);
+    }
+    /// The occluder sort's make-heap `(first, last)`.
+    std_sort_occluders_makeHeap_009f0e40 @ 0x009f_0e40 => extern "C" fn sort_make_heap(first: u32, last: u32) {
+        sort::make_heap(&mut mem(), first, last, [0, 0]);
+    }
+    /// The occluder sort's sort-heap `(first, last, pred)`.
+    std_sort_occluders_sortHeap_009f1900 @ 0x009f_1900 => extern "C" fn sort_sort_heap(first: u32, last: u32, p0: u32, p1: u32) {
+        sort::sort_heap(&mut mem(), first, last, [p0, p1]);
+    }
+    /// The occluder sort's adjust-heap `(first, hole, bottom, &value, pred)`.
+    std_sort_occluders_adjustHeap_009f0ae0 @ 0x009f_0ae0 => extern "C" fn sort_adjust_heap(first: u32, hole: u32, bottom: u32, value: u32, p0: u32, p1: u32) {
+        sort::adjust_heap(&mut mem(), first, hole.cast_signed(), bottom.cast_signed(), value, [p0, p1]);
+    }
+    /// The occluder sort's push-heap `(first, hole, top, &value)`.
+    std_sort_occluders_pushHeap_009f15d0 @ 0x009f_15d0 => extern "C" fn sort_push_heap(first: u32, hole: u32, top: u32, value: u32) {
+        sort::push_heap(&mut mem(), first, hole.cast_signed(), top.cast_signed(), value, [0, 0]);
+    }
+    /// Bullet's `btAlignedFreeInternal(ptr)` -> the free hook's result.
+    btAlignedFreeInternal_009d4d50 @ 0x009d_4d50 => extern "C" fn bt_aligned_free(ptr: u32) -> u32 {
+        pr::bt_aligned_free(&mut mem(), ptr)
+    }
+    /// `btSimulationIslandManager::~btSimulationIslandManager()`.
+    btSimulationIslandManager_dtor_00a8da90 @ 0x00a8_da90 => extern "thiscall" fn bt_island_manager_dtor(this: u32) {
+        pr::bt_island_manager_dtor(&mut mem(), this);
+    }
+    /// `btUnionFind::~btUnionFind()`.
+    btUnionFind_dtor_00a8e680 @ 0x00a8_e680 => extern "thiscall" fn bt_union_find_dtor(this: u32) {
+        pr::bt_union_find_dtor(&mut mem(), this);
+    }
+    /// `_ATL_BASE_MODULE70`'s constructor -> `this`.
+    AtlBaseModule70_ctor_009d9c82 @ 0x009d_9c82 => extern "thiscall" fn atl_base_module_init(this: u32) -> u32 {
+        pr::atl_base_module_init(&mut mem(), this)
+    }
+    /// `CAtlBaseModule::~CAtlBaseModule()`.
+    CAtlBaseModule_dtor_009d9cc1 @ 0x009d_9cc1 => extern "thiscall" fn atl_base_module_dtor(this: u32) {
+        pr::atl_base_module_dtor(&mut mem(), this);
+    }
+    /// `CSimpleArray<HINSTANCE>::operator[](i)` -> `&data[i]`.
+    CSimpleArray_at_009d9ce0 @ 0x009d_9ce0 => extern "thiscall" fn atl_simple_array_at(this: u32, i: u32) -> u32 {
+        pr::atl_simple_array_at(&mut mem(), this, i.cast_signed())
+    }
+    /// `CAtlBaseModule::GetHInstanceAt(i)` -> the instance.
+    CAtlBaseModule_GetHInstanceAt_009d9db5 @ 0x009d_9db5 => extern "thiscall" fn atl_get_hinstance_at(this: u32, i: u32) -> u32 {
+        pr::atl_get_hinstance_at(&mut mem(), this, i.cast_signed())
+    }
+    /// `CSimpleArray<HINSTANCE>::RemoveAll()` (its destructor's body).
+    CSimpleArray_RemoveAll_009d9e5e @ 0x009d_9e5e => extern "thiscall" fn atl_simple_array_dtor(this: u32) {
+        pr::atl_simple_array_dtor(&mut mem(), this);
+    }
+    /// `CWin32Heap::~CWin32Heap()`.
+    CWin32Heap_dtor_009da05c @ 0x009d_a05c => extern "thiscall" fn atl_win32_heap_dtor(this: u32) {
+        pr::atl_win32_heap_dtor(&mut mem(), this);
+    }
+    /// The ATL string data's `AddRef` -> its characters.
+    CStringData_AddRef_009da169 @ 0x009d_a169 => extern "thiscall" fn atl_string_add_ref(this: u32) -> u32 {
+        pr::atl_string_add_ref(&mut mem(), this)
+    }
+    /// `ButtonIcon_setUvs`' quad helper `(&object, w, h, u, v)`; the ring
+    /// buffer slot in a frame.
+    ButtonIcon_writeQuad_006e81f0 @ 0x006e_81f0 => extern "stdcall" fn button_quad(object: u32, w: u32, h: u32, u: f32, v: f32) {
+        let mut f = StackFrame::<1>::new();
+        pr::button_quad(&mut mem(), object, w.cast_signed(), h.cast_signed(), u, v, f.at());
+    }
+    /// The input shutdown's device-map reset.
+    Input_resetDeviceMap_00630730 @ 0x0063_0730 => extern "C" fn input_reset_devices() {
+        pr::input_reset_devices(&mut mem());
+    }
+    /// The script heap's realloc `(p, old, new)` -> the block.
+    ScriptHeap_realloc_0061d030 @ 0x0061_d030 => extern "thiscall" fn script_realloc(heap: u32, p: u32, old: u32, new: u32) -> u32 {
+        pr::script_realloc(&mut mem(), heap, p, old, new)
+    }
+    /// The physics worlds' fix-up after loading `(array)` -> 0.
+    PPhysics_fixWorldsAfterLoading_005eb3c0 @ 0x005e_b3c0 => extern "C" fn physics_fix_worlds(array: u32) -> u32 {
+        pr::physics_fix_worlds(&mut mem(), array)
+    }
+    /// The string tree's insert `(node)` -> 0 or the node with the key.
+    StringTree_insert_006dc140 @ 0x006d_c140 => extern "thiscall" fn string_tree_insert(tree: u32, node: u32) -> u32 {
+        pr::string_tree_insert(&mut mem(), tree, node)
+    }
+    /// The C runtime's `atexit(func)` -> 0 or -1.
+    atexit @ 0x0094_9207 => extern "C" fn crt_atexit(func: u32) -> u32 {
+        pr::crt_atexit(&mut mem(), func)
+    }
+    /// `eh vector constructor iterator(ptr, size, count, ctor, dtor)` -> 1.
+    eh_vector_constructor_iterator @ 0x0094_966a => extern "stdcall" fn eh_vector_ctor_iterator(ptr: u32, size: u32, count: u32, ctor: u32, _dtor: u32) -> u32 {
+        pr::eh_vector_ctor_iterator(&mut mem(), ptr, size, count, ctor)
+    }
+    /// `eh vector destructor iterator(ptr, size, count, dtor)` -> 1.
+    eh_vector_destructor_iterator @ 0x0094_96d2 => extern "stdcall" fn eh_vector_dtor_iterator(ptr: u32, size: u32, count: u32, dtor: u32) -> u32 {
+        pr::eh_vector_dtor_iterator(&mut mem(), ptr, size, count, dtor)
+    }
+
+    /// `std::locale::_Fac_node::~_Fac_node()` -> the deleting destructor's
+    /// result or 0.
+    Fac_node_dtor_0094a62c @ 0x0094_a62c => extern "thiscall" fn fac_node_dtor(node: u32) -> u32 {
+        pr::fac_node_dtor(&mut mem(), node)
+    }
+    /// `mkvparser::SimpleBlock`'s deleting destructor -> `this`.
+    mkvparser_SimpleBlock_deletingDtor_0042d0f0 @ 0x0042_d0f0 => extern "thiscall" fn simple_block_deleting_dtor(this: u32, flags: u32) -> u32 {
+        mkv::simple_block_deleting_dtor(&mut mem(), this, flags)
+    }
+}

@@ -49,6 +49,7 @@ pub mod scene;
 pub mod scissor;
 pub mod start;
 pub mod tk;
+pub mod wp5f_menu;
 
 /// `get_ptr32_func(p)` (`0x00a44650`): `p` (a 32-bit pointer as itself).
 #[must_use]
