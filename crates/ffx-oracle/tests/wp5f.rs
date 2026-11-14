@@ -2075,3 +2075,270 @@ fn wp5f_mkv_block_group_ctor_matches_the_original() {
         }
     });
 }
+
+/// Top-level segment elements for the segment walk: clusters with block
+/// entries, without (a time code, others), of size 0 or unknown; `Void`,
+/// `Cues`. Returns the bytes and each element's offset and whether it is
+/// a cluster.
+fn segment_elements(rng: &mut Rng) -> (Vec<u8>, Vec<(u32, bool)>) {
+    const CLUSTER: [u8; 4] = [0x1f, 0x43, 0xb6, 0x75];
+    let mut data = Vec::new();
+    let mut at = Vec::new();
+    for _ in 0..=rng.below(7) {
+        let sl = rng.pick(&[1usize, 1, 2, 8]);
+        let mut body = Vec::new();
+        for _ in 0..rng.below(4) {
+            let e = match rng.below(9) {
+                0 | 1 => element(&[0xe7], &[rng.next() as u8], sl),
+                2 => element(&[0xa3], &[0x81, 0, 0, 0x80, 1], sl),
+                3 => element(&[0xa0], &element(&[0xa1], &[0x81, 0, 0, 0], 1), sl),
+                4 => element(&[0xec], &[0; 3], sl),
+                5 => vec![0xec, 0x80],
+                6 => vec![0xa3, 0xff],
+                7 => element(&CLUSTER, &[], 1),
+                _ => vec![0x80],
+            };
+            body.extend(e);
+        }
+        at.push((data.len() as u32, true));
+        let e = match rng.below(10) {
+            0 => {
+                at.last_mut().unwrap().1 = false;
+                element(&[0xec], &body, sl)
+            }
+            1 => {
+                at.last_mut().unwrap().1 = false;
+                element(&[0x1c, 0x53, 0xbb, 0x6b], &body, sl)
+            }
+            2 => {
+                let mut e = CLUSTER.to_vec();
+                e.push(0xff);
+                e.extend(&body);
+                e
+            }
+            3 => {
+                let mut e = CLUSTER.to_vec();
+                e.push(0x80);
+                e
+            }
+            _ => element(&CLUSTER, &body, sl),
+        };
+        data.extend(e);
+    }
+    (data, at)
+}
+
+/// A cluster object: its segment, absolute start and index.
+fn cluster_obj(t: &mut Twins, seg: u32, start: u32, index: u32) -> u32 {
+    let c = t.zeros(0x40);
+    t.w32(c, seg);
+    t.w32(c + 8, start);
+    t.w32(c + 0x10, index);
+    c
+}
+
+/// A segment over `data` (its payload from `start`): the reader, start,
+/// size (`size` words), the end-of-stream cluster and an empty array.
+fn segment_obj(t: &mut Twins, reader: u32, start: u32, size: u64) -> u32 {
+    let seg = t.zeros(0x90);
+    t.w32(seg, reader);
+    t.w32(seg + 0x10, start);
+    t.w32(seg + 0x18, size as u32);
+    t.w32(seg + 0x1c, (size >> 32) as u32);
+    seg
+}
+
+#[test]
+fn wp5f_mkv_cluster_create_and_entries_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x0042_b8a0);
+        for k in 0..500 {
+            t.reset();
+            cdecl_imp(t, mkv::WASSERT, 3, 0x61);
+            movie_alloc(t, rng.chance(8));
+            // Cluster::Create
+            let seg = t.words(&[0x5151, 0, 0, 0, rng.below(0x100), 0]);
+            let r = rng.next();
+            let idx = rng.pick(&[u32::MAX, 0, 3, r]);
+            let off = rng.pick(&[0u64, 5, 0x1234, 1 << 33, u64::MAX - 3]);
+            let what = format!("Cluster::Create {k} ({idx:#x}, {off:#x})");
+            t.check(
+                &what,
+                mkv::CLUSTER_CREATE,
+                Conv::FastcallCallerPops,
+                &[seg, idx, off as u32, (off >> 32) as u32],
+                |m| Out::U32(mkv::cluster_create(m, seg, idx, off.cast_signed())),
+            );
+            // HasBlockEntries over synthetic segments
+            t.reset();
+            cdecl_imp(t, mkv::WASSERT, 3, 0x61);
+            let (els, at) = segment_elements(&mut rng);
+            let mut data = vec![0u8; rng.below(4) as usize];
+            let start = data.len() as u32;
+            data.extend(&els);
+            if rng.chance(6) {
+                let cut = rng.below(data.len() as u32 + 1) as usize;
+                data.truncate(cut);
+            }
+            let size = data.len() as u32;
+            let avail = rng.pick(&[size, size, size.saturating_sub(3), size + 4]);
+            let reader = fake_reader(t, &data, rng.pick(&[u32::MAX, u32::MAX - 4]), avail);
+            let m_size = match rng.below(6) {
+                0 => u64::MAX,
+                1 => u64::from(size.saturating_sub(start) / 2),
+                _ => u64::from(size - start),
+            };
+            let seg = segment_obj(t, reader, start, m_size);
+            let off = if rng.chance(10) {
+                rng.pick(&[u64::from(size), u64::from(size) + 9, u64::MAX])
+            } else {
+                u64::from(at[rng.below(at.len() as u32) as usize].0)
+            };
+            let pos = t.words(&[0x1111, 0x2222]);
+            let len = t.words(&[0x3333]);
+            let scratch = t.frame_ebp(5) - 0x400;
+            let what = format!("HasBlockEntries {k} ({data:02x?}, off {off:#x}, avail {avail})");
+            t.check(
+                &what,
+                mkv::HAS_BLOCK_ENTRIES,
+                Conv::FastcallCallerPops,
+                &[seg, pos, off as u32, (off >> 32) as u32, len],
+                |m| {
+                    Out::U32(mkv::has_block_entries(
+                        m,
+                        seg,
+                        off.cast_signed(),
+                        pos,
+                        len,
+                        scratch,
+                    ))
+                },
+            );
+        }
+    });
+}
+
+#[test]
+fn wp5f_mkv_preload_cluster_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x0042_1270);
+        for k in 0..300 {
+            t.reset();
+            cdecl_imp(t, mkv::WASSERT, 3, 0x61);
+            movie_alloc(t, false);
+            let seg = t.zeros(0x90);
+            let (loaded, pre) = (rng.below(3), rng.below(4));
+            let cap = match rng.below(4) {
+                0 => loaded + pre,
+                1 => 0,
+                _ => loaded + pre + rng.below(3) + 1,
+            };
+            let mut words = Vec::new();
+            for i in 0..loaded {
+                words.push(cluster_obj(t, seg, 0x100 * i, i));
+            }
+            for i in 0..pre {
+                let index = if rng.chance(12) { 1 } else { u32::MAX };
+                words.push(cluster_obj(t, seg, 0x1000 + 0x100 * i, index));
+            }
+            words.resize(cap.max(loaded + pre) as usize, 0x7777);
+            let arr = if cap == 0 && loaded + pre == 0 && rng.chance(2) {
+                0
+            } else {
+                t.words(&words)
+            };
+            t.w32(seg + 0x80, arr);
+            t.w32(seg + 0x84, loaded);
+            t.w32(seg + 0x88, pre);
+            t.w32(seg + 0x8c, cap);
+            let index = if rng.chance(10) { 2 } else { u32::MAX };
+            let cl = cluster_obj(t, seg, 0x3000, index);
+            // (one before the loaded ones moves a loaded one: reported)
+            let idx = if loaded > 0 && rng.chance(10) {
+                loaded - 1
+            } else {
+                loaded + rng.below(pre + 1)
+            };
+            let what = format!(
+                "PreloadCluster {k} (loaded {loaded}, preloaded {pre}, size {cap}, at {idx})"
+            );
+            t.check(
+                &what,
+                mkv::PRELOAD_CLUSTER,
+                Conv::Thiscall(seg),
+                &[cl, idx],
+                |m| {
+                    mkv::segment_preload_cluster(m, seg, cl, idx.cast_signed());
+                    Out::None
+                },
+            );
+        }
+    });
+}
+
+#[test]
+fn wp5f_mkv_segment_get_next_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x0042_38d0);
+        for k in 0..500 {
+            t.reset();
+            cdecl_imp(t, mkv::WASSERT, 3, 0x61);
+            movie_alloc(t, false);
+            let (els, at) = segment_elements(&mut rng);
+            let mut data = vec![0u8; rng.below(4) as usize];
+            let start = data.len() as u32;
+            data.extend(&els);
+            let size = data.len() as u32;
+            let avail = rng.pick(&[size, size, size.saturating_sub(3)]);
+            let reader = fake_reader(t, &data, u32::MAX, avail);
+            let m_size = if rng.chance(8) {
+                u64::from(size - start) / 2
+            } else {
+                u64::from(size - start)
+            };
+            let seg = segment_obj(t, reader, start, m_size);
+            // loaded clusters, then preloaded ones (in order, some of the
+            // clusters in the data)
+            let loaded = rng.below(3);
+            let mut words = Vec::new();
+            for i in 0..loaded {
+                words.push(cluster_obj(t, seg, start + 0x40 * i, i));
+            }
+            let mut pre = 0;
+            for &(o, is_cluster) in &at {
+                if is_cluster && rng.chance(2) {
+                    words.push(cluster_obj(t, seg, start + o, u32::MAX));
+                    pre += 1;
+                }
+            }
+            if pre == 0 && !rng.chance(10) {
+                words.push(cluster_obj(t, seg, start + size + 0x10, u32::MAX));
+                pre = 1;
+            }
+            let cap = words.len() as u32 + rng.below(2);
+            words.resize(cap.max(1) as usize, 0x7777);
+            let arr = t.words(&words);
+            t.w32(seg + 0x80, arr);
+            t.w32(seg + 0x84, loaded);
+            t.w32(seg + 0x88, pre);
+            t.w32(seg + 0x8c, cap);
+            let cur = if loaded > 0 && rng.chance(4) {
+                rd32(t, arr + 4 * rng.below(loaded))
+            } else {
+                let (o, _) = at[rng.below(at.len() as u32) as usize];
+                cluster_obj(t, seg, start + o, u32::MAX)
+            };
+            let scratch = t.frame_ebp(1) - 0x400;
+            let what = format!(
+                "Segment::GetNext {k} ({data:02x?}, loaded {loaded}, preloaded {pre}, cur {cur:#x})"
+            );
+            t.check(
+                &what,
+                mkv::SEGMENT_GET_NEXT,
+                Conv::Thiscall(seg),
+                &[cur],
+                |m| Out::U32(mkv::segment_get_next(m, seg, cur, scratch)),
+            );
+        }
+    });
+}

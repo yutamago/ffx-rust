@@ -409,4 +409,27 @@ ported! {
         let w = |lo: u32, hi: u32| (u64::from(hi) << 32 | u64::from(lo)).cast_signed();
         mkv::create_block_group(&mut mem(), cl, w(s_lo, s_hi), w(z_lo, z_hi), w(d_lo, d_hi), f.at())
     }
+    /// `mkvparser::Cluster::Create(segment, idx, off)` -> the new cluster.
+    mkvparser_Cluster_Create_0042b620 @ 0x0042_b620 => extern "fastcall-caller-pops" fn cluster_create(segment: u32, idx: u32, off_lo: u32, off_hi: u32) -> u32 {
+        let off = (u64::from(off_hi) << 32 | u64::from(off_lo)).cast_signed();
+        mkv::cluster_create(&mut mem(), segment, idx, off)
+    }
+    /// `mkvparser::Cluster::HasBlockEntries(segment, off, &pos, &len)` ->
+    /// status; `Length`'s results and the readers' scratch in a frame.
+    mkvparser_Cluster_HasBlockEntries_0042b8a0 @ 0x0042_b8a0 => extern "fastcall-caller-pops" fn has_block_entries(segment: u32, pos: u32, off_lo: u32, off_hi: u32, len: u32) -> u32 {
+        let mut f = StackFrame::<12>::new();
+        let off = (u64::from(off_hi) << 32 | u64::from(off_lo)).cast_signed();
+        mkv::has_block_entries(&mut mem(), segment, off, pos, len, f.at())
+    }
+    /// `mkvparser::Segment::PreloadCluster(cluster, idx)`.
+    mkvparser_Segment_PreloadCluster_00421270 @ 0x0042_1270 => extern "thiscall" fn segment_preload_cluster(seg: u32, cluster: u32, idx: u32) {
+        mkv::segment_preload_cluster(&mut mem(), seg, cluster, idx.cast_signed());
+    }
+    /// `mkvparser::Segment::GetNext(cur)` -> the next cluster; the varint
+    /// length, `HasBlockEntries`' `pos`, `len` and frame and the readers'
+    /// scratch in a frame.
+    mkvparser_Segment_GetNext @ 0x0042_38d0 => extern "thiscall" fn segment_get_next(seg: u32, cur: u32) -> u32 {
+        let mut f = StackFrame::<24>::new();
+        mkv::segment_get_next(&mut mem(), seg, cur, f.at())
+    }
 }
