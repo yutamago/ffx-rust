@@ -3203,3 +3203,80 @@ fn wp5f_atl_module_pieces_match_the_original() {
         }
     });
 }
+
+#[test]
+fn wp5f_button_quad_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x006e_81f0);
+        for k in 0..300 {
+            t.reset();
+            let area = t.zeros(0x80);
+            let block = rng.pick(&[area, area, 0]);
+            t.stub(pr::PHYRE_MALLOC, false, 2, 0, block);
+            t.stub(pr::BLOCK_CTOR, true, 0, 0, 0x11);
+            t.stub(pr::ARRAY_SET_BUFFER, true, 2, 2, 0x12);
+            t.stub(pr::VB_SETUP, true, 3, 3, 0x13);
+            t.stub(pr::VB_IS_BOUND, true, 0, 0, rng.pick(&[0, 1, 0x100]));
+            t.stub(pr::VB_RELEASE, true, 0, 0, 0x14);
+            let out = t.zeros(0x30);
+            // submit hands back the slot (ecx kept for the log)
+            let mut extra = vec![0x51];
+            extra.extend(store_arg(1, 0, out));
+            extra.push(0x59);
+            t.stub_ex(pr::RING_SUBMIT, true, 1, 1, &Ret::Fixed(0x15), &extra);
+            t.stub(pr::RING_UNMAP_COPY, true, 2, 2, rng.pick(&[0, 0, 1]));
+            let desc = t.words(&[7, 7, 0x0707_0707]);
+            let vbbase = t.zeros(0x80);
+            let vb = vbbase + 0x40;
+            let (a, b) = (rng.below(4), rng.below(4));
+            t.w32(vb, a);
+            t.w32(vb + 4, b);
+            t.w32(vb + 0xc, desc);
+            let idx = rng.below(4);
+            t.w32(vb + 0x10, idx);
+            t.w32(vb + 0x14, 0x0101_0101);
+            t.w32(
+                vb + 0x18,
+                rng.pick(&[idx + 1, idx + 2, 0x8000_0000 | (idx + 1)]),
+            );
+            t.w32(vb + 0x38, rng.pick(&[a * b, 99]));
+            let mesh = t.zeros(0x30);
+            t.w32(mesh + 0x28, rng.pick(&[2, 0, 1]));
+            t.w32(mesh + 0x2c, vbbase);
+            let obj = t.words(&[0, mesh]);
+            let object = t.words(&[obj]);
+            let w = rng.pick(&[1u32, 2, 3, 7, 16, 0, (-4i32).cast_unsigned(), 1000]);
+            let hh = rng.pick(&[1u32, 2, 3, 5, 16, 0, (-2i32).cast_unsigned(), 999]);
+            let mut f = || match rng.below(10) {
+                0 => f32::NAN.to_bits(),
+                // (no signalling NaN: the oracle's x87 keeps one signalling
+                // through fld/fst, the CPU and the x87 model quiet it)
+                1 => 0xffc0_0000,
+                2 => f32::INFINITY.to_bits(),
+                _ => (f32::from(rng.below(1000) as u16) / 999.0).to_bits(),
+            };
+            let (u, v) = (f(), f());
+            // the slot where the original keeps it (the stubs log its address)
+            let scratch = t.frame_ebp(5) - 0x1c;
+            let what = format!("button quad {k} (w {w}, h {hh}, u {u:#x}, v {v:#x})");
+            t.check(
+                &what,
+                pr::BUTTON_QUAD,
+                Conv::Stdcall,
+                &[object, w, hh, u, v],
+                |m| {
+                    pr::button_quad(
+                        m,
+                        object,
+                        w.cast_signed(),
+                        hh.cast_signed(),
+                        f32::from_bits(u),
+                        f32::from_bits(v),
+                        scratch,
+                    );
+                    Out::None
+                },
+            );
+        }
+    });
+}

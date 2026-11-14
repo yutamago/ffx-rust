@@ -548,4 +548,10 @@ ported! {
     CStringData_AddRef_009da169 @ 0x009d_a169 => extern "thiscall" fn atl_string_add_ref(this: u32) -> u32 {
         pr::atl_string_add_ref(&mut mem(), this)
     }
+    /// `ButtonIcon_setUvs`' quad helper `(&object, w, h, u, v)`; the ring
+    /// buffer slot in a frame.
+    ButtonIcon_writeQuad_006e81f0 @ 0x006e_81f0 => extern "stdcall" fn button_quad(object: u32, w: u32, h: u32, u: f32, v: f32) {
+        let mut f = StackFrame::<1>::new();
+        pr::button_quad(&mut mem(), object, w.cast_signed(), h.cast_signed(), u, v, f.at());
+    }
 }

@@ -754,4 +754,100 @@ pub mod bridge {
         h.write(rc, n);
         this.wrapping_add(8)
     }
+
+    /// `ButtonIcon_setUvs`' quad helper's callees: `PhyreMalloc(size,
+    /// align)` (cdecl), the vertex-block constructor, `PArray::setBuffer`,
+    /// the vertex buffer's set-up, `isBound`, `release`, the ring buffer's
+    /// `submit` and `unmapCopy` (thiscall), and the vertex format the
+    /// buffer's description gets.
+    pub const BUTTON_QUAD: u32 = 0x006e_81f0;
+    pub const BLOCK_CTOR: u32 = 0x0055_dc40;
+    pub const ARRAY_SET_BUFFER: u32 = 0x0043_4e40;
+    pub const VB_SETUP: u32 = 0x0048_35d0;
+    pub const VB_IS_BOUND: u32 = 0x0056_2da0;
+    pub const VB_RELEASE: u32 = 0x0056_46d0;
+    pub const RING_SUBMIT: u32 = 0x0043_4c50;
+    pub const RING_UNMAP_COPY: u32 = 0x0056_4cb0;
+    pub const QUAD_FORMAT: u32 = 0x00c9_8638;
+
+    /// The quad helper of `ButtonIcon_setUvs` (`0x006e81f0`, stdcall,
+    /// `ret 0x14`: `(&object, w, h, u, v)`): the icon's mesh (`*object`
+    /// `+4`) gets mode 2 (`+0x10`) and, unless it has them (`+0x28` count
+    /// 2), two vertex blocks (0x80 bytes from `PhyreMalloc`, each
+    /// constructed, set as its array); its vertex buffer (`+0x2c` `+0x40`)
+    /// is set up for 8-byte vertices (6, 1), re-created when its size
+    /// changed (released when bound), its description pointed at the quad
+    /// format; then six vertices are written into the ring buffer's next
+    /// slot (`submit` into `frame`): the cell `u..u + 1/h` by `top..top +
+    /// 1/w` with `top = 1 - v - 1/w`, computed as the x87 does (53 bits,
+    /// rounded at each store); the slot is copied (`unmapCopy`) and, when
+    /// that succeeds, becomes the current one (`+0x10`, flag `+0x14`
+    /// cleared). `frame` is the original's `ebp - 0x1c` (the slot).
+    pub fn button_quad(
+        h: &mut impl Host,
+        object: u32,
+        w: i32,
+        hh: i32,
+        u: f32,
+        v: f32,
+        frame: u32,
+    ) {
+        use x87::Reg;
+        // the reciprocals and the top edge, as the original rounds them
+        let hf = f32::from_bits(x87::store(f64::from(hh)));
+        let inv_h = (Reg::load(1.0) / Reg::load(hf)).store();
+        let wf = f32::from_bits(x87::store(f64::from(w)));
+        let inv_w = (Reg::load(1.0) / Reg::load(wf)).store();
+        let top = Reg::load(1.0).sub_m32(v).sub_m32(inv_w).store();
+        let obj: u32 = h.read(object);
+        let mesh: u32 = h.read(at(obj, 4));
+        h.write(at(mesh, 0x10), 2u32);
+        if h.read::<u32>(at(mesh, 0x28)) != 2 {
+            let p = h.call_sym(PHYRE_MALLOC, Conv::Cdecl, &[0x80, 4]);
+            if p != 0 {
+                for i in 0..2u32 {
+                    let e = at(p, i * 0x40);
+                    if e != 0 {
+                        h.call_sym(BLOCK_CTOR, Conv::Thiscall(e), &[]);
+                    }
+                }
+                h.call_sym(ARRAY_SET_BUFFER, Conv::Thiscall(at(mesh, 0x28)), &[p, 2]);
+            }
+        }
+        let vb = at(h.read::<u32>(at(mesh, 0x2c)), 0x40);
+        h.call_sym(VB_SETUP, Conv::Thiscall(vb), &[8, 6, 1]);
+        let size = h.read::<u32>(at(vb, 4)).wrapping_mul(h.read::<u32>(vb));
+        if h.read::<u32>(at(vb, 0x38)) != size {
+            if h.call_sym(VB_IS_BOUND, Conv::Thiscall(vb), &[]) as u8 != 0 {
+                h.call_sym(VB_RELEASE, Conv::Thiscall(vb), &[]);
+            }
+            h.write(at(vb, 0x38), size);
+        }
+        let desc: u32 = h.read(at(vb, 0xc));
+        h.write(at(desc, 8), 1u8);
+        let format = h.rebase(QUAD_FORMAT);
+        h.write(at(desc, 4), format);
+        h.write(desc, 0u32);
+        h.call_sym(RING_SUBMIT, Conv::Thiscall(vb), &[frame]);
+        let out: u32 = h.read(frame);
+        let u = x87::round_trip(u);
+        let y1 = (Reg::load(inv_w) + Reg::load(top)).store();
+        let x1 = (Reg::load(inv_h) + Reg::load(u)).store();
+        for (i, (x, y)) in [(u, y1), (u, top), (x1, top), (x1, top), (x1, y1), (u, y1)]
+            .into_iter()
+            .enumerate()
+        {
+            let i = u32::try_from(i).unwrap_or(0);
+            h.write(at(out, 8 * i), x.to_bits());
+            h.write(at(out, 8 * i + 4), y.to_bits());
+        }
+        let next = h.read::<u32>(at(vb, 0x10)).wrapping_add(1);
+        let wrap = h.read::<u32>(at(vb, 0x18)) & 0x7fff_ffff;
+        let slot = if next == wrap { 0 } else { next };
+        let r = h.call_sym(RING_UNMAP_COPY, Conv::Thiscall(vb), &[slot, frame]);
+        if r == 0 {
+            h.write(at(vb, 0x10), slot);
+            h.write(at(vb, 0x14), 0u8);
+        }
+    }
 }
