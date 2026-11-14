@@ -3072,3 +3072,134 @@ fn wp5f_bullet_teardown_matches_the_original() {
         }
     });
 }
+
+#[test]
+fn wp5f_atl_module_pieces_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x009d_9c82);
+        for k in 0..100 {
+            let junk: Vec<u32> = (0..0x10).map(|_| rng.next()).collect();
+            // _ATL_BASE_MODULE70's constructor (memset stubbed)
+            t.reset();
+            t.stub(pr::CRT_MEMSET, false, 3, 0, 0x99);
+            let this = t.words(&junk);
+            t.check(
+                &format!("ATL base module init {k}"),
+                pr::ATL_BASE_MODULE_INIT,
+                Conv::Thiscall(this),
+                &[],
+                |m| Out::U32(pr::atl_base_module_init(m, this)),
+            );
+            // ~CAtlBaseModule
+            t.reset();
+            imp(
+                t,
+                pr::DELETE_CRITICAL_SECTION,
+                false,
+                1,
+                1,
+                &Ret::Fixed(0),
+                &[],
+            );
+            t.stub(pr::ATL_SIMPLE_ARRAY_DTOR, true, 0, 0, 0x55);
+            let this = t.words(&junk);
+            t.check(
+                &format!("~CAtlBaseModule {k}"),
+                pr::ATL_BASE_MODULE_DTOR,
+                Conv::Thiscall(this),
+                &[],
+                |m| {
+                    pr::atl_base_module_dtor(m, this);
+                    Out::None
+                },
+            );
+            // CSimpleArray: RemoveAll, operator[]
+            t.reset();
+            t.stub(pr::CRT_FREE, false, 1, 0, 0x66);
+            let n = rng.below(4) + 1;
+            let data = if rng.chance(4) {
+                0
+            } else {
+                t.words(&junk[..n as usize])
+            };
+            let arr = t.words(&[data, n, n + 1]);
+            t.check(
+                &format!("CSimpleArray::RemoveAll {k}"),
+                pr::ATL_SIMPLE_ARRAY_DTOR,
+                Conv::Thiscall(arr),
+                &[],
+                |m| {
+                    pr::atl_simple_array_dtor(m, arr);
+                    Out::None
+                },
+            );
+            t.reset();
+            let data = t.words(&junk[..n as usize]);
+            let arr = t.words(&[data, n, n + 1]);
+            let i = rng.below(n);
+            t.check(
+                &format!("CSimpleArray::operator[] {k} ({i} of {n})"),
+                pr::ATL_SIMPLE_ARRAY_AT,
+                Conv::Thiscall(arr),
+                &[i],
+                |m| Out::U32(pr::atl_simple_array_at(m, arr, i.cast_signed())),
+            );
+            // GetHInstanceAt
+            t.reset();
+            imp(
+                t,
+                pr::ENTER_CRITICAL_SECTION,
+                false,
+                1,
+                1,
+                &Ret::Fixed(0),
+                &[],
+            );
+            imp(
+                t,
+                pr::LEAVE_CRITICAL_SECTION,
+                false,
+                1,
+                1,
+                &Ret::Fixed(0),
+                &[],
+            );
+            let data = t.words(&junk[..n as usize]);
+            let module = t.words(&junk);
+            t.w32(module + 0x2c, data);
+            t.w32(module + 0x30, n);
+            let i = rng.pick(&[u32::MAX, 0, n - 1, n, n + 1, 0x8000_0000]);
+            t.check(
+                &format!("GetHInstanceAt {k} ({i:#x} of {n})"),
+                pr::ATL_GET_HINSTANCE_AT,
+                Conv::Thiscall(module),
+                &[i],
+                |m| Out::U32(pr::atl_get_hinstance_at(m, module, i.cast_signed())),
+            );
+            // ~CWin32Heap
+            t.reset();
+            imp(t, pr::HEAP_DESTROY, false, 1, 1, &Ret::Fixed(1), &[]);
+            let heap = t.words(&[0, rng.pick(&[0, 0x1234]), rng.pick(&[0, 1, 0x100])]);
+            t.check(
+                &format!("~CWin32Heap {k}"),
+                pr::ATL_WIN32_HEAP_DTOR,
+                Conv::Thiscall(heap),
+                &[],
+                |m| {
+                    pr::atl_win32_heap_dtor(m, heap);
+                    Out::None
+                },
+            );
+            // the string data's AddRef
+            t.reset();
+            let s = t.words(&junk);
+            t.check(
+                &format!("CStringData AddRef {k}"),
+                pr::ATL_STRING_ADD_REF,
+                Conv::Thiscall(s),
+                &[],
+                |m| Out::U32(pr::atl_string_add_ref(m, s)),
+            );
+        }
+    });
+}

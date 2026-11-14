@@ -520,4 +520,32 @@ ported! {
     btUnionFind_dtor_00a8e680 @ 0x00a8_e680 => extern "thiscall" fn bt_union_find_dtor(this: u32) {
         pr::bt_union_find_dtor(&mut mem(), this);
     }
+    /// `_ATL_BASE_MODULE70`'s constructor -> `this`.
+    AtlBaseModule70_ctor_009d9c82 @ 0x009d_9c82 => extern "thiscall" fn atl_base_module_init(this: u32) -> u32 {
+        pr::atl_base_module_init(&mut mem(), this)
+    }
+    /// `CAtlBaseModule::~CAtlBaseModule()`.
+    CAtlBaseModule_dtor_009d9cc1 @ 0x009d_9cc1 => extern "thiscall" fn atl_base_module_dtor(this: u32) {
+        pr::atl_base_module_dtor(&mut mem(), this);
+    }
+    /// `CSimpleArray<HINSTANCE>::operator[](i)` -> `&data[i]`.
+    CSimpleArray_at_009d9ce0 @ 0x009d_9ce0 => extern "thiscall" fn atl_simple_array_at(this: u32, i: u32) -> u32 {
+        pr::atl_simple_array_at(&mut mem(), this, i.cast_signed())
+    }
+    /// `CAtlBaseModule::GetHInstanceAt(i)` -> the instance.
+    CAtlBaseModule_GetHInstanceAt_009d9db5 @ 0x009d_9db5 => extern "thiscall" fn atl_get_hinstance_at(this: u32, i: u32) -> u32 {
+        pr::atl_get_hinstance_at(&mut mem(), this, i.cast_signed())
+    }
+    /// `CSimpleArray<HINSTANCE>::RemoveAll()` (its destructor's body).
+    CSimpleArray_RemoveAll_009d9e5e @ 0x009d_9e5e => extern "thiscall" fn atl_simple_array_dtor(this: u32) {
+        pr::atl_simple_array_dtor(&mut mem(), this);
+    }
+    /// `CWin32Heap::~CWin32Heap()`.
+    CWin32Heap_dtor_009da05c @ 0x009d_a05c => extern "thiscall" fn atl_win32_heap_dtor(this: u32) {
+        pr::atl_win32_heap_dtor(&mut mem(), this);
+    }
+    /// The ATL string data's `AddRef` -> its characters.
+    CStringData_AddRef_009da169 @ 0x009d_a169 => extern "thiscall" fn atl_string_add_ref(this: u32) -> u32 {
+        pr::atl_string_add_ref(&mut mem(), this)
+    }
 }

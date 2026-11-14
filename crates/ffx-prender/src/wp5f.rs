@@ -635,4 +635,123 @@ pub mod bridge {
     pub fn bt_union_find_dtor(h: &mut impl Host, this: u32) {
         bt_array_clear(h, this.wrapping_add(4));
     }
+
+    /// ATL's module pieces: the `memset` and `free` thunks,
+    /// `Enter`/`Leave`/`DeleteCriticalSection`, `HeapDestroy` and
+    /// `RaiseException` (stdcall imports), the `CWin32Heap` vtable.
+    pub const CRT_MEMSET: u32 = 0x0094_964c;
+    pub const CRT_FREE: u32 = 0x0094_95f2;
+    pub const ENTER_CRITICAL_SECTION: u32 = 0x00b0_c154;
+    pub const LEAVE_CRITICAL_SECTION: u32 = 0x00b0_c158;
+    pub const DELETE_CRITICAL_SECTION: u32 = 0x00b0_c15c;
+    pub const HEAP_DESTROY: u32 = 0x00b0_c04c;
+    pub const RAISE_EXCEPTION: u32 = 0x00b0_c0e0;
+    pub const WIN32_HEAP_VTABLE: u32 = 0x00b7_02a0;
+    pub const ATL_BASE_MODULE_INIT: u32 = 0x009d_9c82;
+    pub const ATL_BASE_MODULE_DTOR: u32 = 0x009d_9cc1;
+    pub const ATL_GET_HINSTANCE_AT: u32 = 0x009d_9db5;
+    pub const ATL_SIMPLE_ARRAY_AT: u32 = 0x009d_9ce0;
+    pub const ATL_SIMPLE_ARRAY_DTOR: u32 = 0x009d_9e5e;
+    pub const ATL_WIN32_HEAP_DTOR: u32 = 0x009d_a05c;
+    pub const ATL_STRING_ADD_REF: u32 = 0x009d_a169;
+
+    fn import_stdcall(h: &mut impl Host, slot: u32, args: &[u32]) -> u32 {
+        let f: u32 = h.read(h.rebase(slot));
+        h.call(f, Conv::Stdcall, args)
+    }
+
+    /// `_ATL_BASE_MODULE70`'s constructor (`0x009d9c82`, thiscall) ->
+    /// `this`: its critical section (`+0x14`, 0x18 bytes) zeroed
+    /// (`memset`) and its resource-instance array (`+0x2c..+0x38`) empty.
+    pub fn atl_base_module_init(h: &mut impl Host, this: u32) -> u32 {
+        h.call_sym(CRT_MEMSET, Conv::Cdecl, &[this.wrapping_add(0x14), 0, 0x18]);
+        for o in [0x2c, 0x30, 0x34] {
+            h.write(this.wrapping_add(o), 0u32);
+        }
+        this
+    }
+
+    /// `CAtlBaseModule::~CAtlBaseModule(this)` (`0x009d9cc1`, thiscall):
+    /// its critical section (`+0x14`) deleted, then its resource-instance
+    /// array (`+0x2c`) destroyed (the original tail-jumps there).
+    pub fn atl_base_module_dtor(h: &mut impl Host, this: u32) {
+        import_stdcall(h, DELETE_CRITICAL_SECTION, &[this.wrapping_add(0x14)]);
+        h.call_sym(
+            ATL_SIMPLE_ARRAY_DTOR,
+            Conv::Thiscall(this.wrapping_add(0x2c)),
+            &[],
+        );
+    }
+
+    /// `CSimpleArray<HINSTANCE>::~CSimpleArray(this)` (`0x009d9e5e`,
+    /// thiscall): its data (`+0`) freed and cleared, size and capacity 0.
+    pub fn atl_simple_array_dtor(h: &mut impl Host, this: u32) {
+        let data: u32 = h.read(this);
+        if data != 0 {
+            h.call_sym(CRT_FREE, Conv::Cdecl, &[data]);
+            h.write(this, 0u32);
+        }
+        h.write(this.wrapping_add(4), 0u32);
+        h.write(this.wrapping_add(8), 0u32);
+    }
+
+    /// `CSimpleArray<HINSTANCE>::operator[](this; i)` (`0x009d9ce0`,
+    /// thiscall, `ret 4`) -> `&data[i]`; an index outside `0..size`
+    /// raises `EXCEPTION_ARRAY_BOUNDS_EXCEEDED` (non-continuable; the
+    /// original does not come back).
+    pub fn atl_simple_array_at(h: &mut impl Host, this: u32, i: i32) -> u32 {
+        if i < 0 || i >= h.read::<i32>(this.wrapping_add(4)) {
+            import_stdcall(h, RAISE_EXCEPTION, &[0xc000_008c, 1, 0, 0]);
+            return 0;
+        }
+        let data: u32 = h.read(this);
+        data.wrapping_add(i.cast_unsigned().wrapping_mul(4))
+    }
+
+    /// `CAtlBaseModule::GetHInstanceAt(this; i)` (`0x009d9db5`, thiscall,
+    /// `ret 4`) -> the `i`-th resource instance under the module's lock
+    /// (`+0x14`): the module's own (`+8`) at the array's size (`+0x30`),
+    /// the array's entry below it, 0 outside.
+    pub fn atl_get_hinstance_at(h: &mut impl Host, this: u32, i: i32) -> u32 {
+        let cs = this.wrapping_add(0x14);
+        import_stdcall(h, ENTER_CRITICAL_SECTION, &[cs]);
+        let n: i32 = h.read(this.wrapping_add(0x30));
+        let r = if i > n || i < 0 {
+            0
+        } else if i == n {
+            h.read(this.wrapping_add(8))
+        } else {
+            let p = h.call_sym(
+                ATL_SIMPLE_ARRAY_AT,
+                Conv::Thiscall(this.wrapping_add(0x2c)),
+                &[i.cast_unsigned()],
+            );
+            h.read(p)
+        };
+        import_stdcall(h, LEAVE_CRITICAL_SECTION, &[cs]);
+        r
+    }
+
+    /// `CWin32Heap::~CWin32Heap(this)` (`0x009da05c`, thiscall): its
+    /// vtable set; an owned (`+8` byte) heap (`+4`) destroyed.
+    pub fn atl_win32_heap_dtor(h: &mut impl Host, this: u32) {
+        let vt = h.rebase(WIN32_HEAP_VTABLE);
+        h.write(this, vt);
+        if h.read::<u8>(this.wrapping_add(8)) != 0 {
+            let heap: u32 = h.read(this.wrapping_add(4));
+            if heap != 0 {
+                import_stdcall(h, HEAP_DESTROY, &[heap]);
+            }
+        }
+    }
+
+    /// The string data's `AddRef` (`0x009da169`, thiscall) -> its
+    /// characters (`this + 8`): the reference count (`+0x14`) one more
+    /// (the original's interlocked add).
+    pub fn atl_string_add_ref(h: &mut impl Host, this: u32) -> u32 {
+        let rc = this.wrapping_add(0x14);
+        let n = h.read::<u32>(rc).wrapping_add(1);
+        h.write(rc, n);
+        this.wrapping_add(8)
+    }
 }
