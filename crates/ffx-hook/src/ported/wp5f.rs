@@ -432,4 +432,19 @@ ported! {
         let mut f = StackFrame::<24>::new();
         mkv::segment_get_next(&mut mem(), seg, cur, f.at())
     }
+    /// `mkvparser::Segment::DoLoadClusterUnknownSize(&pos, &len)` -> status.
+    mkvparser_Segment_DoLoadClusterUnknownSize_00420f70 @ 0x0042_0f70 => extern "thiscall" fn segment_do_load_cluster_unknown_size(seg: u32, pos: u32, len: u32) -> u32 {
+        mkv::segment_do_load_cluster_unknown_size(&mut mem(), seg, pos, len)
+    }
+    /// `mkvparser::Segment::AppendCluster(cluster)`.
+    mkvparser_Segment_AppendCluster_00421060 @ 0x0042_1060 => extern "thiscall" fn segment_append_cluster(seg: u32, cluster: u32) {
+        mkv::segment_append_cluster(&mut mem(), seg, cluster);
+    }
+    /// `mkvparser::Segment::DoLoadCluster(&pos, &len)` -> status;
+    /// `Length`'s results, the readers' scratch and `HasBlockEntries`'
+    /// `pos`, `len` and frame in a frame.
+    mkvparser_Segment_DoLoadCluster_00420730 @ 0x0042_0730 => extern "thiscall" fn segment_do_load_cluster(seg: u32, pos: u32, len: u32) -> u32 {
+        let mut f = StackFrame::<28>::new();
+        mkv::segment_do_load_cluster(&mut mem(), seg, pos, len, f.at())
+    }
 }

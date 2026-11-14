@@ -2100,29 +2100,7 @@ pub mod bridge {
         }
         let size: i32 = h.read(at(seg, 0x8c));
         if count >= size {
-            let n = if size <= 0 {
-                0x800
-            } else {
-                size.wrapping_mul(2)
-            }
-            .cast_unsigned();
-            let bytes = u64::from(n) * 4;
-            let q = alloc(h, u32::try_from(bytes).unwrap_or(u32::MAX));
-            let old: u32 = h.read(at(seg, 0x80));
-            let end = at(old, count.cast_unsigned().wrapping_mul(4));
-            let (mut s, mut d) = (old, q);
-            while s != end {
-                let v: u32 = h.read(s);
-                h.write(d, v);
-                s = at(s, 4);
-                d = at(d, 4);
-            }
-            let old: u32 = h.read(at(seg, 0x80));
-            if old != 0 {
-                free(h, old);
-            }
-            h.write(at(seg, 0x80), q);
-            h.write(at(seg, 0x8c), n);
+            grow_clusters(h, seg, size, count);
         }
         if h.read::<u32>(at(seg, 0x80)) == 0 {
             wassert(h, 0x00b9_06e8, 0x651);
@@ -2368,4 +2346,399 @@ pub mod bridge {
     pub const CLUSTER_CREATE: u32 = 0x0042_b620;
     pub const HAS_BLOCK_ENTRIES: u32 = 0x0042_b8a0;
     pub const SEGMENT_GET_NEXT: u32 = 0x0042_38d0;
+
+    /// `Segment::DoLoadClusterUnknownSize` and `Segment::AppendCluster`
+    /// (thiscall, `ret 8` / `ret 4`).
+    pub const DO_LOAD_CLUSTER: u32 = 0x0042_0730;
+    pub const DO_LOAD_CLUSTER_UNKNOWN_SIZE: u32 = 0x0042_0f70;
+    pub const APPEND_CLUSTER: u32 = 0x0042_1060;
+
+    /// `mkvparser::Segment::DoLoadClusterUnknownSize(segment; &pos, &len)`
+    /// (`0x00420f70`, thiscall, `ret 8`): the cluster of unknown size
+    /// being loaded (`+0x68`) parsed on ([`CLUSTER_PARSE`]): an error as it
+    /// is; at its end (positive) its size (`+0x20`, a negative one
+    /// reported) is known, `*pos` and `m_pos` (`+0x60`) go past it and it is
+    /// no longer the one loaded; 2 (also while it goes on). A known `m_pos`
+    /// and no such cluster are reported.
+    pub fn segment_do_load_cluster_unknown_size(
+        h: &mut impl Host,
+        seg: u32,
+        pos: u32,
+        len: u32,
+    ) -> u32 {
+        if read_i64(h, at(seg, 0x60)) >= 0 {
+            wassert(h, 0x00b9_0738, 0x54b);
+        }
+        if h.read::<u32>(at(seg, 0x68)) == 0 {
+            wassert(h, 0x00b9_074c, 0x54c);
+        }
+        let cl: u32 = h.read(at(seg, 0x68));
+        let s = h.call_sym(CLUSTER_PARSE, Conv::Thiscall(cl), &[pos, len]);
+        if s.cast_signed() < 0 {
+            return s;
+        }
+        if s != 0 {
+            let cl: u32 = h.read(at(seg, 0x68));
+            let start = read_i64(h, at(cl, 8));
+            let size = read_i64(h, at(cl, 0x20));
+            if size < 0 {
+                wassert(h, 0x00b9_047c, 0x5f2);
+            }
+            h.write(at(seg, 0x68), 0u32);
+            let end = size.wrapping_add(start);
+            write_i64(h, pos, end);
+            write_i64(h, at(seg, 0x60), read_i64(h, pos));
+        }
+        2
+    }
+
+    /// `mkvparser::Segment::AppendCluster(segment; cluster)` (`0x00421060`,
+    /// thiscall, `ret 4`): `cluster` (a loaded one: its index the loaded
+    /// count `+0x84`) put after the loaded ones in the cluster array
+    /// (`+0x80`), the preloaded ones (`+0x88`) moved up one; the array
+    /// grown first when full (as [`segment_preload_cluster`]); the loaded
+    /// count one more. Bad arguments and states are reported.
+    pub fn segment_append_cluster(h: &mut impl Host, seg: u32, cluster: u32) {
+        if cluster == 0 {
+            wassert(h, 0x00b9_0694, 0x5fe);
+        }
+        if h.read::<i32>(at(cluster, 0x10)) < 0 {
+            wassert(h, 0x00b9_0784, 0x5ff);
+        }
+        let count = h
+            .read::<i32>(at(seg, 0x88))
+            .wrapping_add(h.read::<i32>(at(seg, 0x84)));
+        if h.read::<i32>(at(seg, 0x8c)) < count {
+            wassert(h, 0x00b9_07b4, 0x604);
+        }
+        let idx: i32 = h.read(at(cluster, 0x10));
+        if idx != h.read::<i32>(at(seg, 0x84)) {
+            wassert(h, 0x00b9_07d0, 0x607);
+        }
+        let size: i32 = h.read(at(seg, 0x8c));
+        if count >= size {
+            grow_clusters(h, seg, size, count);
+        }
+        if h.read::<i32>(at(seg, 0x88)) > 0 {
+            if h.read::<u32>(at(seg, 0x80)) == 0 {
+                wassert(h, 0x00b9_06e8, 0x61c);
+            }
+            let arr: u32 = h.read(at(seg, 0x80));
+            let loaded: u32 = h.read(at(seg, 0x84));
+            let p = at(arr, loaded.wrapping_mul(4));
+            if h.read::<u32>(p) == 0 {
+                wassert(h, 0x00b9_07fc, 0x61f);
+            }
+            let first: u32 = h.read(p);
+            if h.read::<i32>(at(first, 0x10)) >= 0 {
+                wassert(h, 0x00b9_0804, 0x620);
+            }
+            let pre: u32 = h.read(at(seg, 0x88));
+            let mut q = at(p, pre.wrapping_mul(4));
+            let arr: u32 = h.read(at(seg, 0x80));
+            let cap: u32 = h.read(at(seg, 0x8c));
+            if q >= at(arr, cap.wrapping_mul(4)) {
+                wassert(h, 0x00b9_0828, 0x623);
+            }
+            loop {
+                let prev: u32 = h.read(q.wrapping_sub(4));
+                if h.read::<i32>(at(prev, 0x10)) >= 0 {
+                    wassert(h, 0x00b9_0858, 0x627);
+                }
+                let prev: u32 = h.read(q.wrapping_sub(4));
+                h.write(q, prev);
+                q = q.wrapping_sub(4);
+                if q == p {
+                    break;
+                }
+            }
+        }
+        let arr: u32 = h.read(at(seg, 0x80));
+        h.write(at(arr, idx.cast_unsigned().wrapping_mul(4)), cluster);
+        let n = h.read::<u32>(at(seg, 0x84)).wrapping_add(1);
+        h.write(at(seg, 0x84), n);
+    }
+
+    /// The cluster array grown as `PreloadCluster`/`AppendCluster` grow it:
+    /// `size` doubled (0x800 from nothing) words from the movie allocator,
+    /// the `count` entries copied, the old array freed.
+    fn grow_clusters(h: &mut impl Host, seg: u32, size: i32, count: i32) {
+        let n = if size <= 0 {
+            0x800
+        } else {
+            size.wrapping_mul(2)
+        }
+        .cast_unsigned();
+        let bytes = u64::from(n) * 4;
+        let q = alloc(h, u32::try_from(bytes).unwrap_or(u32::MAX));
+        let old: u32 = h.read(at(seg, 0x80));
+        let end = at(old, count.cast_unsigned().wrapping_mul(4));
+        let (mut s, mut d) = (old, q);
+        while s != end {
+            let v: u32 = h.read(s);
+            h.write(d, v);
+            s = at(s, 4);
+            d = at(d, 4);
+        }
+        let old: u32 = h.read(at(seg, 0x80));
+        if old != 0 {
+            free(h, old);
+        }
+        h.write(at(seg, 0x80), q);
+        h.write(at(seg, 0x8c), n);
+    }
+
+    /// `mkvparser::Segment::DoLoadCluster(segment; &pos, &len)`
+    /// (`0x00420730`, thiscall, `ret 8`): an `m_pos` (`+0x60`) of unknown
+    /// size goes on in [`DO_LOAD_CLUSTER_UNKNOWN_SIZE`]. Else the top-level
+    /// elements from `m_pos` are read (id and size as `Cluster::Parse`
+    /// reads them, against the segment's stop and the available data): 1
+    /// at the file's or the segment's end; empty ones and others skipped
+    /// (an unknown size there -2); the first `Cues` makes the segment's
+    /// cues (`+0x78`, 0x40 bytes from the movie allocator); a `Cluster`
+    /// asks [`has_block_entries`] (its error, `pos` and `len` returned).
+    /// The first preloaded cluster at that offset becomes the next loaded
+    /// one (none: -2; its size from the element or the cluster); else one
+    /// with entries is created ([`cluster_create`]) and appended
+    /// ([`APPEND_CLUSTER`]): an unknown size makes it the one loaded
+    /// (`+0x68`, `m_pos` minus the position); 0 with `m_pos` past it.
+    /// Without entries `m_pos` goes past it: 2, or 1 (`m_pos` the end) at
+    /// the file's or the segment's end. `frame`: `Length`'s results (+0,
+    /// +8), the readers' scratch (+0x10..+0x2c), the cluster's `pos` and
+    /// `len` (+0x30, +0x38) and its frame (+0x40..+0x70).
+    #[allow(clippy::too_many_lines)] // the original's walk
+    pub fn segment_do_load_cluster<H: Host>(
+        h: &mut H,
+        seg: u32,
+        pos: u32,
+        len: u32,
+        frame: u32,
+    ) -> u32 {
+        const BAD: u32 = (-2i32).cast_unsigned();
+        if read_i64(h, at(seg, 0x60)) < 0 {
+            return h.call_sym(
+                DO_LOAD_CLUSTER_UNKNOWN_SIZE,
+                Conv::Thiscall(seg),
+                &[pos, len],
+            );
+        }
+        let reader: u32 = h.read(seg);
+        let (total_at, avail_at) = (frame, at(frame, 8));
+        let scratch = at(frame, 0x10);
+        let s = length(h, reader, total_at, avail_at);
+        if s.cast_signed() < 0 {
+            return s;
+        }
+        let total = read_i64(h, total_at);
+        let avail = read_i64(h, avail_at);
+        if total >= 0 && avail > total {
+            wassert(h, 0x00b9_05f8, 0x3b7);
+        }
+        let m_size = read_i64(h, at(seg, 0x18));
+        let segment_stop = if m_size < 0 {
+            -1
+        } else {
+            read_i64(h, at(seg, 0x10)).wrapping_add(m_size)
+        };
+        // the original's `ebp - 0x34`, which an element's end or the cues'
+        // size last went through (handed back as `len` when the cluster's
+        // `Length` fails; never written: 0)
+        let mut last34 = 0u32;
+        loop {
+            let m_pos = read_i64(h, at(seg, 0x60));
+            if (total >= 0 && m_pos >= total) || (segment_stop >= 0 && m_pos >= segment_stop) {
+                return 1;
+            }
+            write_i64(h, pos, m_pos);
+            let id = match parse_varint(h, reader, pos, len, segment_stop, avail, scratch) {
+                Ok(v) => v,
+                Err(s) => return s,
+            };
+            let id_pos = read_i64(h, pos);
+            let p = id_pos.wrapping_add(i64::from(h.read::<i32>(len)));
+            write_i64(h, pos, p);
+            let size = match parse_varint(h, reader, pos, len, segment_stop, avail, scratch) {
+                Ok(v) => v,
+                Err(s) => return s,
+            };
+            let l = h.read::<i32>(len);
+            let p = read_i64(h, pos).wrapping_add(i64::from(l));
+            write_i64(h, pos, p);
+            if size == 0 {
+                write_i64(h, at(seg, 0x60), p);
+                continue;
+            }
+            let unknown = unknown_size(l);
+            if segment_stop >= 0 && size != unknown {
+                let end = p.wrapping_add(size);
+                last34 = end as u32;
+                if end > segment_stop {
+                    return BAD;
+                }
+            }
+            if id == 0x0c53_bb6b {
+                if size == unknown {
+                    return BAD;
+                }
+                if h.read::<u32>(at(seg, 0x78)) == 0 {
+                    let element_size = p.wrapping_sub(id_pos).wrapping_add(size);
+                    last34 = element_size as u32;
+                    let c = alloc(h, 0x40);
+                    if c != 0 {
+                        h.write(c, seg);
+                        write_i64(h, at(c, 8), p);
+                        write_i64(h, at(c, 0x10), size);
+                        write_i64(h, at(c, 0x18), id_pos);
+                        write_i64(h, at(c, 0x20), element_size);
+                        for o in [0x28, 0x2c, 0x30] {
+                            h.write(at(c, o), 0u32);
+                        }
+                        write_i64(h, at(c, 0x38), p);
+                    }
+                    h.write(at(seg, 0x78), c);
+                    if c == 0 {
+                        wassert(h, 0x00b9_0638, 0x422);
+                    }
+                }
+            } else if id == 0x0f43_b675 {
+                return load_cluster_at(
+                    h,
+                    seg,
+                    pos,
+                    len,
+                    frame,
+                    id_pos,
+                    (size != unknown).then_some(size),
+                    (total, segment_stop, last34),
+                );
+            } else if size == unknown {
+                return BAD;
+            }
+            let p = read_i64(h, pos).wrapping_add(size);
+            write_i64(h, at(seg, 0x60), p);
+        }
+    }
+
+    /// [`segment_do_load_cluster`] at a `Cluster` element (`id_pos`; its
+    /// payload at `*pos`, `size` when known); `limits` the file's size,
+    /// the segment's stop and the original's `ebp - 0x34`.
+    #[allow(clippy::too_many_arguments, clippy::too_many_lines)] // the walk's state and checks
+    fn load_cluster_at<H: Host>(
+        h: &mut H,
+        seg: u32,
+        pos: u32,
+        len: u32,
+        frame: u32,
+        id_pos: i64,
+        size: Option<i64>,
+        limits: (i64, i64, u32),
+    ) -> u32 {
+        const BAD: u32 = (-2i32).cast_unsigned();
+        let (total, segment_stop, last34) = limits;
+        let off = id_pos.wrapping_sub(read_i64(h, at(seg, 0x10)));
+        let cluster_size = size.unwrap_or(-1);
+        if off < 0 {
+            wassert(h, 0x00b9_0648, 0x43b);
+        }
+        // the cluster's `pos` and `len` as the original's frame holds them
+        // (its `Length` failing leaves them): the id's high word, junk (0)
+        let (cpos, clen) = (at(frame, 0x30), at(frame, 0x38));
+        write_i64(h, cpos, 0);
+        h.write(clen, last34);
+        let status = has_block_entries(h, seg, off, cpos, clen, at(frame, 0x40));
+        if status.cast_signed() < 0 {
+            write_i64(h, pos, read_i64(h, cpos));
+            let l: u32 = h.read(clen);
+            h.write(len, l);
+            return status;
+        }
+        let idx: u32 = h.read(at(seg, 0x84));
+        if h.read::<i32>(at(seg, 0x88)) > 0 {
+            if idx.cast_signed() >= h.read::<i32>(at(seg, 0x8c)) {
+                wassert(h, 0x00b9_066c, 0x469);
+            }
+            let arr: u32 = h.read(at(seg, 0x80));
+            let c: u32 = h.read(at(arr, idx.wrapping_mul(4)));
+            if c == 0 {
+                wassert(h, 0x00b9_0694, 0x46c);
+            }
+            if h.read::<i32>(at(c, 0x10)) >= 0 {
+                wassert(h, 0x00b9_06a8, 0x46d);
+            }
+            let cs: u32 = h.read(c);
+            let c_off = read_i64(h, at(c, 8)).wrapping_sub(read_i64(h, at(cs, 0x10)));
+            if c_off < 0 {
+                wassert(h, 0x00b9_034c, 0x1b0d);
+                wassert(h, 0x00b9_06d4, 0x470);
+            }
+            if c_off == off {
+                if status == 0 {
+                    return BAD;
+                }
+                if cluster_size >= 0 {
+                    write_i64(h, pos, read_i64(h, pos).wrapping_add(cluster_size));
+                } else {
+                    let sz = read_i64(h, at(c, 0x20));
+                    if sz <= 0 {
+                        return BAD;
+                    }
+                    write_i64(h, pos, read_i64(h, at(c, 8)).wrapping_add(sz));
+                }
+                h.write(at(c, 0x10), idx);
+                let n = h.read::<u32>(at(seg, 0x84)).wrapping_add(1);
+                h.write(at(seg, 0x84), n);
+                let n = h.read::<u32>(at(seg, 0x88)).wrapping_sub(1);
+                h.write(at(seg, 0x88), n);
+                write_i64(h, at(seg, 0x60), read_i64(h, pos));
+                if segment_stop >= 0 && read_i64(h, at(seg, 0x60)) > segment_stop {
+                    wassert(h, 0x00b9_0598, 0x486);
+                }
+                return 0;
+            }
+        }
+        if status == 0 {
+            if cluster_size < 0 {
+                return BAD;
+            }
+            let p = read_i64(h, pos).wrapping_add(cluster_size);
+            write_i64(h, pos, p);
+            let end = if total >= 0 && p >= total {
+                Some(total)
+            } else if segment_stop >= 0 && p >= segment_stop {
+                Some(segment_stop)
+            } else {
+                None
+            };
+            write_i64(h, at(seg, 0x60), end.unwrap_or(p));
+            return if end.is_some() { 1 } else { 2 };
+        }
+        let c = cluster_create(h, seg, idx, off);
+        if c == 0 {
+            wassert(h, 0x00b9_0694, 0x4a4);
+        }
+        h.call_sym(APPEND_CLUSTER, Conv::Thiscall(seg), &[c]);
+        if h.read::<u32>(at(seg, 0x80)) == 0 {
+            wassert(h, 0x00b9_06e8, 0x4a7);
+        }
+        if idx.cast_signed() >= h.read::<i32>(at(seg, 0x8c)) {
+            wassert(h, 0x00b9_066c, 0x4a8);
+        }
+        let arr: u32 = h.read(at(seg, 0x80));
+        if h.read::<u32>(at(arr, idx.wrapping_mul(4))) != c {
+            wassert(h, 0x00b9_0700, 0x4a9);
+        }
+        if cluster_size < 0 {
+            h.write(at(seg, 0x68), c);
+            let p = read_i64(h, pos);
+            write_i64(h, at(seg, 0x60), p.wrapping_neg());
+            return 0;
+        }
+        let p = read_i64(h, pos).wrapping_add(cluster_size);
+        write_i64(h, pos, p);
+        write_i64(h, at(seg, 0x60), p);
+        if segment_stop >= 0 && read_i64(h, at(seg, 0x60)) > segment_stop {
+            wassert(h, 0x00b9_0598, 0x4af);
+        }
+        0
+    }
 }

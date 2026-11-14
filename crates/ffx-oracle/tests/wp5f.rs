@@ -2360,3 +2360,170 @@ fn wp5f_mkv_segment_get_next_matches_the_original() {
         }
     });
 }
+
+#[test]
+fn wp5f_mkv_append_and_unknown_size_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x0042_1060);
+        for k in 0..300 {
+            // AppendCluster
+            t.reset();
+            cdecl_imp(t, mkv::WASSERT, 3, 0x61);
+            movie_alloc(t, false);
+            let seg = t.zeros(0x90);
+            let (loaded, pre) = (rng.below(3), rng.below(4));
+            let cap = match rng.below(4) {
+                0 => loaded + pre,
+                1 => 0,
+                _ => loaded + pre + rng.below(3) + 1,
+            };
+            let mut words = Vec::new();
+            for i in 0..loaded {
+                words.push(cluster_obj(t, seg, 0x100 * i, i));
+            }
+            for i in 0..pre {
+                let index = if rng.chance(12) { 1 } else { u32::MAX };
+                words.push(cluster_obj(t, seg, 0x1000 + 0x100 * i, index));
+            }
+            words.resize(cap.max(loaded + pre) as usize, 0x7777);
+            let arr = if cap == 0 && loaded + pre == 0 && rng.chance(2) {
+                0
+            } else {
+                t.words(&words)
+            };
+            t.w32(seg + 0x80, arr);
+            t.w32(seg + 0x84, loaded);
+            t.w32(seg + 0x88, pre);
+            t.w32(seg + 0x8c, cap);
+            let index = match rng.below(12) {
+                0 => u32::MAX,
+                1 if loaded > 0 => loaded - 1,
+                _ => loaded,
+            };
+            let cl = cluster_obj(t, seg, 0x3000, index);
+            let what = format!(
+                "AppendCluster {k} (loaded {loaded}, preloaded {pre}, size {cap}, index {index:#x})"
+            );
+            t.check(
+                &what,
+                mkv::APPEND_CLUSTER,
+                Conv::Thiscall(seg),
+                &[cl],
+                |m| {
+                    mkv::segment_append_cluster(m, seg, cl);
+                    Out::None
+                },
+            );
+            // DoLoadClusterUnknownSize, Cluster::Parse stubbed
+            t.reset();
+            cdecl_imp(t, mkv::WASSERT, 3, 0x61);
+            let parsed = rng.pick(&[0, 1, 5, (-3i32).cast_unsigned(), (-1i32).cast_unsigned()]);
+            t.stub(mkv::CLUSTER_PARSE, true, 2, 2, parsed);
+            let seg = t.zeros(0x90);
+            let m_pos = rng.pick(&[u64::MAX - 0x40, u64::MAX, 0x40]);
+            t.w32(seg + 0x60, m_pos as u32);
+            t.w32(seg + 0x64, (m_pos >> 32) as u32);
+            let cl = cluster_obj(t, seg, 0x40 + rng.below(0x100), u32::MAX);
+            let size = rng.pick(&[0x20u64, 0, u64::MAX, 1 << 32]);
+            t.w32(cl + 0x20, size as u32);
+            t.w32(cl + 0x24, (size >> 32) as u32);
+            t.w32(cl + 0xc, rng.below(2));
+            // (none: reported; a positive parse would read through it)
+            if !rng.chance(10) || parsed.cast_signed() > 0 {
+                t.w32(seg + 0x68, cl);
+            }
+            let pos = t.words(&[0x1111, 0x2222]);
+            let len = t.words(&[0x3333]);
+            let what = format!(
+                "DoLoadClusterUnknownSize {k} (parse {parsed:#x}, m_pos {m_pos:#x}, size {size:#x})"
+            );
+            t.check(
+                &what,
+                mkv::DO_LOAD_CLUSTER_UNKNOWN_SIZE,
+                Conv::Thiscall(seg),
+                &[pos, len],
+                |m| Out::U32(mkv::segment_do_load_cluster_unknown_size(m, seg, pos, len)),
+            );
+        }
+    });
+}
+
+#[test]
+fn wp5f_mkv_segment_do_load_cluster_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x0042_0730);
+        for k in 0..600 {
+            t.reset();
+            cdecl_imp(t, mkv::WASSERT, 3, 0x61);
+            // (a failed allocation would fault the original's cluster append)
+            movie_alloc(t, false);
+            t.stub(mkv::DO_LOAD_CLUSTER_UNKNOWN_SIZE, true, 2, 2, 0x55);
+            let (els, at) = segment_elements(&mut rng);
+            let mut data = vec![0u8; rng.below(4) as usize];
+            let start = data.len() as u32;
+            data.extend(&els);
+            if rng.chance(6) {
+                let cut = rng.below(data.len() as u32 + 1) as usize;
+                data.truncate(cut);
+            }
+            let size = data.len() as u32;
+            let avail = rng.pick(&[size, size, size.saturating_sub(3), size + 4, 0]);
+            let reader = fake_reader(t, &data, rng.pick(&[u32::MAX, u32::MAX - 4]), avail);
+            let m_size = match rng.below(6) {
+                0 => u64::MAX,
+                1 => u64::from(size.saturating_sub(start) / 2),
+                _ => u64::from(size - start),
+            };
+            let seg = segment_obj(t, reader, start, m_size);
+            // where the load goes on: an element, the end, unknown
+            let m_pos = match rng.below(10) {
+                0 => u64::from(size),
+                1 => u64::MAX - 0x20,
+                _ => u64::from(start + at[rng.below(at.len() as u32) as usize].0),
+            };
+            t.w32(seg + 0x60, m_pos as u32);
+            t.w32(seg + 0x64, (m_pos >> 32) as u32);
+            if rng.chance(4) {
+                t.w32(seg + 0x78, 0x0abc);
+            }
+            // loaded clusters, then preloaded ones (in order, some of the
+            // clusters in the data; their sizes known or not)
+            let loaded = rng.below(3);
+            let mut words = Vec::new();
+            for i in 0..loaded {
+                words.push(cluster_obj(t, seg, start + 0x40 * i, i));
+            }
+            let mut pre = 0;
+            for &(o, is_cluster) in &at {
+                if is_cluster && rng.chance(2) {
+                    let c = cluster_obj(t, seg, start + o, u32::MAX);
+                    let sz = rng.pick(&[u64::MAX, 0, 3, 0x40]);
+                    t.w32(c + 0x20, sz as u32);
+                    t.w32(c + 0x24, (sz >> 32) as u32);
+                    words.push(c);
+                    pre += 1;
+                }
+            }
+            let cap = words.len() as u32 + rng.below(2);
+            words.resize(cap.max(1) as usize, 0x7777);
+            let arr = t.words(&words);
+            t.w32(seg + 0x80, arr);
+            t.w32(seg + 0x84, loaded);
+            t.w32(seg + 0x88, pre);
+            t.w32(seg + 0x8c, cap);
+            let pos = t.words(&[0x1111, 0x2222]);
+            let len = t.words(&[0x3333]);
+            let scratch = t.frame_ebp(2) - 0x400;
+            let what = format!(
+                "Segment::DoLoadCluster {k} ({data:02x?}, m_pos {m_pos:#x}, loaded {loaded}, preloaded {pre}, avail {avail})"
+            );
+            t.check(
+                &what,
+                mkv::DO_LOAD_CLUSTER,
+                Conv::Thiscall(seg),
+                &[pos, len],
+                |m| Out::U32(mkv::segment_do_load_cluster(m, seg, pos, len, scratch)),
+            );
+        }
+    });
+}
