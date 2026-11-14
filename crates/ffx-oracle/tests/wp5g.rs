@@ -512,7 +512,7 @@ fn wp5g_menu_callbacks_match_the_original() {
                     mn::TOP_FADE,
                     rng.pick(&[0u32, 0xaab, 0xaac, 0x1000, 0x7fff_fffe]),
                 ),
-                (mn::TOP_SLIDE, rng.pick(&[0u32, 0x100, 0xf00, 0x1000])),
+                (mn::TOP_SLIDE, rng.pick(&[0u32, 0xff, 0x100, 0xf00, 0x1000])),
                 (
                     mn::TOP_SLIDE_STEP,
                     rng.pick(&[0u32, 0x100, 0xffff_ff00, 0x200, 0xffff_e000]),
@@ -953,10 +953,7 @@ fn wp5g_grid_ui_and_task_steps_match_the_original() {
                 0x0076_e5f0,
                 Conv::Cdecl,
                 &[],
-                |m| {
-                    ms::read_task_step(m);
-                    Out::None
-                },
+                |m| Out::U32(ms::read_task_step(m)),
             );
             let debug = rng.pick(&[0u32, 1]);
             t.stub(ms::FFX_IS_DEBUG, false, 0, 0, debug);
@@ -1300,6 +1297,31 @@ fn wp5g_grid_states_match_the_original() {
                     port(m);
                     Out::None
                 },
+            );
+        }
+    });
+}
+
+#[test]
+fn wp5g_screen_fade_reset_matches_the_original() {
+    use ffx_prender::wp5g::bridge as ms;
+    Twins::each(|t| {
+        let mut rng = Rng(0x0063_7c50);
+        let m = t.zeros(0x1_2400);
+        for k in 0..8u32 {
+            t.reset();
+            t.stub(ms::POST_PROCESS_GET_INSTANCE, false, 0, 0, m);
+            t.w8(m + 0x123a0, rng.pick(&[0u8, 1]));
+            for i in 0..4 {
+                let v = rng.next();
+                t.w32(m + 0x1238c + 4 * i, v);
+            }
+            t.check(
+                &format!("screen fade reset {k}"),
+                0x0063_7c50,
+                Conv::Cdecl,
+                &[],
+                |g| Out::U32(ms::reset_screen_fade(g)),
             );
         }
     });

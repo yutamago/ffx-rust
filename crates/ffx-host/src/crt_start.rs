@@ -653,8 +653,20 @@ fn free_argv(e: &mut Exec, arr: u32, argc_at: u32) -> Option<()> {
 /// sync log, `PhyreExit` or the goodbye line, the arguments freed,
 /// `SteamAPI_Shutdown`, the settings deleted). Its exit code.
 fn game_main(e: &mut Exec, args: &Args) -> Ret {
-    game_main_run(e, args).unwrap_or(Ret::eax(0))
+    use ffx_bridge::route::Router as _;
+    // the original's frame (`sub esp, 0x444`) reserved below the stack
+    // pointer, so the calls it makes push below its locals: unreserved,
+    // `createWindow`'s own frame overwrote `local` (the window object the
+    // start-up reads at once: two reads of a null settings pointer, wp5g)
+    let frame = e.frame_alloc(FRAME);
+    let r = game_main_run(e, args, frame).unwrap_or(Ret::eax(0));
+    e.frame_free(frame);
+    r
 }
+
+/// The bytes [`game_main`] reserves for the original's locals (its
+/// `ebp - 0x444` ..) and the saved registers' room.
+const FRAME: u32 = 0x460;
 
 #[allow(
     clippy::too_many_lines,
@@ -662,16 +674,17 @@ fn game_main(e: &mut Exec, args: &Args) -> Ret {
     clippy::similar_names,
     clippy::many_single_char_names
 )] // the original's one function, its names
-fn game_main_run(e: &mut Exec, args: &Args) -> Option<Ret> {
-    // the original's frame (`ebp` = its first stack word - 8), on the game
-    // stack below the caller's
-    let first = if args.slots == 0 {
+fn game_main_run(e: &mut Exec, args: &Args, frame: u32) -> Option<Ret> {
+    // the original's frame: `ebp` at the top of the reserved block (or,
+    // when none could be reserved, its first stack word - 8, as before)
+    let ebp = if frame != 0 {
+        frame + FRAME - 0x10
+    } else if args.slots == 0 {
         let esp = e.reg(crate::exec::RegisterX86::ESP).ok()?;
-        esp.wrapping_sub(0x40) & !0xf
+        (esp.wrapping_sub(0x40) & !0xf).wrapping_sub(8)
     } else {
-        args.slots
+        args.slots.wrapping_sub(8)
     };
-    let ebp = first.wrapping_sub(8);
     let (folder, argc_at, flag_at, local, msg) = (
         ebp - 0x404,
         ebp - 0x408,

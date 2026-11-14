@@ -311,4 +311,8 @@ ported! {
     AbmapState_Help_00a45010 @ 0x00a4_5010 => extern "C" fn abmap_help() {
         misc::abmap_help(&mut mem());
     }
+    /// The screen-fade reset delegate; the post-process manager.
+    ResetScreenFade_00637c50 @ 0x0063_7c50 => extern "C" fn reset_screen_fade() -> u32 {
+        misc::reset_screen_fade(&mut mem())
+    }
 }

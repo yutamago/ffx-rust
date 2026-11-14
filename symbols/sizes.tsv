@@ -69,6 +69,7 @@
 0x0062f640	3	0	code_0062f640
 0x0062f980	3	0	code_0062f980
 0x0062fb00	3	0	code_0062fb00
+0x00637c50	41	0	ResetScreenFade_00637c50
 0x00638e20	5	0	MsGetEncountType_thunk_00638e20
 0x00638e60	5	0	MsBattleCheck_thunk_00638e60
 0x00639350	11	0	graphicAttachChrClusterTo3DWorld_00639350

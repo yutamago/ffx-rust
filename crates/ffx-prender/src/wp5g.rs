@@ -992,4 +992,18 @@ pub mod bridge {
     fn store_round(h: &impl Host, sym: u32) -> u32 {
         ffx_bridge::x87::store(ffx_bridge::x87::load(h.read(h.rebase(sym))))
     }
+
+    pub const POST_PROCESS_GET_INSTANCE: u32 = 0x0069_2be0;
+
+    /// `ResetScreenFade_00637c50()` (the delegate the screen-fade setup
+    /// registers; `RenderDelegationHelper_runFlag800` runs it): unless the
+    /// post-process manager's `+0x123a0` is set, its four fade floats
+    /// `+0x1238c..+0x12398` = 0.0; the manager.
+    pub fn reset_screen_fade(h: &mut impl Host) -> u32 {
+        let m = cdecl(h, POST_PROCESS_GET_INSTANCE, &[]);
+        if h.read::<u8>(m.wrapping_add(0x123a0)) == 0 {
+            h.write(m.wrapping_add(0x1238c), [0u32; 4]);
+        }
+        m
+    }
 }
