@@ -1583,9 +1583,16 @@ impl Exec {
         if self.halted() {
             return Err(Error::Stopped);
         }
-        let addr = self.shared.resolve_call(addr);
+        // a port's address first: one lookup for the common case (m5-perf1)
+        let (addr, port) = match self.shared.table.get(addr) {
+            Some(&e) => (addr, Some(e)),
+            None => {
+                let to = self.shared.resolve_call(addr);
+                (to, self.shared.table.get(to).copied())
+            }
+        };
         let esp = self.reg(RegisterX86::ESP).unwrap_or(0);
-        let r = if let Some(entry) = self.shared.table.get(addr).copied() {
+        let r = if let Some(entry) = port {
             *self.stats.ports.entry(addr).or_default() += 1;
             self.spot.enter(spot::Kind::Port, addr, esp);
             let ret = if args.slots == 0 && matches!(entry.port, Port::Routed(_)) {
@@ -3053,6 +3060,13 @@ fn thread_main(shared: &Arc<Shared>, handle: u32, id: u32, entry: u32, param: u3
         (Err(_), Some(s)) => (0, s.to_string()),
         (Err(e), None) => (0, e.to_string()),
     };
+    if let Some(t) = crate::sample::thread_cpu() {
+        let name = shared.port_name(entry).unwrap_or("?");
+        eprintln!(
+            "sample: thread {id:#x} ({name}) used {:.2} s of CPU",
+            t.as_secs_f64()
+        );
+    }
     ex.stats.instructions = ex.instructions();
     ex.stats.x87 = ex.x87_steps();
     ex.stats.exceptions = ex.exceptions_raised();
@@ -3197,6 +3211,9 @@ impl ffx_bridge::route::Router for Exec {
         float: ffx_bridge::route::Float,
     ) -> ffx_bridge::route::Raw {
         use ffx_bridge::route::{Float, Raw};
+        // (Exec::call resolves thunks itself; the emulator's check below
+        // needs the target)
+        #[cfg(feature = "dev-unicorn")]
         let addr = self.shared.resolve_call(addr);
         #[cfg(feature = "dev-unicorn")]
         let emulated = self.shared.table.get(addr).is_none()

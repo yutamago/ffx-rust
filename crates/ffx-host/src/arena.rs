@@ -230,9 +230,18 @@ impl Arena {
     #[inline]
     pub fn read_bytes(&self, addr: u32, out: &mut [u8]) {
         if self.is_mapped(addr, out.len()) {
-            // SAFETY: inside mapped regions.
+            let src = self.ptr(addr);
+            // SAFETY: inside mapped regions; `[u8; N]` has alignment 1. The
+            // word sizes as single loads (no `memcpy` call for the ports'
+            // scalar reads; m5-perf1).
             unsafe {
-                std::ptr::copy_nonoverlapping(self.ptr(addr), out.as_mut_ptr(), out.len());
+                match out.len() {
+                    1 => out[0] = src.read(),
+                    2 => out.copy_from_slice(&src.cast::<[u8; 2]>().read()),
+                    4 => out.copy_from_slice(&src.cast::<[u8; 4]>().read()),
+                    8 => out.copy_from_slice(&src.cast::<[u8; 8]>().read()),
+                    n => std::ptr::copy_nonoverlapping(src, out.as_mut_ptr(), n),
+                }
             }
         } else {
             crate::log::bad_access(addr, out.len(), false);
@@ -256,9 +265,20 @@ impl Arena {
     #[inline]
     pub fn write_bytes(&self, addr: u32, data: &[u8]) {
         if self.is_mapped(addr, data.len()) {
-            // SAFETY: inside mapped regions.
+            let dst = self.ptr(addr);
+            // SAFETY: inside mapped regions; alignment 1, as above.
             unsafe {
-                std::ptr::copy_nonoverlapping(data.as_ptr(), self.ptr(addr), data.len());
+                match data.len() {
+                    1 => dst.write(data[0]),
+                    2 => dst.cast::<[u8; 2]>().write([data[0], data[1]]),
+                    4 => dst
+                        .cast::<[u8; 4]>()
+                        .write([data[0], data[1], data[2], data[3]]),
+                    8 => dst
+                        .cast::<[u8; 8]>()
+                        .write(data.try_into().unwrap_or([0; 8])),
+                    n => std::ptr::copy_nonoverlapping(data.as_ptr(), dst, n),
+                }
             }
         } else {
             crate::log::bad_access(addr, data.len(), true);

@@ -11,6 +11,11 @@
 //!   the interrupted instruction's address, as an offset into the object
 //!   that holds it (`tools/host-profile.py` names them with `nm`). Where
 //!   the CPU goes, function by function, the executor's own code included.
+//!   `FFX_HOST_SAMPLE_MAIN=1` keeps only the main thread's samples (the
+//!   thread that started the sampler), the one the frame rate waits on.
+//!
+//! With the sampler on, every game thread notes its CPU time as it ends
+//! (`sample: thread ... used ... s of CPU`).
 //!
 //! A development aid only: nothing samples unless the variable is set.
 
@@ -53,6 +58,15 @@ pub fn start(shared: &Arc<Shared>) -> Option<Sampler> {
     })
 }
 
+/// The calling thread's CPU time so far, when sampling (Linux): the
+/// game threads note theirs as they end, the main thread at
+/// [`Sampler::finish`].
+#[must_use]
+pub fn thread_cpu() -> Option<Duration> {
+    std::env::var_os("FFX_HOST_SAMPLE")?;
+    pc::thread_cpu()
+}
+
 /// The host-entry sampler's loop: (kind, what) -> (self, inclusive).
 fn entries(shared: &std::sync::Weak<Shared>, done: &AtomicBool) -> Counts {
     let mut counts = Counts::new();
@@ -92,6 +106,9 @@ fn kind(k: Kind) -> u8 {
 impl Sampler {
     /// Stops sampling and writes the files (names from `shared`).
     pub fn finish(mut self, shared: &Shared) {
+        if let Some(t) = thread_cpu() {
+            eprintln!("sample: main thread used {:.2} s of CPU", t.as_secs_f64());
+        }
         self.done.store(true, Ordering::Relaxed);
         pc::stop();
         let counts = self
@@ -132,6 +149,9 @@ mod pc {
     static KEYS: [AtomicU64; SLOTS] = [const { AtomicU64::new(0) }; SLOTS];
     static COUNTS: [AtomicU64; SLOTS] = [const { AtomicU64::new(0) }; SLOTS];
     static LOST: AtomicU64 = AtomicU64::new(0);
+    /// Only this thread's samples (`FFX_HOST_SAMPLE_MAIN=1`: the thread
+    /// that started the sampler, the game's main thread), else 0: all.
+    static ONLY: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(0);
     /// (address, the word at `rsp`) pairs: for a leaf function (libc's
     /// `memcpy`, `memset`) the word is its caller's return address.
     static PAIR_KEYS: [AtomicU64; SLOTS] = [const { AtomicU64::new(0) }; SLOTS];
@@ -177,6 +197,11 @@ mod pc {
         if rip == 0 {
             return;
         }
+        let only = ONLY.load(Ordering::Relaxed);
+        // SAFETY: gettid is async-signal-safe.
+        if only != 0 && unsafe { libc::syscall(libc::SYS_gettid) } != only {
+            return;
+        }
         if count(&KEYS, &COUNTS, rip).is_none() {
             LOST.fetch_add(1, Ordering::Relaxed);
         }
@@ -205,6 +230,13 @@ mod pc {
     }
 
     pub(super) fn start() {
+        if std::env::var("FFX_HOST_SAMPLE_MAIN").is_ok_and(|v| v == "1") {
+            // SAFETY: a plain system call.
+            ONLY.store(
+                unsafe { libc::syscall(libc::SYS_gettid) },
+                Ordering::Relaxed,
+            );
+        }
         // SAFETY: installs a handler that only touches atomics.
         unsafe {
             let mut sa: libc::sigaction = std::mem::zeroed();
@@ -218,6 +250,17 @@ mod pc {
 
     pub(super) fn stop() {
         timer(0);
+    }
+
+    pub(super) fn thread_cpu() -> Option<std::time::Duration> {
+        let mut t = libc::timespec {
+            tv_sec: 0,
+            tv_nsec: 0,
+        };
+        // SAFETY: a plain system call into a local.
+        let ok = unsafe { libc::clock_gettime(libc::CLOCK_THREAD_CPUTIME_ID, &raw mut t) } == 0;
+        #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)] // 0..1e9 ns
+        ok.then(|| std::time::Duration::new(t.tv_sec as u64, t.tv_nsec as u32))
     }
 
     /// The object holding `addr`, the offset into it and the nearest
@@ -295,6 +338,9 @@ mod pc {
     pub(super) fn start() {}
     pub(super) fn stop() {}
     pub(super) fn report() -> Option<String> {
+        None
+    }
+    pub(super) fn thread_cpu() -> Option<std::time::Duration> {
         None
     }
 }
