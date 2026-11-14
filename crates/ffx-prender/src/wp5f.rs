@@ -1065,4 +1065,56 @@ pub mod bridge {
         let r = h.call_sym(ONEXIT, Conv::Cdecl, &[func]);
         u32::from(r != 0).wrapping_sub(1)
     }
+
+    /// The C++ runtime's array iterators.
+    pub const EH_VECTOR_CTOR_ITERATOR: u32 = 0x0094_966a;
+    pub const EH_VECTOR_DTOR_ITERATOR: u32 = 0x0094_96d2;
+
+    /// `eh vector constructor iterator(ptr, size, count, ctor, dtor)`
+    /// (`0x0094966a`, stdcall) -> 1: `ctor` (thiscall, no arguments) on
+    /// each of the `count` elements from the first. (A constructor that
+    /// throws makes the original destroy the ones built, `dtor`, before
+    /// the exception goes on; nothing the game builds this way throws,
+    /// and Rust frames cannot carry the exception.)
+    pub fn eh_vector_ctor_iterator(
+        h: &mut impl Host,
+        ptr: u32,
+        size: u32,
+        count: u32,
+        ctor: u32,
+    ) -> u32 {
+        let mut p = ptr;
+        let mut i = 0i32;
+        while i < count.cast_signed() {
+            h.call(ctor, Conv::Thiscall(p), &[]);
+            p = p.wrapping_add(size);
+            i += 1;
+        }
+        1
+    }
+
+    /// `eh vector destructor iterator(ptr, size, count, dtor)`
+    /// (`0x009496d2`, stdcall) -> 1: `dtor` (thiscall, no arguments) on
+    /// each of the `count` elements from the last. (A destructor that
+    /// throws makes the original destroy the rest first, as for the
+    /// constructor iterator.)
+    pub fn eh_vector_dtor_iterator(
+        h: &mut impl Host,
+        ptr: u32,
+        size: u32,
+        count: u32,
+        dtor: u32,
+    ) -> u32 {
+        let mut p = ptr.wrapping_add(size.wrapping_mul(count));
+        let mut n = count.cast_signed();
+        loop {
+            n = n.wrapping_sub(1);
+            if n < 0 {
+                break;
+            }
+            p = p.wrapping_sub(size);
+            h.call(dtor, Conv::Thiscall(p), &[]);
+        }
+        1
+    }
 }

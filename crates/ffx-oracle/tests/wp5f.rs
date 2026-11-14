@@ -3483,3 +3483,34 @@ fn wp5f_crt_atexit_matches_the_original() {
         }
     });
 }
+
+#[test]
+fn wp5f_eh_vector_iterators_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x0094_96d2);
+        for k in 0..100 {
+            t.reset();
+            let f = t.stub_code(0xe1e1, true, 0, 0, &Ret::Fixed(0x5a), &[]);
+            let size = rng.pick(&[4u32, 0xc, 0x30, 0]);
+            let count = rng.pick(&[0u32, 1, 3, 7, u32::MAX]);
+            let ptr = 0x0300_0000 + rng.below(0x100);
+            let dtor = rng.next();
+            t.check(
+                &format!("eh vector ctor {k} ({size:#x} x {count:#x})"),
+                pr::EH_VECTOR_CTOR_ITERATOR,
+                Conv::Stdcall,
+                &[ptr, size, count, f, dtor],
+                |m| Out::U32(pr::eh_vector_ctor_iterator(m, ptr, size, count, f)),
+            );
+            t.reset();
+            let f = t.stub_code(0xe2e2, true, 0, 0, &Ret::Fixed(0x5b), &[]);
+            t.check(
+                &format!("eh vector dtor {k} ({size:#x} x {count:#x})"),
+                pr::EH_VECTOR_DTOR_ITERATOR,
+                Conv::Stdcall,
+                &[ptr, size, count, f],
+                |m| Out::U32(pr::eh_vector_dtor_iterator(m, ptr, size, count, f)),
+            );
+        }
+    });
+}

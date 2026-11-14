@@ -574,4 +574,12 @@ ported! {
     atexit @ 0x0094_9207 => extern "C" fn crt_atexit(func: u32) -> u32 {
         pr::crt_atexit(&mut mem(), func)
     }
+    /// `eh vector constructor iterator(ptr, size, count, ctor, dtor)` -> 1.
+    eh_vector_constructor_iterator @ 0x0094_966a => extern "stdcall" fn eh_vector_ctor_iterator(ptr: u32, size: u32, count: u32, ctor: u32, _dtor: u32) -> u32 {
+        pr::eh_vector_ctor_iterator(&mut mem(), ptr, size, count, ctor)
+    }
+    /// `eh vector destructor iterator(ptr, size, count, dtor)` -> 1.
+    eh_vector_destructor_iterator @ 0x0094_96d2 => extern "stdcall" fn eh_vector_dtor_iterator(ptr: u32, size: u32, count: u32, dtor: u32) -> u32 {
+        pr::eh_vector_dtor_iterator(&mut mem(), ptr, size, count, dtor)
+    }
 }

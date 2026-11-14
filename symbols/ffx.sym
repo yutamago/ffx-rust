@@ -22794,8 +22794,8 @@
 0x0094926c function FID_conflict_vector_deleting_destructor # fh v3:cg2 0x949272 FID_conflict:`vector_deleting_destructor'
 0x00949620 function alloca_probe              # fh v3:cg9 0x949620 __alloca_probe
 0x0094964c function crt_memset_thunk          # g_MagicImports slot 725: jmp [0x00b0c388] (MSVCR110 memset); hidden from the dump
-0x0094966a function eh_vector_constructor_iterator # fh v3:cg7 0x94966a `eh_vector_constructor_iterator'
-0x009496d2 function eh_vector_destructor_iterator # fh v3:cg3 0x9496d2 `eh_vector_destructor_iterator'
+0x0094966a function eh_vector_constructor_iterator # fh v3:cg7 0x94966a `eh_vector_constructor_iterator'; stdcall(ptr, size, count, ctor, dtor) ret 0x14 -> 1: ctor (thiscall) on each element from the first (SEH frame; a throw unwinds the built ones through __ArrayUnwind 0x0094975a); ported M5 wp5f (ffx_prender::wp5f, no unwinding)
+0x009496d2 function eh_vector_destructor_iterator # fh v3:cg3 0x9496d2 `eh_vector_destructor_iterator'; stdcall(ptr, size, count, dtor) ret 0x10 -> 1: dtor (thiscall) on each element from the last (SEH frame; a throw destroys the rest through __ArrayUnwind); ported M5 wp5f (ffx_prender::wp5f, no unwinding)
 0x0094975a function ArrayUnwind               # fh v3:cg2 0x94975a __ArrayUnwind
 0x009497e0 function ftol2_sse                 # MSVC CRT: ST0 to int toward zero; cvttsd2si when __sse2_available (0x0193ed20), else the x87 _ftol2 path (64-bit fistp + correction); ffx_bridge::x87::ftol
 0x00949890 function alloca_probe_16           # fh v3:cg5 0x949890 __alloca_probe_16
