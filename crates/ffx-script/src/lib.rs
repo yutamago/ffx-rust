@@ -20,6 +20,7 @@ pub mod opcode;
 mod script;
 pub mod text;
 pub mod vm;
+pub mod wp5g;
 
 pub use container::{Container, Kind};
 pub use natives::Natives;
