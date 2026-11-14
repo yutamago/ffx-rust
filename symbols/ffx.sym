@@ -22806,9 +22806,11 @@
 0x00949b02 function report_rangecheckfailure  # fh v3:cg10 0x949afc ___report_rangecheckfailure
 0x00949cf0 function crt_rand_thunk            # g_MagicImports slot 452: jmp [0x00b0c420] (MSVCR110 rand); hidden from the dump
 0x00949d00 function aullshr                   # fh v3:cg3 0x949d00 __aullshr
-0x00949e30 function aulldiv                   # fh v3:cg2 0x949e30 __aulldiv
-0x00949ea0 function alldiv                    # fh v3:cg2 0x949ea0 __alldiv
+0x00949db0 function __aullrem                 # stdcall-like (a, b: u64 on the stack, ret 0x10) -> edx:eax = a % b (objdump 0x00949db0..0x00949e25); name from the dump (CRT) ; M5 wp5g: a host function in the build without Unicorn (ffx-host crt.rs register_arith: 4 stack words, ret 0x10, edx:eax)
+0x00949e30 function aulldiv                   # fh v3:cg2 0x949e30 __aulldiv ; M5 wp5g: a host function in the build without Unicorn (ffx-host crt.rs register_arith: 4 stack words, ret 0x10, edx:eax)
+0x00949ea0 function alldiv                    # fh v3:cg2 0x949ea0 __alldiv ; M5 wp5g: a host function in the build without Unicorn (ffx-host crt.rs register_arith: 4 stack words, ret 0x10, edx:eax)
 0x00949f50 function crt_vprintf_thunk         # g_MagicImports slot 726 (142 overlays): jmp [0x00b0c48c] (MSVCR110 vprintf); hidden from the dump
+0x00949f80 function __allmul                  # stdcall-like (a, b: 64-bit on the stack, ret 0x10) -> edx:eax = the product's low 64 bits (objdump 0x00949f80..0x00949fb4); name from the dump (CRT) ; M5 wp5g: a host function in the build without Unicorn (ffx-host crt.rs register_arith: 4 stack words, ret 0x10, edx:eax)
 0x00949ff0 function SEH_prolog4               # fh v3:cg2 0x949ff0 __SEH_prolog4
 0x0094a035 function SEH_epilog4               # fh v3:cg2 0x94a035 __SEH_epilog4
 0x0094a62c function Fac_node_dtor_0094a62c # thiscall(node) -> the deleting dtor's eax or 0: std::locale::_Fac_node::~_Fac_node: the facet (+4) _Decref (vslot 2); a facet handed back deleted (vslot 0, 1); ported M5 wp5f (ffx_prender::wp5f)
