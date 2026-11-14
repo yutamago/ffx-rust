@@ -180,7 +180,9 @@ fn release_mutex(e: &mut Exec, args: &Args) -> Ret {
 /// `WaitForSingleObject(h, ms)` / `WaitForSingleObjectEx(h, ms, alertable)`.
 fn wait_single(e: &mut Exec, args: &Args) -> Ret {
     let id = e.id;
+    let t = std::time::Instant::now();
     let r = e.shared().sync.wait(id, &[a(args, 0)], false, a(args, 1));
+    waited(e, false, t);
     end_if_dead(e, r);
     Ret::eax(r)
 }
@@ -205,10 +207,12 @@ fn wait_multiple(e: &mut Exec, args: &Args) -> Ret {
         return Ret::eax(WAIT_FAILED);
     }
     let id = e.id;
+    let t = std::time::Instant::now();
     let r = e
         .shared()
         .sync
         .wait(id, &handles, a(args, 2) != 0, a(args, 3));
+    waited(e, false, t);
     end_if_dead(e, r);
     Ret::eax(r)
 }
@@ -227,7 +231,9 @@ fn sleep(e: &mut Exec, args: &Args) -> Ret {
     if crate::clock::sleep(e, args) {
         return Ret::VOID;
     }
+    let t = std::time::Instant::now();
     real_sleep(e, args);
+    waited(e, true, t);
     crate::clock::woke(e);
     Ret::VOID
 }
@@ -276,9 +282,19 @@ fn section_init(e: &mut Exec, args: &Args) -> Ret {
     Ret::eax(1)
 }
 
+/// The time a game thread was blocked since `t` (the harness's `timing`).
+fn waited(e: &Exec, sleep: bool, t: std::time::Instant) {
+    e.shared()
+        .clock
+        .waited(e.id, e.is_main(), sleep, t.elapsed());
+}
+
 fn section_enter(e: &mut Exec, args: &Args) -> Ret {
     let id = e.id;
-    if !e.shared().sync.section_enter(a(args, 0), id) {
+    let t = std::time::Instant::now();
+    let entered = e.shared().sync.section_enter(a(args, 0), id);
+    waited(e, false, t);
+    if !entered {
         let why = match e.shared().sync.take_dead() {
             Some(f) => Stop::Failed(f.why, f.eip),
             None => e.shared().stopped().unwrap_or(Stop::Returned),

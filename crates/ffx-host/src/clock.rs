@@ -203,6 +203,13 @@ pub struct Clock {
     /// ([`Clock::timing`]).
     update_time: Timing,
     flip_time: Timing,
+    /// Host time the main thread spends blocked in waits (events,
+    /// semaphores, mutexes, critical sections) and in `Sleep`s, and the
+    /// render thread in either ([`Clock::waited`]), since `timing_from`.
+    main_wait: Timing,
+    main_sleep: Timing,
+    render_wait: Timing,
+    timing_from: Mutex<Option<Instant>>,
     wake: Mutex<()>,
     changed: Condvar,
 }
@@ -238,11 +245,60 @@ impl Clock {
     /// game's update, without the boundary and the limiter's wait) and a
     /// flip in `Renderer_PresentFlip` (the present), average and longest
     /// in ms; then starts over.
+    ///
+    /// Then the threads' split over the same wall time: the main thread's
+    /// waits (`main_wait_ms`, per update: events, semaphores, mutexes,
+    /// critical sections, e.g. for the render thread) and sleeps
+    /// (`main_sleep_ms`: the limiter's among them), what is left busy
+    /// (`main_busy_ms`); the render thread's waits and busy time per flip.
     #[must_use]
     pub fn timing(&self) -> String {
         let (un, ua, um) = self.update_time.take();
         let (fl, fa, fm) = self.flip_time.take();
-        format!("updates {un} update_ms {ua:.3} max {um:.3} flips {fl} flip_ms {fa:.3} max {fm:.3}")
+        let wall = self
+            .timing_from
+            .lock()
+            .ok()
+            .and_then(|mut t| t.replace(Instant::now()))
+            .map_or(0.0, |t| t.elapsed().as_secs_f64() * 1e3);
+        let total = |t: &Timing| {
+            let (n, avg, _) = t.take();
+            #[allow(clippy::cast_precision_loss)] // counts far below 2^52
+            let ms = avg * n as f64;
+            ms
+        };
+        let (mw, ms, rw) = (
+            total(&self.main_wait),
+            total(&self.main_sleep),
+            total(&self.render_wait),
+        );
+        #[allow(clippy::cast_precision_loss)]
+        let per = |ms: f64, n: u64| if n == 0 { 0.0 } else { ms / n as f64 };
+        format!(
+            "updates {un} update_ms {ua:.3} max {um:.3} flips {fl} flip_ms {fa:.3} max {fm:.3} \
+             wall_ms {wall:.0} main_wait_ms {:.3} main_sleep_ms {:.3} main_busy_ms {:.3} \
+             render_wait_ms {:.3} render_busy_ms {:.3}",
+            per(mw, un),
+            per(ms, un),
+            per(wall - mw - ms, un),
+            per(rw, fl),
+            per(wall - rw, fl),
+        )
+    }
+
+    /// A game thread was blocked for `d` (a wait, or a `Sleep` when
+    /// `sleep`): counted for the main and the render thread
+    /// ([`Clock::timing`]).
+    pub fn waited(&self, thread: u32, main: bool, sleep: bool, d: Duration) {
+        if main {
+            if sleep {
+                self.main_sleep.add(d);
+            } else {
+                self.main_wait.add(d);
+            }
+        } else if thread == self.render.load(Ordering::Relaxed) {
+            self.render_wait.add(d);
+        }
     }
 
     /// Whether the clock is the real one ([`Clock::set_real`]).
@@ -455,7 +511,9 @@ pub(crate) fn limiter(e: &mut Exec, ms: u32) {
             stack: vec![ms],
             ..Args::default()
         };
+        let t = Instant::now();
         crate::win32::real_sleep(e, &sleep);
+        clock(e).waited(e.id, e.is_main(), true, t.elapsed());
     } else {
         limiter_sleep(e, ms);
     }
@@ -501,7 +559,9 @@ fn sleep_ms(e: &mut Exec, args: &Args) -> Ret {
         stack: vec![ms],
         ..Args::default()
     };
+    let t = Instant::now();
     crate::win32::real_sleep(e, &sleep);
+    clock(e).waited(e.id, e.is_main(), true, t.elapsed());
     Ret::eax(0)
 }
 
