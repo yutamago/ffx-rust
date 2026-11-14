@@ -566,4 +566,8 @@ ported! {
     PPhysics_fixWorldsAfterLoading_005eb3c0 @ 0x005e_b3c0 => extern "C" fn physics_fix_worlds(array: u32) -> u32 {
         pr::physics_fix_worlds(&mut mem(), array)
     }
+    /// The string tree's insert `(node)` -> 0 or the node with the key.
+    StringTree_insert_006dc140 @ 0x006d_c140 => extern "thiscall" fn string_tree_insert(tree: u32, node: u32) -> u32 {
+        pr::string_tree_insert(&mut mem(), tree, node)
+    }
 }

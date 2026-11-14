@@ -3411,3 +3411,52 @@ fn wp5f_physics_fix_worlds_matches_the_original() {
         }
     });
 }
+
+#[test]
+fn wp5f_string_tree_insert_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x006d_c140);
+        let words: [&[u8]; 9] = [
+            b"a\0", b"ab\0", b"abc\0", b"b\0", b"ba\0", b"\0", b"\xff\0", b"abd\0", b"zz\0",
+        ];
+        for k in 0..300 {
+            t.reset();
+            let tree = t.zeros(0x10);
+            let key = |t: &mut Twins, rng: &mut Rng| -> u32 {
+                match rng.below(12) {
+                    0 => 0,
+                    1 => 1, // a null key with its tag bit
+                    _ => {
+                        let s = t.alloc(words[rng.below(words.len() as u32) as usize]);
+                        s | rng.below(2)
+                    }
+                }
+            };
+            // a random binary tree under the sentinel
+            let n = rng.below(7);
+            let nodes: Vec<u32> = (0..n).map(|_| t.zeros(0x10)).collect();
+            for i in 0..n as usize {
+                let k = key(t, &mut rng);
+                t.w32(nodes[i] + 0xc, k);
+                t.w32(nodes[i] + 8, rng.below(2));
+                for c in 0..2 {
+                    let j = 2 * i + 1 + c;
+                    let child = if j < n as usize { nodes[j] } else { tree };
+                    t.w32(nodes[i] + 4 * c as u32, child);
+                }
+            }
+            t.w32(tree + 0xc, nodes.first().copied().unwrap_or(tree));
+            let node = t.zeros(0x10);
+            let k2 = key(t, &mut rng);
+            t.w32(node + 0xc, k2);
+            t.w32(node + 8, rng.pick(&[0, 1, 0x40, 0x41]));
+            t.check(
+                &format!("string tree insert {k} ({n} nodes)"),
+                pr::STRING_TREE_INSERT,
+                Conv::Thiscall(tree),
+                &[node],
+                |m| Out::U32(pr::string_tree_insert(m, tree, node)),
+            );
+        }
+    });
+}

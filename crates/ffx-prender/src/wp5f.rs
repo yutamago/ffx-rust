@@ -991,4 +991,68 @@ pub mod bridge {
         }
         0
     }
+
+    /// `MemoryDebug_mapInsert`'s tree insert (`0x006dc140`).
+    pub const STRING_TREE_INSERT: u32 = 0x006d_c140;
+
+    /// The key `strcmp` of the string tree: `a` before `b` (unsigned
+    /// bytes); a null key compares by address.
+    fn key_less(h: &impl Host, a: u32, b: u32) -> bool {
+        if a == 0 || b == 0 {
+            return a < b;
+        }
+        let mut i = 0u32;
+        loop {
+            let x: u8 = h.read(a.wrapping_add(i));
+            let y: u8 = h.read(b.wrapping_add(i));
+            if x != y {
+                return x < y;
+            }
+            if x == 0 {
+                return false;
+            }
+            i = i.wrapping_add(1);
+        }
+    }
+
+    /// The string tree's insert (`0x006dc140`, thiscall `(tree; node)`,
+    /// `ret 4`) -> 0, or the node already holding the key: `node` (its
+    /// tag bit, bit 0 of `+8`, set) becomes a leaf (children the sentinel
+    /// `tree`) under the node the key walk (`+0xc` without its tag bit;
+    /// smaller left `+0`, larger right `+4`) ends at, or as the root
+    /// (`tree + 0xc`) in an empty tree; its parent link (`+8`) keeps the
+    /// tag bit.
+    pub fn string_tree_insert(h: &mut impl Host, tree: u32, node: u32) -> u32 {
+        let c: u32 = h.read(at(node, 8));
+        h.write(at(node, 8), c.wrapping_add(1 - (c & 1)));
+        h.write(node, tree);
+        h.write(at(node, 4), tree);
+        let mut parent = at(tree, 0xc);
+        let mut dir = 0u32;
+        let mut cur: u32 = h.read(at(tree, 0xc));
+        if cur != tree {
+            let k: u32 = h.read(at(node, 0xc));
+            let a = k.wrapping_sub(k & 1);
+            loop {
+                let k: u32 = h.read(at(cur, 0xc));
+                let b = k.wrapping_sub(k & 1);
+                parent = cur;
+                if key_less(h, a, b) {
+                    dir = 0;
+                } else if key_less(h, b, a) {
+                    dir = 1;
+                } else {
+                    return cur;
+                }
+                cur = h.read(at(cur, dir * 4));
+                if cur == tree {
+                    break;
+                }
+            }
+        }
+        let c: u32 = h.read(at(node, 8));
+        h.write(at(node, 8), (c & 1).wrapping_add(parent));
+        h.write(at(parent, dir * 4), node);
+        0
+    }
 }
