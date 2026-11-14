@@ -157,6 +157,10 @@ fn main() -> ExitCode {
         eprintln!("harness: {e}");
         return ExitCode::FAILURE;
     }
+    // the sampler (FFX_HOST_SAMPLE; the harness's `sample reset|stop`)
+    if harness {
+        ffx_host::sample::start_global(exec.shared());
+    }
     if harness && let Some(p) = &profile {
         // the test's `quit` ends the process: the profile is written there
         let abs = |p: &PathBuf| std::path::absolute(p).unwrap_or_else(|_| p.clone());

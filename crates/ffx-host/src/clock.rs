@@ -115,6 +115,38 @@ const FMOD_HANDLERS: u32 = 0x00c3_a368;
 /// at `*(+0xa4)`.
 const INPUT: u32 = 0x00cc_b170;
 
+/// Host time spent in one kind of call: count, total and longest (ns).
+#[derive(Debug, Default)]
+struct Timing {
+    count: AtomicU64,
+    total: AtomicU64,
+    max: AtomicU64,
+}
+
+impl Timing {
+    fn add(&self, d: Duration) {
+        let ns = u64::try_from(d.as_nanos()).unwrap_or(u64::MAX);
+        self.count.fetch_add(1, Ordering::Relaxed);
+        self.total.fetch_add(ns, Ordering::Relaxed);
+        self.max.fetch_max(ns, Ordering::Relaxed);
+    }
+
+    fn take(&self) -> (u64, f64, f64) {
+        let n = self.count.swap(0, Ordering::Relaxed);
+        let total = self.total.swap(0, Ordering::Relaxed);
+        let max = self.max.swap(0, Ordering::Relaxed);
+        #[allow(clippy::cast_precision_loss)] // ns totals far below 2^52
+        let avg = if n == 0 {
+            0.0
+        } else {
+            total as f64 / n as f64 / 1e6
+        };
+        #[allow(clippy::cast_precision_loss)]
+        let max = max as f64 / 1e6;
+        (n, avg, max)
+    }
+}
+
 /// What the clock and the boundary share across the game's threads.
 #[derive(Debug, Default)]
 pub struct Clock {
@@ -167,6 +199,10 @@ pub struct Clock {
     /// host's from `epoch` on, as in the original.
     real: AtomicBool,
     epoch: OnceLock<Instant>,
+    /// Host time inside the updates and inside the flips
+    /// ([`Clock::timing`]).
+    update_time: Timing,
+    flip_time: Timing,
     wake: Mutex<()>,
     changed: Condvar,
 }
@@ -195,6 +231,18 @@ impl Clock {
             let _ = self.epoch.set(Instant::now());
         }
         self.real.store(real, Ordering::Release);
+    }
+
+    /// The harness's `timing`: the updates and flips since the last ask,
+    /// with the host time an update spent in `FFXApplication_animate` (the
+    /// game's update, without the boundary and the limiter's wait) and a
+    /// flip in `Renderer_PresentFlip` (the present), average and longest
+    /// in ms; then starts over.
+    #[must_use]
+    pub fn timing(&self) -> String {
+        let (un, ua, um) = self.update_time.take();
+        let (fl, fa, fm) = self.flip_time.take();
+        format!("updates {un} update_ms {ua:.3} max {um:.3} flips {fl} flip_ms {fa:.3} max {fm:.3}")
     }
 
     /// Whether the clock is the real one ([`Clock::set_real`]).
@@ -481,7 +529,9 @@ fn animate(e: &mut Exec, args: &Args) -> Ret {
         *s = Some(Instant::now());
     }
     c.notify();
+    let t = Instant::now();
     let r = e.call_original(0x0042_f520, Conv::Thiscall, args);
+    clock(e).update_time.add(t.elapsed());
     clock(e).frame.store(frame + 1, Ordering::Release);
     r.unwrap_or(Ret::eax(0))
 }
@@ -493,7 +543,9 @@ fn present_flip(e: &mut Exec, args: &Args) -> Ret {
     let c = clock(e);
     c.render.store(e.id, Ordering::Release);
     crate::harness::before_present_flip(e.shared());
+    let t = Instant::now();
     let r = e.call_original(0x0059_3760, Conv::Thiscall, args);
+    clock(e).flip_time.add(t.elapsed());
     crate::harness::after_present_flip();
     let c = clock(e);
     c.flips.fetch_add(1, Ordering::AcqRel);
