@@ -37,6 +37,51 @@ pub mod bridge {
     /// The scene read's completion callback (`0x00783dd0`, the CD object
     /// calls it).
     pub const SCENE_READ_DONE: u32 = 0x0078_3dd0;
+    /// `MsRegistSEdata(actor, sep)`, `MsBtlReadSceneFree()` and
+    /// `MsBtlReadWeapon()`, the scene read completion's callees.
+    pub const MS_REGIST_SE_DATA: u32 = 0x007a_01b0;
+    pub const MS_BTL_READ_SCENE_FREE: u32 = 0x0078_3e00;
+    pub const MS_BTL_READ_WEAPON: u32 = 0x0078_3f60;
+
+    /// `MsBtlReadSceneDone()` (`0x00783dd0`, cdecl, no arguments;
+    /// [`SCENE_READ_DONE`]): with the scene block
+    /// (`crate::misc::bridge::BTL_READ3`) holding more than one entry
+    /// (`+0`, signed) and a sound part (offset `+4` not 0), that part
+    /// registered as actor 0's (`MsRegistSEdata(0, block + offset)`);
+    /// else the block freed (`MsBtlReadSceneFree`). Then a tail jump to
+    /// `MsBtlReadWeapon`: its `eax`. Not in the dump.
+    pub fn ms_btl_read_scene_done<M: Mem>(mem: &mut M, call: Call<'_, M>) -> u32 {
+        let block = crate::misc::bridge::BTL_READ3.get(mem);
+        let n = mem.read::<u32>(block).cast_signed();
+        let off: u32 = mem.read(block.wrapping_add(4));
+        if n > 1 && off != 0 {
+            game(
+                mem,
+                &mut *call,
+                MS_REGIST_SE_DATA,
+                &[0, block.wrapping_add(off)],
+            );
+        } else {
+            game(mem, &mut *call, MS_BTL_READ_SCENE_FREE, &[]);
+        }
+        game(mem, call, MS_BTL_READ_WEAPON, &[])
+    }
+
+    /// The menu-config flag that hides the subtitle switch (`0x01133354`)
+    /// and the config word (`0x0113079c`).
+    pub const SUBTITLE_LOCK: u32 = 0x0113_3354;
+    pub const SAVE_CONFIG: u32 = 0x0113_079c;
+
+    /// `MsGetSaveConfigSubTitle()` (`0x00785210`, native 0x70de's jump
+    /// target): 0 while the lock word is set, else bit 9 of the config
+    /// word. Not in the dump.
+    pub fn ms_get_save_config_sub_title(mem: &impl Mem) -> u32 {
+        if mem.read::<u32>(code(mem, SUBTITLE_LOCK)) != 0 {
+            return 0;
+        }
+        (mem.read::<u32>(code(mem, SAVE_CONFIG)) >> 9) & 1
+    }
+
     /// `Ch_SetHideEvent(chr, flags)` and `Ch_SetPos3(chr, x, y, z)` (chara).
     pub const CH_SET_HIDE_EVENT: u32 = 0x0082_b2c0;
     pub const CH_SET_POS3: u32 = 0x0082_b480;
@@ -113,6 +158,23 @@ pub mod bridge {
     pub const CH_REG_MOTION_ENTRY_CACHE: u32 = 0x0083_76b0;
     pub const REG_MOTION_NAME: u32 = 0x00b5_4c9c;
     pub const REG_MOTION_READ_DONE: u32 = 0x0079_cc80;
+
+    /// chara's `ChN_AddSystemMgrp(data)`, which the read's completion
+    /// hands the block.
+    pub const CHN_ADD_SYSTEM_MGRP: u32 = 0x0083_7750;
+
+    /// `MsRegMotionReadDone()` (`0x0079cc80`, cdecl, no arguments; the CD
+    /// read's completion callback [`ms_reg_motion_read`] passes, which
+    /// `CdReadSync` calls): the flag (`crate::misc::bridge::REG_MOTION_FLAG`)
+    /// set to 1 and the block (`REG_MOTION`) handed to
+    /// [`CHN_ADD_SYSTEM_MGRP`]; its `eax`. Not in the dump (a gap after
+    /// `MsMotBinFrame`).
+    pub fn ms_reg_motion_read_done<M: Mem>(mem: &mut M, call: Call<'_, M>) -> u32 {
+        use crate::misc::bridge::{REG_MOTION, REG_MOTION_FLAG};
+        let block = REG_MOTION.get(mem);
+        REG_MOTION_FLAG.set(mem, 1);
+        game(mem, call, CHN_ADD_SYSTEM_MGRP, &[block])
+    }
 
     /// `MsRegMotionRead()` (`0x0079ccf0`, native 0x70a2): with the
     /// system motions loaded ([`CHN_SYSTEM_MGRP_LOADED`]) the flag

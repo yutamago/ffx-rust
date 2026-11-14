@@ -24,10 +24,32 @@ pub fn bad_access(addr: u32, len: usize, write: bool) {
     };
     // the first ones as notes too (the harness's `notes`), outside the lock
     if first {
+        // the host entries it happened in: the port that made it first
+        let syms = crate::report::symbols();
+        let inside: Vec<String> = crate::exec::spot::innermost(4)
+            .into_iter()
+            .map(|(kind, what)| match kind {
+                crate::exec::spot::Kind::Import => format!("import {what}"),
+                _ => syms.describe(what),
+            })
+            .collect();
+        let inside = if inside.is_empty() {
+            String::new()
+        } else {
+            format!(", in {}", inside.join(" <- "))
+        };
         note(&format!(
-            "bad access: {} of {len} bytes at {addr:#010x} (outside the arena's regions)",
+            "bad access: {} of {len} bytes at {addr:#010x} (outside the arena's regions{inside})",
             if write { "write" } else { "read" }
         ));
+        // `FFX_HOST_BAD_ACCESS_TRACE=1`: the Rust stack of each first one
+        // on stderr (which port made it)
+        if std::env::var_os("FFX_HOST_BAD_ACCESS_TRACE").is_some() {
+            eprintln!(
+                "bad access at {addr:#010x}:\n{}",
+                std::backtrace::Backtrace::force_capture()
+            );
+        }
     }
 }
 

@@ -4270,6 +4270,11 @@ ported! {
         yi::bridge::yi_disable_hamon_eff(&mut mem(), &mut |_, f, a| call_cdecl(f, a))
     }
 
+    /// `yiEnableHamonEff()` (native 0x01e2's jump target).
+    yiEnableHamonEff_009085a0 @ 0x0090_85a0 => extern "C" fn shim_yi_enable_hamon_eff() -> u32 {
+        yi::bridge::yi_enable_hamon_eff(&mut mem(), &mut |_, f, a| call_cdecl(f, a))
+    }
+
     // ---- field round 33: the Sqs IOP calls and SE wrappers ----
 
     /// `Sqs_CallRpc(cmd)`.

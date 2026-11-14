@@ -5255,6 +5255,11 @@ ported! {
     MsEtEffectRead @ 0x0079_e6a0 => extern "C" fn ms_et_effect_read() -> u32 {
         read::ms_et_effect_read(&mut mem(), &mut call_ptr)
     }
+    /// `MsRegMotionReadDone()`: the registered motions' read completion
+    /// (`CdReadSync` calls it); `ChN_AddSystemMgrp`'s `eax`.
+    MsRegMotionReadDone_0079cc80 @ 0x0079_cc80 => extern "C" fn ms_reg_motion_read_done() -> u32 {
+        read::ms_reg_motion_read_done(&mut mem(), &mut call_ptr)
+    }
     /// `MsRegMotionRead()`.
     MsRegMotionRead @ 0x0079_ccf0 => extern "C" fn ms_reg_motion_read() -> i32 {
         read::ms_reg_motion_read(&mut mem(), &mut call_ptr)

@@ -258,3 +258,60 @@ fn a_store_wrapper_calls_its_target_and_stores() {
     assert_eq!(r.eax, 0x1234 ^ 0x5a5a);
     assert_eq!(ported.mem().read::<u32>(out), 0x1234 ^ 0x5a5a);
 }
+
+/// The 64-bit arithmetic helpers (`ffx_host::crt::register_arith`, the
+/// table of the build without Unicorn) against the originals in Unicorn:
+/// `edx:eax` from Rust for operands around the signs, the word boundary
+/// and the extremes (no zero divisors: the original faults there).
+#[test]
+fn the_64_bit_arithmetic_matches_the_originals() {
+    use ffx_host::crt;
+    use ffx_host::table::{Args, Conv};
+    let Some(exe) = exe() else {
+        return;
+    };
+    let mut t = Table::new();
+    crt::register_arith(&mut t);
+    let mut ported = ffx_host::boot_with(&exe, t).unwrap();
+    let mut original = ffx_host::boot_with(&exe, Table::new()).unwrap();
+    let values: [u64; 14] = [
+        0,
+        1,
+        2,
+        3,
+        7,
+        0xffff_ffff,
+        0x1_0000_0000,
+        0x1_2345_6789,
+        0x7fff_ffff_ffff_ffff,
+        0x8000_0000_0000_0000,
+        0xffff_ffff_ffff_ffff,
+        0xffff_ffff_ffff_fff9,
+        0xdead_beef_0bad_f00d,
+        0x0000_0003_0000_0001,
+    ];
+    let run = |e: &mut Exec, f: u32, x: u64, y: u64| {
+        #[allow(clippy::cast_possible_truncation)]
+        let args = Args {
+            stack: vec![x as u32, (x >> 32) as u32, y as u32, (y >> 32) as u32],
+            ..Args::default()
+        };
+        let r = e.call(f, Conv::Stdcall, &args).unwrap();
+        (r.eax, r.edx)
+    };
+    for f in [crt::ALLMUL, crt::ALLDIV, crt::AULLDIV, crt::AULLREM] {
+        for &x in &values {
+            for &y in &values {
+                if y == 0 && f != crt::ALLMUL {
+                    continue;
+                }
+                let a = run(&mut ported, f, x, y);
+                let b = run(&mut original, f, x, y);
+                assert_eq!(a, b, "{f:#x}({x:#x}, {y:#x})");
+            }
+        }
+    }
+    let n = |e: &Exec, a| e.stats.ports.get(&a).copied().unwrap_or(0);
+    assert_eq!(n(&ported, crt::ALLDIV), 13 * 14);
+    assert_eq!(n(&original, crt::ALLDIV), 0);
+}

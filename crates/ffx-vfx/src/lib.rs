@@ -56,4 +56,5 @@ pub mod tail;
 pub mod tree;
 pub mod vec;
 pub mod wave;
+pub mod wp5g_encount;
 pub mod x87;

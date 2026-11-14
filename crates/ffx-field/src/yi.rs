@@ -4904,6 +4904,30 @@ pub mod bridge {
         0
     }
 
+    /// A word `yiEnableHamonEff` clears (`0x01934ea8`, after
+    /// `g_YiColor3`; nothing else in `FFX.exe` touches it).
+    pub const HAMON_ENABLE_WORD: u32 = 0x0193_4ea8;
+
+    /// `yiEnableHamonEff()` (`0x009085a0`, cdecl, name ours: the mirror of
+    /// [`yi_disable_hamon_eff`]; native 0x01e2 jumps to it): sets render
+    /// status bit 24, clears the distortion word and
+    /// [`HAMON_ENABLE_WORD`], turns the PC renderer's distortion on;
+    /// returns 0. Not in the dump (a gap after `yiSetRenderParam`).
+    pub fn yi_enable_hamon_eff<M: Mem, C: FnMut(&mut M, u32, &[u32]) -> u32>(
+        mem: &mut M,
+        call: &mut C,
+    ) -> u32 {
+        let s = RENDER_STATUS.get(mem);
+        RENDER_STATUS.set(mem, s | 0x0100_0000);
+        let at = mem.rebase(super::fog::HAMON);
+        mem.write(at, 0u32);
+        let at = mem.rebase(HAMON_ENABLE_WORD);
+        mem.write(at, 0u32);
+        let f = mem.rebase(super::fog::SET_DISTORTION);
+        call(mem, f, &[1]);
+        0
+    }
+
     /// `Sg_MemSetFree(block)` (`0x0083bdb0`, name ours; from
     /// `Sg_MemCreateFree`, `Sg_MemMoveWork` and `0x0083b720`): marks the
     /// block (its header) free: `+8` 0, `+0xc` down to its heap bits

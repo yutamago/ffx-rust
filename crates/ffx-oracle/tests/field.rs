@@ -10345,6 +10345,16 @@ fn round19_fog_and_back_colour_match_the_original() {
             |o| o.eax(0x0090_8450, &[]),
             |m| yi::bridge::yi_disable_hamon_eff(m, call),
         );
+        // (the words it clears hold junk first; the status word random)
+        for g in [0x018d_ed28, 0x0193_4ea8, 0x018d_ed08] {
+            let p = at(&t, g);
+            t.put(p, rng.next());
+        }
+        t.same(
+            "yiEnableHamonEff",
+            |o| o.eax(0x0090_85a0, &[]),
+            |m| yi::bridge::yi_enable_hamon_eff(m, call),
+        );
     }
 }
 
