@@ -2176,23 +2176,37 @@ fn wp5f_mkv_cluster_create_and_entries_match_the_original() {
             let mut data = vec![0u8; rng.below(4) as usize];
             let start = data.len() as u32;
             data.extend(&els);
-            if rng.chance(6) {
-                let cut = rng.below(data.len() as u32 + 1) as usize;
-                data.truncate(cut);
+            let ei = rng.below(at.len() as u32) as usize;
+            let mut unknown = rng.chance(6);
+            match rng.below(8) {
+                0 => {
+                    let cut = rng.below(data.len() as u32 + 1) as usize;
+                    data.truncate(cut);
+                }
+                1 => {
+                    // inside the cluster's id or size, the segment's size
+                    // unknown (the file's end is the limit then)
+                    let cut = (start + at[ei].0 + 1 + rng.below(4)) as usize;
+                    data.truncate(cut.min(data.len()));
+                    unknown = true;
+                }
+                _ => {}
             }
             let size = data.len() as u32;
-            let avail = rng.pick(&[size, size, size.saturating_sub(3), size + 4]);
+            let avail = rng.pick(&[size, size, size.saturating_sub(3), size + 4, 0]);
             let reader = fake_reader(t, &data, rng.pick(&[u32::MAX, u32::MAX - 4]), avail);
-            let m_size = match rng.below(6) {
-                0 => u64::MAX,
-                1 => u64::from(size.saturating_sub(start) / 2),
-                _ => u64::from(size - start),
+            let m_size = if unknown {
+                u64::MAX
+            } else if rng.chance(5) {
+                u64::from(size.saturating_sub(start) / 2)
+            } else {
+                u64::from(size - start)
             };
             let seg = segment_obj(t, reader, start, m_size);
             let off = if rng.chance(10) {
                 rng.pick(&[u64::from(size), u64::from(size) + 9, u64::MAX])
             } else {
-                u64::from(at[rng.below(at.len() as u32) as usize].0)
+                u64::from(at[ei].0)
             };
             let pos = t.words(&[0x1111, 0x2222]);
             let len = t.words(&[0x3333]);
@@ -2324,6 +2338,10 @@ fn wp5f_mkv_segment_get_next_matches_the_original() {
             t.w32(seg + 0x8c, cap);
             let cur = if loaded > 0 && rng.chance(4) {
                 rd32(t, arr + 4 * rng.below(loaded))
+            } else if rng.chance(10) {
+                // past the data, or at a 0 byte of the prefix
+                let p = rng.pick(&[start + size + 2, 0]);
+                cluster_obj(t, seg, p, u32::MAX)
             } else {
                 let (o, _) = at[rng.below(at.len() as u32) as usize];
                 cluster_obj(t, seg, start + o, u32::MAX)
