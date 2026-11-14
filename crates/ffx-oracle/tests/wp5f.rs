@@ -2477,15 +2477,16 @@ fn wp5f_mkv_segment_do_load_cluster_matches_the_original() {
             let size = data.len() as u32;
             let avail = rng.pick(&[size, size, size.saturating_sub(3), size + 4, 0]);
             let reader = fake_reader(t, &data, rng.pick(&[u32::MAX, u32::MAX - 4]), avail);
+            let mi = rng.below(at.len() as u32) as usize;
             let m_size = match rng.below(6) {
                 0 => u64::MAX,
                 1 => u64::from(size.saturating_sub(start) / 2),
-                2 => u64::from(at[rng.below(at.len() as u32) as usize].0),
+                // at the end of the element the load starts at
+                2 => u64::from(at.get(mi + 1).map_or(size - start, |e| e.0)),
                 _ => u64::from(size - start),
             };
             let seg = segment_obj(t, reader, start, m_size);
             // where the load goes on: an element, the end, unknown
-            let mi = rng.below(at.len() as u32) as usize;
             let m_pos = match rng.below(10) {
                 0 => u64::from(size),
                 1 => u64::MAX - 0x20,
@@ -2539,6 +2540,277 @@ fn wp5f_mkv_segment_do_load_cluster_matches_the_original() {
                 Conv::Thiscall(seg),
                 &[pos, len],
                 |m| Out::U32(mkv::segment_do_load_cluster(m, seg, pos, len, scratch)),
+            );
+        }
+    });
+}
+
+/// An object whose vtable's slot 0 (a deleting destructor) is a logging
+/// stub (thiscall, 1 word).
+fn vobj(t: &mut Twins, tag: u32) -> u32 {
+    let f = t.stub_code(tag, true, 1, 1, &Ret::Fixed(0x51), &[]);
+    let vt = t.words(&[f]);
+    t.words(&[vt, 0, 0, 0])
+}
+
+/// A string pointer or none.
+fn string_or_none(t: &mut Twins, rng: &mut Rng) -> u32 {
+    if rng.chance(3) {
+        0
+    } else {
+        t.words(&[rng.next(), 0])
+    }
+}
+
+/// A cluster with `n` block entries (some null) at `c`.
+fn cluster_entries(t: &mut Twins, rng: &mut Rng, c: u32) {
+    let n = rng.below(4);
+    let mut e = Vec::new();
+    for i in 0..n {
+        e.push(if rng.chance(8) {
+            0
+        } else {
+            vobj(t, 0xe000 + i)
+        });
+    }
+    let arr = if n == 0 && rng.chance(2) {
+        0
+    } else {
+        t.words(&e)
+    };
+    t.w32(c + 0x30, arr);
+    t.w32(c + 0x34, n);
+    t.w32(c + 0x38, n);
+}
+
+/// A `new[]` array: its count word, then `n` zeroed `size`-byte elements.
+fn new_array(t: &mut Twins, n: u32, size: u32) -> u32 {
+    let mut w = vec![n];
+    w.extend(vec![0u32; (n * size / 4) as usize]);
+    t.words(&w) + 4
+}
+
+/// An atom (0x30 bytes at `a`): a string id, displays with strings.
+fn atom_at(t: &mut Twins, rng: &mut Rng, a: u32) {
+    let s = string_or_none(t, rng);
+    t.w32(a, s);
+    let n = rng.below(3);
+    if n > 0 || rng.chance(2) {
+        let d = new_array(t, n, 12);
+        for i in 0..n {
+            for o in [0, 4, 8] {
+                let s = string_or_none(t, rng);
+                t.w32(d + 12 * i + o, s);
+            }
+        }
+        t.w32(a + 0x20, d);
+        t.w32(a + 0x24, n);
+        t.w32(a + 0x28, n);
+    }
+}
+
+/// Chapters: editions of atoms.
+fn chapters(t: &mut Twins, rng: &mut Rng) -> u32 {
+    let ch = t.zeros(0x34);
+    let n = rng.below(3);
+    let eds = t.zeros(12 * n as usize + 4);
+    for i in 0..n {
+        let k = rng.below(3);
+        if k > 0 || rng.chance(2) {
+            let atoms = new_array(t, k, 0x30);
+            for j in 0..k {
+                atom_at(t, rng, atoms + 0x30 * j);
+            }
+            t.w32(eds + 12 * i, atoms);
+            t.w32(eds + 12 * i + 4, k);
+            t.w32(eds + 12 * i + 8, k);
+        }
+    }
+    t.w32(ch + 0x28, eds);
+    t.w32(ch + 0x2c, n);
+    t.w32(ch + 0x30, n);
+    ch
+}
+
+/// Cues: cue points (some null) with track positions (some none).
+fn cues(t: &mut Twins, rng: &mut Rng) -> u32 {
+    let c = t.zeros(0x40);
+    let (a, b) = (rng.below(3), rng.below(2));
+    let mut w = Vec::new();
+    for _ in 0..a + b {
+        w.push(if rng.chance(8) {
+            0
+        } else {
+            let cp = t.zeros(0x28);
+            let tp = string_or_none(t, rng);
+            t.w32(cp + 0x20, tp);
+            cp
+        });
+    }
+    let arr = if w.is_empty() && rng.chance(2) {
+        0
+    } else {
+        t.words(&w)
+    };
+    t.w32(c + 0x28, arr);
+    t.w32(c + 0x2c, a);
+    t.w32(c + 0x30, b);
+    c
+}
+
+/// Tracks: track objects (some null).
+fn tracks(t: &mut Twins, rng: &mut Rng) -> u32 {
+    let tr = t.zeros(0x30);
+    let n = rng.below(4);
+    let w: Vec<u32> = (0..n)
+        .map(|i| {
+            if rng.chance(6) {
+                0
+            } else {
+                vobj(t, 0xd000 + i)
+            }
+        })
+        .collect();
+    let arr = if n == 0 && rng.chance(2) {
+        0
+    } else {
+        t.words(&w)
+    };
+    t.w32(tr + 0x28, arr);
+    t.w32(tr + 0x2c, arr + 4 * n);
+    tr
+}
+
+/// Segment info: three strings (some none).
+fn info(t: &mut Twins, rng: &mut Rng) -> u32 {
+    let i = t.zeros(0x44);
+    for o in [0x38, 0x3c, 0x40] {
+        let s = string_or_none(t, rng);
+        t.w32(i + o, s);
+    }
+    i
+}
+
+#[test]
+fn wp5f_mkv_segment_teardown_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x0041_fa80);
+        for k in 0..200 {
+            // the parts
+            t.reset();
+            cdecl_imp(t, mkv::WASSERT, 3, 0x61);
+            movie_alloc(t, false);
+            let tr = tracks(t, &mut rng);
+            t.check(
+                &format!("Tracks dtor {k}"),
+                mkv::TRACKS_DELETING_DTOR,
+                Conv::Thiscall(tr),
+                &[1],
+                |m| Out::U32(mkv::tracks_deleting_dtor(m, tr)),
+            );
+            let inf = info(t, &mut rng);
+            t.check(
+                &format!("SegmentInfo dtor {k}"),
+                mkv::INFO_DELETING_DTOR,
+                Conv::Thiscall(inf),
+                &[1],
+                |m| Out::U32(mkv::info_deleting_dtor(m, inf)),
+            );
+            let cu = cues(t, &mut rng);
+            t.check(
+                &format!("Cues dtor {k}"),
+                mkv::CUES_DTOR,
+                Conv::Thiscall(cu),
+                &[],
+                |m| {
+                    mkv::cues_dtor(m, cu);
+                    Out::None
+                },
+            );
+            let ch = chapters(t, &mut rng);
+            t.check(
+                &format!("Chapters dtor {k}"),
+                mkv::CHAPTERS_DTOR,
+                Conv::Thiscall(ch),
+                &[],
+                |m| {
+                    mkv::chapters_dtor(m, ch);
+                    Out::None
+                },
+            );
+            let atom = t.zeros(0x30);
+            atom_at(t, &mut rng, atom);
+            t.check(
+                &format!("Atom::Clear {k}"),
+                mkv::ATOM_CLEAR,
+                Conv::Thiscall(atom),
+                &[],
+                |m| {
+                    mkv::atom_clear(m, atom);
+                    Out::None
+                },
+            );
+            // the whole segment
+            t.reset();
+            cdecl_imp(t, mkv::WASSERT, 3, 0x61);
+            movie_alloc(t, false);
+            let seg = t.zeros(0x90);
+            let (loaded, pre) = (rng.below(3), rng.below(3));
+            let mut w = Vec::new();
+            for _ in 0..loaded + pre {
+                w.push(if rng.chance(8) {
+                    0
+                } else {
+                    let c = t.zeros(0x40);
+                    cluster_entries(t, &mut rng, c);
+                    c
+                });
+            }
+            let arr = if w.is_empty() && rng.chance(2) {
+                0
+            } else {
+                t.words(&w)
+            };
+            t.w32(seg + 0x80, arr);
+            t.w32(seg + 0x84, loaded);
+            t.w32(seg + 0x88, pre);
+            cluster_entries(t, &mut rng, seg + 0x20);
+            let parts = [
+                (0x74, rng.chance(4)),
+                (0x70, rng.chance(4)),
+                (0x78, rng.chance(4)),
+                (0x7c, rng.chance(4)),
+                (0x6c, rng.chance(4)),
+            ];
+            for (o, none) in parts {
+                if none {
+                    continue;
+                }
+                let p = match o {
+                    0x74 => tracks(t, &mut rng),
+                    0x70 => info(t, &mut rng),
+                    0x78 => cues(t, &mut rng),
+                    0x7c => chapters(t, &mut rng),
+                    _ => {
+                        let s = t.zeros(0x34);
+                        for so in [0x28, 0x30] {
+                            let a = string_or_none(t, &mut rng);
+                            t.w32(s + so, a);
+                        }
+                        s
+                    }
+                };
+                t.w32(seg + o, p);
+            }
+            t.check(
+                &format!("Segment dtor {k}"),
+                mkv::SEGMENT_DTOR,
+                Conv::Thiscall(seg),
+                &[],
+                |m| {
+                    mkv::segment_dtor(m, seg);
+                    Out::None
+                },
             );
         }
     });

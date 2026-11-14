@@ -2741,4 +2741,216 @@ pub mod bridge {
         }
         0
     }
+
+    /// `Cluster::~Cluster` (ported as `Phyre_PObjectTable_deleteAll`),
+    /// the parts' destructors and `eh_vector_destructor_iterator` (CRT,
+    /// stdcall `(array, size, count, dtor)`), with the element destructors
+    /// it gets.
+    pub const CLUSTER_DTOR: u32 = 0x0042_b7c0;
+    pub const SEGMENT_DTOR: u32 = 0x0041_fa80;
+    pub const TRACKS_DELETING_DTOR: u32 = 0x0041_fbe0;
+    pub const INFO_DELETING_DTOR: u32 = 0x0041_fc30;
+    pub const CUES_DTOR: u32 = 0x0042_1fe0;
+    pub const CHAPTERS_DTOR: u32 = 0x0042_52f0;
+    pub const ATOM_CLEAR: u32 = 0x0042_5d20;
+    pub const EH_VECTOR_DTOR: u32 = 0x0094_96d2;
+    pub const ATOM_DTOR: u32 = 0x0042_5b30;
+    pub const DISPLAY_DTOR: u32 = 0x0042_6240;
+
+    /// A `new[]` array of `size`-byte elements with a count word before
+    /// it: each element destroyed (`dtor`), the block freed.
+    fn delete_array(h: &mut impl Host, arr: u32, size: u32, dtor: u32) {
+        let n: u32 = h.read(arr.wrapping_sub(4));
+        let f = h.rebase(dtor);
+        h.call_sym(EH_VECTOR_DTOR, Conv::Stdcall, &[arr, size, n, f]);
+        let block = arr.wrapping_sub(4);
+        if block != 0 {
+            free(h, block);
+        }
+    }
+
+    /// `mkvparser::Segment::~Segment(segment)` (`0x0041fa80`, thiscall):
+    /// every loaded and preloaded cluster (`+0x80`, `+0x84` + `+0x88`)
+    /// destroyed ([`CLUSTER_DTOR`]) and freed (a null one reported), the
+    /// array freed; the tracks (`+0x74`) and info (`+0x70`) deleted, the
+    /// cues (`+0x78`), chapters (`+0x7c`) destroyed and freed, the seek
+    /// head (`+0x6c`) and its two arrays freed; the end-of-stream cluster
+    /// (`+0x20`) destroyed. (The original's exception frame has nothing to
+    /// unwind here.)
+    pub fn segment_dtor(h: &mut impl Host, seg: u32) {
+        let n = h
+            .read::<u32>(at(seg, 0x88))
+            .wrapping_add(h.read::<u32>(at(seg, 0x84)));
+        let mut p: u32 = h.read(at(seg, 0x80));
+        let end = at(p, n.wrapping_mul(4));
+        while p != end {
+            let c: u32 = h.read(p);
+            p = at(p, 4);
+            if c == 0 {
+                wassert(h, 0x00b9_0514, 0x26d);
+            } else {
+                h.call_sym(CLUSTER_DTOR, Conv::Thiscall(c), &[]);
+                free(h, c);
+            }
+        }
+        let arr: u32 = h.read(at(seg, 0x80));
+        if arr != 0 {
+            free(h, arr);
+        }
+        let tracks: u32 = h.read(at(seg, 0x74));
+        if tracks != 0 {
+            h.call_sym(TRACKS_DELETING_DTOR, Conv::Thiscall(tracks), &[tracks]);
+        }
+        let info: u32 = h.read(at(seg, 0x70));
+        if info != 0 {
+            h.call_sym(INFO_DELETING_DTOR, Conv::Thiscall(info), &[info]);
+        }
+        for (o, dtor) in [(0x78, CUES_DTOR), (0x7c, CHAPTERS_DTOR)] {
+            let x: u32 = h.read(at(seg, o));
+            if x != 0 {
+                h.call_sym(dtor, Conv::Thiscall(x), &[]);
+                free(h, x);
+            }
+        }
+        let seek: u32 = h.read(at(seg, 0x6c));
+        if seek != 0 {
+            for o in [0x28, 0x30] {
+                let a: u32 = h.read(at(seek, o));
+                if a != 0 {
+                    free(h, a);
+                }
+            }
+            free(h, seek);
+        }
+        h.call_sym(CLUSTER_DTOR, Conv::Thiscall(at(seg, 0x20)), &[]);
+    }
+
+    /// `mkvparser::Tracks`' deleting destructor (`0x0041fbe0`, thiscall,
+    /// `ret 4`; the flags not looked at) -> `tracks`: each track
+    /// (`+0x28..+0x2c`) deleted through its vtable (slot 0, flags 1), the
+    /// array and the tracks freed.
+    pub fn tracks_deleting_dtor(h: &mut impl Host, tracks: u32) -> u32 {
+        let mut p: u32 = h.read(at(tracks, 0x28));
+        let end: u32 = h.read(at(tracks, 0x2c));
+        while p != end {
+            let t: u32 = h.read(p);
+            p = at(p, 4);
+            if t != 0 {
+                let vt: u32 = h.read(t);
+                let f: u32 = h.read(vt);
+                h.call(f, Conv::Thiscall(t), &[1]);
+            }
+        }
+        let arr: u32 = h.read(at(tracks, 0x28));
+        if arr != 0 {
+            free(h, arr);
+        }
+        free(h, tracks);
+        tracks
+    }
+
+    /// `mkvparser::SegmentInfo`'s deleting destructor (`0x0041fc30`,
+    /// thiscall, `ret 4`; the flags not looked at) -> `info`: its three
+    /// strings (`+0x38`, `+0x3c`, `+0x40`) freed and cleared, `info` freed.
+    pub fn info_deleting_dtor(h: &mut impl Host, info: u32) -> u32 {
+        for o in [0x38, 0x3c, 0x40] {
+            let s: u32 = h.read(at(info, o));
+            if s != 0 {
+                free(h, s);
+            }
+            h.write(at(info, o), 0u32);
+        }
+        free(h, info);
+        info
+    }
+
+    /// `mkvparser::Cues::~Cues(cues)` (`0x00421fe0`, thiscall): each cue
+    /// point (`+0x28`, `+0x2c` + `+0x30` of them; a null one reported) and
+    /// its track positions (`+0x20`) freed, then the array.
+    pub fn cues_dtor(h: &mut impl Host, cues: u32) {
+        let n = h
+            .read::<u32>(at(cues, 0x30))
+            .wrapping_add(h.read::<u32>(at(cues, 0x2c)));
+        let mut p: u32 = h.read(at(cues, 0x28));
+        let end = at(p, n.wrapping_mul(4));
+        while p != end {
+            let c: u32 = h.read(p);
+            p = at(p, 4);
+            if c == 0 {
+                wassert(h, 0x00b9_0a60, 0x85c);
+            } else {
+                let tp: u32 = h.read(at(c, 0x20));
+                if tp != 0 {
+                    free(h, tp);
+                }
+                free(h, c);
+            }
+        }
+        let arr: u32 = h.read(at(cues, 0x28));
+        if arr != 0 {
+            free(h, arr);
+        }
+    }
+
+    /// `mkvparser::Chapters::~Chapters(chapters)` (`0x004252f0`, thiscall):
+    /// the editions (`+0x28`, 12 bytes each, `+0x30` of them) from the
+    /// last: each one's atoms (`+0`, `+8` of them, 0x30 bytes) cleared
+    /// from the last ([`ATOM_CLEAR`]), the atom array deleted, the edition
+    /// cleared; the count goes down as it goes.
+    pub fn chapters_dtor(h: &mut impl Host, ch: u32) {
+        while h.read::<i32>(at(ch, 0x30)) > 0 {
+            let n = h.read::<u32>(at(ch, 0x30)).wrapping_sub(1);
+            h.write(at(ch, 0x30), n);
+            let editions: u32 = h.read(at(ch, 0x28));
+            let e = at(editions, n.wrapping_mul(12));
+            while h.read::<i32>(at(e, 8)) > 0 {
+                let k = h.read::<u32>(at(e, 8)).wrapping_sub(1);
+                h.write(at(e, 8), k);
+                let atoms: u32 = h.read(e);
+                h.call_sym(
+                    ATOM_CLEAR,
+                    Conv::Thiscall(at(atoms, k.wrapping_mul(0x30))),
+                    &[],
+                );
+            }
+            let atoms: u32 = h.read(e);
+            if atoms != 0 {
+                delete_array(h, atoms, 0x30, ATOM_DTOR);
+            }
+            h.write(e, 0u32);
+            h.write(at(e, 4), 0u32);
+        }
+    }
+
+    /// `mkvparser::Chapters::Atom::Clear(atom)` (`0x00425d20`, thiscall):
+    /// its string id (`+0`) freed and cleared; its displays (`+0x20`, 12
+    /// bytes each, `+0x28` of them) from the last: their three strings
+    /// freed and cleared, the count going down; the display array deleted
+    /// and cleared (`+0x20`, `+0x24`).
+    pub fn atom_clear(h: &mut impl Host, atom: u32) {
+        let s: u32 = h.read(atom);
+        if s != 0 {
+            free(h, s);
+        }
+        h.write(atom, 0u32);
+        while h.read::<i32>(at(atom, 0x28)) > 0 {
+            let n = h.read::<u32>(at(atom, 0x28)).wrapping_sub(1);
+            h.write(at(atom, 0x28), n);
+            let displays: u32 = h.read(at(atom, 0x20));
+            let d = at(displays, n.wrapping_mul(12));
+            for o in [0, 4, 8] {
+                let s: u32 = h.read(at(d, o));
+                if s != 0 {
+                    free(h, s);
+                }
+                h.write(at(d, o), 0u32);
+            }
+        }
+        let displays: u32 = h.read(at(atom, 0x20));
+        if displays != 0 {
+            delete_array(h, displays, 0xc, DISPLAY_DTOR);
+        }
+        h.write(at(atom, 0x20), 0u32);
+        h.write(at(atom, 0x24), 0u32);
+    }
 }

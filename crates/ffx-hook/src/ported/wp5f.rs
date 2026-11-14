@@ -447,4 +447,28 @@ ported! {
         let mut f = StackFrame::<28>::new();
         mkv::segment_do_load_cluster(&mut mem(), seg, pos, len, f.at())
     }
+    /// `mkvparser::Segment::~Segment()`.
+    mkvparser_Segment_dtor_0041fa80 @ 0x0041_fa80 => extern "thiscall" fn segment_dtor(seg: u32) {
+        mkv::segment_dtor(&mut mem(), seg);
+    }
+    /// `mkvparser::Tracks`' deleting destructor -> `this`.
+    mkvparser_Tracks_deletingDtor_0041fbe0 @ 0x0041_fbe0 => extern "thiscall" fn tracks_deleting_dtor(tracks: u32, _flags: u32) -> u32 {
+        mkv::tracks_deleting_dtor(&mut mem(), tracks)
+    }
+    /// `mkvparser::SegmentInfo`'s deleting destructor -> `this`.
+    mkvparser_SegmentInfo_deletingDtor_0041fc30 @ 0x0041_fc30 => extern "thiscall" fn info_deleting_dtor(info: u32, _flags: u32) -> u32 {
+        mkv::info_deleting_dtor(&mut mem(), info)
+    }
+    /// `mkvparser::Cues::~Cues()`.
+    mkvparser_Cues_dtor_00421fe0 @ 0x0042_1fe0 => extern "thiscall" fn cues_dtor(cues: u32) {
+        mkv::cues_dtor(&mut mem(), cues);
+    }
+    /// `mkvparser::Chapters::~Chapters()`.
+    mkvparser_Chapters_dtor_004252f0 @ 0x0042_52f0 => extern "thiscall" fn chapters_dtor(ch: u32) {
+        mkv::chapters_dtor(&mut mem(), ch);
+    }
+    /// `mkvparser::Chapters::Atom::Clear()`.
+    mkvparser_Chapters_Atom_Clear_00425d20 @ 0x0042_5d20 => extern "thiscall" fn atom_clear(atom: u32) {
+        mkv::atom_clear(&mut mem(), atom);
+    }
 }
