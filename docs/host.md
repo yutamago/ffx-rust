@@ -1453,8 +1453,10 @@ A hang always names its cause (2026-11-14, m5-wp5i):
   any, then `the main thread entered no frame boundary for N s (after
   update U); it is in <its host entries>; it waits for <objects, with
   their last signaller>`, or `hang: … no game thread failed`. Time the
-  harness holds the main thread at a boundary (lockstep, the script's
-  jobs: `harness::holding`) is not counted. Frames that come without
+  main thread waits in lockstep's hold for the test to allow the next
+  update (`harness::holding`) is not counted; the script's jobs run at the
+  boundary (`call`, `devsave`, ...) are, so a job that never returns is
+  a hang too. Frames that come without
   updates (the frame loop running, `FFXApplication_animate` not entered)
   count as no progress.
 - **Slow updates are reported as they happen**: an update that has run
