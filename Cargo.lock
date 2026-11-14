@@ -1034,6 +1034,7 @@ dependencies = [
  "ffx-pcore",
  "ffx-sound",
  "ffx-swf",
+ "ffx-system",
  "goblin",
  "libc",
  "md-5",
