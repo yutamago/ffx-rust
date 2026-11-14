@@ -295,4 +295,20 @@ ported! {
         let frame = f.at().wrapping_add(misc::NODE_SPHERES_FRAME);
         misc::abmap_draw_node_spheres_lit(&mut mem(), frame);
     }
+    /// The grid's choose-move-target state.
+    AbmapState_ChooseMoveTarget_00a44ef0 @ 0x00a4_4ef0 => extern "C" fn abmap_choose_move_target() {
+        misc::abmap_choose_move_target(&mut mem());
+    }
+    /// The grid's moving-to-target state.
+    AbmapState_MovingToTarget_00a48230 @ 0x00a4_8230 => extern "C" fn abmap_moving_to_target() {
+        misc::abmap_moving_to_target(&mut mem());
+    }
+    /// The grid's item-target state.
+    AbmapState_ItemTarget_00a452d0 @ 0x00a4_52d0 => extern "C" fn abmap_item_target() {
+        misc::abmap_item_target(&mut mem());
+    }
+    /// The grid's help state.
+    AbmapState_Help_00a45010 @ 0x00a4_5010 => extern "C" fn abmap_help() {
+        misc::abmap_help(&mut mem());
+    }
 }

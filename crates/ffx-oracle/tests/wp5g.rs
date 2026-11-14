@@ -1160,3 +1160,147 @@ fn wp5g_grid_node_spheres_lit_matches_the_original() {
         }
     });
 }
+
+#[test]
+fn wp5g_grid_states_match_the_original() {
+    use ffx_prender::wp5g::bridge as ms;
+    Twins::each(|t| {
+        let mut rng = Rng(0x00a4_5010);
+        let g = t.zeros(0x1_1800);
+        let menu = t.zeros(0x2800);
+        let panel = t.zeros(0x40);
+        for k in 0..512u32 {
+            t.reset();
+            t.g32(ms::ABMAP, g);
+            t.g32(ms::ABMAP_MENU, menu);
+            for (f, n) in [
+                (ms::FREE_CURSOR_STEP, 1),
+                (ms::TRY_CHANGE_PLAYER, 0),
+                (ms::PAD_START_SLIDE_IN, 1),
+                (ms::PAD_START_SLIDE_OUT, 1),
+                (ms::SND_SEP_PLAY_SIMPLE, 1),
+                (ms::SELECT_NODE, 2),
+                (ms::MARK_LOCKED_ENTRIES, 1),
+                (ms::INIT_MOVING_TO_TARGET, 2),
+                (ms::ALL_LINKS_LIMIT_FLAG, 1),
+                (ms::ENTER_COMMAND_MENU, 0),
+                (ms::COPY_DEREF_A596D0, 1),
+                (ms::COPY_DEREF_A59680, 1),
+                (ms::RESET_HELP, 0),
+                (ms::TRY_USE_ITEM, 3),
+                (ms::MASK_NODE_FLAGS, 1),
+                (ms::ENTER_ITEM_MENU, 0),
+            ] {
+                t.stub(f, false, n, 0, 0xf300 + f % 0x100);
+            }
+            t.stub(ms::OPEN_PANEL, false, 2, 0, panel);
+            // the use-item menu's refill sets the new count
+            let count = rng.pick(&[0u16, 1, 2, 3, 8, 9]);
+            let mut x = vec![0xa1];
+            x.extend(t.rebase(ms::ABMAP_MENU).to_le_bytes());
+            x.extend([0x66, 0xc7, 0x80, 0x1e, 0x1a, 0x00, 0x00]);
+            x.extend(count.to_le_bytes());
+            t.stub_ex(
+                ms::FILL_USE_ITEM_MENU,
+                false,
+                2,
+                0,
+                &m5_main3_common::Ret::Fixed(0xf4),
+                &x,
+            );
+            let paging = k % 8 == 3;
+            let using = k % 8 == 2;
+            t.w8(
+                g + 0x115cd,
+                if paging { 0 } else { rng.pick(&[0u8, 0, 0, 1]) },
+            );
+            t.w32(
+                g + 0x115b0,
+                if paging {
+                    0
+                } else {
+                    rng.pick(&[0u32, 0, 0, 5])
+                },
+            );
+            let pad = if paging {
+                0x10
+            } else if using {
+                0x20
+            } else {
+                rng.pick(&[0u16, 0x20, 0x40, 0x10, 0x30, 0x60])
+            };
+            t.write(g + 0x1166e, &pad.to_le_bytes());
+            t.w8(g + 0x115c4, rng.pick(&[0u8, 1, 2]));
+            t.w8(g + 0x115c8, rng.below(7) as u8);
+            t.w8(g + 0x115bc, rng.below(7) as u8);
+            for i in 0..20u32 {
+                let v = rng.below(0x400) as u16;
+                t.write(g + 0x82c + 40 * i, &v.to_le_bytes());
+            }
+            for i in 0..7u32 {
+                let v = rng.next() as u16;
+                t.write(g + 0x110cc + 80 * i, &v.to_le_bytes());
+            }
+            // (after the player nodes: the seventh's record ends at +0x112fc)
+            let cur = rng.below(20) as u16;
+            t.write(g + 0x112fc, &cur.to_le_bytes());
+            let links = rng.pick(&[0i16, 1, 5]);
+            t.write(g + 4, &links.to_le_bytes());
+            for i in 0..5u32 {
+                t.w8(g + 0xa816 + 0x14 * i, rng.next() as u8);
+            }
+            for o in [0x13b4u32, 0x374, 0x9f4, 0x6b4, 0xd34, 0x1074, 0x1a34] {
+                let busy = rng.pick(&[0u32, 0, 0, 0, 0, 0, 0, 0, 1]);
+                t.w32(
+                    menu + o,
+                    if (paging && k % 16 == 3) || using {
+                        0
+                    } else {
+                        busy
+                    },
+                );
+            }
+            if paging && k % 32 == 11 {
+                // only the last panel still moving
+                for o in [0x13b4u32, 0x374, 0x9f4, 0x6b4, 0xd34] {
+                    t.w32(menu + o, 0);
+                }
+                t.w32(menu + 0x1074, 1);
+            }
+            for o in [0x1a18u32, 0x1a1a, 0x1a16] {
+                let v = rng.pick(&[0i16, 1, 2, 3, 8, 9, -1]);
+                t.write(menu + o, &v.to_le_bytes());
+            }
+            // the item rows (`+0x1a00 + 12 * (row + 6)`, past the list's
+            // own words), the panels' "seen" bytes as junk
+            for i in 5..21u32 {
+                let v = rng.next();
+                t.w32(menu + 0x1a00 + 12 * i, v);
+            }
+            for slot in 0..8u32 {
+                t.w8(menu + 0x340 * slot + 0x23, 0xff);
+            }
+            let v = rng.next();
+            t.w32(panel + 0x24, v);
+            let v = rng.next();
+            t.w32(menu + 0x23e4, v);
+            let states: [Step; 4] = [
+                (0x00a4_4ef0, |m| ms::abmap_choose_move_target(m)),
+                (0x00a4_8230, |m| ms::abmap_moving_to_target(m)),
+                (0x00a4_52d0, |m| ms::abmap_item_target(m)),
+                (0x00a4_5010, |m| ms::abmap_help(m)),
+            ];
+            let (addr, port) = states[(k % 4) as usize];
+            t.check(
+                &format!("{addr:#x} {k} (pad {pad:#x})"),
+                addr,
+                Conv::Cdecl,
+                &[],
+                |m| {
+                    port(m);
+                    Out::None
+                },
+            );
+        }
+    });
+}

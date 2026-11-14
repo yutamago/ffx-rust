@@ -712,4 +712,284 @@ pub mod bridge {
             node = node.wrapping_add(0x28);
         }
     }
+
+    pub const FREE_CURSOR_STEP: u32 = 0x00a5_8ff0;
+    /// `abmCalcChrMoveCurMoveCheck` (the move-target filter the cursor step
+    /// gets).
+    pub const MOVE_CHECK: u32 = 0x00a4_5000;
+    pub const INIT_MOVING_TO_TARGET: u32 = 0x00a4_8c80;
+    pub const ALL_LINKS_LIMIT_FLAG: u32 = 0x00a4_73d0;
+    pub const SND_SEP_PLAY_SIMPLE: u32 = 0x0088_6e80;
+    pub const ENTER_COMMAND_MENU: u32 = 0x00a5_9950;
+    pub const COPY_DEREF_A596D0: u32 = 0x00a5_96d0;
+    pub const COPY_DEREF_A59680: u32 = 0x00a5_9680;
+    /// The moving-to-target state (`0x00a48230`).
+    pub const STATE_MOVING_TO_TARGET: u32 = 0x00a4_8230;
+    pub const RESET_HELP: u32 = 0x00a5_b930;
+    pub const TRY_USE_ITEM: u32 = 0x00a5_bca0;
+    pub const FILL_USE_ITEM_MENU: u32 = 0x00a4_5fd0;
+    pub const MASK_NODE_FLAGS: u32 = 0x00a4_7400;
+    pub const ENTER_ITEM_MENU: u32 = 0x00a5_98a0;
+    pub const PAD_ACTIVATE_HANDLER: u32 = 0x00a5_6160;
+    pub const TRY_CHANGE_PLAYER: u32 = 0x00a5_8ec0;
+    pub const PAD_START_SLIDE_IN: u32 = 0x00a4_8f20;
+    pub const PAD_START_SLIDE_OUT: u32 = 0x00a4_8c20;
+    pub const SELECT_NODE: u32 = 0x00a4_8e40;
+    pub const OPEN_PANEL: u32 = 0x00a5_9860;
+    pub const PAD_QUIT_HANDLER: u32 = 0x00a5_6060;
+    pub const MARK_LOCKED_ENTRIES: u32 = 0x00a5_a2e0;
+
+    /// The grid's pad word (`+0x1166e`): bit 5 confirm, bit 6 cancel, bit
+    /// 4 the help page key.
+    fn pad(h: &impl Host) -> u16 {
+        let g = abmap(h);
+        h.read(g.wrapping_add(0x1166e))
+    }
+
+    /// Whether the grid is busy (a sub-state `+0x115cd` or a saved state
+    /// `+0x115b0`): the states do nothing then.
+    fn busy(h: &impl Host) -> bool {
+        let g = abmap(h);
+        h.read::<u8>(g.wrapping_add(0x115cd)) != 0 || h.read::<u32>(g.wrapping_add(0x115b0)) != 0
+    }
+
+    fn sound(h: &mut impl Host, id: u32) {
+        cdecl(h, SND_SEP_PLAY_SIMPLE, &[id]);
+    }
+
+    /// `AbmapState_ChooseMoveTarget_00a44ef0()`: the free cursor stepped
+    /// (with the move check); unless busy, the move length (`(node
+    /// +0x24 of the cursor node + 3) >> 2` into `+0x1161c`); confirm
+    /// clears the links' low three flag bits, sets the moving-to-target
+    /// state (no draw hook), clears `+0x115c3` and starts the move
+    /// (`AbmapInitMovingToTarget(+0x115bc, +0x112fc)`); cancel lifts the
+    /// links' limit flag 0xf0, plays the cancel sound, clears `+0x115c3`
+    /// and `+0x1161c` and goes back to the command menu (page 7).
+    pub fn abmap_choose_move_target(h: &mut impl Host) {
+        let check = h.rebase(MOVE_CHECK);
+        cdecl(h, FREE_CURSOR_STEP, &[check]);
+        if busy(h) {
+            return;
+        }
+        let g = abmap(h);
+        let cur = u32::from(h.read::<u16>(g.wrapping_add(0x112fc)));
+        let len = i32::from(h.read::<u16>(g.wrapping_add(0x82c + 40 * cur)));
+        h.write(g.wrapping_add(0x1161c), ((len + 3) >> 2).cast_unsigned());
+        let p = pad(h);
+        if p & 0x20 != 0 {
+            let g = abmap(h);
+            let mut n = i32::from(h.read::<i16>(g.wrapping_add(4))).cast_unsigned();
+            let mut link = g.wrapping_add(0xa816);
+            while n != 0 {
+                let f: u8 = h.read(link);
+                h.write(link, f & 0xf8);
+                link = link.wrapping_add(0x14);
+                n = n.wrapping_sub(1);
+            }
+            let state = h.rebase(STATE_MOVING_TO_TARGET);
+            set_word_at(h, 0x115a8, state);
+            set_word_at(h, 0x115ac, 0);
+            let g = abmap(h);
+            h.write(g.wrapping_add(0x115c3), 0u8);
+            let g = abmap(h);
+            let cur = u32::from(h.read::<u16>(g.wrapping_add(0x112fc)));
+            let who = u32::from(h.read::<u8>(g.wrapping_add(0x115bc)));
+            cdecl(h, INIT_MOVING_TO_TARGET, &[who, cur]);
+        } else if p & 0x40 != 0 {
+            cdecl(h, ALL_LINKS_LIMIT_FLAG, &[0xf0]);
+            sound(h, 0x8000_0004);
+            let g = abmap(h);
+            h.write(g.wrapping_add(0x115c3), 0u8);
+            set_word_at(h, 0x1161c, 0);
+            cdecl(h, ENTER_COMMAND_MENU, &[]);
+            cdecl(h, COPY_DEREF_A596D0, &[7]);
+        }
+    }
+
+    /// `AbmapState_MovingToTarget_00a48230()`: the menu's move page
+    /// shown: `+0x16e3` = 0, `+0x1d63` = 1, `+0x23e3` = 0x0301, `+0x23e5` =
+    /// 1, `+0x2700` = 0xb, the activate handler at `+0x2704`, `+0x23e4`
+    /// bits 2-3, `+0x23d8` = 0.
+    pub fn abmap_moving_to_target(h: &mut impl Host) {
+        let m = global(h, ABMAP_MENU);
+        let at = |o: u32| m.wrapping_add(o);
+        h.write(at(0x16e3), 0u8);
+        h.write(at(0x1d63), 1u8);
+        h.write(at(0x23e3), 0x0301u16);
+        h.write(at(0x23e5), 1u8);
+        h.write(at(0x2700), 0xbu16);
+        let handler = h.rebase(PAD_ACTIVATE_HANDLER);
+        h.write(at(0x2704), handler);
+        let f: u8 = h.read(at(0x23e4));
+        h.write(at(0x23e4), f | 0xc);
+        h.write(at(0x23d8), 0u16);
+    }
+
+    /// `AbmapState_ItemTarget_00a452d0()`: the free cursor stepped (with
+    /// the move check); unless busy or the menu's `+0x1a34` is set,
+    /// confirm uses the chosen item (`+0x1a00` records of 12 bytes, row
+    /// `+0x1a18` + 6) on the cursor node (`AbmapTryUseItem(+0x115bc,
+    /// +0x112fc, item)`) after page 8's copy and the help reset, refills
+    /// the use-item menu (8, 3) and keeps the row `+0x1a18` and the scroll
+    /// `+0x1a1a` inside the new count `+0x1a1e` (signed); cancel goes back
+    /// to the item menu (page 8). Both mask the node flags 0xfc; cancel
+    /// plays the cancel sound.
+    pub fn abmap_item_target(h: &mut impl Host) {
+        let check = h.rebase(MOVE_CHECK);
+        cdecl(h, FREE_CURSOR_STEP, &[check]);
+        if busy(h) {
+            return;
+        }
+        let m = global(h, ABMAP_MENU);
+        let at = |o: u32| m.wrapping_add(o);
+        if h.read::<u32>(at(0x1a34)) != 0 {
+            return;
+        }
+        let p = pad(h);
+        if p & 0x20 != 0 {
+            let row = i32::from(h.read::<i16>(at(0x1a18))).wrapping_add(6);
+            let item: u32 = h.read(at(0x1a00).wrapping_add((12 * row).cast_unsigned()));
+            h.write(at(0x1a23), 0u8);
+            cdecl(h, COPY_DEREF_A59680, &[8]);
+            cdecl(h, RESET_HELP, &[]);
+            let g = abmap(h);
+            let who = u32::from(h.read::<u8>(g.wrapping_add(0x115bc)));
+            let cur = u32::from(h.read::<u16>(g.wrapping_add(0x112fc)));
+            cdecl(h, TRY_USE_ITEM, &[who, cur, item & 0xffff]);
+            let m2 = global(h, ABMAP_MENU);
+            h.write(m2.wrapping_add(0x1a1e), 0u16);
+            cdecl(h, FILL_USE_ITEM_MENU, &[8, 3]);
+            let d: u16 = h.read(at(0x1a1e));
+            if h.read::<i16>(at(0x1a18)) >= d.cast_signed() {
+                h.write(at(0x1a18), d.wrapping_sub(1));
+            }
+            if h.read::<i16>(at(0x1a18)) < 0 {
+                h.write(at(0x1a18), 0u16);
+            }
+            let top: u16 = h.read(at(0x1a16));
+            let lim = i32::from(d.cast_signed()) - i32::from(top.cast_signed());
+            if i32::from(h.read::<i16>(at(0x1a1a))) > lim {
+                h.write(at(0x1a1a), d.wrapping_sub(top));
+            }
+            if h.read::<i16>(at(0x1a1a)) < 0 {
+                h.write(at(0x1a1a), 0u16);
+            }
+            cdecl(h, MASK_NODE_FLAGS, &[0xfc]);
+        } else if p & 0x40 != 0 {
+            cdecl(h, ENTER_ITEM_MENU, &[]);
+            cdecl(h, COPY_DEREF_A596D0, &[8]);
+            cdecl(h, MASK_NODE_FLAGS, &[0xfc]);
+            sound(h, 0x8000_0004);
+        }
+    }
+
+    /// The grid menu's panels (`0x340` bytes each): slot `k`'s "seen"
+    /// byte (`+0x23`).
+    fn help_seen(m: u32, k: u32) -> u32 {
+        m.wrapping_add(0x340 * k + 0x23)
+    }
+
+    /// `AbmapState_Help_00a45010()` (`AbmapResetHelp` sets it): the free
+    /// cursor stepped (no check) and a player change tried; unless busy,
+    /// the help panel slid in once (`+0x115c4`); confirm plays the sound,
+    /// slides every page out and selects the current player's node
+    /// (`AbmapSelectNode(+0x110cc of the player, [0x00b92180])`, page
+    /// `+0x115c8` back to 0); cancel slides them out and opens the quit
+    /// panel (`0x00a59860(0xb, AbmapPadQuitHandler)`); with every panel
+    /// settled (`+0x34` of panels 6, 1, 3, 2, 4, 5) the page key turns to
+    /// the next page (0..=5), sliding it in (its locked entries marked
+    /// first, pages 2-5).
+    pub fn abmap_help(h: &mut impl Host) {
+        cdecl(h, FREE_CURSOR_STEP, &[0]);
+        if busy(h) {
+            return;
+        }
+        cdecl(h, TRY_CHANGE_PLAYER, &[]);
+        let g = abmap(h);
+        if h.read::<u32>(g.wrapping_add(0x115b0)) != 0 {
+            return;
+        }
+        if h.read::<u8>(g.wrapping_add(0x115c4)) == 0 {
+            h.write(g.wrapping_add(0x115c4), 1u8);
+            cdecl(h, PAD_START_SLIDE_IN, &[6]);
+        }
+        let p = pad(h);
+        let slide_all_out = |h: &mut _| {
+            for k in [6u32, 1, 2, 3, 4, 5] {
+                cdecl(h, PAD_START_SLIDE_OUT, &[k]);
+            }
+        };
+        if p & 0x20 != 0 {
+            sound(h, 0x8000_0001);
+            let g = abmap(h);
+            h.write(g.wrapping_add(0x11666), 0u16);
+            slide_all_out(h);
+            let k = store_round(h, 0x00b9_2180);
+            let g = abmap(h);
+            // `cl`: the 0 the original cleared before the slide-outs (they
+            // leave ecx alone)
+            h.write(g.wrapping_add(0x115c8), 0u8);
+            let who = u32::from(h.read::<u8>(g.wrapping_add(0x115bc)));
+            let node = u32::from(h.read::<u16>(g.wrapping_add(0x110cc + 80 * who)));
+            cdecl(h, SELECT_NODE, &[node, k]);
+        } else if p & 0x40 != 0 {
+            sound(h, 0x8000_0001);
+            slide_all_out(h);
+            let g = abmap(h);
+            h.write(g.wrapping_add(0x115c8), 0u8);
+            let m = global(h, ABMAP_MENU);
+            h.write(m.wrapping_add(0x20a3), 1u8);
+            let quit = h.rebase(PAD_QUIT_HANDLER);
+            let panel = cdecl(h, OPEN_PANEL, &[0xb, quit]);
+            let f: u8 = h.read(panel.wrapping_add(0x24));
+            h.write(panel.wrapping_add(0x24), f | 0xc);
+            h.write(panel.wrapping_add(0x18), 0u16);
+        } else {
+            let m = global(h, ABMAP_MENU);
+            for o in [0x13b4u32, 0x374, 0x9f4, 0x6b4, 0xd34, 0x1074] {
+                if h.read::<u32>(m.wrapping_add(o)) != 0 {
+                    return;
+                }
+            }
+            if p & 0x10 == 0 {
+                return;
+            }
+            sound(h, 0x8000_0001);
+            let g = abmap(h);
+            let page = h.read::<u8>(g.wrapping_add(0x115c8)).wrapping_add(1);
+            h.write(g.wrapping_add(0x115c8), page);
+            let page = if page > 5 {
+                h.write(g.wrapping_add(0x115c8), 0u8);
+                0
+            } else {
+                page
+            };
+            let m = global(h, ABMAP_MENU);
+            match page {
+                0 => {
+                    cdecl(h, PAD_START_SLIDE_OUT, &[5]);
+                    cdecl(h, PAD_START_SLIDE_IN, &[6]);
+                }
+                1 => {
+                    h.write(help_seen(m, 6), 0u8);
+                    cdecl(h, PAD_START_SLIDE_IN, &[1]);
+                }
+                _ => {
+                    // pages 2..5: panels 3, 2, 4, 5, kept in the menu's
+                    // slots 1, 3, 2, 4
+                    let (panel, slot) =
+                        [(3u32, 1u32), (2, 3), (4, 2), (5, 4)][usize::from(page - 2)];
+                    cdecl(h, MARK_LOCKED_ENTRIES, &[panel]);
+                    let m = global(h, ABMAP_MENU);
+                    h.write(help_seen(m, slot), 0u8);
+                    cdecl(h, PAD_START_SLIDE_IN, &[panel]);
+                }
+            }
+        }
+    }
+
+    /// `f32 [sym]` through `fld`/`fstp` (a signalling NaN comes out quiet).
+    fn store_round(h: &impl Host, sym: u32) -> u32 {
+        ffx_bridge::x87::store(ffx_bridge::x87::load(h.read(h.rebase(sym))))
+    }
 }
