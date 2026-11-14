@@ -388,4 +388,25 @@ ported! {
         let w = |lo: u32, hi: u32| (u64::from(hi) << 32 | u64::from(lo)).cast_signed();
         mkv::create_simple_block(&mut mem(), cl, w(start_lo, start_hi), w(size_lo, size_hi))
     }
+    /// `mkvparser::Cluster::ParseBlockGroup(size, &pos, &len)` -> status;
+    /// `Length`'s results, the readers' scratch, the flags and the discard
+    /// padding in a frame.
+    mkvparser_Cluster_ParseBlockGroup_0042af10 @ 0x0042_af10 => extern "thiscall" fn parse_block_group(cl: u32, size_lo: u32, size_hi: u32, pos: u32, len: u32) -> u32 {
+        let mut f = StackFrame::<16>::new();
+        let size = (u64::from(size_hi) << 32 | u64::from(size_lo)).cast_signed();
+        mkv::parse_block_group(&mut mem(), cl, size, pos, len, f.at())
+    }
+    /// `mkvparser::BlockGroup`'s constructor -> `this`.
+    mkvparser_BlockGroup_ctor_0042d200 @ 0x0042_d200 => extern "thiscall" fn block_group_ctor(this: u32, cluster: u32, index: u32, w0: u32, w1: u32, w2: u32, w3: u32, w4: u32, w5: u32, w6: u32, w7: u32, w8: u32, w9: u32, w10: u32, w11: u32) -> u32 {
+        let w = [w0, w1, w2, w3, w4, w5, w6, w7, w8, w9, w10, w11];
+        mkv::block_group_ctor(&mut mem(), this, cluster, index, &w)
+    }
+    /// `mkvparser::Cluster::CreateBlockGroup(start, size, discard)` ->
+    /// status; the varint length, the reference time and the readers'
+    /// scratch in a frame.
+    mkvparser_Cluster_CreateBlockGroup_0042c300 @ 0x0042_c300 => extern "thiscall" fn create_block_group(cl: u32, s_lo: u32, s_hi: u32, z_lo: u32, z_hi: u32, d_lo: u32, d_hi: u32) -> u32 {
+        let mut f = StackFrame::<12>::new();
+        let w = |lo: u32, hi: u32| (u64::from(hi) << 32 | u64::from(lo)).cast_signed();
+        mkv::create_block_group(&mut mem(), cl, w(s_lo, s_hi), w(z_lo, z_hi), w(d_lo, d_hi), f.at())
+    }
 }

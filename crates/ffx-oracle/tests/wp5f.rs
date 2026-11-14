@@ -1900,3 +1900,154 @@ fn wp5f_mkv_simple_blocks_match_the_original() {
         }
     });
 }
+
+/// A `BlockGroup` payload: a `Block` (a synthetic block's bytes) and
+/// optional `BlockDuration`, `ReferenceBlock`s, `DiscardPadding`, others.
+fn group_bytes(rng: &mut Rng) -> Vec<u8> {
+    let mut g = Vec::new();
+    for _ in 0..=rng.below(5) {
+        let sl = rng.pick(&[1usize, 2]);
+        let e = match rng.below(8) {
+            0..=2 => {
+                let lacing = rng.pick(&[0u8, 0, 1]);
+                let n = if lacing == 0 { 1 } else { 2 };
+                let sizes = vec![rng.pick(&[0usize, 2, 9]); n];
+                let bad = rng.pick(&[0, 0, 0, 3]);
+                let b = block_bytes(rng, lacing, &sizes, bad);
+                element(&[0xa1], &b, sl)
+            }
+            3 => {
+                let n = rng.pick(&[1usize, 2, 8, 9]);
+                let v: Vec<u8> = (0..n).map(|_| rng.next() as u8).collect();
+                element(&[0x9b], &v, sl)
+            }
+            4 => {
+                let n = rng.pick(&[1usize, 2, 3]);
+                let v: Vec<u8> = (0..n).map(|_| rng.next() as u8).collect();
+                element(&[0xfb], &v, sl)
+            }
+            5 => {
+                let n = rng.pick(&[1usize, 2]);
+                let v: Vec<u8> = (0..n).map(|_| rng.next() as u8).collect();
+                element(&[0x75, 0xa2], &v, sl)
+            }
+            6 => element(&[0xec], &[1, 2, 3], sl),
+            _ => vec![0x80, 0x81, 0],
+        };
+        g.extend(e);
+    }
+    g
+}
+
+#[test]
+fn wp5f_mkv_block_groups_match_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x0042_af10);
+        for k in 0..500 {
+            t.reset();
+            cdecl_imp(t, mkv::WASSERT, 3, 0x61);
+            movie_alloc(t, false);
+            // ParseBlockGroup over a synthetic group
+            t.stub(
+                mkv::CREATE_BLOCK,
+                true,
+                8,
+                8,
+                rng.pick(&[0, 0, u32::MAX - 1]),
+            );
+            let g = group_bytes(&mut rng);
+            let mut data = vec![0u8; rng.below(4) as usize];
+            let start = data.len() as u32;
+            data.extend(&g);
+            let gsize = match rng.below(6) {
+                0 => g.len().saturating_sub(1),
+                1 => g.len() + 2,
+                _ => g.len(),
+            } as u64;
+            let size = data.len() as u32;
+            let avail = rng.pick(&[size, size, size.saturating_sub(2), size + 3]);
+            let reader = fake_reader(t, &data, u32::MAX, avail);
+            let segment = t.words(&[reader]);
+            let cl = t.zeros(0x40);
+            t.w32(cl, segment);
+            let pos = t.words(&[start, 0]);
+            let len = t.words(&[0x3333]);
+            let scratch = t.frame_ebp(4) - 0x400;
+            let what = format!("ParseBlockGroup {k} ({data:02x?}, size {gsize}, avail {avail})");
+            t.check(
+                &what,
+                0x0042_af10,
+                Conv::Thiscall(cl),
+                &[gsize as u32, 0, pos, len],
+                |m| {
+                    Out::U32(mkv::parse_block_group(
+                        m,
+                        cl,
+                        gsize.cast_signed(),
+                        pos,
+                        len,
+                        scratch,
+                    ))
+                },
+            );
+            // CreateBlockGroup over a well-formed group (it asserts, not
+            // fails, on a bad one); the group's parse stubbed
+            t.reset();
+            cdecl_imp(t, mkv::WASSERT, 3, 0x61);
+            movie_alloc(t, rng.chance(20));
+            t.stub(
+                mkv::BLOCK_GROUP_PARSE,
+                true,
+                0,
+                0,
+                rng.pick(&[0, 0, u32::MAX - 1]),
+            );
+            let vt = t.rebase(mkv::BLOCK_GROUP_VTABLE);
+            let del: u32 = Mem::read(&t.a, vt);
+            let del = del - t.rebase(0x0040_0000) + 0x0040_0000;
+            let stub = t.stub_code(del, true, 1, 1, &Ret::Fixed(0x74), &[]);
+            t.jump(del, stub);
+            let mut g = Vec::new();
+            let b = block_bytes(&mut rng, 0, &[5], 0);
+            g.extend(element(&[0xa1], &b, 1));
+            if rng.chance(2) {
+                g.extend(element(&[0x9b], &[0, 7], 1));
+            }
+            for _ in 0..rng.below(3) {
+                let v = rng.pick(&[&[0x00u8][..], &[0xff], &[0x00, 0x10], &[0xff, 0xf0]]);
+                g.extend(element(&[0xfb], v, 1));
+            }
+            if rng.chance(3) {
+                g.extend(element(&[0xec], &[9], 1));
+            }
+            let data = g.clone();
+            let reader = fake_reader(t, &data, u32::MAX, data.len() as u32);
+            let segment = t.words(&[reader]);
+            let cl = t.zeros(0x40);
+            t.w32(cl, segment);
+            let arr = t.words(&[9, 9, 9, 9]);
+            t.w32(cl + 0x30, arr);
+            t.w32(cl + 0x34, 4);
+            t.w32(cl + 0x38, rng.below(4));
+            let gsize = data.len() as u32;
+            let scratch = t.frame_ebp(6) - 0x400;
+            let what = format!("CreateBlockGroup {k} ({data:02x?})");
+            t.check(
+                &what,
+                0x0042_c300,
+                Conv::Thiscall(cl),
+                &[0, 0, gsize, 0, 3, 0],
+                |m| {
+                    Out::U32(mkv::create_block_group(
+                        m,
+                        cl,
+                        0,
+                        i64::from(gsize),
+                        3,
+                        scratch,
+                    ))
+                },
+            );
+        }
+    });
+}

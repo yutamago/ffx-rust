@@ -1507,4 +1507,374 @@ pub mod bridge {
         h.write(slot, 0u32);
         s
     }
+
+    /// `mkvparser::Cluster::ParseBlockGroup(cluster; size, &pos, &len)`
+    /// (`0x0042af10`, thiscall, `ret 0x10`; `size` 64-bit): the group
+    /// wholly in the file (-2 past the total; -3 with `*len` its size past
+    /// the available data); its children walked (id and size varints
+    /// against the group's stop: -2 / -3): `DiscardPadding` (0x35a2) read
+    /// (`GetUIntLength`, then `UnserializeInt` of that length), a `Block`
+    /// (0x21) checked as [`parse_simple_block`] checks one (track, time
+    /// code, flags, a laced block wholly available) and skipped, others
+    /// skipped; at the group's end `CreateBlock(0x20, start, size,
+    /// discard)` ([`CREATE_BLOCK`]) and `m_pos` past the group. `frame`:
+    /// `Length`'s results (+0, +8), the readers' scratch (+0x10..+0x30),
+    /// the flags byte (+0x30), the discard padding (+0x38, 8 bytes).
+    #[allow(clippy::too_many_lines)] // the original's checks
+    pub fn parse_block_group(
+        h: &mut impl Host,
+        this: u32,
+        size: i64,
+        pos: u32,
+        len: u32,
+        frame: u32,
+    ) -> u32 {
+        const BAD: u32 = (-2i32).cast_unsigned();
+        const MORE: u32 = (-3i32).cast_unsigned();
+        let start = read_i64(h, pos);
+        let stop = start.wrapping_add(size);
+        let segment: u32 = h.read(this);
+        let reader: u32 = h.read(segment);
+        let (total_at, avail_at) = (frame, at(frame, 8));
+        let scratch = at(frame, 0x10);
+        let s = length(h, reader, total_at, avail_at);
+        if s.cast_signed() < 0 {
+            return s;
+        }
+        let total = read_i64(h, total_at);
+        let avail = read_i64(h, avail_at);
+        if total >= 0 {
+            if avail > total {
+                wassert(h, 0x00b9_05f8, 0x19c9);
+            }
+            if stop > total {
+                return BAD;
+            }
+        }
+        if stop > avail {
+            h.write(len, size as u32);
+            return MORE;
+        }
+        let discard = at(frame, 0x38);
+        write_i64(h, discard, 0);
+        while read_i64(h, pos) < stop {
+            let id = match parse_varint(h, reader, pos, len, stop, avail, scratch) {
+                Ok(v) => v,
+                Err(s) => return s,
+            };
+            if id == 0 {
+                return BAD;
+            }
+            let p = read_i64(h, pos).wrapping_add(i64::from(h.read::<i32>(len)));
+            write_i64(h, pos, p);
+            let size = match parse_varint(h, reader, pos, len, stop, avail, scratch) {
+                Ok(v) => v,
+                Err(s) => return s,
+            };
+            let p = read_i64(h, pos).wrapping_add(i64::from(h.read::<i32>(len)));
+            write_i64(h, pos, p);
+            if p > stop {
+                return BAD;
+            }
+            if size == 0 {
+                continue;
+            }
+            if size == unknown_size(h.read::<i32>(len)) {
+                return BAD;
+            }
+            if id == 0x35a2 {
+                let r = uint_length_at(h, reader, len, p.cast_unsigned(), scratch);
+                if r < 0 {
+                    return r as u32;
+                }
+                let n: u32 = h.read(len);
+                let s =
+                    unserialize_int(h, reader, n, p.cast_unsigned(), discard, at(scratch, 0x18));
+                if s.cast_signed() < 0 {
+                    return s;
+                }
+            } else if id == 0x21 {
+                let block_stop = p.wrapping_add(size);
+                if block_stop > stop {
+                    return BAD;
+                }
+                let track = match parse_varint(h, reader, pos, len, block_stop, avail, scratch) {
+                    Ok(v) => v,
+                    Err(s) => return s,
+                };
+                if track == 0 {
+                    return BAD;
+                }
+                let p = read_i64(h, pos).wrapping_add(i64::from(h.read::<i32>(len)));
+                write_i64(h, pos, p);
+                if p.wrapping_add(2) > block_stop {
+                    return BAD;
+                }
+                if p.wrapping_add(2) > avail {
+                    h.write(len, 2u32);
+                    return MORE;
+                }
+                let p = p.wrapping_add(2);
+                write_i64(h, pos, p);
+                if p.wrapping_add(1) > block_stop {
+                    return BAD;
+                }
+                if p.wrapping_add(1) > avail {
+                    h.write(len, 1u32);
+                    return MORE;
+                }
+                let flags = at(frame, 0x30);
+                let s = read(h, reader, p.cast_unsigned(), 1, flags);
+                if s.cast_signed() < 0 {
+                    h.write(len, 1u32);
+                    return s;
+                }
+                let p = p.wrapping_add(1);
+                write_i64(h, pos, p);
+                if p > avail {
+                    wassert(h, 0x00b9_1b1c, 0x1a91);
+                }
+                if p >= block_stop {
+                    return BAD;
+                }
+                if h.read::<u8>(flags) & 6 != 0 && block_stop > avail {
+                    h.write(len, block_stop.wrapping_sub(p) as u32);
+                    return MORE;
+                }
+                write_i64(h, pos, block_stop);
+                continue;
+            }
+            let p = read_i64(h, pos).wrapping_add(size);
+            write_i64(h, pos, p);
+            if p > stop {
+                return BAD;
+            }
+        }
+        if read_i64(h, pos) != stop {
+            wassert(h, 0x00b9_1b60, 0x1aa1);
+        }
+        let [s0, s1] = words64(start);
+        let [z0, z1] = words64(size);
+        let d = read_i64(h, discard);
+        let [d0, d1] = words64(d);
+        let s = h.call_sym(
+            CREATE_BLOCK,
+            Conv::Thiscall(this),
+            &[0x20, 0, s0, s1, z0, z1, d0, d1],
+        );
+        if s == 0 {
+            write_i64(h, at(this, 0x18), stop);
+        }
+        s
+    }
+
+    /// `mkvparser::BlockGroup`'s constructor (`0x0042d200`, thiscall, 14
+    /// words) and `BlockGroup::Parse` (`0x0042d370`, thiscall) and the
+    /// group's vtable.
+    pub const BLOCK_GROUP_CTOR: u32 = 0x0042_d200;
+    pub const BLOCK_GROUP_PARSE: u32 = 0x0042_d370;
+    pub const BLOCK_GROUP_VTABLE: u32 = 0x00b9_20ac;
+
+    /// `0x0042d200(this; cluster, index, start, size, prev, next,
+    /// duration, discard)` (all but the first two 64-bit): the entry's
+    /// fields (vtable, cluster, index), the block at `+0x10` with its start
+    /// and size, no track, time code -1, no frames; prev `+0x40`, next
+    /// `+0x48`, duration `+0x50`, the block's discard padding `+0x38`.
+    /// Returns `this`.
+    pub fn block_group_ctor(
+        h: &mut impl Host,
+        this: u32,
+        cluster: u32,
+        index: u32,
+        w: &[u32; 12],
+    ) -> u32 {
+        h.write(at(this, 4), cluster);
+        h.write(at(this, 8), index);
+        let vt = h.rebase(BLOCK_GROUP_VTABLE);
+        h.write(this, vt);
+        for (i, o) in [0x10u32, 0x14, 0x18, 0x1c].into_iter().enumerate() {
+            h.write(at(this, o), w[i]);
+        }
+        h.write(at(this, 0x28), 0xffffu16);
+        h.write(at(this, 0x30), u32::MAX);
+        h.write(at(this, 0x38), w[10]);
+        h.write(at(this, 0x3c), w[11]);
+        h.write(at(this, 0x20), 0u32);
+        h.write(at(this, 0x24), 0u32);
+        h.write(at(this, 0x2a), 0u8);
+        h.write(at(this, 0x2c), 0u32);
+        for (i, o) in [0x40u32, 0x44, 0x48, 0x4c, 0x50, 0x54]
+            .into_iter()
+            .enumerate()
+        {
+            h.write(at(this, o), w[4 + i]);
+        }
+        this
+    }
+
+    /// `mkvparser::Cluster::CreateBlockGroup(cluster; start, size,
+    /// discard)` (`0x0042c300`, thiscall, `ret 0x18`): the group's children
+    /// read again (`ReadUInt`; the asserts as the original's): the
+    /// `Block`'s position and size (the first one), `BlockDuration`
+    /// (`UnserializeUInt`), each `ReferenceBlock` (`UnserializeInt`: -1
+    /// when it fails; a time at most 0 is the previous one, else the
+    /// next); a `BlockGroup` (0x58 bytes from the movie allocator,
+    /// [`BLOCK_GROUP_CTOR`]) in the next entry, parsed
+    /// ([`BLOCK_GROUP_PARSE`]): the count grows and 0, else the entry is
+    /// deleted (vtable slot 0, 1) and cleared and the status returned; -1
+    /// without memory. `frame`: the varint length (+0), the reference
+    /// time (+8, 8 bytes) and the readers' scratch (+0x10..+0x30).
+    #[allow(clippy::too_many_lines)] // the original's loop
+    pub fn create_block_group(
+        h: &mut impl Host,
+        this: u32,
+        start: i64,
+        size: i64,
+        discard: i64,
+        frame: u32,
+    ) -> u32 {
+        if h.read::<u32>(at(this, 0x30)) == 0 {
+            wassert(h, 0x00b9_1b88, 0x1c92);
+        }
+        if h.read::<i32>(at(this, 0x34)) <= 0 {
+            wassert(h, 0x00b9_1b9c, 0x1c93);
+        }
+        if h.read::<i32>(at(this, 0x38)) < 0 {
+            wassert(h, 0x00b9_1cd8, 0x1c94);
+        }
+        if h.read::<i32>(at(this, 0x38)) >= h.read::<i32>(at(this, 0x34)) {
+            wassert(h, 0x00b9_1d08, 0x1c95);
+        }
+        let segment: u32 = h.read(this);
+        let reader: u32 = h.read(segment);
+        let stop = start.wrapping_add(size);
+        let lenp = frame;
+        let time = at(frame, 8);
+        let scratch = at(frame, 0x10);
+        let mut prev = 1i64;
+        let mut next = 0i64;
+        let mut duration = -1i64;
+        let mut bpos = -1i64;
+        let mut bsize = -1i64;
+        let mut pos = start;
+        if pos < stop {
+            loop {
+                let id = read_uint(h, reader, lenp, pos.cast_unsigned(), at(scratch, 0x18))
+                    .cast_signed();
+                if id < 0 {
+                    wassert(h, 0x00b9_0414, 0x1cac);
+                }
+                pos = pos.wrapping_add(i64::from(h.read::<i32>(lenp)));
+                if pos > stop {
+                    wassert(h, 0x00b9_0ab0, 0x1cad);
+                }
+                let size = read_uint(h, reader, lenp, pos.cast_unsigned(), at(scratch, 0x18))
+                    .cast_signed();
+                if size < 0 {
+                    wassert(h, 0x00b9_047c, 0x1cb2);
+                }
+                pos = pos.wrapping_add(i64::from(h.read::<i32>(lenp)));
+                if pos > stop {
+                    wassert(h, 0x00b9_0ab0, 0x1cb3);
+                }
+                if id == 0x21 {
+                    if bpos < 0 {
+                        bpos = pos;
+                        bsize = size;
+                    }
+                } else if id == 0x1b {
+                    if size > 8 {
+                        wassert(h, 0x00b9_0400, 0x1cbd);
+                    }
+                    duration = unserialize_uint(
+                        h,
+                        reader,
+                        pos.cast_unsigned(),
+                        size.cast_unsigned(),
+                        at(scratch, 0x18),
+                    )
+                    .cast_signed();
+                    if duration < 0 {
+                        wassert(h, 0x00b9_1d4c, 0x1cc0);
+                    }
+                } else if id == 0x7b {
+                    if size > 8 {
+                        wassert(h, 0x00b9_0400, 0x1cc2);
+                    }
+                    if unserialize_int(
+                        h,
+                        reader,
+                        size as u32,
+                        pos.cast_unsigned(),
+                        time,
+                        at(scratch, 0x18),
+                    ) != 0
+                    {
+                        wassert(h, 0x00b9_03c0, 0x1cc8);
+                        return u32::MAX;
+                    }
+                    let t = read_i64(h, time);
+                    if t <= 0 {
+                        prev = t;
+                    } else {
+                        next = t;
+                    }
+                }
+                pos = pos.wrapping_add(size);
+                if pos > stop {
+                    wassert(h, 0x00b9_0958, 0x1cd3);
+                }
+                if pos >= stop {
+                    break;
+                }
+            }
+        }
+        if pos != stop {
+            wassert(h, 0x00b9_0970, 0x1cd6);
+        }
+        if bpos < 0 {
+            wassert(h, 0x00b9_1d68, 0x1cd7);
+        }
+        if bsize < 0 {
+            wassert(h, 0x00b9_1d7c, 0x1cd8);
+        }
+        let index: u32 = h.read(at(this, 0x38));
+        let entries: u32 = h.read(at(this, 0x30));
+        let slot = at(entries, index.wrapping_mul(4));
+        let mem = alloc(h, 0x58);
+        let e = if mem == 0 {
+            0
+        } else {
+            let mut w = [0u32; 12];
+            for (i, v) in [bpos, bsize, prev, next, duration, discard]
+                .into_iter()
+                .enumerate()
+            {
+                let [lo, hi] = words64(v);
+                w[2 * i] = lo;
+                w[2 * i + 1] = hi;
+            }
+            let mut args = vec![this, index];
+            args.extend(w);
+            h.call_sym(BLOCK_GROUP_CTOR, Conv::Thiscall(mem), &args)
+        };
+        h.write(slot, e);
+        if e == 0 {
+            return u32::MAX;
+        }
+        let s = h.call_sym(BLOCK_GROUP_PARSE, Conv::Thiscall(e), &[]);
+        if s == 0 {
+            let n = h.read::<u32>(at(this, 0x38)).wrapping_add(1);
+            h.write(at(this, 0x38), n);
+            return 0;
+        }
+        let e: u32 = h.read(slot);
+        if e != 0 {
+            let vt: u32 = h.read(e);
+            let f: u32 = h.read(vt);
+            h.call(f, Conv::Thiscall(e), &[1]);
+        }
+        h.write(slot, 0u32);
+        s
+    }
 }
