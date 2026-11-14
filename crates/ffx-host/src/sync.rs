@@ -17,6 +17,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Condvar, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
+use crate::exec::MAIN_THREAD;
+
 /// How often a blocked wait looks at the stop flag.
 pub const SLICE: Duration = Duration::from_millis(50);
 
@@ -114,6 +116,37 @@ struct Inner {
     waiting: HashMap<u32, u32>,
     /// Blocked `EnterCriticalSection`s per section.
     section_waiting: HashMap<u32, u32>,
+    /// The thread that last signalled each event or semaphore
+    /// (`SetEvent`, `ReleaseSemaphore`): the one a waiter waits for.
+    signaller: HashMap<u32, u32>,
+    /// Game threads that stopped on a failure (an unported address, a
+    /// failed trap), in order ([`Objects::thread_failed`]).
+    failed: Vec<Failure>,
+    /// What each blocked thread waits for now (for the hang report).
+    blocked: HashMap<u32, Blocked>,
+    /// The stop for the main thread's last wait, which can never end
+    /// ([`Objects::take_dead`]).
+    dead: Option<Failure>,
+}
+
+/// A game thread's stop on a failure.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Failure {
+    /// The game thread.
+    pub thread: u32,
+    /// Why (`Stop::Failed`'s text: the unported address and its callers).
+    pub why: String,
+    /// Where (`Stop::Failed`'s address).
+    pub eip: u32,
+}
+
+/// What a blocked thread waits for.
+#[derive(Debug, Clone)]
+enum Blocked {
+    /// `WaitFor*Object*` on these handles.
+    Objects(Vec<u32>),
+    /// `EnterCriticalSection` on the section at this address.
+    Section(u32),
 }
 
 impl Inner {
@@ -121,7 +154,71 @@ impl Inner {
     fn awaited(&self, handle: u32) -> bool {
         self.waiting.get(&handle).is_some_and(|&n| n > 0)
     }
+
+    /// The failure of game thread `id`, if it stopped on one.
+    fn failure(&self, id: u32) -> Option<&Failure> {
+        self.failed.iter().find(|f| f.thread == id)
+    }
+
+    /// The main thread's stop when its wait on `handle`, not satisfied
+    /// now, can never end: its mutex's owner, or the thread that signalled
+    /// it before, stopped on a failure. The failure's text and address
+    /// first (the cause), then the wait.
+    fn dead_handle(&self, handle: u32) -> Option<Failure> {
+        let (who, what, kind) = match self.objects.get(&handle)? {
+            Obj::Mutex { owner, .. } if *owner != 0 => (*owner, "holds", "mutex"),
+            Obj::Event { .. } => (*self.signaller.get(&handle)?, "signals", "event"),
+            Obj::Semaphore { .. } => (*self.signaller.get(&handle)?, "releases", "semaphore"),
+            Obj::Mutex { .. } | Obj::Thread { .. } => return None,
+        };
+        let f = self.failure(who)?;
+        Some(Failure {
+            thread: who,
+            why: format!(
+                "{} on thread {who:#x}; the main thread waits for {kind} {handle:#x}, which that \
+                 thread {what}",
+                f.why
+            ),
+            eip: f.eip,
+        })
+    }
+
+    /// What thread `id` waits for, in words.
+    fn blocked_text(&self, id: u32) -> Option<String> {
+        Some(match self.blocked.get(&id)? {
+            Blocked::Objects(h) => {
+                let list: Vec<String> = h
+                    .iter()
+                    .map(|h| {
+                        let kind = match self.objects.get(h) {
+                            Some(Obj::Event { .. }) => "event",
+                            Some(Obj::Semaphore { .. }) => "semaphore",
+                            Some(Obj::Mutex { .. }) => "mutex",
+                            Some(Obj::Thread { .. }) => "thread",
+                            None => "handle",
+                        };
+                        match self.signaller.get(h) {
+                            Some(t) => format!("{kind} {h:#x} (last signalled by thread {t:#x})"),
+                            None => format!("{kind} {h:#x}"),
+                        }
+                    })
+                    .collect();
+                format!("waits for {}", list.join(", "))
+            }
+            Blocked::Section(at) => match self.sections.get(at) {
+                Some(s) if s.owner != 0 => format!(
+                    "waits for critical section {at:#010x}, held by thread {:#x}",
+                    s.owner
+                ),
+                _ => format!("waits for critical section {at:#010x}"),
+            },
+        })
+    }
 }
+
+/// A wait shorter than this is a poll: a hang through polls is the
+/// watchdog's to find (`Shared::check_hang`), not the wait's.
+const DEAD_MIN_MS: u32 = 1000;
 
 /// Counts `key` in or out of a waiting map.
 fn note_wait(map: &mut HashMap<u32, u32>, key: u32, on: bool) {
@@ -143,6 +240,9 @@ pub struct Objects {
     stopping: AtomicBool,
     /// Some thread was terminated ([`Objects::killed`]'s fast path).
     any_killed: AtomicBool,
+    /// Some game thread stopped on a failure (the dead-wait check's fast
+    /// path).
+    any_failed: AtomicBool,
 }
 
 impl Objects {
@@ -174,6 +274,43 @@ impl Objects {
         self.any_killed.store(true, Ordering::Release);
         self.lock().killed.entry(id).or_insert(code);
         self.changed.notify_all();
+    }
+
+    /// A game thread stopped on a failure: a wait of the main thread on
+    /// what it signals, or a section it holds, can never end
+    /// ([`Objects::wait`], [`Objects::section_enter`]).
+    pub fn thread_failed(&self, f: Failure) {
+        let mut g = self.lock();
+        if g.failure(f.thread).is_none() {
+            g.failed.push(f);
+        }
+        self.any_failed.store(true, Ordering::Release);
+        drop(g);
+        self.changed.notify_all();
+    }
+
+    /// The first game thread that stopped on a failure.
+    #[must_use]
+    pub fn first_failure(&self) -> Option<Failure> {
+        if !self.any_failed.load(Ordering::Acquire) {
+            return None;
+        }
+        self.lock().failed.first().cloned()
+    }
+
+    /// The stop for the main thread's wait that just ended as one that
+    /// never could (`WAIT_FAILED` from [`Objects::wait`], false from
+    /// [`Objects::section_enter`]): the failed thread's failure, then the
+    /// wait. Taken once.
+    pub fn take_dead(&self) -> Option<Failure> {
+        self.lock().dead.take()
+    }
+
+    /// What game thread `id` is blocked on now, in words (`None` when it
+    /// is not in a wait or a critical section).
+    #[must_use]
+    pub fn blocked(&self, id: u32) -> Option<String> {
+        self.lock().blocked_text(id)
     }
 
     /// Whether any thread was terminated.
@@ -217,8 +354,9 @@ impl Objects {
         self.lock().objects.remove(&handle);
     }
 
-    /// `SetEvent` / `ResetEvent`; false for a handle that is no event.
-    pub fn set_event(&self, handle: u32, to: bool) -> bool {
+    /// `SetEvent` / `ResetEvent` by game thread `me`; false for a handle
+    /// that is no event.
+    pub fn set_event(&self, handle: u32, to: bool, me: u32) -> bool {
         let mut g = self.lock();
         let ok = match g.objects.get_mut(&handle) {
             Some(Obj::Event { set, .. }) => {
@@ -227,6 +365,9 @@ impl Objects {
             }
             _ => false,
         };
+        if ok && to {
+            g.signaller.insert(handle, me);
+        }
         // a reset satisfies no wait
         let wake = to && g.awaited(handle);
         drop(g);
@@ -236,9 +377,9 @@ impl Objects {
         ok
     }
 
-    /// `ReleaseSemaphore`: the previous count, or `None` (not a semaphore,
-    /// or past its maximum).
-    pub fn release_semaphore(&self, handle: u32, by: i32) -> Option<i32> {
+    /// `ReleaseSemaphore` by game thread `me`: the previous count, or
+    /// `None` (not a semaphore, or past its maximum).
+    pub fn release_semaphore(&self, handle: u32, by: i32, me: u32) -> Option<i32> {
         let mut g = self.lock();
         let r = match g.objects.get_mut(&handle) {
             Some(Obj::Semaphore { count, max }) if *count + by <= *max => {
@@ -248,6 +389,9 @@ impl Objects {
             }
             _ => None,
         };
+        if r.is_some() {
+            g.signaller.insert(handle, me);
+        }
         let wake = g.awaited(handle);
         drop(g);
         if wake {
@@ -304,6 +448,8 @@ impl Objects {
     pub fn wait(&self, me: u32, handles: &[u32], all: bool, ms: u32) -> u32 {
         let deadline = (ms != INFINITE).then(|| Instant::now() + Duration::from_millis(ms.into()));
         let mut g = self.lock();
+        // whether `blocked` holds this wait (taken out on every return)
+        let mut noted = false;
         loop {
             let ready: Vec<bool> = handles
                 .iter()
@@ -325,15 +471,47 @@ impl Objects {
                         o.consume(me);
                     }
                 }
+                if noted {
+                    g.blocked.remove(&me);
+                }
                 return WAIT_OBJECT_0 + u32::try_from(i).unwrap_or(0);
             }
             if self.stopping() || g.killed.contains_key(&me) {
+                g.blocked.remove(&me);
                 return WAIT_TIMEOUT;
+            }
+            // the main thread waiting for what a failed thread would have
+            // signalled: the wait never ends (`all`: one such handle is
+            // enough; else every handle not yet signalled must be one)
+            if me == MAIN_THREAD && ms >= DEAD_MIN_MS && self.any_failed.load(Ordering::Acquire) {
+                let dead: Vec<Option<Failure>> = handles
+                    .iter()
+                    .zip(&ready)
+                    .filter(|(_, r)| !**r)
+                    .map(|(h, _)| g.dead_handle(*h))
+                    .collect();
+                let hit = if all {
+                    dead.iter().flatten().next().cloned()
+                } else if dead.iter().all(Option::is_some) {
+                    dead.first().cloned().flatten()
+                } else {
+                    None
+                };
+                if hit.is_some() {
+                    g.dead = hit;
+                    g.blocked.remove(&me);
+                    return WAIT_FAILED;
+                }
+            }
+            if !noted {
+                g.blocked.insert(me, Blocked::Objects(handles.to_vec()));
+                noted = true;
             }
             let slice = match deadline {
                 Some(d) => {
                     let left = d.saturating_duration_since(Instant::now());
                     if left.is_zero() {
+                        g.blocked.remove(&me);
                         return WAIT_TIMEOUT;
                     }
                     left.min(SLICE)
@@ -365,18 +543,45 @@ impl Objects {
     }
 
     /// `EnterCriticalSection` by `me` (blocks); false when the run ended
-    /// before it got the section.
+    /// before it got the section, or (the main thread) when its owner
+    /// stopped on a failure, so it is never left ([`Objects::take_dead`]).
     pub fn section_enter(&self, at: u32, me: u32) -> bool {
         let mut g = self.lock();
+        let mut noted = false;
         loop {
             let s = g.sections.entry(at).or_default();
             if s.owner == 0 || s.owner == me {
                 s.owner = me;
                 s.count += 1;
+                if noted {
+                    g.blocked.remove(&me);
+                }
                 return true;
             }
+            let owner = s.owner;
             if self.stopping() || g.killed.contains_key(&me) {
+                g.blocked.remove(&me);
                 return false;
+            }
+            if me == MAIN_THREAD
+                && self.any_failed.load(Ordering::Acquire)
+                && let Some(f) = g.failure(owner)
+            {
+                g.dead = Some(Failure {
+                    thread: owner,
+                    why: format!(
+                        "{} on thread {owner:#x}; the main thread waits for critical section \
+                         {at:#010x}, which that thread holds",
+                        f.why
+                    ),
+                    eip: f.eip,
+                });
+                g.blocked.remove(&me);
+                return false;
+            }
+            if !noted {
+                g.blocked.insert(me, Blocked::Section(at));
+                noted = true;
             }
             note_wait(&mut g.section_waiting, at, true);
             g = self
@@ -438,7 +643,7 @@ mod tests {
         let o2 = Arc::clone(&o);
         let t = std::thread::spawn(move || o2.wait(2, &[8], false, INFINITE));
         std::thread::sleep(Duration::from_millis(20));
-        assert!(o.set_event(8, true));
+        assert!(o.set_event(8, true, 1));
         assert_eq!(t.join().unwrap(), WAIT_OBJECT_0);
         // consumed: the next wait times out
         assert_eq!(o.wait(1, &[8], false, 10), WAIT_TIMEOUT);
@@ -466,8 +671,8 @@ mod tests {
         o.insert(4, Obj::Semaphore { count: 1, max: 2 });
         assert_eq!(o.wait(1, &[4], false, 0), WAIT_OBJECT_0);
         assert_eq!(o.wait(1, &[4], false, 0), WAIT_TIMEOUT);
-        assert_eq!(o.release_semaphore(4, 2), Some(0));
-        assert_eq!(o.release_semaphore(4, 1), None);
+        assert_eq!(o.release_semaphore(4, 2, 1), Some(0));
+        assert_eq!(o.release_semaphore(4, 1, 1), None);
         let o2 = Arc::clone(&o);
         o.insert(
             12,
@@ -508,5 +713,96 @@ mod tests {
         // thread 6 waits its full time out; the section stays thread 9's
         assert_eq!(other.join().unwrap(), WAIT_TIMEOUT);
         assert!(!o.section_try(0x200, 6));
+    }
+
+    fn event(o: &Objects, h: u32) {
+        o.insert(
+            h,
+            Obj::Event {
+                manual: false,
+                set: false,
+            },
+        );
+    }
+
+    fn failure(thread: u32) -> Failure {
+        Failure {
+            thread,
+            why: "unported address 0x0077ba70 (x) called from y".into(),
+            eip: 0x0077_ba70,
+        }
+    }
+
+    #[test]
+    fn the_main_threads_wait_for_a_failed_threads_event_ends_naming_both() {
+        let o = Arc::new(Objects::default());
+        event(&o, 20);
+        event(&o, 24);
+        // thread 7 signalled 20 once (consumed), thread 8 signals 24
+        assert!(o.set_event(20, true, 7));
+        assert_eq!(o.wait(MAIN_THREAD, &[20], false, 0), WAIT_OBJECT_0);
+        assert!(o.set_event(24, true, 8));
+        assert_eq!(o.wait(MAIN_THREAD, &[24], false, 0), WAIT_OBJECT_0);
+        // the failure comes while the main thread waits
+        let o2 = Arc::clone(&o);
+        let main = std::thread::spawn(move || o2.wait(MAIN_THREAD, &[20], false, INFINITE));
+        std::thread::sleep(Duration::from_millis(30));
+        assert!(!main.is_finished());
+        o.thread_failed(failure(7));
+        assert_eq!(main.join().unwrap(), WAIT_FAILED);
+        let dead = o.take_dead().expect("the dead wait's stop");
+        assert_eq!((dead.thread, dead.eip), (7, 0x0077_ba70));
+        assert!(
+            dead.why
+                .starts_with("unported address 0x0077ba70 (x) called from y on thread 0x7; ")
+                && dead
+                    .why
+                    .contains("waits for event 0x14, which that thread signals"),
+            "{}",
+            dead.why
+        );
+        assert!(o.take_dead().is_none(), "taken once");
+        // another thread's wait on it is only a wait (it times out)
+        assert_eq!(o.wait(3, &[20], false, 1000), WAIT_TIMEOUT);
+        // a poll is not judged; nor an any-wait with a live signaller
+        assert_eq!(o.wait(MAIN_THREAD, &[20], false, 100), WAIT_TIMEOUT);
+        assert_eq!(
+            o.wait(MAIN_THREAD, &[20, 24], false, 1000),
+            WAIT_TIMEOUT,
+            "thread 8 can still signal 24"
+        );
+        assert!(o.take_dead().is_none());
+        // a wait for all: the dead handle is enough
+        assert_eq!(o.wait(MAIN_THREAD, &[24, 20], true, INFINITE), WAIT_FAILED);
+        assert_eq!(o.take_dead().map(|d| d.thread), Some(7));
+        assert_eq!(o.first_failure(), Some(failure(7)));
+    }
+
+    #[test]
+    fn the_main_thread_entering_a_failed_threads_section_ends() {
+        let o = Arc::new(Objects::default());
+        o.section_init(0x300);
+        assert!(o.section_enter(0x300, 9));
+        o.thread_failed(failure(9));
+        // another thread just waits (until the run stops)
+        let o2 = Arc::clone(&o);
+        let other = std::thread::spawn(move || o2.section_enter(0x300, 5));
+        assert!(!o.section_enter(0x300, MAIN_THREAD));
+        let dead = o.take_dead().expect("the dead wait's stop");
+        assert!(
+            dead.why
+                .contains("waits for critical section 0x00000300, which that thread holds"),
+            "{}",
+            dead.why
+        );
+        std::thread::sleep(Duration::from_millis(30));
+        assert!(!other.is_finished());
+        assert!(
+            o.blocked(5)
+                .is_some_and(|b| b.contains("held by thread 0x9"))
+        );
+        o.stop();
+        assert!(!other.join().unwrap());
+        assert!(o.blocked(5).is_none());
     }
 }

@@ -660,7 +660,7 @@ fn fmod_tick(e: &mut Exec, args: &Args) -> Ret {
         // the tick's own wait (less than a period since the last
         // soundLoop) returns at once
         let ev = e.mem().read::<u32>(manager + 0x18);
-        e.shared().sync.set_event(ev, true);
+        e.shared().sync.set_event(ev, true, e.id);
     }
     let r = e.call_original(0x006f_a700, Conv::Thiscall, args);
     let c = clock(e);
@@ -691,7 +691,7 @@ fn fmod_wait_for_turn(e: &mut Exec, manager: u32) {
         let ev = e.mem().read::<u32>(manager + 0x18);
         let id = e.id;
         e.shared().sync.wait(id, &[ev], false, 50);
-        e.shared().sync.set_event(ev, false);
+        e.shared().sync.set_event(ev, false, e.id);
     }
 }
 
@@ -713,7 +713,7 @@ fn serve_sync(e: &mut Exec, manager: u32) {
     mem.write(manager + 0x48, result);
     mem.write(manager + 0x44, 1u8);
     let ev: u32 = mem.read(manager + 0x1c);
-    e.shared().sync.set_event(ev, true);
+    e.shared().sync.set_event(ev, true, e.id);
 }
 
 /// At the boundary: the `FmodManager` thread's tick, waited for.
@@ -725,7 +725,7 @@ fn fmod_turn(e: &Exec) {
     }
     let asked = c.fmod_asked.fetch_add(1, Ordering::AcqRel) + 1;
     let ev = e.mem().read::<u32>(manager + 0x18);
-    e.shared().sync.set_event(ev, true);
+    e.shared().sync.set_event(ev, true, e.id);
     if !c.wait_until(e, PATIENCE, || c.fmod_done.load(Ordering::Acquire) >= asked) {
         c.fmod_late.fetch_add(1, Ordering::AcqRel);
         e.shared().audio.note_late(c.frame());

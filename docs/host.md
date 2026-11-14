@@ -1423,6 +1423,50 @@ proves it on emulated code: two threads started through `FFX.exe`'s own
 `inc` under one critical section (through the game's IAT), and the main
 thread waits on both thread handles: the count is exactly 6,000.
 
+### Hangs
+
+A hang always names its cause (2026-11-14, m5-wp5i):
+
+- **A failed game thread is in the log at once.** `Exec::end` writes
+  `ffx-host: thread 0x… failed: <why>; returns …` to stderr (unbuffered;
+  `ffx-rust.log` is the program's stdout and stderr), besides the note the
+  report and the harness's `notes` list, and records the failure in
+  `sync` (`Objects::thread_failed`).
+- **A wait that can never end ends the run.** `sync` remembers the thread
+  that last signalled each event or semaphore, and mutex and critical
+  section owners. A main-thread wait of 1 s or longer (`INFINITE`
+  included) on an object whose signaller or owner stopped on a failure
+  (any-wait: every unsignalled handle such; wait-all: one), or an
+  `EnterCriticalSection` of a section such a thread holds, returns at
+  once, and the import ends the run with `Stop::Failed`: the failure's
+  text and address first, then `on thread 0x…; the main thread waits for
+  event 0x…, which that thread signals`.
+- **The watchdog catches the rest** (polls, spins, waits on objects
+  nobody signalled yet): when the main thread enters no frame boundary
+  for 30 s after a game thread failed, or (no failure) for
+  `FFX_HOST_HANG_SECS` (default 180 under the harness, else off; 0 off)
+  after its first boundary, the run ends. The outcome is the failure, if
+  any, then `the main thread entered no frame boundary for N s (after
+  update U); it is in <its host entries>; it waits for <objects, with
+  their last signaller>`, or `hang: … no game thread failed`. Time the
+  harness holds the main thread at a boundary (lockstep, the script's
+  jobs: `harness::holding`) is not counted.
+
+Tests: `sync`'s unit tests (dead waits and sections),
+`tests/no_unicorn.rs`'s `a_threads_failure_ends_the_main_threads_wait_on_it`
+and `a_main_thread_that_makes_no_progress_after_a_failure_ends_the_run`
+(30 s).
+
+A headless replay on Linux: start `ffx-rust --gfx-null` with
+`FFX_HARNESS=<port>`, `FFX_HARNESS_HOME=<dir>` (the sandbox's
+`GameSetting.ini`, comment lines dropped, in `<dir>/Square Enix/FINAL
+FANTASY X&X-2 HD Remaster/`) and `FFX_HARNESS_BACKGROUND=1`, then play a
+script with `crates/ffx-harness/examples/replay_attach.rs <port> <script>
+<trace>` (no game slot, `shot` lines skipped). devsave-22-luca's script
+after its `load` line (sent as `devsave 22 lockstep` on the title) plays
+to the end this way on the no-Unicorn build, the in-field movie
+`LCI_us.webm` included (2026-11-14).
+
 ## Windows
 
 `src/win_forward.rs` binds ahead of the stand-ins on Windows

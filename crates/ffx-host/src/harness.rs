@@ -490,6 +490,22 @@ pub fn boundary(e: &mut Exec, frame: u32) {
     if !enabled() {
         return;
     }
+    HOLDING.store(true, Ordering::Release);
+    boundary_held(e, frame);
+    HOLDING.store(false, Ordering::Release);
+}
+
+/// The main thread is inside [`boundary`] (the script's jobs, lockstep's
+/// hold): waiting for the test, not hung (the executor's hang check).
+static HOLDING: AtomicBool = AtomicBool::new(false);
+
+/// Whether the main thread is at a frame boundary now, held by the test.
+#[must_use]
+pub fn holding() -> bool {
+    HOLDING.load(Ordering::Acquire)
+}
+
+fn boundary_held(e: &mut Exec, frame: u32) {
     if LOCKSTEP_REQUEST.swap(false, Ordering::AcqRel) {
         ALLOWED.store(frame, Ordering::Release);
         wake();

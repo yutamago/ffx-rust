@@ -1006,6 +1006,161 @@ impl Shared {
     pub fn port_name(&self, at: u32) -> Option<&'static str> {
         self.table.get(at).map(|e| e.name)
     }
+
+    /// The host entries a thread is in (its spot), innermost first, by
+    /// name (ports and traps by `ffx.sym`/the overlay, imports by
+    /// `DLL!name`): the caller chain of an unported address, or where a
+    /// hung thread stands.
+    #[must_use]
+    pub fn spot_chain(&self, spot: &spot::Spot) -> String {
+        let syms = crate::report::symbols();
+        let (frames, more) = spot.frames();
+        let mut out: Vec<String> = frames
+            .iter()
+            .rev()
+            .map(|f| match f.kind {
+                spot::Kind::Port => match self.port_name(f.what) {
+                    Some(n) => format!("{n} ({:#010x})", f.what),
+                    None => syms.describe(f.what),
+                },
+                spot::Kind::Import => self
+                    .import_name(f.what as usize)
+                    .unwrap_or("an import")
+                    .to_string(),
+                spot::Kind::Trap => crate::library::describe(f.what)
+                    .unwrap_or_else(|| format!("trap {:#010x}", f.what)),
+            })
+            .collect();
+        // the spot keeps the outermost entries: the innermost are lost
+        if more > 0 {
+            out.insert(0, format!("({more} inner entries not kept)"));
+        }
+        if out.is_empty() {
+            return format!("the thread's start (thread {:#x})", spot.id);
+        }
+        out.join(" <- ")
+    }
+
+    /// The watchdog's hang check, once a [`HANG_POLL`]: when the main
+    /// thread has entered no frame boundary (and is not held at one by
+    /// the harness's lockstep) for [`HANG_AFTER_FAILURE`] after another
+    /// game thread stopped on a failure, or for the hang limit
+    /// (`FFX_HOST_HANG_SECS`; under the harness 180 s by default, else
+    /// off) after its first boundary, the run ends with a stop that names
+    /// where the main thread stands, what it waits for and the failure
+    /// (docs/host.md, "Hangs"). A hang must name its cause.
+    fn check_hang(&self, watch: &mut HangWatch) {
+        let frame = self.clock.frame();
+        let now = Instant::now();
+        if frame != watch.frame || crate::harness::holding() {
+            watch.frame = frame;
+            watch.since = now;
+            return;
+        }
+        let failure = self.sync.first_failure();
+        // the time counts from the failure, or from the last boundary
+        // after it
+        if failure.is_some() && !watch.failure_seen {
+            watch.failure_seen = true;
+            watch.since = now;
+        }
+        let still = now.duration_since(watch.since);
+        let limit = if failure.is_some() {
+            Some(HANG_AFTER_FAILURE)
+        } else if frame > 0 {
+            hang_limit()
+        } else {
+            None
+        };
+        if limit.is_none_or(|l| still < l) {
+            return;
+        }
+        let (chain, at) = self
+            .spots
+            .lock()
+            .ok()
+            .and_then(|l| {
+                l.iter().find(|p| p.id == MAIN_THREAD).map(|p| {
+                    let at = p.frames().0.last().map_or(0, |f| f.what);
+                    (self.spot_chain(p), at)
+                })
+            })
+            .unwrap_or_else(|| ("an unknown place".into(), 0));
+        let blocked = self
+            .sync
+            .blocked(MAIN_THREAD)
+            .map_or_else(String::new, |b| format!("; it {b}"));
+        let hang = format!(
+            "the main thread entered no frame boundary for {} s (after update {frame}); it is \
+             in {chain}{blocked}",
+            still.as_secs()
+        );
+        // the outcome is the failure, when there is one (the cause), then
+        // the hang it led to
+        let stop = match failure {
+            Some(f) => Stop::Failed(
+                format!("{} on thread {:#x}; {hang}", f.why, f.thread),
+                f.eip,
+            ),
+            None => Stop::Failed(format!("hang: {hang}; no game thread failed"), at),
+        };
+        eprintln!("ffx-host: {stop}");
+        crate::log::note(&stop.to_string());
+        self.stop_all(stop);
+    }
+}
+
+/// The watchdog's view of the main thread's progress ([`Shared::check_hang`]).
+struct HangWatch {
+    frame: u32,
+    since: Instant,
+    last_poll: Instant,
+    failure_seen: bool,
+}
+
+impl HangWatch {
+    fn new() -> Self {
+        let now = Instant::now();
+        Self {
+            frame: 0,
+            since: now,
+            last_poll: now,
+            failure_seen: false,
+        }
+    }
+
+    /// Whether the hang check is due (every [`HANG_POLL`]).
+    fn due(&mut self) -> bool {
+        let now = Instant::now();
+        if now.duration_since(self.last_poll) < HANG_POLL {
+            return false;
+        }
+        self.last_poll = now;
+        true
+    }
+}
+
+/// How often the watchdog checks for a hang.
+const HANG_POLL: Duration = Duration::from_secs(1);
+/// No frame boundary for this long after a game thread failed: a hang.
+const HANG_AFTER_FAILURE: Duration = Duration::from_secs(30);
+/// Under the harness, no frame boundary for this long: a hang.
+const HANG_HARNESS: Duration = Duration::from_secs(180);
+
+/// The hang limit without a failed thread: `FFX_HOST_HANG_SECS` (0: off),
+/// else [`HANG_HARNESS`] under the harness, else none.
+fn hang_limit() -> Option<Duration> {
+    static LIMIT: std::sync::OnceLock<Option<Duration>> = std::sync::OnceLock::new();
+    *LIMIT.get_or_init(|| {
+        match std::env::var("FFX_HOST_HANG_SECS")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+        {
+            Some(0) => None,
+            Some(s) => Some(Duration::from_secs(s)),
+            None => crate::harness::enabled().then_some(HANG_HARNESS),
+        }
+    })
 }
 
 /// Stops every emulator (at its next block) when the run ends or runs out
@@ -1017,10 +1172,14 @@ impl Shared {
 #[cfg(feature = "dev-unicorn")]
 fn watchdog(shared: &std::sync::Weak<Shared>) {
     let mut late: Option<Instant> = None;
+    let mut hang = HangWatch::new();
     loop {
         std::thread::sleep(WATCH);
         let Some(s) = shared.upgrade() else { return };
         s.stop_killed();
+        if !s.sync.stopping() && hang.due() {
+            s.check_hang(&mut hang);
+        }
         if s.overdue()
             && let Ok(list) = s.emulators.lock()
         {
@@ -1070,9 +1229,13 @@ fn budget_stop(s: &Shared) {
 /// its next call ([`Exec::halted`]).
 #[cfg(not(feature = "dev-unicorn"))]
 fn watchdog(shared: &std::sync::Weak<Shared>) {
+    let mut hang = HangWatch::new();
     loop {
         std::thread::sleep(WATCH);
         let Some(s) = shared.upgrade() else { return };
+        if !s.sync.stopping() && hang.due() {
+            s.check_hang(&mut hang);
+        }
         if s.overdue() && !s.sync.stopping() {
             budget_stop(&s);
         }
@@ -1529,11 +1692,25 @@ impl Exec {
                     .take(8)
                     .map(|a| format!("{a:#010x}"))
                     .collect();
-                crate::log::note(&format!(
+                let line = format!(
                     "thread {:#x} failed: {why}; returns {}",
                     self.id,
                     calls.join(" ")
-                ));
+                );
+                crate::log::note(&line);
+                // and in the log at once (stderr is unbuffered; ffx-rust's
+                // log is its stdout and stderr): a run that hangs later is
+                // killed before its report (docs/host.md, "Hangs")
+                if !self.is_main()
+                    && let Stop::Failed(text, eip) = &why
+                {
+                    eprintln!("ffx-host: {line}");
+                    self.shared.sync.thread_failed(crate::sync::Failure {
+                        thread: self.id,
+                        why: text.clone(),
+                        eip: *eip,
+                    });
+                }
             }
             let global = self.is_main() || matches!(why, Stop::Milestone(_) | Stop::Budget(_));
             if global {
@@ -1845,33 +2022,7 @@ impl Exec {
     /// the caller chain of an unported address.
     #[cfg(not(feature = "dev-unicorn"))]
     fn chain(&self) -> String {
-        let syms = crate::report::symbols();
-        let (frames, more) = self.spot.frames();
-        let mut out: Vec<String> = frames
-            .iter()
-            .rev()
-            .map(|f| match f.kind {
-                spot::Kind::Port => match self.shared.port_name(f.what) {
-                    Some(n) => format!("{n} ({:#010x})", f.what),
-                    None => syms.describe(f.what),
-                },
-                spot::Kind::Import => self
-                    .shared
-                    .import_name(f.what as usize)
-                    .unwrap_or("an import")
-                    .to_string(),
-                spot::Kind::Trap => crate::library::describe(f.what)
-                    .unwrap_or_else(|| format!("trap {:#010x}", f.what)),
-            })
-            .collect();
-        // the spot keeps the outermost entries: the innermost are lost
-        if more > 0 {
-            out.insert(0, format!("({more} inner entries not kept)"));
-        }
-        if out.is_empty() {
-            return format!("the thread's start (thread {:#x})", self.id);
-        }
-        out.join(" <- ")
+        self.shared.spot_chain(&self.spot)
     }
 
     /// [`Exec::call`] for a cdecl function of word arguments, returning
