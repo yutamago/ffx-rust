@@ -1448,13 +1448,20 @@ A hang always names its cause (2026-11-14, m5-wp5i):
 - **The watchdog catches the rest** (polls, spins, waits on objects
   nobody signalled yet): when the main thread enters no frame boundary
   for 30 s after a game thread failed, or (no failure) for
-  `FFX_HOST_HANG_SECS` (default 180 under the harness, else off; 0 off)
-  after its first boundary, the run ends. The outcome is the failure, if
+  `FFX_HOST_HANG_SECS` (default under the harness 60 s without Unicorn,
+  300 s with it; else off; 0 off) after its first boundary, the run ends. The outcome is the failure, if
   any, then `the main thread entered no frame boundary for N s (after
   update U); it is in <its host entries>; it waits for <objects, with
   their last signaller>`, or `hang: … no game thread failed`. Time the
   harness holds the main thread at a boundary (lockstep, the script's
-  jobs: `harness::holding`) is not counted.
+  jobs: `harness::holding`) is not counted. Frames that come without
+  updates (the frame loop running, `FFXApplication_animate` not entered)
+  count as no progress.
+- **Slow updates are reported as they happen**: an update that has run
+  for 10 s writes `ffx-host: slow: update U has run for N s; the main
+  thread is in …` and one `ffx-host: slow, thread 0x… is in …` line per
+  other game thread (again every 30 s while it lasts), so a run killed
+  from outside (the replay's time limit) still says where it stood.
 
 Tests: `sync`'s unit tests (dead waits and sections),
 `tests/no_unicorn.rs`'s `a_threads_failure_ends_the_main_threads_wait_on_it`

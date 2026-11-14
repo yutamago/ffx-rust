@@ -1052,20 +1052,27 @@ impl Shared {
         out.join(" <- ")
     }
 
-    /// The watchdog's hang check, once a [`HANG_POLL`]: when the main
-    /// thread has entered no frame boundary (and is not held at one by
-    /// the harness's lockstep) for [`HANG_AFTER_FAILURE`] after another
-    /// game thread stopped on a failure, or for the hang limit
-    /// (`FFX_HOST_HANG_SECS`; under the harness 180 s by default, else
-    /// off) after its first boundary, the run ends with a stop that names
-    /// where the main thread stands, what it waits for and the failure
-    /// (docs/host.md, "Hangs"). A hang must name its cause.
+    /// The watchdog's hang check, once a [`HANG_POLL`] (docs/host.md,
+    /// "Hangs"; a hang must name its cause). The main thread's progress is
+    /// the frame boundaries it enters (updates); time the harness holds it
+    /// at one (lockstep, the script's jobs) does not count.
+    ///
+    /// - An update that runs for [`SLOW_UPDATE`] is reported (then every
+    ///   [`SLOW_AGAIN`]): where every game thread stands and what it waits
+    ///   for, in the log at once, so even a run killed from outside says
+    ///   where it was.
+    /// - The run ends after [`HANG_AFTER_FAILURE`] without progress once a
+    ///   game thread stopped on a failure, or after the hang limit
+    ///   (`FFX_HOST_HANG_SECS`; under the harness [`HANG_HARNESS`] by
+    ///   default, else off) after the first boundary: the outcome is the
+    ///   failure, if any, then where the main thread stands.
     fn check_hang(&self, watch: &mut HangWatch) {
         let frame = self.clock.frame();
         let now = Instant::now();
         if frame != watch.frame || crate::harness::holding() {
             watch.frame = frame;
             watch.since = now;
+            watch.reported = None;
             return;
         }
         let failure = self.sync.first_failure();
@@ -1084,23 +1091,23 @@ impl Shared {
             None
         };
         if limit.is_none_or(|l| still < l) {
+            let due = match watch.reported {
+                None => frame > 0 && still >= SLOW_UPDATE,
+                Some(t) => now.duration_since(t) >= SLOW_AGAIN,
+            };
+            if due {
+                watch.reported = Some(now);
+                let (chain, _, blocked) = self.main_place();
+                eprintln!(
+                    "ffx-host: slow: update {frame} has run for {} s; the main thread is in \
+                     {chain}{blocked}",
+                    still.as_secs()
+                );
+                self.report_threads("slow");
+            }
             return;
         }
-        let (chain, at) = self
-            .spots
-            .lock()
-            .ok()
-            .and_then(|l| {
-                l.iter().find(|p| p.id == MAIN_THREAD).map(|p| {
-                    let at = p.frames().0.last().map_or(0, |f| f.what);
-                    (self.spot_chain(p), at)
-                })
-            })
-            .unwrap_or_else(|| ("an unknown place".into(), 0));
-        let blocked = self
-            .sync
-            .blocked(MAIN_THREAD)
-            .map_or_else(String::new, |b| format!("; it {b}"));
+        let (chain, at, blocked) = self.main_place();
         let hang = format!(
             "the main thread entered no frame boundary for {} s (after update {frame}); it is \
              in {chain}{blocked}",
@@ -1117,8 +1124,34 @@ impl Shared {
         };
         eprintln!("ffx-host: {stop}");
         crate::log::note(&stop.to_string());
-        // every other game thread's place too: whom the main thread waits
-        // for may wait in turn
+        self.report_threads("at the hang");
+        self.stop_all(stop);
+    }
+
+    /// Where the main thread stands: its host entries, the innermost
+    /// one's address, and what it waits for ("; it waits for …" or "").
+    fn main_place(&self) -> (String, u32, String) {
+        let (chain, at) = self
+            .spots
+            .lock()
+            .ok()
+            .and_then(|l| {
+                l.iter().find(|p| p.id == MAIN_THREAD).map(|p| {
+                    let at = p.frames().0.last().map_or(0, |f| f.what);
+                    (self.spot_chain(p), at)
+                })
+            })
+            .unwrap_or_else(|| ("an unknown place".into(), 0));
+        let blocked = self
+            .sync
+            .blocked(MAIN_THREAD)
+            .map_or_else(String::new, |b| format!("; it {b}"));
+        (chain, at, blocked)
+    }
+
+    /// Every other game thread's place, to stderr: whom the main thread
+    /// waits for may wait in turn.
+    fn report_threads(&self, when: &str) {
         if let Ok(l) = self.spots.lock() {
             for p in l.iter().filter(|p| p.id != MAIN_THREAD) {
                 let blocked = self
@@ -1126,13 +1159,12 @@ impl Shared {
                     .blocked(p.id)
                     .map_or_else(String::new, |b| format!("; it {b}"));
                 eprintln!(
-                    "ffx-host: at the hang, thread {:#x} is in {}{blocked}",
+                    "ffx-host: {when}, thread {:#x} is in {}{blocked}",
                     p.id,
                     self.spot_chain(p)
                 );
             }
         }
-        self.stop_all(stop);
     }
 }
 
@@ -1142,6 +1174,8 @@ struct HangWatch {
     since: Instant,
     last_poll: Instant,
     failure_seen: bool,
+    /// When this update was last reported slow.
+    reported: Option<Instant>,
 }
 
 impl HangWatch {
@@ -1152,6 +1186,7 @@ impl HangWatch {
             since: now,
             last_poll: now,
             failure_seen: false,
+            reported: None,
         }
     }
 
@@ -1166,12 +1201,21 @@ impl HangWatch {
     }
 }
 
+/// An update that runs this long is reported.
+const SLOW_UPDATE: Duration = Duration::from_secs(10);
+/// And again after this long, while it lasts.
+const SLOW_AGAIN: Duration = Duration::from_secs(30);
 /// How often the watchdog checks for a hang.
 const HANG_POLL: Duration = Duration::from_secs(1);
 /// No frame boundary for this long after a game thread failed: a hang.
 const HANG_AFTER_FAILURE: Duration = Duration::from_secs(30);
-/// Under the harness, no frame boundary for this long: a hang.
-const HANG_HARNESS: Duration = Duration::from_secs(180);
+/// Under the harness, no frame boundary for this long: a hang (one update
+/// with every function in Rust takes well under a second; emulated ones,
+/// a map load's included, can take minutes).
+#[cfg(not(feature = "dev-unicorn"))]
+const HANG_HARNESS: Duration = Duration::from_secs(60);
+#[cfg(feature = "dev-unicorn")]
+const HANG_HARNESS: Duration = Duration::from_secs(300);
 
 /// The hang limit without a failed thread: `FFX_HOST_HANG_SECS` (0: off),
 /// else [`HANG_HARNESS`] under the harness, else none.
