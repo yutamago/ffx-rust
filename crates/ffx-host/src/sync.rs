@@ -122,6 +122,9 @@ struct Inner {
     /// Game threads that stopped on a failure (an unported address, a
     /// failed trap), in order ([`Objects::thread_failed`]).
     failed: Vec<Failure>,
+    /// Game threads that ended (returned, `ExitThread`, failed, or
+    /// terminated), by id.
+    ended: std::collections::HashSet<u32>,
     /// What each blocked thread waits for now (for the hang report).
     blocked: HashMap<u32, Blocked>,
     /// The stop for the main thread's last wait, which can never end
@@ -207,8 +210,15 @@ impl Inner {
             }
             Blocked::Section(at) => match self.sections.get(at) {
                 Some(s) if s.owner != 0 => format!(
-                    "waits for critical section {at:#010x}, held by thread {:#x}",
-                    s.owner
+                    "waits for critical section {at:#010x}, held by thread {:#x}{}",
+                    s.owner,
+                    if self.killed.contains_key(&s.owner) {
+                        " (terminated)"
+                    } else if self.ended.contains(&s.owner) {
+                        " (ended)"
+                    } else {
+                        ""
+                    }
                 ),
                 _ => format!("waits for critical section {at:#010x}"),
             },
@@ -424,9 +434,11 @@ impl Objects {
     /// A thread ended with `code`.
     pub fn thread_done(&self, handle: u32, exit: u32) {
         let mut g = self.lock();
-        if let Some(Obj::Thread { code, done, .. }) = g.objects.get_mut(&handle) {
+        if let Some(Obj::Thread { id, code, done }) = g.objects.get_mut(&handle) {
             *code = exit;
             *done = true;
+            let id = *id;
+            g.ended.insert(id);
         }
         drop(g);
         self.changed.notify_all();
@@ -575,6 +587,26 @@ impl Objects {
                         f.why
                     ),
                     eip: f.eip,
+                });
+                g.blocked.remove(&me);
+                return false;
+            }
+            // a terminated thread never leaves what it holds (it unwinds
+            // at its next call, `LeaveCriticalSection` included), nor one
+            // that ended without leaving it
+            if me == MAIN_THREAD && (g.ended.contains(&owner) || g.killed.contains_key(&owner)) {
+                let how = if g.killed.contains_key(&owner) {
+                    "was terminated (TerminateThread)"
+                } else {
+                    "ended"
+                };
+                g.dead = Some(Failure {
+                    thread: owner,
+                    why: format!(
+                        "thread {owner:#x} {how} holding critical section {at:#010x}; the main \
+                         thread waits for it"
+                    ),
+                    eip: at,
                 });
                 g.blocked.remove(&me);
                 return false;
@@ -804,5 +836,45 @@ mod tests {
         o.stop();
         assert!(!other.join().unwrap());
         assert!(o.blocked(5).is_none());
+    }
+
+    #[test]
+    fn the_main_thread_entering_a_section_a_terminated_thread_holds_ends() {
+        let o = Objects::default();
+        o.section_init(0x400);
+        o.insert(
+            40,
+            Obj::Thread {
+                id: 11,
+                code: STILL_ACTIVE,
+                done: false,
+            },
+        );
+        assert!(o.section_enter(0x400, 11));
+        o.kill(11, 0);
+        assert!(!o.section_enter(0x400, MAIN_THREAD));
+        let dead = o.take_dead().expect("the dead wait's stop");
+        assert_eq!(
+            dead.why,
+            "thread 0xb was terminated (TerminateThread) holding critical section 0x00000400; \
+             the main thread waits for it"
+        );
+        // one that ended holding it
+        o.section_init(0x404);
+        o.insert(
+            44,
+            Obj::Thread {
+                id: 12,
+                code: STILL_ACTIVE,
+                done: false,
+            },
+        );
+        assert!(o.section_enter(0x404, 12));
+        o.thread_done(44, 0);
+        assert!(!o.section_enter(0x404, MAIN_THREAD));
+        assert!(
+            o.take_dead()
+                .is_some_and(|d| d.why.starts_with("thread 0xc ended holding"))
+        );
     }
 }

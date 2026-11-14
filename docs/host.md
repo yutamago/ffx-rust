@@ -1440,7 +1440,11 @@ A hang always names its cause (2026-11-14, m5-wp5i):
   `EnterCriticalSection` of a section such a thread holds, returns at
   once, and the import ends the run with `Stop::Failed`: the failure's
   text and address first, then `on thread 0x…; the main thread waits for
-  event 0x…, which that thread signals`.
+  event 0x…, which that thread signals`. The same for a critical section
+  whose owner ended or was terminated (`TerminateThread` takes effect at
+  the thread's next call, so a terminated thread never leaves a section
+  it holds): `thread 0x… was terminated (TerminateThread) holding
+  critical section 0x…; the main thread waits for it`.
 - **The watchdog catches the rest** (polls, spins, waits on objects
   nobody signalled yet): when the main thread enters no frame boundary
   for 30 s after a game thread failed, or (no failure) for
