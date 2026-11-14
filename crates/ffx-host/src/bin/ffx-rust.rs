@@ -8,6 +8,9 @@
 //!          [--audio-wav FILE]
 //! ```
 //!
+//! `FFX_HOST_GFX=null` picks the null device as `--gfx-null` does (harness
+//! runs pass no arguments).
+//!
 //! Under the test harness (`FFX_HARNESS=<port>`, docs/harness.md "Two
 //! processes") it serves the harness protocol, takes its Documents folder
 //! from `FFX_HARNESS_HOME` and runs until the test quits it.
@@ -43,6 +46,11 @@ fn main() -> ExitCode {
     let mut count = false;
     let mut stops = Vec::new();
     let mut opts = ffx_host::Options::default();
+    // `FFX_HOST_GFX=null`: the null device, as `--gfx-null` (for harness
+    // runs, which pass no arguments: a hang bisected to the real device)
+    if std::env::var("FFX_HOST_GFX").is_ok_and(|v| v == "null") {
+        opts.gfx.backend = ffx_host::gfx::Choice::Null;
+    }
     let mut profile: Option<PathBuf> = None;
     let mut routes: Option<PathBuf> = None;
     let mut ports: Option<PathBuf> = None;

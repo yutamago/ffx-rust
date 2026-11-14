@@ -490,6 +490,22 @@ pub fn boundary(e: &mut Exec, frame: u32) {
     if !enabled() {
         return;
     }
+    boundary_held(e, frame);
+}
+
+/// The main thread waits in lockstep's hold for the test to allow the
+/// next update: not hung (the executor's hang check). Only the waits
+/// between the jobs count: a job (the script's `call`, `devsave`, ...)
+/// that never returns is a hang like any other.
+static HOLDING: AtomicBool = AtomicBool::new(false);
+
+/// Whether the main thread is at a frame boundary now, held by the test.
+#[must_use]
+pub fn holding() -> bool {
+    HOLDING.load(Ordering::Acquire)
+}
+
+fn boundary_held(e: &mut Exec, frame: u32) {
     if LOCKSTEP_REQUEST.swap(false, Ordering::AcqRel) {
         ALLOWED.store(frame, Ordering::Release);
         wake();
@@ -505,7 +521,9 @@ pub fn boundary(e: &mut Exec, frame: u32) {
         && !e.shared().overdue()
         && e.stopped().is_none()
     {
+        HOLDING.store(true, Ordering::Release);
         nap(Duration::from_millis(1));
+        HOLDING.store(false, Ordering::Release);
         run_main_jobs(e, frame);
     }
     PASSED.store(frame + 1, Ordering::Release);

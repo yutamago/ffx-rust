@@ -131,6 +131,122 @@ fn a_thread_pool_work_item_runs_its_callback_without_a_trampoline() {
     assert_eq!(s.ports.get(&MS_CHECK_RANGE), Some(&1), "{t:?}");
 }
 
+/// The events [`a_threads_failure_ends_the_main_threads_wait_on_it`] uses:
+/// the thread signals the first, the main thread the second.
+const EVENT: u32 = 0x7e00;
+const GO: u32 = 0x7e04;
+
+/// A game thread's routine: signals [`EVENT`] once, waits for [`GO`], then
+/// calls an address with no Rust side, which stops the thread.
+fn signals_then_fails(e: &mut Exec, _: u32, _: &Args) -> Ret {
+    let id = e.id;
+    e.shared().sync.set_event(EVENT, true, id);
+    e.shared().sync.wait(id, &[GO], false, 10_000);
+    let _ = e.call_stdcall(ENTRY, &[]);
+    Ret::eax(0)
+}
+
+#[test]
+fn a_threads_failure_ends_the_main_threads_wait_on_it() {
+    let Some(exe) = exe() else { return };
+    let mut exec = ffx_host::boot(&exe).unwrap();
+    exec.set_budget(Duration::from_secs(60));
+    for h in [EVENT, GO] {
+        exec.shared().sync.insert(
+            h,
+            ffx_host::sync::Obj::Event {
+                manual: false,
+                set: false,
+            },
+        );
+    }
+    let at = exec.alloc_code(&[0xcc]).unwrap();
+    exec.shared().add_trap(
+        at,
+        Trap {
+            run: signals_then_fails,
+            tag: 0,
+            conv: Conv::Stdcall,
+            words: 1,
+        },
+    );
+    let (_, id) = exec.spawn_thread(at, 0, false, "CreateThread");
+    let main = ffx_host::exec::MAIN_THREAD;
+    let sync = &exec.shared().sync;
+    // the first signal arrives; the second never will: the thread fails
+    assert_eq!(sync.wait(main, &[EVENT], false, 10_000), 0);
+    sync.set_event(GO, true, main);
+    assert_eq!(
+        sync.wait(main, &[EVENT], false, ffx_host::sync::INFINITE),
+        ffx_host::sync::WAIT_FAILED
+    );
+    let dead = sync.take_dead().expect("the stop for the dead wait");
+    assert_eq!((dead.thread, dead.eip), (id, ENTRY));
+    assert!(
+        dead.why
+            .starts_with(&format!("unported address {ENTRY:#010x} (")),
+        "{}",
+        dead.why
+    );
+    assert!(
+        dead.why.contains(&format!(
+            "on thread {id:#x}; the main thread waits for event {EVENT:#x}, which that thread \
+             signals"
+        )),
+        "{}",
+        dead.why
+    );
+    exec.join_threads(Duration::from_secs(10));
+}
+
+/// A game thread's routine that stops at once at an unported address.
+fn fails(e: &mut Exec, _: u32, _: &Args) -> Ret {
+    let _ = e.call_stdcall(ENTRY, &[]);
+    Ret::eax(0)
+}
+
+/// The watchdog's hang rule (docs/host.md, "Hangs"): a main thread that
+/// enters no frame boundary for 30 s after a game thread failed (here it
+/// only polls) ends the run, with the failure as the outcome. Takes 30 s.
+#[test]
+fn a_main_thread_that_makes_no_progress_after_a_failure_ends_the_run() {
+    let Some(exe) = exe() else { return };
+    let mut exec = ffx_host::boot(&exe).unwrap();
+    exec.set_budget(Duration::from_secs(120));
+    let at = exec.alloc_code(&[0xcc]).unwrap();
+    exec.shared().add_trap(
+        at,
+        Trap {
+            run: fails,
+            tag: 0,
+            conv: Conv::Stdcall,
+            words: 1,
+        },
+    );
+    let (_, id) = exec.spawn_thread(at, 0, false, "CreateThread");
+    let start = std::time::Instant::now();
+    while exec.shared().stopped().is_none() && start.elapsed() < Duration::from_secs(60) {
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    let waited = start.elapsed();
+    let Some(Stop::Failed(why, addr)) = exec.shared().stopped() else {
+        panic!("no stop: {:?}", exec.shared().stopped());
+    };
+    assert!(waited >= Duration::from_secs(29), "{waited:?}");
+    assert_eq!(addr, ENTRY, "{why}");
+    assert!(
+        why.starts_with(&format!("unported address {ENTRY:#010x} (")),
+        "{why}"
+    );
+    assert!(
+        why.contains(&format!(
+            "on thread {id:#x}; the main thread entered no frame boundary for 30 s"
+        )),
+        "{why}"
+    );
+    exec.join_threads(Duration::from_secs(10));
+}
+
 /// One TSV row.
 fn row(out: &mut String, kind: &str, what: &str, name: &str, detail: &str) {
     let _ = writeln!(out, "{kind}\t{what}\t{name}\t{detail}");

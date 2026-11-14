@@ -113,11 +113,15 @@ fn create_event(e: &mut Exec, args: &Args) -> Ret {
 }
 
 fn set_event(e: &mut Exec, args: &Args) -> Ret {
-    Ret::eax(u32::from(e.shared().sync.set_event(a(args, 0), true)))
+    Ret::eax(u32::from(e.shared().sync.set_event(a(args, 0), true, e.id)))
 }
 
 fn reset_event(e: &mut Exec, args: &Args) -> Ret {
-    Ret::eax(u32::from(e.shared().sync.set_event(a(args, 0), false)))
+    Ret::eax(u32::from(e.shared().sync.set_event(
+        a(args, 0),
+        false,
+        e.id,
+    )))
 }
 
 /// `CreateSemaphoreA/W(attr, initial, maximum, name)`.
@@ -138,7 +142,7 @@ fn release_semaphore(e: &mut Exec, args: &Args) -> Ret {
     let prev = e
         .shared()
         .sync
-        .release_semaphore(a(args, 0), a(args, 1).cast_signed());
+        .release_semaphore(a(args, 0), a(args, 1).cast_signed(), e.id);
     match prev {
         Some(prev) => {
             if a(args, 2) != 0 {
@@ -177,7 +181,19 @@ fn release_mutex(e: &mut Exec, args: &Args) -> Ret {
 fn wait_single(e: &mut Exec, args: &Args) -> Ret {
     let id = e.id;
     let r = e.shared().sync.wait(id, &[a(args, 0)], false, a(args, 1));
+    end_if_dead(e, r);
     Ret::eax(r)
+}
+
+/// The main thread's wait that can never end (the thread that would
+/// signal it stopped on a failure: [`crate::sync::Objects::take_dead`])
+/// ends the run, naming both, instead of hanging until killed.
+fn end_if_dead(e: &mut Exec, r: u32) {
+    if r == WAIT_FAILED
+        && let Some(f) = e.shared().sync.take_dead()
+    {
+        e.end(Stop::Failed(f.why, f.eip));
+    }
 }
 
 /// `WaitForMultipleObjects(n, handles, all, ms)`.
@@ -193,6 +209,7 @@ fn wait_multiple(e: &mut Exec, args: &Args) -> Ret {
         .shared()
         .sync
         .wait(id, &handles, a(args, 2) != 0, a(args, 3));
+    end_if_dead(e, r);
     Ret::eax(r)
 }
 
@@ -256,7 +273,10 @@ fn section_init(e: &mut Exec, args: &Args) -> Ret {
 fn section_enter(e: &mut Exec, args: &Args) -> Ret {
     let id = e.id;
     if !e.shared().sync.section_enter(a(args, 0), id) {
-        let why = e.shared().stopped().unwrap_or(Stop::Returned);
+        let why = match e.shared().sync.take_dead() {
+            Some(f) => Stop::Failed(f.why, f.eip),
+            None => e.shared().stopped().unwrap_or(Stop::Returned),
+        };
         e.end(why);
     }
     Ret::VOID
