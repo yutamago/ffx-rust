@@ -2102,13 +2102,21 @@ fn segment_elements(rng: &mut Rng) -> (Vec<u8>, Vec<(u32, bool)>) {
         }
         at.push((data.len() as u32, true));
         let e = match rng.below(10) {
-            0 => {
+            0 | 1 => {
                 at.last_mut().unwrap().1 = false;
-                element(&[0xec], &body, sl)
-            }
-            1 => {
-                at.last_mut().unwrap().1 = false;
-                element(&[0x1c, 0x53, 0xbb, 0x6b], &body, sl)
+                let id: &[u8] = if rng.chance(2) {
+                    &[0xec]
+                } else {
+                    &[0x1c, 0x53, 0xbb, 0x6b]
+                };
+                if rng.chance(6) {
+                    // of unknown size
+                    let mut e = id.to_vec();
+                    e.push(0xff);
+                    e
+                } else {
+                    element(id, &body, sl)
+                }
             }
             2 => {
                 let mut e = CLUSTER.to_vec();
@@ -2472,14 +2480,16 @@ fn wp5f_mkv_segment_do_load_cluster_matches_the_original() {
             let m_size = match rng.below(6) {
                 0 => u64::MAX,
                 1 => u64::from(size.saturating_sub(start) / 2),
+                2 => u64::from(at[rng.below(at.len() as u32) as usize].0),
                 _ => u64::from(size - start),
             };
             let seg = segment_obj(t, reader, start, m_size);
             // where the load goes on: an element, the end, unknown
+            let mi = rng.below(at.len() as u32) as usize;
             let m_pos = match rng.below(10) {
                 0 => u64::from(size),
                 1 => u64::MAX - 0x20,
-                _ => u64::from(start + at[rng.below(at.len() as u32) as usize].0),
+                _ => u64::from(start + at[mi].0),
             };
             t.w32(seg + 0x60, m_pos as u32);
             t.w32(seg + 0x64, (m_pos >> 32) as u32);
@@ -2494,8 +2504,14 @@ fn wp5f_mkv_segment_do_load_cluster_matches_the_original() {
                 words.push(cluster_obj(t, seg, start + 0x40 * i, i));
             }
             let mut pre = 0;
-            for &(o, is_cluster) in &at {
-                if is_cluster && rng.chance(2) {
+            for (i, &(o, is_cluster)) in at.iter().enumerate() {
+                // (mostly from the one the load starts at)
+                let take = if i < mi {
+                    rng.chance(4)
+                } else {
+                    !rng.chance(4)
+                };
+                if is_cluster && take {
                     let c = cluster_obj(t, seg, start + o, u32::MAX);
                     let sz = rng.pick(&[u64::MAX, 0, 3, 0x40]);
                     t.w32(c + 0x20, sz as u32);
