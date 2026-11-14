@@ -554,4 +554,8 @@ ported! {
         let mut f = StackFrame::<1>::new();
         pr::button_quad(&mut mem(), object, w.cast_signed(), h.cast_signed(), u, v, f.at());
     }
+    /// The input shutdown's device-map reset.
+    Input_resetDeviceMap_00630730 @ 0x0063_0730 => extern "C" fn input_reset_devices() {
+        pr::input_reset_devices(&mut mem());
+    }
 }

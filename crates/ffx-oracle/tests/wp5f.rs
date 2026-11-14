@@ -3280,3 +3280,74 @@ fn wp5f_button_quad_matches_the_original() {
         }
     });
 }
+
+#[test]
+fn wp5f_input_reset_devices_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x0063_0730);
+        for k in 0..100 {
+            t.reset();
+            imp(
+                t,
+                pr::WAIT_FOR_SINGLE_OBJECT,
+                false,
+                2,
+                2,
+                &Ret::Fixed(0),
+                &[],
+            );
+            imp(t, pr::RELEASE_MUTEX, false, 1, 1, &Ret::Fixed(1), &[]);
+            // the successor follows each node's +8 link (thiscall, ret 4)
+            let succ = t.code(&[
+                0x8b, 0x44, 0x24, 0x04, // mov eax, [esp + 4]
+                0x8b, 0x40, 0x08, // mov eax, [eax + 8]
+                0xc2, 0x04, 0x00, // ret 4
+            ]);
+            t.jump(pr::TREE_SUCCESSOR, succ);
+            t.stub(pr::USER_FREE, false, 1, 0, 0x21);
+            t.stub(pr::TREE_ORPHAN_ALL, true, 0, 0, 0x22);
+            t.stub(pr::FREE_LIST_RESET, true, 0, 0, 0x23);
+            let head = t.rebase(pr::INPUT_MAP);
+            let shared = if rng.chance(8) {
+                0
+            } else {
+                let s = t.zeros(0xb0);
+                t.w32(s + 0xa8, 0x0bad_0001);
+                s
+            };
+            t.w32(t.rebase(pr::INPUT_SHARED), shared);
+            // a chain down to the leftmost node, then successors to the end
+            let n = rng.below(5);
+            let nodes: Vec<u32> = (0..n).map(|_| t.zeros(0x10)).collect();
+            for i in 0..n as usize {
+                let down = if i + 1 < n as usize && i < 1 {
+                    nodes[i + 1]
+                } else {
+                    head
+                };
+                t.w32(nodes[i], down);
+                let next = if i + 1 < n as usize {
+                    nodes[i + 1]
+                } else {
+                    head
+                };
+                t.w32(nodes[i] + 8, next);
+            }
+            let first = match nodes.first() {
+                Some(&f) => f,
+                None => head,
+            };
+            t.w32(head + 0xc, first);
+            t.check(
+                &format!("input reset devices {k} ({n} nodes)"),
+                pr::INPUT_RESET_DEVICES,
+                Conv::Cdecl,
+                &[],
+                |m| {
+                    pr::input_reset_devices(m);
+                    Out::None
+                },
+            );
+        }
+    });
+}

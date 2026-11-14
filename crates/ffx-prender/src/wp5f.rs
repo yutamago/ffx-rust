@@ -850,4 +850,66 @@ pub mod bridge {
             h.write(at(vb, 0x14), 0u8);
         }
     }
+
+    /// The input devices' shared state (`0x00ccb15c`, its mutex `+0xa8`),
+    /// the device map's sentinel (`0x00c31e9c`; its leftmost link `+0xc`)
+    /// and node free list (`0x00c31eb4`); `WaitForSingleObject` and
+    /// `ReleaseMutex` (stdcall imports), the tree's successor
+    /// (thiscall `(tree; node)`, `ret 4`) and `orphanAllContents`, the
+    /// free list's `reset` (thiscall), `user_free` (cdecl).
+    pub const INPUT_RESET_DEVICES: u32 = 0x0063_0730;
+    pub const INPUT_SHARED: u32 = 0x00cc_b15c;
+    pub const INPUT_MAP: u32 = 0x00c3_1e9c;
+    pub const INPUT_MAP_NODES: u32 = 0x00c3_1eb4;
+    pub const WAIT_FOR_SINGLE_OBJECT: u32 = 0x00b0_c0f8;
+    pub const RELEASE_MUTEX: u32 = 0x00b0_c1c0;
+    pub const TREE_SUCCESSOR: u32 = 0x0057_5160;
+    pub const TREE_ORPHAN_ALL: u32 = 0x0057_4970;
+    pub const FREE_LIST_RESET: u32 = 0x0049_cc10;
+    pub const USER_FREE: u32 = 0x0068_7010;
+
+    /// The input shutdown's device-map reset (`0x00630730`, no arguments):
+    /// with the shared state there, under its mutex: from the leftmost
+    /// node (down the `+0` links from the sentinel's `+0xc`) every node
+    /// up to the sentinel is freed (`user_free`), each successor taken
+    /// before; then the tree's contents orphaned and its node free list
+    /// reset. (The original's exception frame has nothing to unwind.)
+    pub fn input_reset_devices(h: &mut impl Host) {
+        let shared: u32 = h.read(h.rebase(INPUT_SHARED));
+        if shared == 0 {
+            return;
+        }
+        let mutex: u32 = h.read(at(shared, 0xa8));
+        let f: u32 = h.read(h.rebase(WAIT_FOR_SINGLE_OBJECT));
+        h.call(f, Conv::Stdcall, &[mutex, u32::MAX]);
+        let head = h.rebase(INPUT_MAP);
+        let mut node: u32 = h.read(at(head, 0xc));
+        if node != head && node != 0 {
+            loop {
+                let next: u32 = h.read(node);
+                if next == head {
+                    break;
+                }
+                node = next;
+            }
+        }
+        if node != head {
+            let mut next = h.call_sym(TREE_SUCCESSOR, Conv::Thiscall(head), &[node]);
+            loop {
+                h.call_sym(USER_FREE, Conv::Cdecl, &[node]);
+                node = next;
+                if next != head {
+                    next = h.call_sym(TREE_SUCCESSOR, Conv::Thiscall(head), &[next]);
+                }
+                if node == head {
+                    break;
+                }
+            }
+        }
+        h.call_sym(TREE_ORPHAN_ALL, Conv::Thiscall(head), &[]);
+        let nodes = h.rebase(INPUT_MAP_NODES);
+        h.call_sym(FREE_LIST_RESET, Conv::Thiscall(nodes), &[]);
+        let f: u32 = h.read(h.rebase(RELEASE_MUTEX));
+        h.call(f, Conv::Stdcall, &[mutex]);
+    }
 }
