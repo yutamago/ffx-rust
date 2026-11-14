@@ -1932,6 +1932,7 @@ fn group_bytes(rng: &mut Rng) -> Vec<u8> {
                 element(&[0x75, 0xa2], &v, sl)
             }
             6 => element(&[0xec], &[1, 2, 3], sl),
+            7 if rng.chance(2) => vec![0xec, 0xff], // the unknown size
             _ => vec![0x80, 0x81, 0],
         };
         g.extend(e);
@@ -2047,6 +2048,29 @@ fn wp5f_mkv_block_groups_match_the_original() {
                         scratch,
                     ))
                 },
+            );
+        }
+    });
+}
+
+#[test]
+fn wp5f_mkv_block_group_ctor_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x0042_d200);
+        for k in 0..20 {
+            t.reset();
+            let junk: Vec<u32> = (0..0x16).map(|_| rng.next()).collect();
+            let this = t.words(&junk);
+            let (cl, idx) = (rng.next(), rng.next());
+            let w: [u32; 12] = std::array::from_fn(|_| rng.next());
+            let mut args = vec![cl, idx];
+            args.extend(w);
+            t.check(
+                &format!("BlockGroup ctor {k}"),
+                mkv::BLOCK_GROUP_CTOR,
+                Conv::Thiscall(this),
+                &args,
+                |m| Out::U32(mkv::block_group_ctor(m, this, cl, idx, &w)),
             );
         }
     });
