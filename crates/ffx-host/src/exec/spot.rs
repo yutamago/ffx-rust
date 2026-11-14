@@ -10,7 +10,23 @@
 //! no lock); read by the harness thread at any time. A read can see an
 //! entry being replaced: a sampling aid, as the hook's `stacks` is.
 
+use std::cell::RefCell;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+
+thread_local! {
+    /// This OS thread's host entries (kind and what), innermost last: what
+    /// [`crate::log::bad_access`] names (the port that read outside the
+    /// arena).
+    static ENTRIES: RefCell<Vec<(Kind, u32)>> = const { RefCell::new(Vec::new()) };
+}
+
+/// This thread's innermost host entries, innermost first (at most `n`).
+#[must_use]
+pub fn innermost(n: usize) -> Vec<(Kind, u32)> {
+    ENTRIES
+        .try_with(|e| e.borrow().iter().rev().take(n).copied().collect())
+        .unwrap_or_default()
+}
 
 /// Host entries kept per thread (deeper ones are counted, not kept).
 pub const DEPTH: usize = 16;
@@ -84,12 +100,14 @@ impl Spot {
         self.last_esp.store(esp, Ordering::Relaxed);
         self.depth
             .store(u32::try_from(d + 1).unwrap_or(u32::MAX), Ordering::Release);
+        let _ = ENTRIES.try_with(|e| e.borrow_mut().push((kind, what)));
     }
 
     /// The owning thread leaves its innermost host entry.
     pub fn leave(&self) {
         let d = self.depth.load(Ordering::Relaxed);
         self.depth.store(d.saturating_sub(1), Ordering::Release);
+        let _ = ENTRIES.try_with(|e| e.borrow_mut().pop());
     }
 
     /// The entries now, outermost first, and how many more were too deep
@@ -171,5 +189,19 @@ mod tests {
             s.leave();
         }
         assert_eq!(s.frames(), (f, 0));
+    }
+
+    #[test]
+    fn the_thread_knows_its_innermost_entries() {
+        let s = Spot::new(2, (0, 0x1000));
+        let before = innermost(8).len();
+        s.enter(Kind::Port, 0x0040_1000, 0x100);
+        s.enter(Kind::Import, 7, 0xf0);
+        let got = innermost(2);
+        assert_eq!(got, vec![(Kind::Import, 7), (Kind::Port, 0x0040_1000)]);
+        s.leave();
+        assert_eq!(innermost(1), vec![(Kind::Port, 0x0040_1000)]);
+        s.leave();
+        assert_eq!(innermost(8).len(), before);
     }
 }
