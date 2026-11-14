@@ -3463,3 +3463,23 @@ fn wp5f_string_tree_insert_matches_the_original() {
         }
     });
 }
+
+#[test]
+fn wp5f_crt_atexit_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x0094_9207);
+        for k in 0..50 {
+            t.reset();
+            let func = rng.next();
+            let r = rng.pick(&[0, func, 1]);
+            t.stub(pr::ONEXIT, false, 1, 0, r);
+            t.check(
+                &format!("atexit {k} ({r:#x})"),
+                pr::ATEXIT,
+                Conv::Cdecl,
+                &[func],
+                |m| Out::U32(pr::crt_atexit(m, func)),
+            );
+        }
+    });
+}

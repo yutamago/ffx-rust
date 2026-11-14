@@ -22788,7 +22788,7 @@
 0x00948c10 function Thread_create_00948c10 # cdecl(arg): CreateThread(0, 0, Thread_entry_00948c30, arg, 0, 0) -> the handle; caller PageManager_startThread_00947630; name ours; ported M5 render-pcui b3 (ffx_pcui::m5u_h)
 0x00948c30 function Thread_entry_00948c30 # stdcall(f) ret 4: the thread start routine Thread_create_00948c10 passes: f() -> its eax; name ours; ported M5 render-pcui b3 (ffx_pcui::m5u_h)
 0x00949162 function onexit                    # fh v3:cg3 0x949162 __onexit
-0x00949207 function atexit                    # fh v3:cg225 0x949207 _atexit
+0x00949207 function atexit                    # fh v3:cg225 0x949207 _atexit; cdecl(func) -> _onexit 0x00949162(func) ? 0 : -1 (ecx left = func); ported M5 wp5f (ffx_prender::wp5f)
 0x0094923a function security_check_cookie     # fh v3:cg658 0x949240 __security_check_cookie
 0x00949256 function crt_memcpy_thunk          # jmp [0x00b0c364] (MSVCR110 memcpy); hidden from the dump; name ours
 0x0094926c function FID_conflict_vector_deleting_destructor # fh v3:cg2 0x949272 FID_conflict:`vector_deleting_destructor'

@@ -570,4 +570,8 @@ ported! {
     StringTree_insert_006dc140 @ 0x006d_c140 => extern "thiscall" fn string_tree_insert(tree: u32, node: u32) -> u32 {
         pr::string_tree_insert(&mut mem(), tree, node)
     }
+    /// The C runtime's `atexit(func)` -> 0 or -1.
+    atexit @ 0x0094_9207 => extern "C" fn crt_atexit(func: u32) -> u32 {
+        pr::crt_atexit(&mut mem(), func)
+    }
 }

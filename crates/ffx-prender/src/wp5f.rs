@@ -1055,4 +1055,14 @@ pub mod bridge {
         h.write(at(parent, dir * 4), node);
         0
     }
+
+    /// The C runtime's `_onexit` (cdecl).
+    pub const ONEXIT: u32 = 0x0094_9162;
+
+    /// `atexit(func)` (`0x00949207`, cdecl) -> 0 when `_onexit` took it,
+    /// else -1.
+    pub fn crt_atexit(h: &mut impl Host, func: u32) -> u32 {
+        let r = h.call_sym(ONEXIT, Conv::Cdecl, &[func]);
+        u32::from(r != 0).wrapping_sub(1)
+    }
 }
