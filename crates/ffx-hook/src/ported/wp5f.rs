@@ -508,4 +508,16 @@ ported! {
     std_sort_occluders_pushHeap_009f15d0 @ 0x009f_15d0 => extern "C" fn sort_push_heap(first: u32, hole: u32, top: u32, value: u32) {
         sort::push_heap(&mut mem(), first, hole.cast_signed(), top.cast_signed(), value, [0, 0]);
     }
+    /// Bullet's `btAlignedFreeInternal(ptr)` -> the free hook's result.
+    btAlignedFreeInternal_009d4d50 @ 0x009d_4d50 => extern "C" fn bt_aligned_free(ptr: u32) -> u32 {
+        pr::bt_aligned_free(&mut mem(), ptr)
+    }
+    /// `btSimulationIslandManager::~btSimulationIslandManager()`.
+    btSimulationIslandManager_dtor_00a8da90 @ 0x00a8_da90 => extern "thiscall" fn bt_island_manager_dtor(this: u32) {
+        pr::bt_island_manager_dtor(&mut mem(), this);
+    }
+    /// `btUnionFind::~btUnionFind()`.
+    btUnionFind_dtor_00a8e680 @ 0x00a8_e680 => extern "thiscall" fn bt_union_find_dtor(this: u32) {
+        pr::bt_union_find_dtor(&mut mem(), this);
+    }
 }

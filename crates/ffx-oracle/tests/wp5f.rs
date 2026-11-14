@@ -3001,3 +3001,74 @@ fn wp5f_occluder_sort_matches_the_original() {
         }
     });
 }
+
+/// A `btAlignedObjectArray` at `arr`: size, capacity, data (or none),
+/// owns-memory byte.
+fn bt_array(t: &mut Twins, rng: &mut Rng, arr: u32) {
+    let n = rng.below(4);
+    let data = if rng.chance(3) {
+        0
+    } else {
+        t.words(&[1, 2, 3, 4])
+    };
+    t.w32(arr, n);
+    t.w32(arr + 4, n + rng.below(3));
+    t.w32(arr + 8, data);
+    let owns = rng.pick(&[0u32, 1, 1, 0x0101_0100]);
+    t.w32(arr + 0xc, owns);
+}
+
+#[test]
+fn wp5f_bullet_teardown_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x00a8_da90);
+        for k in 0..100 {
+            // btAlignedFreeInternal through its free hook
+            t.reset();
+            let f = t.stub_code(0xf4ee, false, 1, 0, &Ret::Fixed(0x77), &[]);
+            let slot = t.rebase(pr::BT_FREE_FUNC);
+            t.patch(slot, &f.to_le_bytes());
+            let r = rng.next() | 1;
+            let ptr = rng.pick(&[0, 0x1234, r]);
+            t.check(
+                &format!("btAlignedFreeInternal {k} ({ptr:#x})"),
+                pr::BT_ALIGNED_FREE,
+                Conv::Cdecl,
+                &[ptr],
+                |m| Out::U32(pr::bt_aligned_free(m, ptr)),
+            );
+            // btUnionFind's destructor
+            t.reset();
+            t.stub(pr::BT_ALIGNED_FREE, false, 1, 0, 0x33);
+            let uf = t.zeros(0x18);
+            bt_array(t, &mut rng, uf + 4);
+            t.check(
+                &format!("~btUnionFind {k}"),
+                pr::BT_UNION_FIND_DTOR,
+                Conv::Thiscall(uf),
+                &[],
+                |m| {
+                    pr::bt_union_find_dtor(m, uf);
+                    Out::None
+                },
+            );
+            // btSimulationIslandManager's destructor
+            t.reset();
+            t.stub(pr::BT_ALIGNED_FREE, false, 1, 0, 0x33);
+            t.stub(pr::BT_UNION_FIND_DTOR, true, 0, 0, 0x44);
+            let im = t.zeros(0x44);
+            bt_array(t, &mut rng, im + 0x1c);
+            bt_array(t, &mut rng, im + 0x30);
+            t.check(
+                &format!("~btSimulationIslandManager {k}"),
+                pr::BT_ISLAND_MANAGER_DTOR,
+                Conv::Thiscall(im),
+                &[],
+                |m| {
+                    pr::bt_island_manager_dtor(m, im);
+                    Out::None
+                },
+            );
+        }
+    });
+}

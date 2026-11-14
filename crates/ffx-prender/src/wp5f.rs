@@ -569,4 +569,70 @@ pub mod bridge {
             h.call_sym(ATL_THROW, Conv::Cdecl, &[0x8007_000e]);
         }
     }
+
+    /// Bullet's `btAlignedFreeInternal(ptr)` (cdecl): the aligned-free
+    /// count (`0x0193fc88`) and the free hook (`0x00c64be4`, cdecl `(ptr)`),
+    /// the `btSimulationIslandManager` vtable and `btUnionFind`'s
+    /// destructor (thiscall).
+    pub const BT_ALIGNED_FREE: u32 = 0x009d_4d50;
+    pub const BT_FREE_COUNT: u32 = 0x0193_fc88;
+    pub const BT_FREE_FUNC: u32 = 0x00c6_4be4;
+    pub const BT_ISLAND_MANAGER_VTABLE: u32 = 0x00b7_c78c;
+    pub const BT_ISLAND_MANAGER_DTOR: u32 = 0x00a8_da90;
+    pub const BT_UNION_FIND_DTOR: u32 = 0x00a8_e680;
+
+    /// `btAlignedFreeInternal(ptr)` (`0x009d4d50`) -> the free hook's
+    /// result: a null `ptr` gives 0; else the count goes up and the hook
+    /// frees it (the original tail-jumps there).
+    pub fn bt_aligned_free(h: &mut impl Host, ptr: u32) -> u32 {
+        if ptr == 0 {
+            return 0;
+        }
+        let at_count = h.rebase(BT_FREE_COUNT);
+        let n = h.read::<u32>(at_count).wrapping_add(1);
+        h.write(at_count, n);
+        let f: u32 = h.read(h.rebase(BT_FREE_FUNC));
+        h.call(f, Conv::Cdecl, &[ptr])
+    }
+
+    /// A `btAlignedObjectArray` at `arr` (size `+0`, capacity `+4`, data
+    /// `+8`, owns-memory byte `+0xc`) cleared as its `clear()`: owned data
+    /// freed ([`BT_ALIGNED_FREE`]), the data cleared, owning again, size
+    /// and capacity 0.
+    fn bt_array_clear(h: &mut impl Host, arr: u32) {
+        let data: u32 = h.read(arr.wrapping_add(8));
+        if data != 0 {
+            if h.read::<u8>(arr.wrapping_add(0xc)) != 0 {
+                h.call_sym(BT_ALIGNED_FREE, Conv::Cdecl, &[data]);
+            }
+            h.write(arr.wrapping_add(8), 0u32);
+        }
+        h.write(arr.wrapping_add(0xc), 1u8);
+        h.write(arr.wrapping_add(8), 0u32);
+        h.write(arr, 0u32);
+        h.write(arr.wrapping_add(4), 0u32);
+    }
+
+    /// `btSimulationIslandManager::~btSimulationIslandManager(this)`
+    /// (`0x00a8da90`, thiscall): its vtable set, its two arrays (`+0x30`,
+    /// `+0x1c`) cleared, then its union-find (`+4`) destroyed
+    /// ([`BT_UNION_FIND_DTOR`]). (The original's exception frame has
+    /// nothing to unwind here.)
+    pub fn bt_island_manager_dtor(h: &mut impl Host, this: u32) {
+        let vt = h.rebase(BT_ISLAND_MANAGER_VTABLE);
+        h.write(this, vt);
+        bt_array_clear(h, this.wrapping_add(0x30));
+        bt_array_clear(h, this.wrapping_add(0x1c));
+        h.call_sym(
+            BT_UNION_FIND_DTOR,
+            Conv::Thiscall(this.wrapping_add(4)),
+            &[],
+        );
+    }
+
+    /// `btUnionFind::~btUnionFind(this)` (`0x00a8e680`, thiscall): its
+    /// element array (`+4`) cleared.
+    pub fn bt_union_find_dtor(h: &mut impl Host, this: u32) {
+        bt_array_clear(h, this.wrapping_add(4));
+    }
 }
