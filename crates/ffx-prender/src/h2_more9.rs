@@ -664,17 +664,26 @@ pub mod bridge {
     /// Transposes a matrix of 4 rows of `n` floats at `src` (`n` 4 or 3)
     /// into `n` rows of 4 at the frame words `tmp` (each through the FPU,
     /// in the original's order) and copies them to `dst`.
+    /// The matrix is read, and the frame words and `dst` written, as
+    /// blocks (m5-perf2: the render thread's second cost in a battle);
+    /// the source is a constant buffer's data, apart from the frame.
     fn transpose(h: &mut impl Host, src: u32, dst: u32, n: u32, tmp: u32) {
+        let n = n as usize;
+        let mut m = [0u8; 64];
+        let m = &mut m[..16 * n];
+        h.read_bytes(src, m);
+        let word =
+            |i: usize| u32::from_le_bytes([m[4 * i], m[4 * i + 1], m[4 * i + 2], m[4 * i + 3]]);
+        let mut t = [0u8; 64];
         for r in 0..n {
             for c in 0..4 {
-                let v: u32 = h.read(src + 4 * (c * n + r));
-                h.write(tmp + 4 * (r * 4 + c), x87::store(x87::load(v)));
+                let v = x87::store(x87::load(word(c * n + r)));
+                t[4 * (r * 4 + c)..][..4].copy_from_slice(&v.to_le_bytes());
             }
         }
-        for j in 0..4 * n {
-            let v: u32 = h.read(tmp + 4 * j);
-            h.write(dst + 4 * j, v);
-        }
+        let t = &t[..16 * n];
+        h.write_bytes(tmp, t);
+        h.write_bytes(dst, t);
     }
 
     /// `PRenderThread::copyConstantBuffer(this; buf, slot, entries, _,
