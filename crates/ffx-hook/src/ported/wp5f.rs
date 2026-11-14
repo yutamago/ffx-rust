@@ -562,4 +562,8 @@ ported! {
     ScriptHeap_realloc_0061d030 @ 0x0061_d030 => extern "thiscall" fn script_realloc(heap: u32, p: u32, old: u32, new: u32) -> u32 {
         pr::script_realloc(&mut mem(), heap, p, old, new)
     }
+    /// The physics worlds' fix-up after loading `(array)` -> 0.
+    PPhysics_fixWorldsAfterLoading_005eb3c0 @ 0x005e_b3c0 => extern "C" fn physics_fix_worlds(array: u32) -> u32 {
+        pr::physics_fix_worlds(&mut mem(), array)
+    }
 }

@@ -947,4 +947,48 @@ pub mod bridge {
         }
         cur
     }
+
+    /// The physics worlds' fix-up after loading (`0x005eb3c0`): its
+    /// static header (`0x00cc0598`, enabled byte `+0`; guard bit 0 of
+    /// `0x00cc05e4`, its constructor, the destructor `atexit` gets) and the
+    /// per-world steps (thiscall).
+    pub const PHYSICS_FIX_WORLDS: u32 = 0x005e_b3c0;
+    pub const PHYSICS_HEADER: u32 = 0x00cc_0598;
+    pub const PHYSICS_HEADER_GUARD: u32 = 0x00cc_05e4;
+    pub const PHYSICS_HEADER_CTOR: u32 = 0x005e_0330;
+    pub const PHYSICS_HEADER_DTOR: u32 = 0x00b0_5d10;
+    pub const ATEXIT: u32 = 0x0094_9207;
+    pub const PHYSICS_WORLD_FIX_A: u32 = 0x005f_56a0;
+    pub const PHYSICS_WORLD_FIX_B: u32 = 0x005f_35b0;
+
+    /// The physics worlds' fix-up after loading (`0x005eb3c0`, cdecl
+    /// `(array)`) -> 0: the static physics header built on first use (its
+    /// guard bit set, constructed, its destructor registered with
+    /// `atexit`); when it is enabled, each of the array's worlds (`+0x3c`
+    /// of them from `+0x30`, `+0x2c`'s `+0x1c` bytes apart) gets both
+    /// steps. (The original's exception frame has nothing to unwind.)
+    pub fn physics_fix_worlds(h: &mut impl Host, array: u32) -> u32 {
+        let guard_at = h.rebase(PHYSICS_HEADER_GUARD);
+        let guard: u32 = h.read(guard_at);
+        let header = h.rebase(PHYSICS_HEADER);
+        if guard & 1 == 0 {
+            h.write(guard_at, guard | 1);
+            h.call_sym(PHYSICS_HEADER_CTOR, Conv::Thiscall(header), &[]);
+            let dtor = h.rebase(PHYSICS_HEADER_DTOR);
+            h.call_sym(ATEXIT, Conv::Cdecl, &[dtor]);
+        }
+        if h.read::<u8>(header) != 0 {
+            let mut n: u32 = h.read(at(array, 0x3c));
+            let mut world: u32 = h.read(at(array, 0x30));
+            let desc: u32 = h.read(at(array, 0x2c));
+            let stride: u32 = h.read(at(desc, 0x1c));
+            while n != 0 {
+                h.call_sym(PHYSICS_WORLD_FIX_A, Conv::Thiscall(world), &[]);
+                h.call_sym(PHYSICS_WORLD_FIX_B, Conv::Thiscall(world), &[]);
+                world = world.wrapping_add(stride);
+                n -= 1;
+            }
+        }
+        0
+    }
 }

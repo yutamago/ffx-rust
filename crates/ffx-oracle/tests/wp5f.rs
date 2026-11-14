@@ -3380,3 +3380,34 @@ fn wp5f_script_realloc_matches_the_original() {
         }
     });
 }
+
+#[test]
+fn wp5f_physics_fix_worlds_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x005e_b3c0);
+        for k in 0..100 {
+            t.reset();
+            t.stub(pr::PHYSICS_HEADER_CTOR, true, 0, 0, 0x41);
+            t.stub(pr::ATEXIT, false, 1, 0, 0);
+            t.stub(pr::PHYSICS_WORLD_FIX_A, true, 0, 0, 0x42);
+            t.stub(pr::PHYSICS_WORLD_FIX_B, true, 0, 0, 0x43);
+            let guard = rng.pick(&[0u32, 1, 2, 3]);
+            t.w32(t.rebase(pr::PHYSICS_HEADER_GUARD), guard);
+            let enabled = rng.pick(&[0u32, 1, 0x100, 0xff]);
+            t.w32(t.rebase(pr::PHYSICS_HEADER), enabled);
+            let desc = t.zeros(0x20);
+            t.w32(desc + 0x1c, rng.pick(&[0x40, 0x10, 0]));
+            let array = t.zeros(0x40);
+            t.w32(array + 0x2c, desc);
+            t.w32(array + 0x30, 0x0200_0000);
+            t.w32(array + 0x3c, rng.below(4));
+            t.check(
+                &format!("physics fix worlds {k} (guard {guard}, enabled {enabled:#x})"),
+                pr::PHYSICS_FIX_WORLDS,
+                Conv::Cdecl,
+                &[array],
+                |m| Out::U32(pr::physics_fix_worlds(m, array)),
+            );
+        }
+    });
+}
