@@ -144,6 +144,18 @@ fn env_or(name: &str, default: u64) -> u64 {
         .unwrap_or(default)
 }
 
+/// The speed line (m5-perf1): updates and flips per host second.
+fn speed(exec: &Exec, wall: Duration) {
+    let updates = exec.shared().clock.frame();
+    let flips = exec.shared().clock.flips();
+    let s = wall.as_secs_f64();
+    eprintln!(
+        "speed: {updates} updates, {flips} flips in {s:.1} s: {:.2} updates/s, {:.2} flips/s",
+        f64::from(updates) / s,
+        f64::from(flips) / s
+    );
+}
+
 #[test]
 fn boots_until_the_first_unported_address() {
     let Some(exe) = exe() else { return };
@@ -167,15 +179,7 @@ fn boots_until_the_first_unported_address() {
     if let Some(s) = sampler {
         s.finish(exec.shared());
     }
-    // the speed (m5-perf1): updates and flips per host second
-    let updates = exec.shared().clock.frame();
-    let flips = exec.shared().clock.flips();
-    eprintln!(
-        "speed: {updates} updates, {flips} flips in {:.1} s: {:.2} updates/s, {:.2} flips/s",
-        wall.as_secs_f64(),
-        f64::from(updates) / wall.as_secs_f64(),
-        f64::from(flips) / wall.as_secs_f64()
-    );
+    speed(&exec, wall);
     let syms = syms();
     let report = ffx_host::report::text(&exec, &syms, &format!("{stop}"));
     eprintln!("{report}");

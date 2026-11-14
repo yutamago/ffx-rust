@@ -23,12 +23,15 @@ use std::time::Duration;
 use crate::exec::Shared;
 use crate::exec::spot::Kind;
 
+/// Host-entry samples: (kind, what) -> (self, inclusive).
+type Counts = HashMap<(u8, u32), (u64, u64)>;
+
 /// A running sampler ([`start`]).
 #[derive(Debug)]
 pub struct Sampler {
     prefix: String,
     done: Arc<AtomicBool>,
-    thread: Option<std::thread::JoinHandle<HashMap<(u8, u32), (u64, u64)>>>,
+    thread: Option<std::thread::JoinHandle<Counts>>,
 }
 
 /// Starts sampling when `FFX_HOST_SAMPLE` is set.
@@ -51,11 +54,8 @@ pub fn start(shared: &Arc<Shared>) -> Option<Sampler> {
 }
 
 /// The host-entry sampler's loop: (kind, what) -> (self, inclusive).
-fn entries(
-    shared: &std::sync::Weak<Shared>,
-    done: &AtomicBool,
-) -> HashMap<(u8, u32), (u64, u64)> {
-    let mut counts: HashMap<(u8, u32), (u64, u64)> = HashMap::new();
+fn entries(shared: &std::sync::Weak<Shared>, done: &AtomicBool) -> Counts {
+    let mut counts = Counts::new();
     while !done.load(Ordering::Relaxed) {
         std::thread::sleep(Duration::from_millis(1));
         let Some(s) = shared.upgrade() else { break };
@@ -107,10 +107,7 @@ impl Sampler {
                 1 => ("port", shared.port_name(what).unwrap_or("").to_string()),
                 2 => (
                     "import",
-                    shared
-                        .import_name(what as usize)
-                        .unwrap_or("")
-                        .to_string(),
+                    shared.import_name(what as usize).unwrap_or("").to_string(),
                 ),
                 3 => ("trap", String::new()),
                 _ => ("none", format!("thread {what:#x} outside host entries")),
@@ -186,7 +183,7 @@ mod pc {
         // SAFETY: installs a handler that only touches atomics.
         unsafe {
             let mut sa: libc::sigaction = std::mem::zeroed();
-            sa.sa_sigaction = on_prof as usize;
+            sa.sa_sigaction = on_prof as *const () as usize;
             sa.sa_flags = libc::SA_SIGINFO | libc::SA_RESTART;
             libc::sigemptyset(&raw mut sa.sa_mask);
             libc::sigaction(libc::SIGPROF, &raw const sa, std::ptr::null_mut());
@@ -199,6 +196,7 @@ mod pc {
     }
 
     /// `object\toffset\tsymbol\tcount` rows, most samples first.
+    #[allow(clippy::unnecessary_wraps)] // None off Linux
     pub(super) fn report() -> Option<String> {
         let mut rows: Vec<(u64, u64)> = (0..SLOTS)
             .filter_map(|i| {
@@ -206,7 +204,7 @@ mod pc {
                 (k != 0).then(|| (k, COUNTS[i].load(Ordering::Relaxed)))
             })
             .collect();
-        rows.sort_by(|a, b| b.1.cmp(&a.1));
+        rows.sort_by_key(|r| std::cmp::Reverse(r.1));
         let mut out = format!(
             "# object\toffset\tsymbol\tcount (lost {})\n",
             LOST.load(Ordering::Relaxed)

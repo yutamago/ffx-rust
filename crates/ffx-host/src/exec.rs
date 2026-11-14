@@ -3241,11 +3241,11 @@ impl ffx_bridge::route::Router for Exec {
     }
 
     fn read_bytes(&mut self, addr: u32, out: &mut [u8]) {
-        ffx_bridge::Mem::read_bytes(&self.mem(), addr, out);
+        self.shared.arena.read_bytes(addr, out);
     }
 
     fn write_bytes(&mut self, addr: u32, data: &[u8]) {
-        ffx_bridge::Mem::write_bytes(&mut self.mem(), addr, data);
+        self.shared.arena.write_bytes(addr, data);
     }
 
     fn scratch(&mut self, slot: ffx_bridge::route::Scratch) -> u32 {
