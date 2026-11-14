@@ -12,7 +12,8 @@
 //!   that holds it (`tools/host-profile.py` names them with `nm`). Where
 //!   the CPU goes, function by function, the executor's own code included.
 //!   `FFX_HOST_SAMPLE_MAIN=1` keeps only the main thread's samples (the
-//!   thread that started the sampler), the one the frame rate waits on.
+//!   thread that started the sampler), the one the frame rate waits on;
+//!   `FFX_HOST_SAMPLE_THREAD=<id>` one game thread's ([`thread_started`]).
 //!
 //! With the sampler on, every game thread notes its CPU time as it ends
 //! (`sample: thread ... used ... s of CPU`).
@@ -67,15 +68,38 @@ pub fn thread_cpu() -> Option<Duration> {
     pc::thread_cpu()
 }
 
+/// A game thread starts on this host thread: with
+/// `FFX_HOST_SAMPLE_THREAD=<id>` (hex, `0x1014`) the CPU sampler keeps only
+/// that thread's samples.
+pub fn thread_started(id: u32) {
+    let Ok(want) = std::env::var("FFX_HOST_SAMPLE_THREAD") else {
+        return;
+    };
+    if u32::from_str_radix(want.trim_start_matches("0x"), 16) == Ok(id) {
+        pc::only_this_thread();
+    }
+}
+
 /// The host-entry sampler's loop: (kind, what) -> (self, inclusive).
 fn entries(shared: &std::sync::Weak<Shared>, done: &AtomicBool) -> Counts {
     let mut counts = Counts::new();
+    // the threads the CPU sampler keeps (all, the main one, or one)
+    let only: Option<u32> = if std::env::var("FFX_HOST_SAMPLE_MAIN").is_ok_and(|v| v == "1") {
+        Some(crate::exec::MAIN_THREAD)
+    } else {
+        std::env::var("FFX_HOST_SAMPLE_THREAD")
+            .ok()
+            .and_then(|v| u32::from_str_radix(v.trim_start_matches("0x"), 16).ok())
+    };
     while !done.load(Ordering::Relaxed) {
         std::thread::sleep(Duration::from_millis(1));
         let Some(s) = shared.upgrade() else { break };
         let spots = s.spots.lock().map(|l| l.clone()).unwrap_or_default();
         drop(s);
         for spot in spots {
+            if only.is_some_and(|id| id != spot.id) {
+                continue;
+            }
             let (frames, _) = spot.frames();
             let Some(inner) = frames.last() else {
                 counts.entry((0, spot.id)).or_default().0 += 1;
@@ -231,11 +255,7 @@ mod pc {
 
     pub(super) fn start() {
         if std::env::var("FFX_HOST_SAMPLE_MAIN").is_ok_and(|v| v == "1") {
-            // SAFETY: a plain system call.
-            ONLY.store(
-                unsafe { libc::syscall(libc::SYS_gettid) },
-                Ordering::Relaxed,
-            );
+            only_this_thread();
         }
         // SAFETY: installs a handler that only touches atomics.
         unsafe {
@@ -250,6 +270,14 @@ mod pc {
 
     pub(super) fn stop() {
         timer(0);
+    }
+
+    pub(super) fn only_this_thread() {
+        // SAFETY: a plain system call.
+        ONLY.store(
+            unsafe { libc::syscall(libc::SYS_gettid) },
+            Ordering::Relaxed,
+        );
     }
 
     pub(super) fn thread_cpu() -> Option<std::time::Duration> {
@@ -337,6 +365,7 @@ mod pc {
 mod pc {
     pub(super) fn start() {}
     pub(super) fn stop() {}
+    pub(super) fn only_this_thread() {}
     pub(super) fn report() -> Option<String> {
         None
     }

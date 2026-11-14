@@ -3043,6 +3043,7 @@ fn start_thread(shared: &Arc<Shared>, handle: u32) {
 }
 
 fn thread_main(shared: &Arc<Shared>, handle: u32, id: u32, entry: u32, param: u32) {
+    crate::sample::thread_started(id);
     let mut ex = match Exec::on_thread(Arc::clone(shared), id, THREAD_STACK_SIZE) {
         Ok(e) => e,
         Err(e) => {
