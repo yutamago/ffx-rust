@@ -14579,6 +14579,7 @@
 0x0079ca80 function MsBuildGearList_0079ca80 # ours: (i): g_BtlItemMem2 +0x158 / +0x2e8 + 0x478 i: u16 0x5000 + slot for each g_Equipment slot in use, of kind (+5) 0 then 1, owner (+4) i, without flag 2 (+3); caller MsSetRamChr; ported (ffx_battle::minor, battle round 29)
 0x0079cb10 function MsSetRamMonData           # fh v3:exact 0x0079cb30; MsSetRamChr(0, i + 0x14) for each monster slot i < 8 with MsGetMon(i) +0x10 set; ported (ffx_battle::save_param, battle round 34)
 0x0079cb40 function MsMotBinFrame             # fh v3:exact 0x0079cb60
+0x0079cc80 function MsRegMotionReadDone_0079cc80 # cdecl() -> ChN_AddSystemMgrp(g_BtlRegMotion)'s eax, g_BtlRegMotionFlag = 1 first: the CD read completion MsRegMotionRead passes (CdReadSync calls it); not in the dump (gap after MsMotBinFrame, objdump 0x0079cc80..0x0079cc93); name ours; ported M5 wp5g (ffx_battle::read)
 0x0079cca0 function ChnSystemMgrpReset_0079cca0 # cdecl(), eax unused (caller's on one path): byte 0x0112c9cf = 0; [0x0113606c] and ChN_SystemMgrpLoaded: [0x0113606c] = 0, jmp 0x00837690; Native_70a4's body; not in the dump; name ours; ported M5 r4 mbs2 b3 (ffx_menu::m5m_m)
 0x0079ccd0 function MsRegMotionInit           # fh v3:bsim1.00 0x0079ccf0
 0x0079ccf0 function MsRegMotionRead              # str-match switch: only user of 1 string(s) held once by both builds, e.g. 'regmot'; Switch 0x710035ed80 MsRegMotionRead (symbols from Fahrenheit's server export); ported (ffx_battle::read, battle round 32): () -> (i8) g_BtlRegMotionFlag: ChN_SystemMgrpLoaded: flag 1; else unless Ch_RegMotionGetExistMem: flag 0, file 0 of dir 0x2e into Sg_MallocA(((n + 0x8f) & ~0x7f) - 0x10) (g_BtlRegMotion), Ch_RegMotionEntryCache, CD read with callback 0x0079cc80
@@ -21553,6 +21554,7 @@
 0x009084b0 function yiDisposeAnimDObj         # fh switch:bsim1.00 0x710052c6f0
 0x00908550 function yiDrawScrEffect           # Fahrenheit's name (v3:exact 0x00908550, kept as ours for the notes); () -> 0: bit 24 of g_YiRenderStatus: yiScreff_entry(&g_YiRender, [0x018ded28] unread), else graphicSetDistortionSkipped(1); ported (field r14, ffx_field::yi)
 0x00908580 function yiSetRenderParam             # (v): g_YiRenderStatus |= 0x100, 0x018ded2c = v; script native 0x0091c580
+0x009085a0 function yiEnableHamonEff_009085a0 # cdecl() -> 0: g_YiRenderStatus |= 0x1000000, [0x018ded28] = 0, [0x01934ea8] = 0, graphicSetDistortionEnable(1); the mirror of yiDisableHamonEff; Native_01e2 jumps to it; not in the dump (gap after yiSetRenderParam, objdump 0x009085a0..0x009085ca); name ours; ported M5 wp5g (ffx_field::yi)
 0x009085d0 function yiFieldMapRead            # fh v3:bsim1.00 0x009085d0
 0x00908600 function yiFieldMapReadNB          # Fahrenheit's name (v3:cg3 0x908600, kept as ours for the notes); (a, b) -> 0: yiObjReadNB(0x13, a, b), g_YiRenderStatus |= 0x2000; ported (field r14, ffx_field::yi)
 0x00908630 function yiFieldObjReadNB          # Fahrenheit's name (switch:bsim1.00 0x710052ac80, kept as ours for the notes); (a, b) -> yiObjReadNB(0x13, a, b)'s eax, then g_YiRenderStatus |= 0x2000; ported (field r14, ffx_field::yi)
@@ -30354,6 +30356,7 @@
 0x01931230 label    g_YiRenderSave               # yiPushRenderState's save area: status, colour scale, offset, word, three floats, shift, then 128 x 100 bytes of display object transforms (+0x88 float, rotation, translation, matrix)
 0x01934e78 label    g_YiFieldFlags               # bit 0 set by yiSetFieldPair, bit 1 when its first argument is non-zero; floats at +4, +0x18..+0x24, int at +0x28 (yiSetFieldVec3Int); ?meaning
 0x01934ea4 label    g_YiColor3                   # three bytes (yiSetColor3)
+0x01934ea8 label    g_YiHamonEnableWord          # u32 (?meaning); cleared by yiEnableHamonEff 0x009085a0, its only reference (refs.py)
 0x01934ed0 label    g_YiPendingMap               # map data loadPhyreFieldMap waits for (0 none); its name string at 0x01934ee8
 0x0193bb08 label    g_YiAnimUseVCount            # animations time by yiGetVCount when set, else yiGetFCount (yiAnimAttachDefault, yiKeyFrame_attachChr)
 0x0193bb14 label    g_YiClutSplit                # CLUTs in the first VRAM area: 32, or 16 for texture mode 4 (yiClutAlloc_makepacket)

@@ -114,6 +114,23 @@ pub mod bridge {
     pub const REG_MOTION_NAME: u32 = 0x00b5_4c9c;
     pub const REG_MOTION_READ_DONE: u32 = 0x0079_cc80;
 
+    /// chara's `ChN_AddSystemMgrp(data)`, which the read's completion
+    /// hands the block.
+    pub const CHN_ADD_SYSTEM_MGRP: u32 = 0x0083_7750;
+
+    /// `MsRegMotionReadDone()` (`0x0079cc80`, cdecl, no arguments; the CD
+    /// read's completion callback [`ms_reg_motion_read`] passes, which
+    /// `CdReadSync` calls): the flag (`crate::misc::bridge::REG_MOTION_FLAG`)
+    /// set to 1 and the block (`REG_MOTION`) handed to
+    /// [`CHN_ADD_SYSTEM_MGRP`]; its `eax`. Not in the dump (a gap after
+    /// `MsMotBinFrame`).
+    pub fn ms_reg_motion_read_done<M: Mem>(mem: &mut M, call: Call<'_, M>) -> u32 {
+        use crate::misc::bridge::{REG_MOTION, REG_MOTION_FLAG};
+        let block = REG_MOTION.get(mem);
+        REG_MOTION_FLAG.set(mem, 1);
+        game(mem, call, CHN_ADD_SYSTEM_MGRP, &[block])
+    }
+
     /// `MsRegMotionRead()` (`0x0079ccf0`, native 0x70a2): with the
     /// system motions loaded ([`CHN_SYSTEM_MGRP_LOADED`]) the flag
     /// (`crate::misc::bridge::REG_MOTION_FLAG`) set and 1; else unless
