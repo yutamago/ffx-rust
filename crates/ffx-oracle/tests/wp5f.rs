@@ -2860,7 +2860,7 @@ fn wp5f_occluder_sort_matches_the_original() {
             t.reset();
             let first = t.words(&w);
             let last = first + 8 * n;
-            let ideal = rng.pick(&[n, n, 0, 1, 2]);
+            let ideal = rng.pick(&[n, n, 0, 1, 2, 6, 8]);
             t.check(
                 &format!("sort {k} (n {n}, ideal {ideal})"),
                 sort::SORT,
