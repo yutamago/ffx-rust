@@ -132,34 +132,59 @@ mod pc {
     static KEYS: [AtomicU64; SLOTS] = [const { AtomicU64::new(0) }; SLOTS];
     static COUNTS: [AtomicU64; SLOTS] = [const { AtomicU64::new(0) }; SLOTS];
     static LOST: AtomicU64 = AtomicU64::new(0);
+    /// (address, the word at `rsp`) pairs: for a leaf function (libc's
+    /// `memcpy`, `memset`) the word is its caller's return address.
+    static PAIR_KEYS: [AtomicU64; SLOTS] = [const { AtomicU64::new(0) }; SLOTS];
+    static PAIR_RIP: [AtomicU64; SLOTS] = [const { AtomicU64::new(0) }; SLOTS];
+    static PAIR_RET: [AtomicU64; SLOTS] = [const { AtomicU64::new(0) }; SLOTS];
+    static PAIR_COUNTS: [AtomicU64; SLOTS] = [const { AtomicU64::new(0) }; SLOTS];
+
+    /// Counts `key` in `keys`/`counts`; the slot, or `None` when full.
+    fn count(keys: &[AtomicU64; SLOTS], counts: &[AtomicU64; SLOTS], key: u64) -> Option<usize> {
+        #[allow(clippy::cast_possible_truncation)] // a hash
+        let mut i = (key.wrapping_mul(0x9e37_79b9_7f4a_7c15) >> 46) as usize % SLOTS;
+        for _ in 0..64 {
+            let k = keys[i].load(Ordering::Relaxed);
+            if k == key
+                || (k == 0
+                    && keys[i]
+                        .compare_exchange(0, key, Ordering::Relaxed, Ordering::Relaxed)
+                        .map_or_else(|now| now == key, |_| true))
+            {
+                counts[i].fetch_add(1, Ordering::Relaxed);
+                return Some(i);
+            }
+            i = (i + 1) % SLOTS;
+        }
+        None
+    }
 
     extern "C" fn on_prof(_: i32, _: *mut libc::siginfo_t, ctx: *mut libc::c_void) {
-        // SAFETY: the kernel hands a SA_SIGINFO handler its ucontext.
-        let rip = unsafe {
+        // SAFETY: the kernel hands a SA_SIGINFO handler its ucontext; the
+        // interrupted thread's `rsp` points into its (mapped) stack.
+        #[allow(clippy::cast_sign_loss)] // a register's bits
+        let (rip, ret) = unsafe {
             let uc = ctx.cast::<libc::ucontext_t>();
-            #[allow(clippy::cast_sign_loss)] // a register's bits
-            let r = (*uc).uc_mcontext.gregs[libc::REG_RIP as usize] as u64;
-            r
+            let g = &(*uc).uc_mcontext.gregs;
+            let rsp = g[libc::REG_RSP as usize] as u64;
+            let ret = if rsp == 0 {
+                0
+            } else {
+                (rsp as *const u64).read_volatile()
+            };
+            (g[libc::REG_RIP as usize] as u64, ret)
         };
         if rip == 0 {
             return;
         }
-        #[allow(clippy::cast_possible_truncation)] // a hash
-        let mut i = (rip.wrapping_mul(0x9e37_79b9_7f4a_7c15) >> 46) as usize % SLOTS;
-        for _ in 0..64 {
-            let k = KEYS[i].load(Ordering::Relaxed);
-            if k == rip
-                || (k == 0
-                    && KEYS[i]
-                        .compare_exchange(0, rip, Ordering::Relaxed, Ordering::Relaxed)
-                        .map_or_else(|now| now == rip, |_| true))
-            {
-                COUNTS[i].fetch_add(1, Ordering::Relaxed);
-                return;
-            }
-            i = (i + 1) % SLOTS;
+        if count(&KEYS, &COUNTS, rip).is_none() {
+            LOST.fetch_add(1, Ordering::Relaxed);
         }
-        LOST.fetch_add(1, Ordering::Relaxed);
+        let pair = (rip ^ ret.rotate_left(29)).max(1);
+        if let Some(i) = count(&PAIR_KEYS, &PAIR_COUNTS, pair) {
+            PAIR_RIP[i].store(rip, Ordering::Relaxed);
+            PAIR_RET[i].store(ret, Ordering::Relaxed);
+        }
     }
 
     fn timer(us: i64) {
@@ -195,7 +220,37 @@ mod pc {
         timer(0);
     }
 
-    /// `object\toffset\tsymbol\tcount` rows, most samples first.
+    /// The object holding `addr`, the offset into it and the nearest
+    /// exported symbol.
+    fn place(addr: u64) -> (String, u64, String) {
+        let text = |p: *const libc::c_char| {
+            if p.is_null() {
+                String::new()
+            } else {
+                // SAFETY: dladdr hands NUL-terminated names.
+                unsafe { std::ffi::CStr::from_ptr(p) }
+                    .to_string_lossy()
+                    .into_owned()
+            }
+        };
+        // SAFETY: dladdr only reads the loader's tables.
+        unsafe {
+            let mut info: libc::Dl_info = std::mem::zeroed();
+            if libc::dladdr(addr as *const libc::c_void, &raw mut info) == 0 {
+                (String::from("?"), addr, String::new())
+            } else {
+                (
+                    text(info.dli_fname),
+                    addr - info.dli_fbase as u64,
+                    text(info.dli_sname),
+                )
+            }
+        }
+    }
+
+    /// `object\toffset\tsymbol\tcount` rows, most samples first; then,
+    /// after a `# pairs` line, `object\toffset\tsymbol\tret object\tret
+    /// offset\tcount` rows.
     #[allow(clippy::unnecessary_wraps)] // None off Linux
     pub(super) fn report() -> Option<String> {
         let mut rows: Vec<(u64, u64)> = (0..SLOTS)
@@ -210,30 +265,25 @@ mod pc {
             LOST.load(Ordering::Relaxed)
         );
         for (rip, n) in rows {
-            // SAFETY: dladdr only reads the loader's tables.
-            let (obj, off, sym) = unsafe {
-                let mut info: libc::Dl_info = std::mem::zeroed();
-                if libc::dladdr(rip as *const libc::c_void, &raw mut info) == 0 {
-                    (String::from("?"), rip, String::new())
-                } else {
-                    let obj = if info.dli_fname.is_null() {
-                        String::from("?")
-                    } else {
-                        std::ffi::CStr::from_ptr(info.dli_fname)
-                            .to_string_lossy()
-                            .into_owned()
-                    };
-                    let sym = if info.dli_sname.is_null() {
-                        String::new()
-                    } else {
-                        std::ffi::CStr::from_ptr(info.dli_sname)
-                            .to_string_lossy()
-                            .into_owned()
-                    };
-                    (obj, rip - info.dli_fbase as u64, sym)
-                }
-            };
+            let (obj, off, sym) = place(rip);
             let _ = writeln!(out, "{obj}\t{off:#x}\t{sym}\t{n}");
+        }
+        let mut pairs: Vec<(u64, u64, u64)> = (0..SLOTS)
+            .filter(|&i| PAIR_KEYS[i].load(Ordering::Relaxed) != 0)
+            .map(|i| {
+                (
+                    PAIR_RIP[i].load(Ordering::Relaxed),
+                    PAIR_RET[i].load(Ordering::Relaxed),
+                    PAIR_COUNTS[i].load(Ordering::Relaxed),
+                )
+            })
+            .collect();
+        pairs.sort_by_key(|r| std::cmp::Reverse(r.2));
+        out.push_str("# pairs\n");
+        for (rip, ret, n) in pairs.into_iter().take(20_000) {
+            let (obj, off, sym) = place(rip);
+            let (robj, roff, _) = place(ret);
+            let _ = writeln!(out, "{obj}\t{off:#x}\t{sym}\t{robj}\t{roff:#x}\t{n}");
         }
         Some(out)
     }

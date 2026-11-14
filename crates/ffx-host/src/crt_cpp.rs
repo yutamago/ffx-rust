@@ -545,7 +545,6 @@ fn sgetc(e: &mut Exec, args: &Args) -> Ret {
         let p = cell(&mem, this, IGNEXT);
         return Ret::eax(u32::from(mem.read::<u8>(p)));
     }
-    drop(mem);
     virtual_call(e, this, UNDERFLOW, Vec::new())
 }
 

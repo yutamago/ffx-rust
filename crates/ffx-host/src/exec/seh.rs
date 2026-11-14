@@ -526,7 +526,7 @@ impl Exec {
         }
         let ctx = area;
         self.write_context(ctx, ret, esp + 4 + 16)?;
-        let mut mem = self.mem();
+        let mut mem = self.mem_owned();
         let rec = if record == 0 {
             let r = area + AREA_RECORD;
             mem.write(r, STATUS_UNWIND);
@@ -627,7 +627,7 @@ impl Exec {
     /// continue); returns its `eip`.
     #[cfg(feature = "dev-unicorn")]
     fn read_context(&mut self, ctx: u32) -> Result<u32> {
-        let mem = self.mem();
+        let mem = self.mem_owned();
         for (k, r) in (0u32..).zip([
             RegisterX86::EDI,
             RegisterX86::ESI,

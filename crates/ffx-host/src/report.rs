@@ -228,7 +228,9 @@ pub fn ports_tsv(exec: &Exec) -> String {
         }
     }
     let mut out = String::from("address\tname\tcalls\n");
-    for (&addr, &n) in &stats.ports {
+    let mut ports: Vec<(u32, u64)> = stats.ports.iter().map(|(&a, &n)| (a, n)).collect();
+    ports.sort_unstable();
+    for (addr, n) in ports {
         let name = exec.table().get(addr).map_or("?", |e| e.name);
         let _ = writeln!(out, "{addr:#010x}\t{name}\t{n}");
     }

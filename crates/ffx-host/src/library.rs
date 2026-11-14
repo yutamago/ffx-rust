@@ -86,7 +86,7 @@ fn load(e: &mut Exec, name: &str) -> Option<u32> {
     if let Ok(mut m) = MAPPED.write() {
         m.push((file.to_string(), dll.base, dll.size));
     }
-    let mut mem = e.mem();
+    let mut mem = e.mem_owned();
     for imp in &dll.imports {
         #[cfg(not(feature = "dev-unicorn"))]
         let target = import_target(e, &imp.dll, &imp.name)
@@ -535,7 +535,7 @@ fn run_bound(e: &mut Exec, bound: &Bound, args: &Args) -> Ret {
     if low >= e.stack_floor() && low < esp {
         let _ = e.set_esp(low);
     }
-    let mem = e.mem();
+    let mem = e.mem_owned();
     let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let mut g = HostGame {
             e: &mut *e,

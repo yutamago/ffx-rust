@@ -240,6 +240,18 @@ impl Arena {
         }
     }
 
+    /// The game memory at `addr..addr + len` in place, when mapped (for a
+    /// reader that hands it on at once, as the D3D11 layer's unmap: no
+    /// copy). The game's threads may write it meanwhile, as they may
+    /// write what [`Arena::read_bytes`] copies.
+    #[must_use]
+    pub fn slice(&self, addr: u32, len: u32) -> Option<&[u8]> {
+        // SAFETY: inside mapped regions, which stay mapped while the arena
+        // lives.
+        self.is_mapped(addr, len as usize)
+            .then(|| unsafe { std::slice::from_raw_parts(self.ptr(addr), len as usize) })
+    }
+
     /// Writes game memory at `addr` ([`ArenaMem`]'s write).
     #[inline]
     pub fn write_bytes(&self, addr: u32, data: &[u8]) {
@@ -251,6 +263,24 @@ impl Arena {
         } else {
             crate::log::bad_access(addr, data.len(), true);
         }
+    }
+}
+
+/// Game memory borrowed from the arena ([`crate::exec::Exec::mem`]): an
+/// [`ArenaMem`] without the `Arc`, whose clone at every access was a
+/// cache line all the game threads fought over (m5-perf1).
+#[derive(Debug, Clone, Copy)]
+pub struct ArenaRef<'a>(pub &'a Arena);
+
+impl ffx_bridge::Mem for ArenaRef<'_> {
+    fn read_bytes(&self, addr: u32, out: &mut [u8]) {
+        self.0.read_bytes(addr, out);
+    }
+    fn write_bytes(&mut self, addr: u32, data: &[u8]) {
+        self.0.write_bytes(addr, data);
+    }
+    fn image_base(&self) -> u32 {
+        ffx_bridge::IMAGE_BASE
     }
 }
 

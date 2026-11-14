@@ -151,8 +151,9 @@ impl Profile {
 /// What the executor saw on the way, for the report.
 #[derive(Debug, Default, Clone)]
 pub struct Stats {
-    /// Port entries by address (from Unicorn or from Rust).
-    pub ports: BTreeMap<u32, u64>,
+    /// Port entries by address (from Unicorn or from Rust; counted at
+    /// every call, so a fast map: sort for a listing).
+    pub ports: crate::table::AddrMap<u64>,
     /// Import calls by name.
     pub imports: BTreeMap<String, u64>,
     /// Unstubbed imports, in the order first called.
@@ -304,7 +305,7 @@ pub struct Shared {
     table: Table,
     imports: Imports,
     /// Import stub address → index into `imports`' bound list.
-    stubs: HashMap<u32, usize>,
+    stubs: crate::table::AddrMap<usize>,
     /// Every import of `FFX.exe` and the DLLs: `DLL!name` (`(from X)` for a
     /// DLL's), and where it went.
     pub routes: Vec<(String, Route)>,
@@ -348,7 +349,7 @@ pub struct Shared {
     /// Possible ones in modules of unknown builds (a code hook each).
     x87_watch: Vec<(u32, Op)>,
     /// Traps placed at run time ([`Shared::add_trap`]).
-    traps: RwLock<HashMap<u32, Trap>>,
+    traps: RwLock<crate::table::AddrMap<Trap>>,
     /// The D3D11 device and DXGI (`crate::gfx`), once created.
     pub gfx: crate::gfx::Slot,
     /// Trampolines to the originals that ports wrap: address → trampoline
@@ -359,7 +360,7 @@ pub struct Shared {
     /// and 492 more): thunk → what its slot holds (an import's stub or a
     /// DLL export). Patched to `int3`; a call or jump to one goes straight
     /// to the import ([`Shared::thunk`]).
-    thunks: HashMap<u32, u32>,
+    thunks: crate::table::AddrMap<u32>,
     /// `FFX.exe`'s IAT slots, for the thunks [`Shared::thunk`] finds when
     /// a port calls one the scan left alone.
     iat: HashSet<u32>,
@@ -454,7 +455,7 @@ impl Shared {
             dlls,
             table,
             imports: Imports::new(),
-            stubs: HashMap::new(),
+            stubs: crate::table::AddrMap::default(),
             routes: Vec::new(),
             heap: Mutex::new(heap),
             files: Mutex::new(files),
@@ -481,11 +482,11 @@ impl Shared {
             running: AtomicU32::new(0),
             x87: Arc::new(HashMap::new()),
             x87_watch: Vec::new(),
-            traps: RwLock::new(HashMap::new()),
+            traps: RwLock::new(crate::table::AddrMap::default()),
             gfx: crate::gfx::Slot::default(),
             #[cfg(feature = "dev-unicorn")]
             originals: HashMap::new(),
-            thunks: HashMap::new(),
+            thunks: crate::table::AddrMap::default(),
             iat: HashSet::new(),
             x87_imports: HashMap::new(),
             crt_data,
@@ -1302,7 +1303,14 @@ impl Exec {
 
     /// The arena as [`ffx_bridge::Mem`].
     #[must_use]
-    pub fn mem(&self) -> ArenaMem {
+    pub fn mem(&self) -> crate::arena::ArenaRef<'_> {
+        crate::arena::ArenaRef(&self.shared.arena)
+    }
+
+    /// The game's memory as an owned [`ArenaMem`] (an `Arc` clone: for a
+    /// holder that outlives a borrow of the executor).
+    #[must_use]
+    pub fn mem_owned(&self) -> ArenaMem {
         ArenaMem {
             arena: Arc::clone(&self.shared.arena),
         }
@@ -2405,7 +2413,7 @@ impl Exec {
         // call eax; movsd [cell], xmm0; ret
         let at = self.sentinel + X87_STUBS + X87_STUB * self.x87_depth;
         let cell = at + 0x40;
-        let mut mem = self.mem();
+        let mut mem = self.mem_owned();
         mem.write(cell, x);
         mem.write(cell + 8, y);
         let mut code = vec![0xf2, 0x0f, 0x10, 0x05];
@@ -2461,7 +2469,7 @@ impl Exec {
         // movsd xmm0, [cell]; mov eax, addr; call eax; movsd [cell], xmm0; ret
         let at = self.sentinel + X87_STUBS + X87_STUB * self.x87_depth;
         let cell = at + 0x40;
-        let mut mem = self.mem();
+        let mut mem = self.mem_owned();
         mem.write(cell, x);
         let mut code = vec![0xf2, 0x0f, 0x10, 0x05];
         code.extend_from_slice(&cell.to_le_bytes());
@@ -2725,7 +2733,7 @@ impl Exec {
     fn thread_block(&mut self, at: u32) -> Result<()> {
         let teb = at + PAGE;
         let peb = at + 2 * PAGE;
-        let mut mem = self.mem();
+        let mut mem = self.mem_owned();
         let w = |m: &mut ArenaMem, a: u32, v: u32| ffx_bridge::Mem::write(m, a, v);
         w(&mut mem, teb, u32::MAX);
         w(&mut mem, teb + 4, self.stack.1);
@@ -3315,7 +3323,7 @@ impl Exec {
         let cells = at + 0x40;
         let out = cells + 0x38;
         let mut code = Vec::new();
-        let mut mem = self.mem();
+        let mut mem = self.mem_owned();
         for (i, &v) in (0u32..).zip(st) {
             mem.write(cells + 8 * i, v);
             code.extend_from_slice(&[0xdd, 0x05]);
