@@ -2815,3 +2815,189 @@ fn wp5f_mkv_segment_teardown_matches_the_original() {
         }
     });
 }
+
+use ffx_prender::wp5f_sort::bridge as sort;
+
+/// `n` sort entries: a word and a key (often repeated; NaNs, zeros of
+/// both signs and infinities among them).
+fn sort_entries(rng: &mut Rng, n: u32) -> Vec<u32> {
+    let pool = [
+        1.0f32,
+        2.0,
+        0.5,
+        -1.0,
+        0.0,
+        -0.0,
+        f32::NAN,
+        f32::INFINITY,
+        3.25,
+    ];
+    let few = rng.chance(2);
+    let nan = rng.chance(3);
+    let mut w = Vec::new();
+    for i in 0..n {
+        let k = if few {
+            let k = pool[rng.below(pool.len() as u32) as usize];
+            if k.is_nan() && !nan { 7.0 } else { k }
+        } else {
+            (f32::from(rng.below(2000) as u16) - 1000.0) / 8.0
+        };
+        w.push(0x1000 + i);
+        w.push(k.to_bits());
+    }
+    w
+}
+
+#[test]
+fn wp5f_occluder_sort_matches_the_original() {
+    Twins::each(|t| {
+        let mut rng = Rng(0x009f_16c0);
+        for k in 0..300 {
+            let n = rng.pick(&[0u32, 1, 2, 3, 5, 31, 32, 33, 40, 41, 42, 64, 100, 257]);
+            let w = sort_entries(&mut rng, n);
+            let pred = [rng.next(), rng.next()];
+            // the whole sort, ideal as the caller passes it or nearly spent
+            t.reset();
+            let first = t.words(&w);
+            let last = first + 8 * n;
+            let ideal = rng.pick(&[n, n, 0, 1, 2]);
+            t.check(
+                &format!("sort {k} (n {n}, ideal {ideal})"),
+                sort::SORT,
+                Conv::Cdecl,
+                &[first, last, ideal, pred[0], pred[1]],
+                |m| {
+                    sort::sort(m, first, last, ideal.cast_signed(), pred);
+                    Out::None
+                },
+            );
+            // the parts on the unsorted entries
+            if n >= 2 {
+                t.reset();
+                let first = t.words(&w);
+                let last = first + 8 * n;
+                let out = t.words(&[0x5555, 0x6666]);
+                t.check(
+                    &format!("partition {k} (n {n})"),
+                    sort::PARTITION,
+                    Conv::Cdecl,
+                    &[out, first, last, pred[0], pred[1]],
+                    |m| Out::U32(sort::partition_out(m, out, first, last, pred)),
+                );
+                t.reset();
+                let first = t.words(&w);
+                let lastin = first + 8 * (n - 1);
+                let mid = first + 8 * ((n - 1) / 2);
+                t.check(
+                    &format!("median {k} (n {n})"),
+                    sort::MEDIAN,
+                    Conv::Cdecl,
+                    &[first, mid, lastin, pred[0], pred[1]],
+                    |m| {
+                        sort::median(m, first, mid, lastin, pred);
+                        Out::None
+                    },
+                );
+                t.reset();
+                let first = t.words(&w);
+                let (a, b, c) = (
+                    first + 8 * rng.below(n),
+                    first + 8 * rng.below(n),
+                    first + 8 * rng.below(n),
+                );
+                t.check(
+                    &format!("med3 {k}"),
+                    sort::MED3,
+                    Conv::Cdecl,
+                    &[a, b, c, 0, 0],
+                    |m| {
+                        sort::med3(m, a, b, c, pred);
+                        Out::None
+                    },
+                );
+            }
+            for (what, sym) in [
+                ("insertion", sort::INSERTION_SORT),
+                ("make heap", sort::MAKE_HEAP),
+                ("sort heap", sort::SORT_HEAP),
+            ] {
+                t.reset();
+                let first = t.words(&w);
+                let last = first + 8 * n;
+                if sym == sort::SORT_HEAP {
+                    // on a heap
+                    t.check(
+                        &format!("make heap first {k}"),
+                        sort::MAKE_HEAP,
+                        Conv::Cdecl,
+                        &[first, last, 0, 0, 0, 0],
+                        |m| {
+                            sort::make_heap(m, first, last, pred);
+                            Out::None
+                        },
+                    );
+                }
+                t.check(
+                    &format!("{what} {k} (n {n})"),
+                    sym,
+                    Conv::Cdecl,
+                    &[first, last, pred[0], pred[1], 0, 0],
+                    |m| {
+                        match sym {
+                            sort::INSERTION_SORT => sort::insertion_sort(m, first, last, pred),
+                            sort::MAKE_HEAP => sort::make_heap(m, first, last, pred),
+                            _ => sort::sort_heap(m, first, last, pred),
+                        }
+                        Out::None
+                    },
+                );
+            }
+            if n >= 1 {
+                t.reset();
+                let first = t.words(&w);
+                let value = t.words(&sort_entries(&mut rng, 1));
+                let bottom = rng.below(n) + 1;
+                let hole = rng.below(bottom);
+                t.check(
+                    &format!("adjust heap {k} (bottom {bottom}, hole {hole})"),
+                    sort::ADJUST_HEAP,
+                    Conv::Cdecl,
+                    &[first, hole, bottom, value, pred[0], pred[1]],
+                    |m| {
+                        sort::adjust_heap(
+                            m,
+                            first,
+                            hole.cast_signed(),
+                            bottom.cast_signed(),
+                            value,
+                            pred,
+                        );
+                        Out::None
+                    },
+                );
+                t.reset();
+                let first = t.words(&w);
+                let value = t.words(&sort_entries(&mut rng, 1));
+                let hole = rng.below(n);
+                let top = rng.below(hole + 1);
+                t.check(
+                    &format!("push heap {k} (hole {hole}, top {top})"),
+                    sort::PUSH_HEAP,
+                    Conv::Cdecl,
+                    &[first, hole, top, value],
+                    |m| {
+                        sort::push_heap(
+                            m,
+                            first,
+                            hole.cast_signed(),
+                            top.cast_signed(),
+                            value,
+                            pred,
+                        );
+                        Out::None
+                    },
+                );
+            }
+        }
+    });
+}

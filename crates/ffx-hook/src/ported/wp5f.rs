@@ -13,6 +13,7 @@ use super::{StackFrame, mem, ported};
 use ffx_menu::wp5f_menu::bridge as menu;
 use ffx_prender::wp5f::bridge as pr;
 use ffx_prender::wp5f_mkv::bridge as mkv;
+use ffx_prender::wp5f_sort::bridge as sort;
 use ffx_sg::m5main4_lib::bridge as lib;
 use ffx_system::wp5f_sstream::bridge as ss;
 
@@ -470,5 +471,41 @@ ported! {
     /// `mkvparser::Chapters::Atom::Clear()`.
     mkvparser_Chapters_Atom_Clear_00425d20 @ 0x0042_5d20 => extern "thiscall" fn atom_clear(atom: u32) {
         mkv::atom_clear(&mut mem(), atom);
+    }
+    /// The occluder sort's introsort loop `(first, last, ideal, pred)`.
+    std_sort_occluders_009f16c0 @ 0x009f_16c0 => extern "C" fn sort_occluders(first: u32, last: u32, ideal: u32, p0: u32, p1: u32) {
+        sort::sort(&mut mem(), first, last, ideal.cast_signed(), [p0, p1]);
+    }
+    /// The occluder sort's partition `(&out, first, last, pred)` -> `&out`.
+    std_sort_occluders_partition_009f1a30 @ 0x009f_1a30 => extern "C" fn sort_partition(out: u32, first: u32, last: u32, p0: u32, p1: u32) -> u32 {
+        sort::partition_out(&mut mem(), out, first, last, [p0, p1])
+    }
+    /// The occluder sort's median `(first, mid, last, pred)`.
+    std_sort_occluders_median_009f1180 @ 0x009f_1180 => extern "C" fn sort_median(first: u32, mid: u32, last: u32, p0: u32, p1: u32) {
+        sort::median(&mut mem(), first, mid, last, [p0, p1]);
+    }
+    /// The occluder sort's median of three `(a, b, c)`.
+    std_sort_occluders_med3_009f1060 @ 0x009f_1060 => extern "C" fn sort_med3(a: u32, b: u32, c: u32) {
+        sort::med3(&mut mem(), a, b, c, [0, 0]);
+    }
+    /// The occluder sort's insertion sort `(first, last)`.
+    std_sort_occluders_insertion_009f0c80 @ 0x009f_0c80 => extern "C" fn sort_insertion(first: u32, last: u32) {
+        sort::insertion_sort(&mut mem(), first, last, [0, 0]);
+    }
+    /// The occluder sort's make-heap `(first, last)`.
+    std_sort_occluders_makeHeap_009f0e40 @ 0x009f_0e40 => extern "C" fn sort_make_heap(first: u32, last: u32) {
+        sort::make_heap(&mut mem(), first, last, [0, 0]);
+    }
+    /// The occluder sort's sort-heap `(first, last, pred)`.
+    std_sort_occluders_sortHeap_009f1900 @ 0x009f_1900 => extern "C" fn sort_sort_heap(first: u32, last: u32, p0: u32, p1: u32) {
+        sort::sort_heap(&mut mem(), first, last, [p0, p1]);
+    }
+    /// The occluder sort's adjust-heap `(first, hole, bottom, &value, pred)`.
+    std_sort_occluders_adjustHeap_009f0ae0 @ 0x009f_0ae0 => extern "C" fn sort_adjust_heap(first: u32, hole: u32, bottom: u32, value: u32, p0: u32, p1: u32) {
+        sort::adjust_heap(&mut mem(), first, hole.cast_signed(), bottom.cast_signed(), value, [p0, p1]);
+    }
+    /// The occluder sort's push-heap `(first, hole, top, &value)`.
+    std_sort_occluders_pushHeap_009f15d0 @ 0x009f_15d0 => extern "C" fn sort_push_heap(first: u32, hole: u32, top: u32, value: u32) {
+        sort::push_heap(&mut mem(), first, hole.cast_signed(), top.cast_signed(), value, [0, 0]);
     }
 }
