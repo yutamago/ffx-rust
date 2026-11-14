@@ -1009,9 +1009,14 @@ impl Shared {
 }
 
 /// Stops every emulator (at its next block) when the run ends or runs out
-/// of time, so the threads see it; they resume or unwind themselves.
+/// of time, so the threads see it; they resume or unwind themselves. A
+/// run whose threads stay in Rust (ports calling ports, no emulator to
+/// stop) is ended as without the emulator once it is [`GRACE`] overdue:
+/// the boot test without the DLLs ran on for 30 minutes past its minute
+/// once the ports reached that far (m5-perf1).
 #[cfg(feature = "dev-unicorn")]
 fn watchdog(shared: &std::sync::Weak<Shared>) {
+    let mut late: Option<Instant> = None;
     loop {
         std::thread::sleep(WATCH);
         let Some(s) = shared.upgrade() else { return };
@@ -1027,7 +1032,36 @@ fn watchdog(shared: &std::sync::Weak<Shared>) {
                 }
             }
         }
+        if s.overdue() && !s.sync.stopping() {
+            let since = *late.get_or_insert_with(Instant::now);
+            if since.elapsed() >= GRACE {
+                budget_stop(&s);
+            }
+        } else {
+            late = None;
+        }
     }
+}
+
+/// How long past its budget a run with the emulator may take to see it
+/// itself (at the emulator's next block, with the exact `eip`).
+#[cfg(feature = "dev-unicorn")]
+const GRACE: Duration = Duration::from_secs(2);
+
+/// Ends the run for its budget at the main thread's innermost host entry
+/// (every thread sees it at its next call, [`Exec::halted`]).
+fn budget_stop(s: &Shared) {
+    let at = s
+        .spots
+        .lock()
+        .ok()
+        .and_then(|l| {
+            l.iter()
+                .find(|p| p.id == MAIN_THREAD)
+                .and_then(|p| p.frames().0.last().map(|f| f.what))
+        })
+        .unwrap_or(0);
+    s.stop_all(Stop::Budget(at));
 }
 
 /// Ends the run when it runs out of time (without the emulator nothing
@@ -1040,17 +1074,7 @@ fn watchdog(shared: &std::sync::Weak<Shared>) {
         std::thread::sleep(WATCH);
         let Some(s) = shared.upgrade() else { return };
         if s.overdue() && !s.sync.stopping() {
-            let at = s
-                .spots
-                .lock()
-                .ok()
-                .and_then(|l| {
-                    l.iter()
-                        .find(|p| p.id == MAIN_THREAD)
-                        .and_then(|p| p.frames().0.last().map(|f| f.what))
-                })
-                .unwrap_or(0);
-            s.stop_all(Stop::Budget(at));
+            budget_stop(&s);
         }
     }
 }
