@@ -86,6 +86,7 @@
 0x006449c0	11	0	graphicUpdateMapYIQ_thunk_006449c0
 0x00645dc0	30	0	graphicVideoState_00645dc0
 0x00645e50	16	0	graphicisVideoAtEndFrame
+0x00652400	8	0	PhyreScene_onOpeningScreenFinish_00652400
 0x00660410	12	0	graphicVideoIsPlaying_00660410
 0x00679cb0	198	189	FUN_00679cb0
 0x00684ae0	29	0	graphicAbmapFree_00684ae0

@@ -192,6 +192,10 @@ ported! {
     StoreComputedToDeref_00643b10 @ 0x0064_3b10 => extern "C" fn auto_00643b10(a0: u32) -> u32 {
         ffx_auto::call(&mut mem(), &t::R_00643B10, &[a0])
     }
+    /// store constant to global: `u8[&0x00ccb9c2] = 0x0`.
+    PhyreScene_onOpeningScreenFinish_00652400 @ 0x0065_2400 => extern "C" fn auto_00652400() {
+        ffx_auto::run(&mut mem(), &t::R_00652400, &[]);
+    }
     /// several stores: computed, into deref/field: `t0 = u32[(a0 + 0xf954)]; t1 = u32[(a0 + 0xf8cc)]; u32[((a0 + (t0 * 0x4)) + 0xf8d4)] = t1; t2 = u32[(a0 + 0xf954)]; t3 = u32[(a0 + 0xf8d0)]; u32[((a0 + (t2 * 0x4)) + 0xf914)] = t3; t4 = u32[(a0 + 0xf954)]; u32[(a0 + 0xf954)] = (t4 + 0x1); return t3`.
     PhyreScene_VFXSyncPath @ 0x0065_4cc0 => extern "thiscall" fn auto_00654cc0(a0: u32) -> u32 {
         ffx_auto::call(&mut mem(), &t::R_00654CC0, &[a0])
