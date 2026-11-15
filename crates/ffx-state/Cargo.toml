@@ -1,0 +1,15 @@
+[package]
+name = "ffx-state"
+description = "The game-state API: what a frontend (gd-ffx) reads after each update, typed and versioned (docs/state-api.md)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+# the character records' layout (ffx_chara::layout)
+ffx-chara.workspace = true
+
+[lints]
+workspace = true
