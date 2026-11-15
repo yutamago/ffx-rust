@@ -38,6 +38,8 @@ pub struct Movie {
     base: u64,
     pub volume: f32,
     pub paused: bool,
+    /// The stereo speaker mode (`Engine::stereo`).
+    pub stereo: bool,
     /// Frames read and mixed so far (for the report).
     pub fetched: u64,
     pub mixed: u64,
@@ -78,6 +80,7 @@ impl Movie {
             base: 0,
             volume: 1.0,
             paused: false,
+            stereo: false,
             fetched: 0,
             mixed: 0,
         }
@@ -124,6 +127,7 @@ impl Movie {
             looped: None,
         });
         v.volume = self.volume;
+        v.stereo = self.stereo;
         v.mix(block);
         v.ended = false;
         self.pcm = Arc::try_unwrap(std::mem::replace(

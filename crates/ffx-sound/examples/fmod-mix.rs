@@ -7,6 +7,10 @@
 //! FFX_GAME_DIR=~/steam-games/FFX-X2-HD cargo run --release -p ffx-sound \
 //!   --example fmod-mix -- <log> <out.wav>
 //! ```
+//!
+//! `FMOD_SPEAKERMODE=2` mixes in FMOD's stereo speaker mode (a real
+//! device's: pans, mono waves on both sides), else in the raw mode the
+//! capture runs in.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -120,7 +124,27 @@ fn script(text: &str, dir: &str) -> Vec<Entry> {
                 }
                 continue;
             }
-            _ => continue, // the pan has no effect (audio-platform.md)
+            "pan" => {
+                // the probe's chain: the event's channel group, its channel
+                // 0, Channel::setPan (no effect in the raw speaker mode)
+                let event = h(w[1], &mut handles);
+                let (group, chan) = (event | 0x10, event | 0x20);
+                out.push(Entry::Call(Call {
+                    function: "Event::getChannelGroup".into(),
+                    args: vec![event],
+                    outs: vec![(1, group)],
+                    ..Call::default()
+                }));
+                out.push(Entry::Call(Call {
+                    function: "ChannelGroup::getChannel".into(),
+                    args: vec![group, 0],
+                    outs: vec![(2, chan)],
+                    ..Call::default()
+                }));
+                c.function = "Channel::setPan".into();
+                c.args = vec![chan, f32w(w[2])];
+            }
+            _ => continue,
         }
         out.push(Entry::Call(c));
     }
@@ -150,6 +174,9 @@ fn main() {
         archive,
         cache: HashMap::new(),
     });
+    // FMOD_SPEAKERMODE=2: the stereo speaker mode of a real device (the
+    // probe's PROBE_SPEAKERMODE=2); else the capture's raw one
+    engine.stereo = std::env::var("FMOD_SPEAKERMODE").is_ok_and(|v| v == "2");
     engine.run(&entries);
     std::fs::write(out, wav(&engine.out)).expect("write");
     eprintln!(

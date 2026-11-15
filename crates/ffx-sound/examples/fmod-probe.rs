@@ -6,7 +6,7 @@
 //! ```bash
 //! PATH=tools/shims:$PATH XWIN_ARCH=x86,x86_64 cargo xwin build --release \
 //!   --target i686-pc-windows-msvc -p ffx-sound --example fmod-probe
-//! fmod-probe.exe <game dir> <media dir> <script> <out.wav>
+//! [PROBE_SPEAKERMODE=n] fmod-probe.exe <game dir> <media dir> <script> <out.wav>
 //! ```
 //!
 //! `<media dir>` holds the `.fev` and `.fsb` files the script loads (copied
@@ -176,6 +176,26 @@ mod probe {
             "?setDSPBufferSize@System@FMOD@@QAG?AW4FMOD_RESULT@@IH@Z",
             &[sys, f[0] / 30, 4],
         );
+        // PROBE_SPEAKERMODE=<n>: System::setSpeakerMode(n) before init
+        // (FMOD Ex 4.44: 0 raw, 1 mono, 2 stereo); the speaker mode in
+        // force is printed either way
+        if let Some(mode) = std::env::var("PROBE_SPEAKERMODE")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+        {
+            fm.x(
+                EX,
+                "?setSpeakerMode@System@FMOD@@QAG?AW4FMOD_RESULT@@W4FMOD_SPEAKERMODE@@@Z",
+                &[sys, mode],
+            );
+        }
+        let mut mode = 0usize;
+        fm.x(
+            EX,
+            "?getSpeakerMode@System@FMOD@@QAG?AW4FMOD_RESULT@@PAW4FMOD_SPEAKERMODE@@@Z",
+            &[sys, a(&raw mut mode)],
+        );
+        println!("speaker mode {mode}");
         let path = CString::new(out.as_str()).expect("out");
         fm.x(
             EV,

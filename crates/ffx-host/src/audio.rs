@@ -406,7 +406,8 @@ fn with<T>(e: &mut Exec, f: impl FnOnce(&mut State) -> T) -> Option<T> {
             .ok()
             .and_then(|w| w.clone())
             .and_then(|p| wav_file(&p));
-        let fed = start_device(wav.is_some()) && e.shared().clock.is_real();
+        let device = start_device(wav.is_some());
+        let fed = device && e.shared().clock.is_real();
         if fed {
             let weak = Arc::downgrade(&shared);
             let spawned = std::thread::Builder::new()
@@ -416,8 +417,12 @@ fn with<T>(e: &mut Exec, f: impl FnOnce(&mut State) -> T) -> Option<T> {
                 crate::log::note(&format!("fmod: no feeder thread: {err}"));
             }
         }
+        let mut engine = Engine::new(SharedFiles(Arc::clone(&files)));
+        // the device: FMOD's stereo speaker mode (pans, mono waves on both
+        // sides); the capture and harness games keep the raw one
+        engine.stereo = device;
         *guard = Some(State {
-            engine: Engine::new(SharedFiles(Arc::clone(&files))),
+            engine,
             files,
             next: 0x100,
             callbacks: HashMap::new(),
@@ -873,7 +878,8 @@ fn system_create_sound(e: &mut Exec, args: &Args) -> Ret {
     })
     .flatten();
     if movie && let Some(h) = r {
-        let m = movie::Movie::new(e, h, exinfo);
+        let mut m = movie::Movie::new(e, h, exinfo);
+        m.stereo = with(e, |s| s.engine.stereo).unwrap_or(false);
         with(e, |s| s.movie = Some(m));
         movie_reads(e, 2);
     }
