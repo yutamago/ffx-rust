@@ -862,12 +862,13 @@ fn the_state_api_names_the_main_menu() {
 }
 
 /// The effects (API 5): in the deck's battle (Besaid, then `Battle { 3, 0,
-/// 0 }`), with Tidus's attack chosen (Circle twice), the snapshots show the
-/// effect records in use: the battle's bind effects, one per character
-/// (`0x40000400 +` its record, the monsters' among them), each targeting
-/// its own character; and the five screen filter slots.
+/// 0 }`; Attack chosen, Circle twice), the snapshots show the effect
+/// records in use: the battle's bind effects, there from its start, one
+/// per character (`0x40000400 +` its character byte, the monsters' 20 and
+/// 21 among them), each targeting its own character; the battle music; the
+/// five screen filter slots.
 #[test]
-fn the_state_api_sees_an_attacks_effects() {
+fn the_state_api_sees_a_battles_effects() {
     use std::sync::atomic::{AtomicU32, Ordering::Relaxed};
     use std::sync::{Arc, Mutex};
     let Some(exe) = exe() else { return };
@@ -949,7 +950,7 @@ fn the_state_api_sees_an_attacks_effects() {
     let e = seen.lock().unwrap().clone().unwrap();
     eprintln!("effects: {e:?}");
     assert!(e.running.iter().all(|r| r.id != 0 && r.id != u32::MAX));
-    // the monsters' (records 20, 21) bind effects, each on its own character
+    // the monsters' (characters 20, 21) bind effects, each on its own one
     for chr in [20u8, 21] {
         assert!(
             e.running
@@ -959,4 +960,5 @@ fn the_state_api_sees_an_attacks_effects() {
         );
     }
     assert_eq!(e.filters.len(), 5);
+    assert_ne!(e.music, -1, "{e:?}");
 }

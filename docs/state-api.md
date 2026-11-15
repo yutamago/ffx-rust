@@ -104,7 +104,8 @@ character, kind, ended flag and targets; no start frame is stored, so a
 frontend sees starts by comparing slots between snapshots), the five
 screen filter slots (`g_FadeSlots` with `g_FadeActive`'s bits: 0
 cross-fade, 1 motion blur, 2 flash, 3 colour filter, 4 fade; mode,
-colour, frames left and in all), the screen's shake offset (`g_Screens[0]`
+colour and the `+4`..`+0xa` words, whose meaning differs per slot: see
+`ScreenFilter`'s fields), the screen's shake offset (`g_Screens[0]`
 `+0x30`, `+0x34`) and the music playing (`g_SndNowPlayMusic`). Not yet:
 the field's particle effects (`g_FpData`/`g_FpRun`), effect positions,
 damage numbers, sound effects.
@@ -230,7 +231,9 @@ struct ScreenFilter
   mode: u8
   color: rgb
   frames: i16
-  total: i16
+  level: i16
+  target: i16
+  step: i16
 ```
 
 ## Sources

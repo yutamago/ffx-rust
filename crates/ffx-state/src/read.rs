@@ -307,6 +307,7 @@ fn effects(m: &Mem<'_>) -> Effects {
             .skip(1)
         {
             let id = u32::from_le_bytes([r[0], r[1], r[2], r[3]]);
+            // -1 free; 0 in a table not set up yet
             if id == u32::MAX || id == 0 {
                 continue;
             }
@@ -331,7 +332,9 @@ fn effects(m: &Mem<'_>) -> Effects {
                 mode: m.u8(at),
                 color: [m.u8(at + 1), m.u8(at + 2), m.u8(at + 3)],
                 frames: m.i16(at + 4),
-                total: m.i16(at + 6),
+                level: m.i16(at + 6),
+                target: m.i16(at + 8),
+                step: m.i16(at + 0xa),
             }
         })
         .collect();

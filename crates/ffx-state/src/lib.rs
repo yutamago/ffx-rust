@@ -139,7 +139,8 @@ api_struct! {
         /// The effect id (`MsGetEffID`: group << 16 | a << 8 | b; bind
         /// effects 0x40000400.. + the character).
         id: u32,
-        /// The effect character (`+0x18`, `g_EtChr`'s index).
+        /// The effect's first character (`+0x18`: out of battle
+        /// `g_EtChr`'s index, in battle `MsGetEff2Chr`'s).
         character: u8,
         /// Its kind (`+0x1c`).
         kind: u8,
@@ -151,20 +152,32 @@ api_struct! {
 }
 
 api_struct! {
-    /// A screen filter slot of `g_FadeSlots`.
+    /// A screen filter slot of `g_FadeSlots` (ffx-sg's `Sg_DrawFilter`):
+    /// its `+4`..`+0xa` words mean different things per slot.
     ScreenFilter {
-        /// The slot (0..4).
+        /// The slot: 0 the cross-fade, 1 motion blur, 2 a flash, 3 a colour
+        /// filter, 4 the fade.
         slot: u8,
         /// It runs (`g_FadeActive`'s bit).
         active: bool,
-        /// Its mode (`+0`; the fade's 2..5, a flash 6, a filter 7).
+        /// Its mode (`+0`): 0 the cross-fade's level, 2..5 the fade (2, 3
+        /// to and from black, 4, 5 with the colour), 6 a flash, 7, 8 the
+        /// filter.
         mode: u8,
-        /// Its colour (`+1..+3`).
+        /// Its colour (`+1..+3`; the black fades write 0xff here and draw
+        /// black).
         color: [u8; 3],
-        /// Frames left and in all (`+4`, `+6`).
+        /// `+4`: frames left (the cross-fade, the flash, the fade), or on
+        /// (the blur, the filter).
         frames: i16,
-        /// See `frames`.
-        total: i16,
+        /// `+6`: the frames in all (the flash, the fade), the alpha now
+        /// (the cross-fade), the weight (the blur), the level / 127 (the
+        /// filter).
+        level: i16,
+        /// `+8`: the cross-fade's target alpha.
+        target: i16,
+        /// `+0xa`: the cross-fade's step.
+        step: i16,
     }
 }
 
@@ -461,7 +474,7 @@ mod tests {
     }
 
     /// FNV-1a of `schema::text()` at [`API_VERSION`].
-    const PINNED: u64 = 0x3b69_e9fc_cbd4_a86b;
+    const PINNED: u64 = 0x9ab8_fa46_5e25_1490;
 
     /// A field change must raise [`API_VERSION`]: the schema's text is
     /// pinned to the version here.
