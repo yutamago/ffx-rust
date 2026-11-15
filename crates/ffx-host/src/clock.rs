@@ -199,6 +199,9 @@ pub struct Clock {
     /// host's from `epoch` on, as in the original.
     real: AtomicBool,
     epoch: OnceLock<Instant>,
+    /// The opening logos end on their first frame on the real clock too
+    /// ([`Clock::set_skip_opening`]).
+    skip_opening: AtomicBool,
     /// Host time inside the updates and inside the flips
     /// ([`Clock::timing`]).
     update_time: Timing,
@@ -300,6 +303,12 @@ impl Clock {
         } else if thread == self.render.load(Ordering::Relaxed) {
             self.render_wait.add(d);
         }
+    }
+
+    /// Ends the start-up logos on their first frame on the real clock too,
+    /// as fast mode always does (`crate::Options::skip_opening`).
+    pub fn set_skip_opening(&self, skip: bool) {
+        self.skip_opening.store(skip, Ordering::Release);
     }
 
     /// Whether the clock is the real one ([`Clock::set_real`]).
@@ -600,7 +609,8 @@ fn animate(e: &mut Exec, args: &Args) -> Ret {
 }
 
 /// `Renderer_PresentFlip(renderer)` (`0x00593760`, thiscall, bool): notes
-/// the render thread; ends the opening logos on their first frame; before
+/// the render thread; ends the opening logos on their first frame (on the
+/// real clock only with [`Clock::set_skip_opening`]); before
 /// the first update runs the vsyncs (no boundary yet).
 fn present_flip(e: &mut Exec, args: &Args) -> Ret {
     let c = clock(e);
@@ -614,16 +624,21 @@ fn present_flip(e: &mut Exec, args: &Args) -> Ret {
     crate::harness::after_present_flip();
     let c = clock(e);
     c.flips.fetch_add(1, Ordering::AcqRel);
-    if c.is_real() {
+    let real = c.is_real();
+    if real && !c.skip_opening.load(Ordering::Acquire) {
         return r.unwrap_or(Ret::eax(0));
     }
     let mut mem = e.mem();
     if mem.read::<u8>(OPENING_PLAYING) != 0 {
         mem.write(OPENING_PLAYING, 0u8);
         crate::log::note(&format!(
-            "the opening logos end at flip {} (fast mode)",
-            c.flips()
+            "the opening logos end at flip {} ({})",
+            c.flips(),
+            if real { "skipped" } else { "fast mode" }
         ));
+    }
+    if real {
+        return r.unwrap_or(Ret::eax(0));
     }
     if c.frame() == 0 {
         run_vsync(e);

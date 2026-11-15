@@ -175,6 +175,12 @@ pub struct Options {
     /// and the frame limiter sleeps, as `FFX.exe` runs. `false`: the
     /// virtual clock (every run as fast as the host goes, the tests').
     pub real_clock: bool,
+    /// End the start-up logos (`OpeningScreen.swf`) on their first frame on
+    /// the real clock too, as fast mode does (`clock::Clock::set_skip_opening`):
+    /// for a frontend that shows its own picture, and for builds without
+    /// Ruffle (no `swf` feature), whose null Iggy player never sends the
+    /// movie's `Finish`, so the start-up loop would wait for it forever.
+    pub skip_opening: bool,
 }
 
 /// [`boot_with`] with [`Options`]: maps the image and (unless
@@ -201,6 +207,7 @@ pub fn boot_opts(exe: &Path, table: table::Table, opts: &Options) -> Result<exec
     let shared = exec::Shared::new(arena, image, dlls, table, files)?;
     shared.gfx.configure(opts.gfx.clone());
     shared.clock.set_real(opts.real_clock);
+    shared.clock.set_skip_opening(opts.skip_opening);
     let mut exec = exec::Exec::new(shared)?;
     match exec.attach_dlls(1) {
         Ok(()) => Ok(exec),
