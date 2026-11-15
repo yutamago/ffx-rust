@@ -2,7 +2,8 @@
 //! harness listening: `replay_attach <port> <script> <trace path>`. For a
 //! headless `ffx-rust` on Linux (`FFX_HARNESS=<port> ffx-rust --gfx-null`;
 //! docs/host.md, "Hangs"): no game slot, no window, no launch. `shot` lines
-//! are skipped (the null device has no back buffer). Leaves the game
+//! are skipped and `shotwhen` lines wait for their condition without the
+//! shot (the null device has no back buffer). Leaves the game
 //! running unless the script ends it; `FFX_REPLAY_QUIT=1` sends `quit`.
 //! `FFX_REPLAY_PACE=1` plays the script a line at a time and prints, after
 //! each, the wall time, the frame (updates done) and the updates per wall
@@ -18,7 +19,8 @@ fn main() -> ffx_harness::Result<()> {
     let script: String = script
         .lines()
         .filter(|l| !l.trim_start().starts_with("shot "))
-        .flat_map(|l| [l, "\n"])
+        .map(shot_when_as_wait)
+        .flat_map(|l| [l, "\n".to_owned()])
         .collect();
     let mut game = ffx_harness::Game::connect(port)?;
     if std::env::var_os("FFX_REPLAY_PACE").is_some() {
@@ -33,6 +35,18 @@ fn main() -> ffx_harness::Result<()> {
         let _ = game.command("quit");
     }
     Ok(())
+}
+
+/// `shotwhen <range> <value> <mask> <limit> <path>` as `waitfor <range>
+/// <value> <mask> <limit>`; other lines as they are.
+fn shot_when_as_wait(line: &str) -> String {
+    let words: Vec<&str> = line.split_whitespace().collect();
+    match words.as_slice() {
+        ["shotwhen", range, value, mask, limit, ..] => {
+            format!("waitfor {range} {value} {mask} {limit}")
+        }
+        _ => line.to_owned(),
+    }
 }
 
 /// `FFX_REPLAY_PACE=1`: the script a line at a time; per line the wall
