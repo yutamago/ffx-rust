@@ -466,8 +466,7 @@ tools/scene-gate.sh <scene> <run A> <run B>
 gate capture (`crates/ffx-host/src/gfx/gate.rs`, docs/harness.md "Two
 processes") writes `capture.ffxgfx` as the hook's hash mode does, so
 drawdiff compares it with the original's references (`scene-gate.sh
-<scene> dg-<replay>-r1 <rust run>`; bsil0000 against `dg-besaid-r2`, the
-r1/r2 table above). It writes no `hashes.txt`;
+<scene> dg-<replay>-s1 <rust run>`, below). It writes no `hashes.txt`;
 `scene-gate.sh` then skips `compare-captures.py` (target and back buffer
 hashes) and says so. The run's `ffx-rust.log` is kept beside the
 captures, and marks the run as an `ffx-rust` one: `scene-gate.sh` then
@@ -546,11 +545,13 @@ capture's own work at frame 0 (the hook hashes every target at the
 present) makes the render thread late there every time. ffx-rust, with
 the order (`cloth waits` in its log: 180 on the battle), shows three
 different states, and its frames 0 and 2 equal the references' bit for
-bit. New original references with the order are needed:
-`scene-gate-capture.sh <replay> dg-<replay>-s1 original` and `-s2` for
-besaid, kami, deck and battle, then each pair against itself and the
-`rust` runs against `s1`. The cloth entries (kami0100's ring, and what
-the hood residue holds) should then be measured again.
+bit. New original references with the order were taken on 2026-11-15
+(`dg-<replay>-s1` and `-s2` for besaid, kami, deck and battle, original
+code, one game at a time). Every scene's s1 passes against its s2, and
+ffx-rust's captures (`m5s-<replay>`, the no-Unicorn build) pass against s1
+on all five scenes: menu, battle, bsil0000, bsil0300 and kami0100. The
+gates' references are s1 from now on (the r1/r2 rules above, bsil0000
+against r2 included, applied to the older references).
 
 | Scene | Replay (`tools/replays/`) | Capture point |
 |---|---|---|

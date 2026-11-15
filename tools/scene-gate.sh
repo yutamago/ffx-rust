@@ -14,8 +14,8 @@
 # Scenes: bsil0000, bsil0300 (replay besaid), kami0100 (replay kami),
 # menu (replay deck), battle (replay battle), draw-field (fw-101, fw-459, besaid-101; as
 # ~/ffx-work/m4/draw-field-gate.sh). References (original code, current
-# harness pins): dg-<replay>-r1 (bsil0000: r2; docs/drawdiff.md, "Scene
-# gates"). Exit 0 when both pass, 3 when two battle runs loaded in other
+# harness pins and the cloth order): dg-<replay>-s1 (docs/drawdiff.md,
+# "Scene gates"). Exit 0 when both pass, 3 when two battle runs loaded in other
 # update counts (rerun).
 set -u
 repo="$(cd "$(dirname "$0")/.." && pwd)"
