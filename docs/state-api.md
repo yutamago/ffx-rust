@@ -37,7 +37,8 @@ run without requests is unchanged.
   record, group and formation into `g_BtlFieldIndex`, `ResetEncountExe(1)`,
   `g_BtlExe`), raised again every 30 updates while the field drops it, and
   answered once `g_BtlStatus` says the battle runs (or after 600 updates
-  without it). Field 3 group 0 formation 0 is the salvage ship's deck
+  without it); refused while a battle runs, and a new one answers a
+  waiting one with `Err`. Field 3 group 0 formation 0 is the salvage ship's deck
   (`/btlmap/cdsp/cdsp00_a/`); the battle's characters come through the
   same character records as the field's (`actors`).
 

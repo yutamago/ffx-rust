@@ -177,7 +177,15 @@ pub(crate) fn boundary(e: &mut Exec, frame: u32) {
                 if let Some(old) = e.shared().requests.take_battle() {
                     (old.reply)(Err("another battle was asked for".into()));
                 }
-                ask_battle(e, field, group, formation);
+                // a battle runs: the request would only rewrite its field
+                if e.mem().read::<u8>(BTL_STATUS) != 0 {
+                    reply(Err("a battle is running".into()));
+                    continue;
+                }
+                if let Err(err) = ask_battle(e, field, group, formation) {
+                    reply(Err(format!("ResetEncountExe: {err}")));
+                    continue;
+                }
                 crate::log::note(&format!(
                     "requests: Battle({field}, {group}, {formation}) asked at frame {frame}"
                 ));
@@ -197,16 +205,17 @@ pub(crate) fn boundary(e: &mut Exec, frame: u32) {
 
 /// Writes a random encounter's request (as `start_battle` in
 /// ffx-harness's screens.rs): the field, group and formation,
-/// `ResetEncountExe(1)`, the request flag.
-fn ask_battle(e: &mut Exec, field: u16, group: u8, formation: u8) {
+/// `ResetEncountExe(1)`, the request flag (not raised when the call fails).
+fn ask_battle(e: &mut Exec, field: u16, group: u8, formation: u8) -> crate::Result<()> {
     {
         let mut mem = e.mem();
         mem.write(BTL_FIELD_INDEX, field);
         mem.write(BTL_FIELD_INDEX + 2, group);
         mem.write(BTL_FIELD_INDEX + 3, formation);
     }
-    let _ = e.call_cdecl(RESET_ENCOUNT_EXE, &[1]);
+    e.call_cdecl(RESET_ENCOUNT_EXE, &[1])?;
     e.mem().write(BTL_EXE, 1u8);
+    Ok(())
 }
 
 /// A waiting battle at the boundary: answered when it runs or has waited
@@ -220,24 +229,32 @@ fn battle_step(e: &mut Exec, frame: u32, mut b: Battle) {
         let mem = e.mem();
         (mem.read::<u8>(BTL_STATUS), mem.read::<u8>(BTL_EXE))
     };
-    if status != 0 {
-        (b.reply)(Ok(format!(
+    let done = if status != 0 {
+        Some(Ok(format!(
             "battle field {} group {} formation {} started at frame {frame} (asked {} times)",
             b.field, b.group, b.formation, b.times
-        )));
-        return;
-    }
-    if frame.wrapping_sub(b.since) > BATTLE_WAIT {
-        (b.reply)(Err(format!(
+        )))
+    } else if frame.wrapping_sub(b.since) > BATTLE_WAIT {
+        Some(Err(format!(
             "no battle after {BATTLE_WAIT} updates (asked {} times)",
             b.times
-        )));
+        )))
+    } else if flag == 0 && frame.wrapping_sub(b.raised) >= BATTLE_AGAIN {
+        match ask_battle(e, b.field, b.group, b.formation) {
+            Ok(()) => {
+                b.raised = frame;
+                b.times += 1;
+                None
+            }
+            Err(err) => Some(Err(format!("ResetEncountExe: {err}"))),
+        }
+    } else {
+        None
+    };
+    if let Some(r) = done {
+        crate::log::note(&format!("requests: battle at frame {frame}: {r:?}"));
+        (b.reply)(r);
         return;
-    }
-    if flag == 0 && frame.wrapping_sub(b.raised) >= BATTLE_AGAIN {
-        ask_battle(e, b.field, b.group, b.formation);
-        b.raised = frame;
-        b.times += 1;
     }
     e.shared().requests.keep_battle(b);
 }
@@ -256,6 +273,32 @@ mod tests {
             let g = Arc::clone(&g);
             Box::new(move |r| g.lock().unwrap().push(r)) as Reply
         })
+    }
+
+    fn battle(reply: Reply) -> Battle {
+        Battle {
+            field: 3,
+            group: 0,
+            formation: 0,
+            reply,
+            since: 0,
+            raised: 0,
+            times: 1,
+        }
+    }
+
+    #[test]
+    fn a_waiting_battle_keeps_the_queue_looked_at_and_ends_with_the_run() {
+        let q = Requests::default();
+        let (got, reply) = recorder();
+        q.keep_battle(battle(reply()));
+        assert!(q.waiting.load(Ordering::Acquire));
+        // taking the batch leaves the flag up while the battle waits
+        let _ = q.take();
+        assert!(q.waiting.load(Ordering::Acquire));
+        q.close();
+        assert_eq!(*got.lock().unwrap(), vec![Err(ENDED.to_string())]);
+        assert!(q.take_battle().is_none());
     }
 
     #[test]
