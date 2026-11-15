@@ -126,7 +126,9 @@ api_struct! {
         mp: i32,
         /// See `mp`.
         max_mp: i32,
-        /// KO'd (`+0xdcc` `stat_death` nonzero).
+        /// KO'd (`+0xdcc` `stat_death` nonzero: 1 KO'd, 2 the death pose
+        /// set). A monster that dies with a death pattern usually leaves
+        /// `battlers` instead (its `+0xdc8` cleared).
         dead: bool,
         /// Shown on the field (`+0xdd2` `stat_exist_flag`).
         exists: bool,

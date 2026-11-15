@@ -115,7 +115,9 @@ damage numbers, sound effects.
 `Snapshot.battlers`, in battle only (`g_BtlStatus`): the actors taking part
 (`+0xdc8` `in_battle`) of `g_BtlChrTop` (0x1f x 0xf90; 0..0x11 the party,
 0x14..0x1b the monsters) with HP, MP and their maximums, KO (`+0xdcc`),
-shown (`+0xdd2`) and the turn counter (`+0x6ec`): a frontend's battle HUD
+shown (`+0xdd2`) and the turn counter (`+0x6ec`): a frontend's battle HUD.
+A monster that dies with a death pattern (`+0x3f5`) usually leaves the list
+(its `+0xdc8` cleared) rather than showing `dead`
 (docs/formats/battle.md, "The battle actor").
 
 ## Encoding
