@@ -23,7 +23,7 @@ pub use read::{LANGUAGE_UNKNOWN, Reader, read};
 pub use schema::{ApiStruct, ApiType, Field, StructSchema, Ty};
 
 /// The API's version: a frontend checks it before it decodes a snapshot.
-pub const API_VERSION: u32 = 5;
+pub const API_VERSION: u32 = 6;
 
 /// The first four bytes of an encoded snapshot (`FFXS`).
 pub const MAGIC: u32 = u32::from_le_bytes(*b"FFXS");
@@ -106,6 +106,34 @@ api_struct! {
         /// What a frontend plays and draws besides the world: effects,
         /// screen filters, the music.
         effects: Effects,
+        /// The battle's actors taking part (party and monsters), empty out
+        /// of battle.
+        battlers: Vec<Battler>,
+    }
+}
+
+api_struct! {
+    /// A battle actor (`g_BtlChrTop` `0x011334d4`, 0xf90 bytes each:
+    /// docs/formats/battle.md "The battle actor").
+    Battler {
+        /// Its index (0..0x11 the party, 0x14..0x1b the monsters).
+        index: u8,
+        /// HP and its maximum (`+0x5d0`, `+0x594`).
+        hp: i32,
+        /// See `hp`.
+        max_hp: i32,
+        /// MP and its maximum (`+0x5d4`, `+0x598`).
+        mp: i32,
+        /// See `mp`.
+        max_mp: i32,
+        /// KO'd (`+0xdcc` `stat_death` nonzero: 1 KO'd, 2 the death pose
+        /// set). A monster that dies with a death pattern usually leaves
+        /// `battlers` instead (its `+0xdc8` cleared).
+        dead: bool,
+        /// Shown on the field (`+0xdd2` `stat_exist_flag`).
+        exists: bool,
+        /// Its turn counter (`+0x6ec` `current_ctb`).
+        ctb: i32,
     }
 }
 
@@ -435,6 +463,7 @@ pub fn structs() -> Vec<&'static StructSchema> {
         Effects::schema(),
         EffectInstance::schema(),
         ScreenFilter::schema(),
+        Battler::schema(),
     ]
 }
 
@@ -471,12 +500,12 @@ mod tests {
         let effects = 4 + 2 + 2 + 4 + 4 + 4;
         assert_eq!(
             b.len(),
-            8 + 4 + 8 + world + camera + input + 2 + actor + menus + 2 + effects
+            8 + 4 + 8 + world + camera + input + 2 + actor + menus + 2 + effects + 2
         );
     }
 
     /// FNV-1a of `schema::text()` at [`API_VERSION`].
-    const PINNED: u64 = 0x9ab8_fa46_5e25_1490;
+    const PINNED: u64 = 0x5730_bd6c_ed24_bf4d;
 
     /// A field change must raise [`API_VERSION`]: the schema's text is
     /// pinned to the version here.
@@ -488,7 +517,7 @@ mod tests {
         });
         assert_eq!(
             (API_VERSION, hash),
-            (5, PINNED),
+            (6, PINNED),
             "the schema changed: raise API_VERSION and pin the new hash"
         );
     }
@@ -508,11 +537,12 @@ mod tests {
                 "actors",
                 "menus",
                 "messages",
-                "effects"
+                "effects",
+                "battlers"
             ]
         );
         assert!(matches!(s.fields[5].ty, Ty::List(_)));
-        assert_eq!(structs().len(), 12);
+        assert_eq!(structs().len(), 13);
         assert!(Actor::schema().fields.iter().all(|f| !f.doc.is_empty()));
     }
 }
