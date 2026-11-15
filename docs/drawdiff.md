@@ -458,10 +458,47 @@ tools/scene-gate.sh <scene> <run A> <run B>
 gate capture (`crates/ffx-host/src/gfx/gate.rs`, docs/harness.md "Two
 processes") writes `capture.ffxgfx` as the hook's hash mode does, so
 drawdiff compares it with the original's references (`scene-gate.sh
-<scene> dg-<replay>-q1 <rust run>`). It writes no `hashes.txt`;
+<scene> dg-<replay>-r1 <rust run>`; bsil0000 against `dg-besaid-r2`, the
+r1/r2 table above). It writes no `hashes.txt`;
 `scene-gate.sh` then skips `compare-captures.py` (target and back buffer
 hashes) and says so. The run's `ffx-rust.log` is kept beside the
-captures.
+captures, and marks the run as an `ffx-rust` one: `scene-gate.sh` then
+adds `allow/gate/rust.txt`, what differs by design between the programs
+(GDraw: `FFX.exe`'s Iggy draws its movies on the game's device, with
+its own depth-stencil clears; `ffx-rust` composites Ruffle's image with
+objects the stream leaves out, so on bsil0300 the autosave prompt's 54
+items a frame are in the references only).
+
+The first `rust` gate run (m5 gates, 2026-11-15, `m5g-<replay>`, the
+build of `f08592186`) failed all five scenes; nothing had passed before
+(the mode was new, never run in a game). Against the stale `q1`
+references (2026-10-27, taken before `pin` reset `GlobalTime`) bsil0300,
+bsil0000 and kami0100 also showed 180-410 `scene.GlobalTime` constants;
+against r1/r2 those are gone. What was left was the capture, not the
+ports:
+
+- **Rings.** m5-perf1 (`b202e7392`) dropped `UpdateBuffer` without the
+  recording, which `ffx-rust` keeps off, so the frames of a gate capture
+  carried none, and every draw read its dynamic buffers as they were at
+  the window's start: the arena's `0xcd` fill where nothing had been
+  written yet (bsil0000's map draws, the cloth `vb5`), the previous
+  frame's vertices elsewhere (battle `vb0`-`vb3`, `ib`; the menu's `vb3`).
+  While a capture waits for its presents, the layer compares the dynamic
+  buffers again, from their bytes at the window's start.
+- **States.** D3D11 hands out one object for the state descriptions it
+  counts as the same (a sampler's `MaxAnisotropy` without an anisotropic
+  filter, a disabled blend's factors); the hook's capture keeps one
+  description per object, the last one created. The layer's handles each
+  kept their own, so `ps.sampler0.max_anisotropy: 0 | 1` (the menu's
+  material samplers, 241 draws a frame) and `blend.rt0.src/dest: 2/1 |
+  5/6` (21 draws). The D3D11 back end now names each state's object
+  (`Backend::object`), and the gate store gives every live state of one
+  object its last description (`gate::Store::state_object`).
+
+With both left out (a temporary allow list over the m5g captures), the
+menu, battle, bsil0000 (against r2) and kami0100 pass, and bsil0300 has
+GDraw's two clears left (now on `rust.txt`); the ring contents themselves
+need a new capture.
 
 | Scene | Replay (`tools/replays/`) | Capture point |
 |---|---|---|

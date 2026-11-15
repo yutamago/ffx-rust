@@ -86,6 +86,14 @@ Two writers of the same state (the same replay on `FFX.exe` and
 - the CRC, header `+0x1a` and file `+0x64f4`, which covers the play time
   (`SaveDataWriteCrc` `0x00648f20`: `TkCRC(0x64b8, file + 0x40)`).
 
+A reader's new save against the save it loaded may also differ in
+`saved_*` (block `+0xc0`-`+0xcf`, file `0x0100`): the reader saves from
+where its load put it, so the previous map and entrance there are its own
+way to the save sphere, not the writer's. The m5 round trip
+(2026-11-15) showed it at file `+0x0106`: `30 01 00 00 00` in both
+writers' saves, `2d 01 00 00 01` in both readers' (`FFX.exe` and
+`ffx-rust.exe` alike), every other byte equal.
+
 The file's modification time is not in its bytes (the load list sorts by
 it, above). No other byte, and no byte of `GameSetting.ini`, depends on
 the clock or the program: `tools/saves-roundtrip.sh` (`docs/harness.md`,

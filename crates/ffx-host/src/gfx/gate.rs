@@ -143,8 +143,12 @@ struct Window {
 #[derive(Default)]
 pub struct Store {
     textures: HashMap<Id, Texture>,
-    /// Views, shaders, layouts, states: as streamed.
+    /// Views, shaders, layouts, states: as streamed (a state's description
+    /// as its D3D11 object's last creation left it: [`Store::state_object`]).
     others: HashMap<Id, Msg>,
+    /// The D3D11 object behind each state (the back end's
+    /// [`super::Backend::object`]).
+    state_objects: HashMap<Id, usize>,
     window: Option<Window>,
 }
 
@@ -164,6 +168,15 @@ pub struct Live<'a> {
 impl Store {
     /// Takes in one message the layer streams.
     pub fn object(&mut self, m: &Msg, layout: impl Fn(&TextureDesc) -> Vec<(u32, u32, u32)>) {
+        if let Msg::Texture { id, .. }
+        | Msg::View { id, .. }
+        | Msg::Shader { id, .. }
+        | Msg::Layout { id, .. }
+        | Msg::State { id, .. }
+        | Msg::Release { id } = m
+        {
+            self.state_objects.remove(id);
+        }
         match m {
             Msg::Texture {
                 id,
@@ -197,6 +210,36 @@ impl Store {
                 self.others.remove(id);
             }
             _ => {}
+        }
+    }
+
+    /// State `id` (just streamed) is D3D11 object `object`. D3D11 hands
+    /// out one object for every description it counts as the same
+    /// (`CreateSamplerState` without an anisotropic filter ignores
+    /// `MaxAnisotropy`, `CreateBlendState` a disabled target's factors),
+    /// and the hook's capture keeps one description per object: the last
+    /// one the game created it with (`gfx::create_state`, keyed by the
+    /// object). So every live state of the same object takes `id`'s
+    /// description, and a draw that binds any of them reads as in
+    /// `FFX.exe`. `None` (the null device): each state keeps its own.
+    pub fn state_object(&mut self, id: Id, object: Option<usize>) {
+        let Some(object) = object else {
+            return;
+        };
+        let Some(Msg::State { kind, desc, .. }) = self.others.get(&id).cloned() else {
+            return;
+        };
+        self.state_objects.insert(id, object);
+        for (&other, &o) in &self.state_objects {
+            if other != id
+                && o == object
+                && let Some(Msg::State {
+                    kind: k, desc: d, ..
+                }) = self.others.get_mut(&other)
+                && *k == kind
+            {
+                d.clone_from(&desc);
+            }
         }
     }
 
@@ -910,6 +953,70 @@ mod tests {
             ]
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A sampler state's message: filter, address modes 1, `MaxAnisotropy`.
+    fn sampler(id: Id, filter: u32, aniso: u32) -> Msg {
+        let words = [
+            filter,
+            1,
+            1,
+            1,
+            0,
+            aniso,
+            1,
+            0,
+            0,
+            0,
+            0,
+            0xff7f_ffff,
+            0x7f7f_ffff,
+        ];
+        Msg::State {
+            id,
+            kind: ffx_gfx::StateKind::Sampler,
+            desc: words.iter().flat_map(|w| w.to_le_bytes()).collect(),
+        }
+    }
+
+    fn aniso(s: &Store, id: Id) -> u32 {
+        match s.others.get(&id) {
+            Some(Msg::State { desc, .. }) => u32::from_le_bytes(desc[20..24].try_into().unwrap()),
+            _ => panic!("no state {id}"),
+        }
+    }
+
+    /// m5 gates (2026-11-15): the menu's material samplers (filter 0x15,
+    /// made with `MaxAnisotropy` 1 and 0) were one D3D11 object in
+    /// `FFX.exe`, which the hook recorded with the last description; the
+    /// layer's handles each kept their own, and 241 draws a frame differed.
+    #[test]
+    fn states_of_one_d3d11_object_share_its_last_description() {
+        let mut s = Store::default();
+        let made = |s: &mut Store, m: Msg, object: Option<usize>| {
+            let Msg::State { id, .. } = m else {
+                unreachable!()
+            };
+            s.object(&m, layout);
+            s.state_object(id, object);
+        };
+        made(&mut s, sampler(1, 0x15, 1), Some(0x100));
+        made(&mut s, sampler(2, 0x0, 1), Some(0x200)); // another object
+        made(&mut s, sampler(3, 0x15, 0), Some(0x100));
+        assert_eq!((aniso(&s, 1), aniso(&s, 3)), (0, 0));
+        assert_eq!(aniso(&s, 2), 1);
+        // a release leaves the object's description with the others
+        s.object(&Msg::Release { id: 3 }, layout);
+        assert_eq!(aniso(&s, 1), 0);
+        // the next creation is the last one again
+        made(&mut s, sampler(4, 0x15, 1), Some(0x100));
+        assert_eq!(aniso(&s, 1), 1);
+        // the null device names no object: each keeps its own
+        made(&mut s, sampler(5, 0x15, 0), None);
+        assert_eq!((aniso(&s, 1), aniso(&s, 5)), (1, 0));
+        // a handle made again as another object leaves the old one
+        made(&mut s, sampler(1, 0x15, 7), Some(0x300));
+        assert_eq!(aniso(&s, 4), 1);
     }
 
     fn hex(b: &[u8]) -> String {

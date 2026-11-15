@@ -312,6 +312,14 @@ pub trait Backend: Send {
     fn read_texture(&mut self, _id: u32, _desc: &[u32; 11]) -> Option<Vec<Subresource>> {
         None
     }
+    /// The real object behind `id` (its address), when the back end
+    /// makes one: D3D11 hands out one state object for the descriptions
+    /// it counts as the same, as `FFX.exe`'s device does, and gate
+    /// captures follow it ([`gate::Store::state_object`]); `None` without
+    /// a real device.
+    fn object(&self, _id: u32) -> Option<usize> {
+        None
+    }
 }
 
 /// The recording null device: no GPU, every object a stand-in.
@@ -391,6 +399,12 @@ struct Resource {
 impl Resource {
     fn is_constant_buffer(&self) -> bool {
         self.dims == 0 && self.desc[2] & 0x4 != 0
+    }
+
+    /// A dynamic vertex or index buffer (`D3D11_USAGE_DYNAMIC`, not a
+    /// constant buffer): a gate capture's ring.
+    fn is_dynamic(&self) -> bool {
+        self.dims == 0 && !self.is_constant_buffer() && self.desc.get(1) == Some(&2)
     }
 }
 
@@ -626,15 +640,25 @@ fn buffer_now(
 }
 
 /// The dynamic vertex and index buffers' bytes now (`D3D11_USAGE_DYNAMIC`,
-/// not constant buffers).
-fn rings<'a>(
-    mem: &'a impl ffx_bridge::Mem,
-    resources: &'a HashMap<u32, Resource>,
-) -> impl Iterator<Item = (u32, Vec<u8>)> + 'a {
+/// not constant buffers). `seen`: they become what the stream last saw
+/// of them, so the capture's `UpdateBuffer`s start from them (without the
+/// recording, which keeps its own).
+fn rings(
+    mem: &impl ffx_bridge::Mem,
+    resources: &mut HashMap<u32, Resource>,
+    seen: bool,
+) -> Vec<(u32, Vec<u8>)> {
     resources
-        .iter()
-        .filter(|(_, r)| r.dims == 0 && !r.is_constant_buffer() && r.desc.get(1) == Some(&2))
-        .map(|(&id, r)| (id, bytes(mem, r.copy, r.size)))
+        .iter_mut()
+        .filter(|(_, r)| r.is_dynamic())
+        .map(|(&id, r)| {
+            let now = bytes(mem, r.copy, r.size);
+            if seen {
+                r.seen.clone_from(&now);
+            }
+            (id, now)
+        })
+        .collect()
 }
 
 /// `g_Camera`: the active camera channel; its look-at point and eye.
@@ -1152,6 +1176,9 @@ impl Gfx {
                 kind,
                 desc: desc.clone(),
             });
+            if let Some(g) = self.gate.as_mut() {
+                g.state_object(h, self.backend.object(h));
+            }
             self.descs.insert(h, desc);
         }
         hr
@@ -1285,17 +1312,26 @@ impl Gfx {
     /// The stream's `UpdateBuffer` for a non-constant buffer whose
     /// contents changed: the changed span.
     fn buffer_changed(&mut self, e: &Exec, id: u32) {
-        // only the recording reads `UpdateBuffer` (gate captures skip it):
-        // without one, no copy and compare of the whole buffer at every
-        // unmap (m5-perf1: 11 % of the headless boot's CPU, and most of
-        // its memcpy and memset)
-        if self.config.no_record {
+        // the recording reads `UpdateBuffer`, and so does a gate capture
+        // while it waits for its presents: its frames carry the dynamic
+        // buffers' updates over their bytes at the window's start (the
+        // draws read the rings' bytes as the game wrote them for the
+        // draw; without them, what the rings held at the window's start:
+        // m5 gates, 2026-11-15). Otherwise no copy and compare of the
+        // whole buffer at every unmap (m5-perf1: 11 % of the headless
+        // boot's CPU, and most of its memcpy and memset).
+        let capturing = self.gate.as_ref().is_some_and(|g| g.wants().is_some());
+        if self.config.no_record && !capturing {
             return;
         }
         let Some(r) = self.resources.get_mut(&id) else {
             return;
         };
         if r.dims != 0 || r.is_constant_buffer() || r.copy == 0 {
+            return;
+        }
+        // without the recording, the dynamic ones only (the gate's rings)
+        if self.config.no_record && !r.is_dynamic() {
             return;
         }
         let now = bytes(&e.mem(), r.copy, r.size);
@@ -1524,8 +1560,12 @@ impl Gfx {
             filtered = ffx_gfx::Frame { cmds, ..f.clone() };
             &filtered
         };
-        if g.present(crate::harness::present_label(), f, &mut live) {
-            g.snapshot_rings(rings(&mem, resources));
+        let before = g.present(crate::harness::present_label(), f, &mut live);
+        if before {
+            let now = rings(&mem, &mut self.resources, self.config.no_record);
+            if let Some(g) = self.gate.as_mut() {
+                g.snapshot_rings(now.into_iter());
+            }
         }
     }
 
@@ -1555,7 +1595,7 @@ impl Gfx {
             return Err("no gate store (start ffx-rust with FFX_HOST_GFX_CAPTURE=1)".into());
         };
         g.arm(opts, first, reply)?;
-        g.snapshot_rings(rings(mem, &self.resources));
+        g.snapshot_rings(rings(mem, &mut self.resources, self.config.no_record).into_iter());
         Ok(())
     }
 
@@ -2515,6 +2555,74 @@ mod tests {
             texture_subs(2, &[64, 64, 1, 1, 28, 1, 0, 0, 8, 0, 0]),
             vec![(256, 64, 1)]
         );
+    }
+
+    /// The `UpdateBuffer`s of this frame so far: (buffer, offset, bytes).
+    fn updates(g: &Gfx) -> Vec<(u32, u32, Vec<u8>)> {
+        g.cmds
+            .iter()
+            .filter_map(|c| match c {
+                Cmd::UpdateBuffer { id, offset, data } => Some((*id, *offset, data.clone())),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// m5 gates (2026-11-15): without the recording (`ffx-rust.exe`'s
+    /// default), a gate capture's frames carried no `UpdateBuffer`, so its
+    /// draws read the rings as they were at the window's start (the
+    /// previous frame's vertices, or the arena's fill where nothing had
+    /// been written yet) and every scene gate failed on ring contents.
+    /// While a capture waits for its presents, the dynamic buffers'
+    /// changes go into the frame again, from their bytes at the window's
+    /// start; other buffers and other times stay without the compare.
+    /// Needs `FFX_GAME_DIR` (the arena of a booted image).
+    #[test]
+    fn a_gate_capture_carries_the_rings_updates() {
+        let Some(dir) = std::env::var_os("FFX_GAME_DIR") else {
+            eprintln!("FFX_GAME_DIR is not set; skipping");
+            return;
+        };
+        let e = crate::boot(&std::path::Path::new(&dir).join("FFX.exe")).unwrap();
+        let config = Config {
+            backend: Choice::Null,
+            no_record: true,
+            gate: true,
+            ..Config::default()
+        };
+        let desc = SwapChainDesc([1280, 720, 60, 1, 0x1c, 0, 0, 1, 0, 0x20, 1, 0, 1, 0, 0]);
+        let mut g = Gfx::new(&e, config, desc, 0).unwrap();
+        let at = e.alloc(64);
+        let make = |g: &mut Gfx, usage: u32, cpu: u32| -> u32 {
+            e.mem().write(at, [64u32, usage, 1, cpu, 0, 0]);
+            assert_eq!(g.create_buffer(&e, &[g.device, at, 0, at + 32]), S_OK);
+            e.mem().read(at + 32)
+        };
+        let ring = make(&mut g, 2, 0x1_0000);
+        let fixed = make(&mut g, 0, 0);
+        // writes `bytes` at `offset` of the ring through a map
+        let write = |g: &mut Gfx, offset: u32, bytes: &[u8]| {
+            let out = at + 48;
+            assert_eq!(g.map(&e, &[g.context, ring, 0, 5, 0, out]), S_OK);
+            let p: u32 = e.mem().read(out);
+            e.mem().write_bytes(p + offset, bytes);
+            g.unmap(&e, &[g.context, ring, 0]);
+        };
+        // no capture: no compare, no update
+        write(&mut g, 0, &[1; 8]);
+        assert_eq!(updates(&g), Vec::new());
+        let (tx, rx) = std::sync::mpsc::channel();
+        let opts = gate::Options::parse(&["d", "hash", "frames", "1"]).unwrap();
+        g.gate_arm(&e.mem(), opts, 5, tx).unwrap();
+        // armed: the span changed since the window's start, nothing more
+        write(&mut g, 16, &[2; 4]);
+        write(&mut g, 16, &[2; 4]);
+        assert_eq!(updates(&g), vec![(ring, 16, vec![2; 4])]);
+        // a buffer that is not a ring: no update without the recording
+        e.mem().write_bytes(at, &[3; 16]);
+        g.update(&e, &[g.context, fixed, 0, 0, at, 0, 0]);
+        assert_eq!(updates(&g).len(), 1);
+        drop(rx);
     }
 
     #[test]
