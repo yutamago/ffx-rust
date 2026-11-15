@@ -97,6 +97,25 @@ impl Arena {
         self.base.wrapping_add(addr as usize)
     }
 
+    /// Starts watching the writes to `addr..addr + len` (the OS's write
+    /// watch: Windows' `MEM_WRITE_WATCH`): [`Arena::written`] then names
+    /// the pages written since. False where there is none (Linux).
+    #[must_use]
+    pub fn watch(&self, addr: u32, len: u32) -> bool {
+        let (start, size) = pages_around(addr, len);
+        sys::watch_reset(self.base, start, size)
+    }
+
+    /// The byte runs of `addr..addr + len` on pages written since
+    /// [`Arena::watch`], as (offset from `addr`, length), in order;
+    /// `None` when unknown (no write watch: every byte may be written).
+    #[must_use]
+    pub fn written(&self, addr: u32, len: u32) -> Option<Vec<(u32, u32)>> {
+        let (start, size) = pages_around(addr, len);
+        let pages = sys::written_pages(self.base, start, size)?;
+        Some(runs(addr, len, &pages))
+    }
+
     /// How many times a region was mapped so far.
     #[must_use]
     pub fn generation(&self) -> u64 {
@@ -316,10 +335,51 @@ impl ffx_bridge::Mem for ArenaMem {
     }
 }
 
+/// The whole pages around `addr..addr + len`: (start, size).
+fn pages_around(addr: u32, len: u32) -> (u32, u32) {
+    let page = 1u64 << PAGE_SHIFT;
+    let start = u64::from(addr) & !(page - 1);
+    let end = (u64::from(addr) + u64::from(len)).div_ceil(page) * page;
+    #[allow(clippy::cast_possible_truncation)] // below 4 GB
+    let r = (start as u32, (end - start).min(u64::from(u32::MAX)) as u32);
+    r
+}
+
+/// The runs of `addr..addr + len` (offsets from `addr`) that the written
+/// pages (their addresses, ascending) cover, adjacent pages joined.
+fn runs(addr: u32, len: u32, pages: &[u32]) -> Vec<(u32, u32)> {
+    let page = 1u64 << PAGE_SHIFT;
+    let (lo, hi) = (u64::from(addr), u64::from(addr) + u64::from(len));
+    let mut out: Vec<(u32, u32)> = Vec::new();
+    for &p in pages {
+        let a = u64::from(p).max(lo);
+        let b = (u64::from(p) + page).min(hi);
+        if a >= b {
+            continue;
+        }
+        #[allow(clippy::cast_possible_truncation)] // offsets within `len`
+        let (off, n) = ((a - lo) as u32, (b - a) as u32);
+        match out.last_mut() {
+            Some(last) if last.0 + last.1 == off => last.1 += n,
+            _ => out.push((off, n)),
+        }
+    }
+    out
+}
+
 /// The OS side: reserve, commit, release.
 #[cfg(all(unix, target_pointer_width = "64"))]
 mod sys {
     use crate::{Error, Result};
+
+    /// No write watch here.
+    pub(super) fn watch_reset(_: *mut u8, _: u32, _: u32) -> bool {
+        false
+    }
+
+    pub(super) fn written_pages(_: *mut u8, _: u32, _: u32) -> Option<Vec<u32>> {
+        None
+    }
 
     /// Where to look next after a refused mapping at `at`.
     pub(super) fn next_probe(at: u64) -> u64 {
@@ -373,12 +433,58 @@ mod sys {
 /// The OS side on 64-bit Windows: one 4 GB reservation.
 #[cfg(all(windows, target_pointer_width = "64"))]
 mod sys {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
     use windows_sys::Win32::System::Memory::{
-        MEM_COMMIT, MEM_RELEASE, MEM_RESERVE, PAGE_NOACCESS, PAGE_READWRITE, VirtualAlloc,
-        VirtualFree,
+        GetWriteWatch, MEM_COMMIT, MEM_RELEASE, MEM_RESERVE, PAGE_NOACCESS, PAGE_READWRITE,
+        ResetWriteWatch, VirtualAlloc, VirtualFree,
     };
 
     use crate::{Error, Result};
+
+    /// `MEM_WRITE_WATCH` (windows-sys has it under `SystemServices`).
+    const MEM_WRITE_WATCH: u32 = 0x0020_0000;
+
+    /// The reservation has the write watch (`MEM_WRITE_WATCH`).
+    static WATCHED: AtomicBool = AtomicBool::new(false);
+
+    pub(super) fn watch_reset(base: *mut u8, start: u32, size: u32) -> bool {
+        // SAFETY: inside the reservation, which has the write watch.
+        WATCHED.load(Ordering::Relaxed)
+            && unsafe { ResetWriteWatch(base.add(start as usize).cast(), size as usize) } == 0
+    }
+
+    /// The pages of `start..start + size` written since the last reset,
+    /// as arena addresses.
+    pub(super) fn written_pages(base: *mut u8, start: u32, size: u32) -> Option<Vec<u32>> {
+        if !WATCHED.load(Ordering::Relaxed) {
+            return None;
+        }
+        let mut addrs =
+            vec![std::ptr::null_mut::<core::ffi::c_void>(); (size as usize).div_ceil(0x1000)];
+        let mut count = addrs.len();
+        let mut granularity = 0u32;
+        // SAFETY: inside the reservation; the array holds `count` entries.
+        let r = unsafe {
+            GetWriteWatch(
+                0,
+                base.add(start as usize).cast(),
+                size as usize,
+                addrs.as_mut_ptr(),
+                &raw mut count,
+                &raw mut granularity,
+            )
+        };
+        if r != 0 || granularity != 0x1000 || count > addrs.len() {
+            return None;
+        }
+        #[allow(clippy::cast_possible_truncation)] // offsets into the 4 GB arena
+        let pages = addrs[..count]
+            .iter()
+            .map(|&p| (p as usize - base as usize) as u32)
+            .collect();
+        Some(pages)
+    }
 
     /// Where to look next after a refused mapping at `at`.
     pub(super) fn next_probe(at: u64) -> u64 {
@@ -386,8 +492,23 @@ mod sys {
     }
 
     pub(super) fn reserve() -> Result<*mut u8> {
-        // SAFETY: a fresh reservation.
-        let p = unsafe { VirtualAlloc(std::ptr::null(), 1 << 32, MEM_RESERVE, PAGE_NOACCESS) };
+        // SAFETY: a fresh reservation, with the write watch (the D3D11
+        // layer's discarding maps upload only the pages the game wrote),
+        // else without it.
+        let mut p = unsafe {
+            VirtualAlloc(
+                std::ptr::null(),
+                1 << 32,
+                MEM_RESERVE | MEM_WRITE_WATCH,
+                PAGE_NOACCESS,
+            )
+        };
+        if p.is_null() {
+            // SAFETY: as above.
+            p = unsafe { VirtualAlloc(std::ptr::null(), 1 << 32, MEM_RESERVE, PAGE_NOACCESS) };
+        } else {
+            WATCHED.store(true, Ordering::Relaxed);
+        }
         if p.is_null() {
             return Err(Error::Map(0, 0, "4 GB reservation refused".into()));
         }
@@ -422,6 +543,16 @@ mod sys {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn written_pages_become_runs_inside_the_range() {
+        assert_eq!(pages_around(0x1234, 0x10), (0x1000, 0x1000));
+        assert_eq!(pages_around(0x1ff0, 0x20), (0x1000, 0x2000));
+        // the range 0x1800..0x5800; pages 0x1000, 0x2000 (joined), 0x4000, 0x5000
+        let r = runs(0x1800, 0x4000, &[0x1000, 0x2000, 0x4000, 0x5000]);
+        assert_eq!(r, vec![(0, 0x1800), (0x2800, 0x1800)]);
+        assert_eq!(runs(0x1800, 0x100, &[0x3000]), []);
+    }
 
     #[test]
     fn mapped_pages_are_seen_without_the_lock() {

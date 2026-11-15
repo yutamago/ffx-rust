@@ -758,6 +758,18 @@ pub static R_00643B10: Row = Row {
     ],
     result: Some(Val::Tmp(0)),
 };
+/// `PhyreScene_onOpeningScreenFinish_00652400` (store constant to global): `u8[&0x00ccb9c2] = 0x0`.
+pub static R_00652400: Row = Row {
+    address: 0x0065_2400,
+    conv: Conv::Cdecl,
+    args: &[],
+    steps: &[Step::Store {
+        size: 1,
+        addr: Val::Image(0x00cc_b9c2),
+        value: Val::Const(0x0),
+    }],
+    result: None,
+};
 /// `PhyreScene_VFXSyncPath` (several stores: computed, into deref/field): `t0 = u32[(a0 + 0xf954)]; t1 = u32[(a0 + 0xf8cc)]; u32[((a0 + (t0 * 0x4)) + 0xf8d4)] = t1; t2 = u32[(a0 + 0xf954)]; t3 = u32[(a0 + 0xf8d0)]; u32[((a0 + (t2 * 0x4)) + 0xf914)] = t3; t4 = u32[(a0 + 0xf954)]; u32[(a0 + 0xf954)] = (t4 + 0x1); return t3`.
 pub static R_00654CC0: Row = Row {
     address: 0x0065_4cc0,
@@ -8431,7 +8443,7 @@ pub static R_00A79540: Row = Row {
 };
 
 /// Every row, by address.
-pub static ROWS: [&Row; 367] = [
+pub static ROWS: [&Row; 368] = [
     &R_00401310,
     &R_0042D3C0,
     &R_0042E060,
@@ -8478,6 +8490,7 @@ pub static ROWS: [&Row; 367] = [
     &R_006437C0,
     &R_006437E0,
     &R_00643B10,
+    &R_00652400,
     &R_00654CC0,
     &R_0065DE70,
     &R_0065DE90,

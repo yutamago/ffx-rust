@@ -37,6 +37,7 @@
 //! | `pad`, `press` | the buttons the clock's `Input_KeyHeld` wrapper answers for |
 //! | `shot <path>` | the back buffer of the update the main thread stands after, as a 32-bit BMP |
 //! | `gfxcapture <dir>` | the layer's recording so far (`capture.ffxgfx`, `calls.txt`) |
+//! | `timing` | since the last `timing`: updates and flips, the host time an update spends in `FFXApplication_animate` and a flip in `Renderer_PresentFlip` (average, longest; ms) |
 //! | `notes` | the run's notes so far (`crate::log::note`: turns, failed threads), as `events` lists |
 //! | `quit` | ends the process (after writing the `--profile` file: [`profile_at_quit`]) |
 //!
@@ -1493,6 +1494,23 @@ fn run(shared: &Arc<Shared>, line: &str) -> Result<String, String> {
             quit(shared);
             Ok("ok".into())
         }
+        // host time per update and per flip since the last `timing`
+        "timing" => Ok(format!("ok {}", shared.clock.timing())),
+        // the sampler's window (`crate::sample`, `FFX_HOST_SAMPLE`)
+        "sample" => match words.get(1).copied() {
+            Some("reset") if crate::sample::reset(shared) => Ok("ok".into()),
+            Some("stop")
+                if crate::sample::stop_window(
+                    shared,
+                    words.get(2).copied().unwrap_or("window"),
+                ) =>
+            {
+                Ok("ok".into())
+            }
+            // without FFX_HOST_SAMPLE the script plays on (no files)
+            Some("reset" | "stop") => Ok("ok no sampler (FFX_HOST_SAMPLE)".into()),
+            _ => Err("sample reset|stop [name]".into()),
+        },
         // the replay player's closing line: no call log here
         "calllog" if words.get(1) == Some(&"off") => Ok("ok".into()),
         // where the mix stands (docs/harness.md, "Audio capture"): the
@@ -1592,6 +1610,7 @@ fn quit(shared: &Shared) {
         eprintln!("{line}");
     }
     write_profile(shared);
+    crate::sample::finish_global(shared);
     // run-all.sh fails a run with any (docs/harness.md)
     eprintln!("{}", crate::log::bad_accesses_line());
     eprintln!(

@@ -291,18 +291,31 @@ pub mod bridge {
     /// and the 0x10 at `+0x21c` whose owner word (0x280 bytes above) is
     /// `slot` are cleared (the others are rewritten as they are); returns
     /// `al = 1` over the last address the original computed.
+    ///
+    /// The two tables are one run of 0x90 words (`+0x1c..+0x25c`) with
+    /// their owners one run above (`+0x29c..+0x4dc`), apart: read and
+    /// written as two blocks (m5-perf2: 0x1b0 word accesses a call were
+    /// the render thread's largest cost in a battle), the same bytes as
+    /// the original's word loop.
     pub fn unbind_table(h: &mut impl Host, this: u32, slot: u32) -> u32 {
-        for (base, n) in [(this + 0x1c, 0x80), (this + 0x21c, 0x10)] {
-            for i in 0..n {
-                let p = base + 4 * i;
-                let v = if h.read::<u32>(p + 0x280) == slot {
-                    0
-                } else {
-                    h.read::<u32>(p)
-                };
-                h.write(p, v);
+        const WORDS: usize = 0x90;
+        let base = this + 0x1c;
+        let mut owners = [0u8; 4 * WORDS];
+        let mut values = [0u8; 4 * WORDS];
+        h.read_bytes(base + 0x280, &mut owners);
+        h.read_bytes(base, &mut values);
+        let slot = slot.to_le_bytes();
+        for (v, o) in values
+            .as_chunks_mut::<4>()
+            .0
+            .iter_mut()
+            .zip(owners.as_chunks::<4>().0)
+        {
+            if *o == slot {
+                v.fill(0);
             }
         }
+        h.write_bytes(base, &values);
         ((this + 0x25c) & !0xff) | 1
     }
 

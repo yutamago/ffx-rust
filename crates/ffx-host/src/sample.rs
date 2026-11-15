@@ -18,6 +18,15 @@
 //! With the sampler on, every game thread notes its CPU time as it ends
 //! (`sample: thread ... used ... s of CPU`).
 //!
+//! Under the harness (`ffx-rust` with `FFX_HARNESS`) the program starts
+//! the sampler at the boot ([`start_global`]); the harness's `sample
+//! reset` starts the window over (the counts, and each thread's CPU time
+//! from there), `sample stop <name>` writes the files under `<prefix>.<name>`
+//! and starts a new window (`quit` writes `<prefix>`), with a
+//! `<prefix>.cpu.tsv` of each host thread's CPU time over the window, with
+//! the updates and flips it saw: the time an update and a flip cost,
+//! without the limiter's waits.
+//!
 //! A development aid only: nothing samples unless the variable is set.
 
 use std::collections::HashMap;
@@ -32,12 +41,196 @@ use crate::exec::spot::Kind;
 /// Host-entry samples: (kind, what) -> (self, inclusive).
 type Counts = HashMap<(u8, u32), (u64, u64)>;
 
+/// The sampler [`start_global`] started.
+static RUNNING: std::sync::Mutex<Option<Sampler>> = std::sync::Mutex::new(None);
+/// The host-entry counts so far (the loop's, readable at any time).
+static ENTRY_COUNTS: std::sync::Mutex<Option<Counts>> = std::sync::Mutex::new(None);
+/// At the window's start: each host thread's CPU time, the updates, the
+/// flips and the wall time.
+static WINDOW: std::sync::Mutex<Option<Window>> = std::sync::Mutex::new(None);
+
+#[derive(Debug)]
+struct Window {
+    cpu: HashMap<u32, (String, Duration)>,
+    updates: u32,
+    flips: u32,
+    at: std::time::Instant,
+}
+
+impl Window {
+    fn now(shared: &Shared) -> Self {
+        Self {
+            cpu: threads_cpu(),
+            updates: shared.clock.frame(),
+            flips: shared.clock.flips(),
+            at: std::time::Instant::now(),
+        }
+    }
+}
+
+/// Each host thread's name and CPU time (user + system), from
+/// `/proc/self/task` (Linux; empty elsewhere).
+fn threads_cpu() -> HashMap<u32, (String, Duration)> {
+    let mut out = HashMap::new();
+    let Ok(dir) = std::fs::read_dir("/proc/self/task") else {
+        return out;
+    };
+    for t in dir.flatten() {
+        let Some(tid) = t.file_name().to_str().and_then(|n| n.parse::<u32>().ok()) else {
+            continue;
+        };
+        let Ok(stat) = std::fs::read_to_string(t.path().join("stat")) else {
+            continue;
+        };
+        // `pid (comm) state ...`: utime and stime are fields 14 and 15
+        let Some((head, rest)) = stat.rsplit_once(')') else {
+            continue;
+        };
+        let comm = head.split_once('(').map_or("", |(_, c)| c).to_string();
+        let f: Vec<&str> = rest.split_whitespace().collect();
+        let ticks = |i: usize| f.get(i).and_then(|v| v.parse::<u64>().ok()).unwrap_or(0);
+        // fields after the comm start at 3 (state): utime 14 -> index 11
+        let ticks = ticks(11) + ticks(12);
+        out.insert(tid, (comm, Duration::from_millis(ticks * 10)));
+    }
+    out
+}
+
+/// [`start`], kept until [`finish_global`] (`ffx-rust` under the
+/// harness, whose `quit` ends the process); the window starts now.
+pub fn start_global(shared: &Arc<Shared>) {
+    if let Some(s) = start(shared)
+        && let Ok(mut r) = RUNNING.lock()
+    {
+        *r = Some(s);
+        if let Ok(mut w) = WINDOW.lock() {
+            *w = Some(Window::now(shared));
+        }
+    }
+}
+
+/// The harness's `sample reset`: the counts start over, and the window.
+pub fn reset(shared: &Shared) -> bool {
+    if RUNNING.lock().map_or(true, |r| r.is_none()) {
+        return false;
+    }
+    if let Ok(mut c) = ENTRY_COUNTS.lock() {
+        *c = None;
+    }
+    pc::reset();
+    if let Ok(mut w) = WINDOW.lock() {
+        *w = Some(Window::now(shared));
+    }
+    true
+}
+
+/// The harness's `sample stop [name]`: the window's files under
+/// `<prefix>.<name>` (the window's CPU times too), then a new window.
+/// False when no sampler runs.
+pub fn stop_window(shared: &Shared, name: &str) -> bool {
+    let prefix = match RUNNING.lock() {
+        Ok(r) => match r.as_ref() {
+            Some(s) => format!("{}.{name}", s.prefix),
+            None => return false,
+        },
+        Err(_) => return false,
+    };
+    write_window(shared, &prefix);
+    write_files(shared, &prefix);
+    reset(shared)
+}
+
+/// `quit`: [`Sampler::finish`] of the sampler [`start_global`] started,
+/// with the window's CPU times. False when none runs.
+pub fn finish_global(shared: &Shared) -> bool {
+    let Some(s) = RUNNING.lock().ok().and_then(|mut r| r.take()) else {
+        return false;
+    };
+    write_window(shared, &s.prefix);
+    s.finish(shared);
+    true
+}
+
+/// `<prefix>.cpu.tsv`: each host thread's CPU time since the window
+/// started, per update and per flip.
+fn write_window(shared: &Shared, prefix: &str) {
+    if let Some(w) = WINDOW.lock().ok().and_then(|mut w| w.take()) {
+        let end = Window::now(shared);
+        let updates = end.updates.saturating_sub(w.updates);
+        let flips = end.flips.saturating_sub(w.flips);
+        let wall = end.at.duration_since(w.at).as_secs_f64();
+        let mut rows: Vec<(u32, String, f64)> = end
+            .cpu
+            .iter()
+            .map(|(tid, (name, t))| {
+                let before = w.cpu.get(tid).map_or(Duration::ZERO, |b| b.1);
+                (*tid, name.clone(), t.saturating_sub(before).as_secs_f64())
+            })
+            .filter(|r| r.2 > 0.0)
+            .collect();
+        rows.sort_by(|a, b| b.2.total_cmp(&a.2));
+        let per = |n: u32, t: f64| {
+            if n == 0 {
+                0.0
+            } else {
+                1000.0 * t / f64::from(n)
+            }
+        };
+        let mut out = format!(
+            "# window: {updates} updates, {flips} flips in {wall:.3} s of wall time ({:.2} updates/s)\n# tid\tname\tcpu s\tms per update\tms per flip\n",
+            if wall > 0.0 {
+                f64::from(updates) / wall
+            } else {
+                0.0
+            }
+        );
+        for (tid, name, t) in rows {
+            let _ = writeln!(
+                out,
+                "{tid}\t{name}\t{t:.3}\t{:.2}\t{:.2}",
+                per(updates, t),
+                per(flips, t)
+            );
+        }
+        eprint!("{out}");
+        let _ = std::fs::write(format!("{prefix}.cpu.tsv"), out);
+    }
+}
+
+/// `<prefix>.entries.tsv` and `<prefix>.pc.tsv` from the counts so far.
+fn write_files(shared: &Shared, prefix: &str) {
+    let counts = ENTRY_COUNTS
+        .lock()
+        .ok()
+        .and_then(|c| c.clone())
+        .unwrap_or_default();
+    let mut rows: Vec<_> = counts.into_iter().collect();
+    rows.sort_by(|a, b| b.1.0.cmp(&a.1.0).then(b.1.1.cmp(&a.1.1)));
+    let mut out = String::from("# kind\twhat\tname\tself\tincl\n");
+    for ((k, what), (own, incl)) in rows {
+        let (kind, name) = match k {
+            1 => ("port", shared.port_name(what).unwrap_or("").to_string()),
+            2 => (
+                "import",
+                shared.import_name(what as usize).unwrap_or("").to_string(),
+            ),
+            3 => ("trap", String::new()),
+            _ => ("none", format!("thread {what:#x} outside host entries")),
+        };
+        let _ = writeln!(out, "{kind}\t{what:#010x}\t{name}\t{own}\t{incl}");
+    }
+    let _ = std::fs::write(format!("{prefix}.entries.tsv"), out);
+    if let Some(pcs) = pc::report() {
+        let _ = std::fs::write(format!("{prefix}.pc.tsv"), pcs);
+    }
+}
+
 /// A running sampler ([`start`]).
 #[derive(Debug)]
 pub struct Sampler {
     prefix: String,
     done: Arc<AtomicBool>,
-    thread: Option<std::thread::JoinHandle<Counts>>,
+    thread: Option<std::thread::JoinHandle<()>>,
 }
 
 /// Starts sampling when `FFX_HOST_SAMPLE` is set.
@@ -81,8 +274,7 @@ pub fn thread_started(id: u32) {
 }
 
 /// The host-entry sampler's loop: (kind, what) -> (self, inclusive).
-fn entries(shared: &std::sync::Weak<Shared>, done: &AtomicBool) -> Counts {
-    let mut counts = Counts::new();
+fn entries(shared: &std::sync::Weak<Shared>, done: &AtomicBool) {
     // the threads the CPU sampler keeps (all, the main one, or one)
     let only: Option<u32> = if std::env::var("FFX_HOST_SAMPLE_MAIN").is_ok_and(|v| v == "1") {
         Some(crate::exec::MAIN_THREAD)
@@ -96,6 +288,10 @@ fn entries(shared: &std::sync::Weak<Shared>, done: &AtomicBool) -> Counts {
         let Some(s) = shared.upgrade() else { break };
         let spots = s.spots.lock().map(|l| l.clone()).unwrap_or_default();
         drop(s);
+        let Ok(mut guard) = ENTRY_COUNTS.lock() else {
+            break;
+        };
+        let counts = guard.get_or_insert_with(Counts::new);
         for spot in spots {
             if only.is_some_and(|id| id != spot.id) {
                 continue;
@@ -116,7 +312,6 @@ fn entries(shared: &std::sync::Weak<Shared>, done: &AtomicBool) -> Counts {
             }
         }
     }
-    counts
 }
 
 fn kind(k: Kind) -> u8 {
@@ -135,30 +330,10 @@ impl Sampler {
         }
         self.done.store(true, Ordering::Relaxed);
         pc::stop();
-        let counts = self
-            .thread
-            .take()
-            .and_then(|t| t.join().ok())
-            .unwrap_or_default();
-        let mut rows: Vec<_> = counts.into_iter().collect();
-        rows.sort_by(|a, b| b.1.0.cmp(&a.1.0).then(b.1.1.cmp(&a.1.1)));
-        let mut out = String::from("# kind\twhat\tname\tself\tincl\n");
-        for ((k, what), (own, incl)) in rows {
-            let (kind, name) = match k {
-                1 => ("port", shared.port_name(what).unwrap_or("").to_string()),
-                2 => (
-                    "import",
-                    shared.import_name(what as usize).unwrap_or("").to_string(),
-                ),
-                3 => ("trap", String::new()),
-                _ => ("none", format!("thread {what:#x} outside host entries")),
-            };
-            let _ = writeln!(out, "{kind}\t{what:#010x}\t{name}\t{own}\t{incl}");
+        if let Some(t) = self.thread.take() {
+            let _ = t.join();
         }
-        let _ = std::fs::write(format!("{}.entries.tsv", self.prefix), out);
-        if let Some(pcs) = pc::report() {
-            let _ = std::fs::write(format!("{}.pc.tsv", self.prefix), pcs);
-        }
+        write_files(shared, &self.prefix);
     }
 }
 
@@ -272,6 +447,16 @@ mod pc {
         timer(0);
     }
 
+    /// The counts start over (a sample racing the reset may survive).
+    pub(super) fn reset() {
+        for t in [&KEYS, &COUNTS, &PAIR_KEYS, &PAIR_COUNTS] {
+            for a in t {
+                a.store(0, Ordering::Relaxed);
+            }
+        }
+        LOST.store(0, Ordering::Relaxed);
+    }
+
     pub(super) fn only_this_thread() {
         // SAFETY: a plain system call.
         ONLY.store(
@@ -365,6 +550,7 @@ mod pc {
 mod pc {
     pub(super) fn start() {}
     pub(super) fn stop() {}
+    pub(super) fn reset() {}
     pub(super) fn only_this_thread() {}
     pub(super) fn report() -> Option<String> {
         None

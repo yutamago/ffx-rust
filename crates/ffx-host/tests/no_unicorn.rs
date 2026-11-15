@@ -388,3 +388,71 @@ fn boots_until_the_first_unported_address() {
         "{report}"
     );
 }
+
+/// The real clock (`Options::real_clock`, m5-perf2) paces the game as
+/// `FFX.exe` does: `Game_Main`'s frame limiter sleeps until the next
+/// frame's time, so the boot plays 30 updates a wall second (two vsyncs a
+/// frame at 59.94 Hz: 29.97), not as many as the host can run (the
+/// virtual clock's). Measured over updates 100..600 of the boot (the
+/// logos and the title) in windows of 50, on the null device; the host
+/// must be able to run faster than 30 a second there (headless it runs
+/// 100 or more).
+#[test]
+fn the_real_clock_paces_the_updates_as_the_original() {
+    let Some(exe) = exe() else { return };
+    let opts = ffx_host::Options {
+        documents: Some(documents("real-clock")),
+        gfx: ffx_host::gfx::Config {
+            backend: ffx_host::gfx::Choice::Null,
+            no_record: true,
+            ..ffx_host::gfx::Config::default()
+        },
+        real_clock: true,
+        ..ffx_host::Options::default()
+    };
+    let mut exec = ffx_host::boot_opts(&exe, ffx_host::ports::table(), &opts).unwrap();
+    exec.set_budget(Duration::from_secs(env_or("FFX_NOU_BUDGET", 120)));
+    let shared = std::sync::Arc::clone(exec.shared());
+    let watch = std::thread::spawn(move || {
+        let at = |n: u32| {
+            while shared.clock.frame() < n {
+                if shared.stopped().is_some() {
+                    return None;
+                }
+                std::thread::sleep(Duration::from_micros(200));
+            }
+            Some(std::time::Instant::now())
+        };
+        let mut last = at(100)?;
+        let mut rates = Vec::new();
+        for n in (150..=600).step_by(50) {
+            let t = at(n)?;
+            rates.push(50.0 / t.duration_since(last).as_secs_f64());
+            last = t;
+        }
+        // the run ends here
+        shared.stop_all(Stop::Milestone("updates measured".into()));
+        Some(rates)
+    });
+    let stop = exec.run_entry().unwrap();
+    exec.join_threads(Duration::from_secs(5));
+    let mut rates = watch
+        .join()
+        .unwrap()
+        .unwrap_or_else(|| panic!("stopped first: {stop}"));
+    eprintln!("real clock: updates/s per 50 updates from 100: {rates:.2?}");
+    rates.sort_by(f64::total_cmp);
+    // a window with a load in it runs longer (as in the original): the
+    // median window is the limiter's rate
+    let median = rates[rates.len() / 2];
+    assert!(
+        (29.7..=30.2).contains(&median),
+        "median {median:.2} updates/s"
+    );
+    // never faster than the limiter (the virtual clock ran the field at
+    // 34 a second on Windows), but for its catch-up: after a late frame
+    // the limiter's last time steps by at most one interval
+    // (`now - min(over, interval)`), so the window after a slow one may
+    // run one update ahead (50 in 49 frame times: 30.6)
+    assert!(rates.iter().all(|&r| r < 30.7), "{rates:.2?}");
+}
