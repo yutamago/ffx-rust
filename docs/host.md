@@ -1042,8 +1042,28 @@ hook's `rust_audio.rs` is its other driver), with the same calls:
   silence, counted), so nothing the game sees depends on it. Off in
   harness games (their clock is virtual, as the hook keeps it off there)
   unless `FFX_RUST_AUDIO_OUT=1`; `FFX_RUST_AUDIO_OUT=0` keeps it off
-  anywhere. Emulated, the game mixes slower than real time, so a run
-  outside the harness stutters (underruns) until Unicorn is gone.
+  anywhere.
+- **The feeder** (2026-11-15, m5-player-io): with the device on and the
+  real clock (a player's run) and no capture, a thread of its own
+  (`audio::feeder`) mixes the blocks, as FMOD's mixer runs on its own
+  thread and follows the device: it keeps the device's queue at 4,800
+  frames (the device's prefill) plus one block, looking every 4 ms
+  (without a device, e.g. headless on Linux, it follows the wall clock).
+  `EventSystem::update` then mixes nothing and hands the game the end
+  callbacks and movie reads of the blocks mixed since the last one. Before,
+  each `EventSystem::update` mixed one block, so the mix followed the
+  `FmodManager` thread's ticks, and every tick it missed
+  (`FmodManager_tick` skips the periods it is late for) was 33 ms the
+  device never got: 3,588 blocks in 4,799 updates of a player's run on
+  Windows (75 %), 27 a second headless (90 %), and the device played
+  100 ms bursts between underruns. Headless now: 2,681 blocks in 90 s
+  (30 a second). The capture (`--audio-wav`) and harness games keep one
+  block per `EventSystem::update`, so the audio replays are unchanged.
+  Left: the engine reads a bank's waves through the game's file callbacks
+  under the mixer's lock (`Engine::wave`, at an event's start), and the
+  feeder waits for it: up to 122 ms at a scene's load headless, noted as
+  `fmod: feeder waited N ms` from 50 ms on; longer than the queue, it
+  underruns once there.
 - The movie's user stream (`createSound` with `FMOD_OPENUSER`,
   `src/audio/movie.rs`, host-iggy): mixed from the game's PCM read
   callback, as the hooked game's engine does it (`rust_audio.rs`): two
