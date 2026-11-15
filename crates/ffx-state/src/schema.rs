@@ -1,6 +1,7 @@
 //! The API's schema: each struct's fields and their types, and their
 //! encoding. Types: integers and floats little-endian, `bool` one byte (0 or
-//! 1), `String` a `u16` byte count then UTF-8, a list a `u16` count then its
+//! 1), `String` a `u16` byte count then UTF-8, `bytes` a `u16` count then the
+//! bytes, a list a `u16` count then its
 //! items, `[f32; N]` N floats, a struct its fields in order.
 
 /// A field's type.
@@ -24,6 +25,8 @@ pub enum Ty {
     Bool,
     /// `String`.
     Str,
+    /// `Vec<u8>`: raw bytes (the game's encoded text).
+    Bytes,
     /// `[f32; 3]`.
     Vec3,
     /// `[f32; 12]`.
@@ -50,6 +53,7 @@ impl Ty {
             Self::F64 => "f64".into(),
             Self::Bool => "bool".into(),
             Self::Str => "string".into(),
+            Self::Bytes => "bytes".into(),
             Self::Vec3 => "vec3".into(),
             Self::Mat34 => "mat3x4".into(),
             Self::Mat4 => "mat4".into(),
@@ -130,6 +134,15 @@ impl ApiType for String {
         }
         out.extend_from_slice(&count(n).to_le_bytes());
         out.extend_from_slice(&self.as_bytes()[..n]);
+    }
+}
+
+impl ApiType for Vec<u8> {
+    const TY: Ty = Ty::Bytes;
+    fn encode(&self, out: &mut Vec<u8>) {
+        let n = count(self.len());
+        out.extend_from_slice(&n.to_le_bytes());
+        out.extend_from_slice(&self[..usize::from(n)]);
     }
 }
 

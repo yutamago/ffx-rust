@@ -596,3 +596,82 @@ fn a_developer_save_loads_on_request() {
     assert!(p.bones.len() > 50, "{p:?}");
     eprintln!("player {} at {:?}", p.model, p.position);
 }
+
+/// The game-state API's message windows (API 3): developer save 6 (the
+/// arrival off Besaid, scenario 111) plays its cut scene, whose first
+/// subtitle opens a message window with its text.
+#[test]
+fn the_state_api_sees_a_subtitle() {
+    use std::sync::{Arc, Mutex};
+    let Some(exe) = exe() else { return };
+    let opts = ffx_host::Options {
+        documents: Some(documents("subtitle")),
+        gfx: ffx_host::gfx::Config {
+            backend: ffx_host::gfx::Choice::Null,
+            no_record: true,
+            ..ffx_host::gfx::Config::default()
+        },
+        ..ffx_host::Options::default()
+    };
+    let mut exec = ffx_host::boot_opts(&exe, ffx_host::ports::table(), &opts).unwrap();
+    exec.set_budget(Duration::from_secs(300));
+    let seen: Arc<Mutex<Option<ffx_state::Message>>> = Arc::default();
+    let language: Arc<Mutex<Option<u8>>> = Arc::default();
+    let id = {
+        let seen = Arc::clone(&seen);
+        let language = Arc::clone(&language);
+        let shared = Arc::downgrade(exec.shared());
+        let asked = std::sync::atomic::AtomicBool::new(false);
+        exec.shared().observers.add(Arc::new(move |s| {
+            let Some(shared) = shared.upgrade() else {
+                return;
+            };
+            if s.world.map == 0x15d
+                && s.world.event_frame > 30
+                && !asked.swap(true, std::sync::atomic::Ordering::Relaxed)
+            {
+                shared
+                    .requests
+                    .push(ffx_host::requests::Request::DevSave(6), Box::new(|_| {}));
+            }
+            if s.world.story != 111 {
+                return;
+            }
+            if let Some(m) = s
+                .messages
+                .iter()
+                .find(|m| m.state == 2 && !m.text.is_empty())
+            {
+                if let Ok(mut l) = language.lock() {
+                    *l = Some(s.world.language);
+                }
+                if let Ok(mut x) = seen.lock() {
+                    *x = Some(m.clone());
+                }
+                shared.stop_all(Stop::Milestone("a subtitle".into()));
+            }
+        }))
+    };
+    let stop = exec.run_entry().unwrap();
+    exec.join_threads(Duration::from_secs(5));
+    exec.shared().observers.remove(id);
+    assert_eq!(stop, Stop::Milestone("a subtitle".into()));
+    let m = seen.lock().unwrap().clone().unwrap();
+    // decoded with the character set of the game's language (a fresh
+    // GameSetting.ini: Japanese): the first line of the arrival, Tidus's
+    // "Rikku!?" ("リュック！？")
+    let language = language.lock().unwrap().expect("the language was read");
+    // a fresh GameSetting.ini: Japanese
+    assert_eq!(language, 0);
+    let lang = ffx_text::Language::Japanese;
+    let game = exe.parent().unwrap();
+    let archive = ffx_vbf::Archive::open(game.join("data/FFX_Data.vbf")).unwrap();
+    let table = archive
+        .read(archive.find(&lang.charset_path()).unwrap())
+        .unwrap();
+    let text = ffx_text::Charset::from_table(&table, lang)
+        .unwrap()
+        .decode(&m.text);
+    eprintln!("message {m:?} (language {language}, {lang:?}): {text:?}");
+    assert!(text.contains("リュック"), "{text:?}");
+}
