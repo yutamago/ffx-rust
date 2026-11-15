@@ -181,6 +181,8 @@ pub struct Options {
 /// As [`boot`]; a DLL whose `DllMain` fails stops the boot.
 pub fn boot_opts(exe: &Path, table: table::Table, opts: &Options) -> Result<exec::Exec> {
     let bytes = std::fs::read(exe)?;
+    #[cfg(windows)]
+    win_forward::set_icon_source(exe);
     let arena = Arc::new(arena::Arena::new()?);
     let image = image::load(&arena, &bytes)?;
     let dir = exe.parent().unwrap_or(Path::new("."));

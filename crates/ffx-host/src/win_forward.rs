@@ -39,7 +39,10 @@ use ffx_bridge::Mem;
 use windows_sys::Win32::Foundation::{HWND, LPARAM, POINT, RECT, WPARAM};
 use windows_sys::Win32::Graphics::Gdi::{ClientToScreen, UpdateWindow};
 use windows_sys::Win32::Media::{timeBeginPeriod, timeEndPeriod};
-use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows_sys::Win32::System::LibraryLoader::{
+    EnumResourceNamesW, GetModuleHandleW, LOAD_LIBRARY_AS_DATAFILE, LOAD_LIBRARY_AS_IMAGE_RESOURCE,
+    LoadLibraryExW,
+};
 use windows_sys::Win32::UI::WindowsAndMessaging as wm;
 
 use crate::exec::{Exec, Stop};
@@ -53,6 +56,70 @@ const WM_ACTIVATE: u32 = 0x0006;
 const WM_CLOSE: u32 = 0x0010;
 const WS_VISIBLE: u32 = 0x1000_0000;
 const GWL_WNDPROC: i32 = -4;
+
+/// The player's `FFX.exe`, whose icon the real window class shows
+/// ([`set_icon_source`]).
+static ICON_SOURCE: Mutex<Option<std::path::PathBuf>> = Mutex::new(None);
+
+/// Remembers the player's `FFX.exe` (at boot): the real window class takes
+/// its icon from it, as the original's window shows `FFX.exe`'s own (the
+/// game's `LoadIconA` answers a stand-in handle; no game data is built in).
+pub fn set_icon_source(exe: &std::path::Path) {
+    if let Ok(mut s) = ICON_SOURCE.lock() {
+        *s = Some(exe.to_path_buf());
+    }
+}
+
+/// The first icon group of [`ICON_SOURCE`] at `size` pixels (0: the
+/// system's default size), or null when there is none. The module stays
+/// loaded as a data file (icons are shared from it).
+fn game_icon(size: i32) -> wm::HICON {
+    use std::os::windows::ffi::OsStrExt;
+    unsafe extern "system" fn first(
+        _: windows_sys::Win32::Foundation::HMODULE,
+        _: windows_sys::core::PCWSTR,
+        name: windows_sys::core::PCWSTR,
+        found: isize,
+    ) -> windows_sys::core::BOOL {
+        // SAFETY: `found` is the `usize` the caller passed (below).
+        unsafe { *(found as *mut usize) = name as usize };
+        0
+    }
+    let Some(path) = ICON_SOURCE.lock().ok().and_then(|s| s.clone()) else {
+        return std::ptr::null_mut();
+    };
+    let wide: Vec<u16> = path.as_os_str().encode_wide().chain([0]).collect();
+    // SAFETY: plain calls; `wide` and `name` outlive them.
+    unsafe {
+        let module = LoadLibraryExW(
+            wide.as_ptr(),
+            std::ptr::null_mut(),
+            LOAD_LIBRARY_AS_DATAFILE | LOAD_LIBRARY_AS_IMAGE_RESOURCE,
+        );
+        if module.is_null() {
+            return std::ptr::null_mut();
+        }
+        let mut name = 0usize;
+        EnumResourceNamesW(
+            module,
+            wm::RT_GROUP_ICON,
+            Some(first),
+            (&raw mut name) as isize,
+        );
+        if name == 0 {
+            return std::ptr::null_mut();
+        }
+        wm::LoadImageW(
+            module,
+            name as windows_sys::core::PCWSTR,
+            wm::IMAGE_ICON,
+            size,
+            size,
+            if size == 0 { wm::LR_DEFAULTSIZE } else { 0 },
+        )
+        .cast()
+    }
+}
 
 /// The game's window procedures, by class name (lower case).
 static CLASSES: Mutex<Vec<(String, u32)>> = Mutex::new(Vec::new());
@@ -162,7 +229,7 @@ fn register_class_a(e: &mut Exec, args: &Args) -> Ret {
             cbClsExtra: 0,
             cbWndExtra: 0,
             hInstance: GetModuleHandleW(std::ptr::null()),
-            hIcon: std::ptr::null_mut(),
+            hIcon: game_icon(0),
             hCursor: wm::LoadCursorW(std::ptr::null_mut(), wm::IDC_ARROW),
             hbrBackground: std::ptr::null_mut(),
             lpszMenuName: std::ptr::null(),
