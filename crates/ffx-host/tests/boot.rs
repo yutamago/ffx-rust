@@ -788,8 +788,10 @@ fn the_state_api_names_the_main_menu() {
     let mut exec = ffx_host::boot_opts(&exe, ffx_host::ports::table(), &opts).unwrap();
     exec.set_budget(Duration::from_secs(300));
     let seen: Arc<Mutex<Option<ffx_state::Menus>>> = Arc::default();
+    let language: Arc<Mutex<Option<u8>>> = Arc::default();
     let id = {
         let seen = Arc::clone(&seen);
+        let language = Arc::clone(&language);
         let shared = Arc::downgrade(exec.shared());
         let step = AtomicU32::new(0);
         let at = AtomicU32::new(0);
@@ -822,6 +824,9 @@ fn the_state_api_names_the_main_menu() {
                     if let Ok(mut x) = seen.lock() {
                         *x = Some(s.menus.clone());
                     }
+                    if let Ok(mut l) = language.lock() {
+                        *l = Some(s.world.language);
+                    }
                     shared.stop_all(Stop::Milestone("the main menu".into()));
                 }
                 _ => {}
@@ -835,6 +840,8 @@ fn the_state_api_names_the_main_menu() {
     let menus = seen.lock().unwrap().clone().unwrap();
     let game = exe.parent().unwrap();
     let archive = ffx_vbf::Archive::open(game.join("data/FFX_Data.vbf")).unwrap();
+    // the snapshot's language: Japanese for a fresh GameSetting.ini
+    assert_eq!(language.lock().unwrap().unwrap(), 0);
     let lang = ffx_text::Language::Japanese;
     let table = archive
         .read(archive.find(&lang.charset_path()).unwrap())

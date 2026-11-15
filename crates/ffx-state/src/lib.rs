@@ -158,12 +158,13 @@ api_struct! {
 api_struct! {
     /// An option of the main menu.
     MenuOption {
-        /// The menu it opens (`g_TkMenuMainOptions` `+0`).
+        /// The menu it opens (`g_TkMenuMainOptions` `+0`, a `u32` the game
+        /// reads; its low 16 bits here: the names' lookup takes 12).
         id: u16,
         /// It can be chosen (`+4`).
         enabled: bool,
-        /// Its name in the game's encoding (`MsMenuGetText(9, id)`, the
-        /// menu text the game loaded).
+        /// Its name in the game's encoding (`MsMenuGetText(9, id, kana)`, the
+        /// menu text the game loaded; kana names when the config says so).
         name: Vec<u8>,
     }
 }

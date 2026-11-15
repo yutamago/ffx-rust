@@ -85,6 +85,12 @@ const MENU_MAIN_OPTION_LIST: u32 = 0x0187_1568;
 const MAX_OPTIONS: i32 = 32;
 /// `TkMenuMainMes`: the main menu's names are menu text 9.
 const MENU_TEXT_MAIN: u32 = 9;
+/// `g_BtlMenuText`: the menu texts' rows (12 bytes each: `+0` busy, `+8`
+/// the table), as `MsMenuGetText` reads them (ffx-battle's `menu_text`).
+const MENU_TEXT: u32 = 0x0113_33f0;
+const MENU_TEXT_ROW: u32 = 12;
+/// `g_SaveMenu`'s word: bit 3 the kana names (`MsGetSaveConfigHiragana`).
+const SAVE_MENU: u32 = 0x0113_079c;
 const BTL_WINDOW_OPEN: u32 = 0x023c_c08c;
 const BTL_WINDOW_CHR: u32 = 0x023c_c088;
 const BTL_ACTION_DEPTH: u32 = 0x023c_c092;
@@ -270,6 +276,22 @@ pub fn read(mem: &dyn Reader, update: u32, game_time: f64) -> Snapshot {
     }
 }
 
+/// `TkMenuMainMes(id)`: `MsMenuGetText(i, id, kana)` as the game runs it
+/// on the PC (ffx-battle's `menu_text`; its English rows are never used
+/// there): the name's address, 0 while the row is busy or has no table.
+fn menu_text(m: &Mem<'_>, i: u32, id: u32) -> u32 {
+    let row = MENU_TEXT.wrapping_add(i * MENU_TEXT_ROW);
+    let table = m.u32(row.wrapping_add(8));
+    if table == 0 || m.u8(row) != 0 {
+        return 0;
+    }
+    let kana = (m.u32(SAVE_MENU) >> 3) & 1;
+    #[allow(clippy::cast_possible_wrap)] // 12 bits
+    let (record, strings) =
+        ffx_kernel::bridge::excel_data(&ReadOnly(m.0), (id & 0xfff) as i32, table);
+    u32::from(m.u16(record.wrapping_add(kana * 4))).wrapping_add(strings)
+}
+
 fn menus(m: &Mem<'_>) -> Menus {
     // level -1: no command window (`TOSetBtlActiveChr`)
     let depth = m.u8(BTL_ACTION_DEPTH).cast_signed();
@@ -298,12 +320,7 @@ fn menus(m: &Mem<'_>) -> Menus {
         .map(|i| {
             let at = MENU_MAIN_OPTION_LIST + i * 8;
             let id = m.u16(at);
-            let name_at = ffx_battle::menu::bridge::ms_menu_get_text(
-                &ReadOnly(m.0),
-                MENU_TEXT_MAIN,
-                u32::from(id),
-                0,
-            );
+            let name_at = menu_text(m, MENU_TEXT_MAIN, u32::from(id));
             MenuOption {
                 id,
                 enabled: m.i16(at + 4) != 0,

@@ -50,29 +50,29 @@ pub fn ms_get_excel_data(mem: &mut impl Mem, id: i32, table: u32, strings: u32) 
 /// pointer to store into.
 pub fn excel_data(mem: &impl Mem, id: i32, table: u32) -> (u32, u32) {
     let count = i32::from(mem.read::<i16>(table));
-    let mut seg = table + 8;
+    let mut seg = table.wrapping_add(8);
     let mut found = false;
     for _ in 0..count.max(0) {
         let first = i32::from(mem.read::<u16>(seg));
-        let last = i32::from(mem.read::<u16>(seg + 2));
+        let last = i32::from(mem.read::<u16>(seg.wrapping_add(2)));
         if first <= id && id <= last {
             found = true;
             break;
         }
-        seg += 12;
+        seg = seg.wrapping_add(12);
     }
     if !found {
-        seg = table + 8;
+        seg = table.wrapping_add(8);
     }
-    let data = mem.read::<u32>(seg + 8);
-    let strings = u32::from(mem.read::<u16>(seg + 6))
+    let data = mem.read::<u32>(seg.wrapping_add(8));
+    let strings = u32::from(mem.read::<u16>(seg.wrapping_add(6)))
         .wrapping_add(data)
         .wrapping_add(table);
     if !found {
         return (data.wrapping_add(table), strings);
     }
     let first = u32::from(mem.read::<u16>(seg));
-    let stride = u32::from(mem.read::<u16>(seg + 4));
+    let stride = u32::from(mem.read::<u16>(seg.wrapping_add(4)));
     #[allow(clippy::cast_sign_loss)] // id >= first here
     let index = (id as u32).wrapping_sub(first);
     let record = stride
