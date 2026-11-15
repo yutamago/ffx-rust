@@ -665,13 +665,35 @@ is either ported or listed as unreachable with its evidence.
 
 ### M6: ports
 
-Linux and the Steam Deck first, then macOS, then whatever else. The
-native graphics backend (wgpu or Vulkan) is chosen at the start of M6;
-until then Proton runs the 64-bit Windows build. FMOD is already gone
-(M5's mixer). Controller mappings and the PC UI
-screens need a per-platform pass. The survey that opens M6 (the Windows
-dependencies, the graphics options, a wgpu proof of concept on the
-game's own shaders) is `docs/m6.md`.
+Linux and the Steam Deck through Proton now; native platforms through a
+Godot frontend later (user, 2026-11-15). The survey that opened M6 (the
+Windows dependencies, the graphics options, a wgpu proof of concept on
+the game's own shaders) is `docs/m6.md`.
+
+**Decisions (user, 2026-11-15).**
+- **Proton now.** `ffx-rust.exe` (64-bit Windows) runs on Linux and the
+  Steam Deck under Proton. M6 makes that solid: a baseline with the
+  original under Proton as the pixel reference, the replays and gates
+  there, and the Deck checks (Game Mode launch, Steam Input, 1280x800,
+  suspend and resume, 30 updates a second, achievements, saves shared
+  with the original).
+- **The platform seam.** The window, input, sound, Steam, the documents
+  folder and the message box move behind one trait in `ffx-host`, with
+  today's Windows code as one implementation. The future frontend plugs
+  in there.
+- **No native graphics back end now.** The wgpu back end the survey
+  recommended is not built. Native Linux, Deck and macOS builds come with
+  the Godot frontend, a future goal: `ffx-rust` stays the game-logic core
+  and Godot draws, plays and takes input on top. macOS waits for it.
+- Linux system libraries (Vulkan loader, libasound, libudev, X11/Wayland,
+  `libsteam_api.so`) are acceptable at run time; nothing is vendored.
+  macOS builds, when they come, are unsigned test builds first.
+
+**Done when** `ffx-rust.exe` under Proton passes on Linux and the Deck
+what M5 passes on Windows (every replay with the original's trace
+events, the scene gates, the audio checks, the saves round trip), the
+Deck checks above hold, and the platform seam carries the Windows build
+with every replay unchanged.
 
 ## Determinism
 
