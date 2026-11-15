@@ -66,8 +66,9 @@ screen's state machine and cursor, and whether the PC (Esc, Flash) menu
 is up. `messages` are the event script's message windows that are not
 closed (`g_AtelMsgWindows`, the bank `g_AtelMenuExecStatus` selects):
 state, place, flags, mode, the choice the player has highlighted (the
-text box's slot at `0x01868a90`, as `Native_MsgSelect_Poll` reads it), the
-one the script started it at, and the text as the game encodes it (a frontend decodes it with ffx-text's charset for `World.language`, the text's language (`g_LocalizationManager` `+4`, as `TOGetFFXLang`; a fresh `GameSetting.ini` gives Japanese); `{VAR}` codes
+text box's record that `0x01868a90`'s table points at, as
+`Native_MsgSelect_Poll` reads it), the
+one the script started it at, and the text as the game encodes it (a frontend decodes it with ffx-text's charset for `World.language`, the text's language (`g_LocalizationManager` `+4`, as `TOGetFFXLang`; 0xff unknown; a fresh `GameSetting.ini` gives Japanese, 0); `{VAR}` codes
 are not filled). The battle record's offsets come from the ports
 (`TOBtlMemoryCursorPos`, `ffx_system::tolib`), not yet from a run in
 battle; the title's menu and the Esc menu's pages (Flash) are not covered.

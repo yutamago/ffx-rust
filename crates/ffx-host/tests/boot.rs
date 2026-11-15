@@ -661,6 +661,8 @@ fn the_state_api_sees_a_subtitle() {
     // GameSetting.ini: Japanese): the first line of the arrival, Tidus's
     // "Rikku!?" ("リュック！？")
     let language = language.lock().unwrap().expect("the language was read");
+    // a fresh GameSetting.ini: Japanese
+    assert_eq!(language, 0);
     let lang = match language {
         1 => ffx_text::Language::English,
         _ => ffx_text::Language::Japanese,

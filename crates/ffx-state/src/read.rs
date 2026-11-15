@@ -43,6 +43,8 @@ const BTL_STATUS: u32 = 0x0112_a8e0;
 const PAUSE_ON: u32 = 0x0134_0828;
 /// `g_LocalizationManager`: `+4` the text's language (`TOGetFFXLang`).
 const LOCALIZATION: u32 = 0x00cd_ed58;
+/// `World::language` when the language cannot be read.
+pub const LANGUAGE_UNKNOWN: u8 = 0xff;
 /// `g_FadeActive` (a bit per fade slot).
 const FADE_ACTIVE: u32 = 0x0130_0704;
 
@@ -102,11 +104,12 @@ const ESC_MENU: u32 = 0x00cc_c870;
 const MSG_WINDOWS: u32 = 0x0132_6d70;
 const MSG_BANK: u32 = 0x0132_6b82;
 const MSG_WINDOW: u32 = 0x2c;
-/// The text boxes' slots (0x138 bytes a window): byte 1 is 2 for a choice,
-/// whose highlighted option is the first byte at `+0x18`
-/// (`TOGetTableKind2Data_008b7fd0`, `Native_MsgSelect_Poll`).
-const MSG_SLOTS: u32 = 0x0186_8a90;
-const MSG_SLOT: u32 = 0x138;
+/// The text boxes' table (`TOGetTable_01868a90`): 8 pointers, one per
+/// script window, to 0x138-byte records (`TOSetExeMessageArea` points them
+/// at the current bank's). In a record byte 1 is 2 for a choice and byte 7
+/// its option count; the highlighted option is the first byte at `+0x18`
+/// (`TOGetTableKind2Data_008b7fd0`, as `Native_MsgSelect_Poll` reads it).
+const MSG_TABLE: u32 = 0x0186_8a90;
 /// `g_MsgNone`: an empty text.
 const MSG_NONE: u32 = 0x0132_5b74;
 /// At most this many bytes of a window's text.
@@ -304,9 +307,12 @@ fn messages(m: &Mem<'_>) -> Vec<Message> {
                 flags: m.u16(at + 0x16),
                 mode: m.u8(at + 0x1d),
                 choice: {
-                    let slot = MSG_SLOTS + u32::from(w) * MSG_SLOT;
-                    if m.u8(slot + 1) == 2 {
-                        i16::from(m.u8(slot + 0x18))
+                    let rec = m.u32(MSG_TABLE + 4 * u32::from(w));
+                    if rec != 0
+                        && m.u8(rec.wrapping_add(1)) == 2
+                        && m.u8(rec.wrapping_add(7)).cast_signed() > 0
+                    {
+                        i16::from(m.u8(rec.wrapping_add(0x18)))
                     } else {
                         -1
                     }
@@ -343,11 +349,15 @@ fn world(m: &Mem<'_>) -> World {
         paused: m.u8(PAUSE_ON) != 0,
         fading: m.u32(FADE_ACTIVE) != 0,
         language: {
+            // 0xff: unknown (no manager yet, or not a language)
             let lm = m.u32(LOCALIZATION);
-            if lm == 0 {
-                0
+            if lm == 0 || !m.mapped::<4>(lm.wrapping_add(4)) {
+                LANGUAGE_UNKNOWN
             } else {
-                u8::try_from(m.u32(lm.wrapping_add(4))).unwrap_or(0)
+                u8::try_from(m.u32(lm.wrapping_add(4)))
+                    .ok()
+                    .filter(|&l| l <= 10)
+                    .unwrap_or(LANGUAGE_UNKNOWN)
             }
         },
     }
@@ -484,7 +494,13 @@ mod tests {
     fn nothing_mapped_reads_as_an_empty_world() {
         let s = read(&Sparse(HashMap::new()), 5, 2.0);
         assert_eq!(s.update, 5);
-        assert_eq!(s.world, World::default());
+        assert_eq!(
+            s.world,
+            World {
+                language: LANGUAGE_UNKNOWN,
+                ..World::default()
+            }
+        );
         assert!(!s.camera.valid);
         assert_eq!(s.actors.len(), 0);
     }
@@ -526,6 +542,66 @@ mod tests {
         assert_eq!(s.menus.battle_depth, 1);
         assert_eq!(s.menus.battle_cursor, 1);
         assert_eq!(s.menus.battle_ids, [0x01, 0x30, 0x02, 0x30, 0x03, 0x30]);
+    }
+
+    #[test]
+    fn the_live_choice_through_the_text_box_table() {
+        let mut mem = Sparse(HashMap::new());
+        mem.put(MSG_BANK, &[0]);
+        mem.put(MSG_WINDOWS, &vec![0u8; 16 * MSG_WINDOW as usize]);
+        // window 3 open; its table entry points at a record: a choice of
+        // 3 options with the second highlighted
+        mem.put(MSG_WINDOWS + 3 * MSG_WINDOW + 0x14, &2u16.to_le_bytes());
+        mem.put(MSG_WINDOWS + 3 * MSG_WINDOW + 0x1e, &[0]);
+        mem.put(MSG_TABLE, &[0u8; 32]);
+        let rec: u32 = 0x0440_0000;
+        mem.put(MSG_TABLE + 12, &rec.to_le_bytes());
+        mem.put(rec, &[0u8; 0x138]);
+        mem.put(rec + 1, &[2]);
+        mem.put(rec + 7, &[3]);
+        mem.put(rec + 0x18, &[1]);
+        let s = read(&mem, 0, 0.0);
+        assert_eq!((s.messages[0].window, s.messages[0].choice), (3, 1));
+        assert_eq!(s.messages[0].initial_choice, 0);
+        // no options: no choice
+        mem.put(rec + 7, &[0]);
+        assert_eq!(read(&mem, 0, 0.0).messages[0].choice, -1);
+    }
+
+    #[test]
+    fn the_language_the_save_list_and_the_menus_edge_cases() {
+        let mut mem = Sparse(HashMap::new());
+        // no localization manager: unknown
+        assert_eq!(read(&mem, 0, 0.0).world.language, LANGUAGE_UNKNOWN);
+        let lm: u32 = 0x0450_0000;
+        mem.put(LOCALIZATION, &lm.to_le_bytes());
+        mem.put(lm, &[0u8; 8]);
+        mem.put(lm + 4, &1u32.to_le_bytes());
+        assert_eq!(read(&mem, 0, 0.0).world.language, 1);
+        mem.put(lm + 4, &0x1234u32.to_le_bytes());
+        assert_eq!(read(&mem, 0, 0.0).world.language, LANGUAGE_UNKNOWN);
+        // the save list: the index is top + cursor
+        mem.put(SAVE_TOP, &5i32.to_le_bytes());
+        mem.put(SAVE_CURSOR, &2i32.to_le_bytes());
+        mem.put(SAVE_ROWS, &9i32.to_le_bytes());
+        mem.put(SAVE_FILES, &8i32.to_le_bytes());
+        let s = read(&mem, 0, 0.0).menus;
+        assert_eq!(
+            (s.save_top, s.save_cursor, s.save_rows, s.save_files),
+            (5, 2, 9, 8)
+        );
+        // battle level -1: no command window
+        mem.put(BTL_ACTION_DEPTH, &[0xff]);
+        mem.put(BTL_WINDOW_RECORDS + BTL_RECORD_CURSOR, &4u16.to_le_bytes());
+        let s = read(&mem, 0, 0.0).menus;
+        assert_eq!((s.battle_depth, s.battle_cursor), (-1, 0));
+        assert_eq!(s.battle_ids.len(), 0);
+        // an Esc menu object that is not mapped is not up
+        mem.put(ESC_MENU, &0x0460_0000u32.to_le_bytes());
+        assert!(!read(&mem, 0, 0.0).menus.esc_menu);
+        // a bank byte of -1 reads bank 0
+        mem.put(MSG_BANK, &[0xff]);
+        assert_eq!(read(&mem, 0, 0.0).messages.len(), 0);
     }
 
     #[test]

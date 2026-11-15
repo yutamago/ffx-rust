@@ -19,7 +19,7 @@
 mod read;
 pub mod schema;
 
-pub use read::{Reader, read};
+pub use read::{LANGUAGE_UNKNOWN, Reader, read};
 pub use schema::{ApiStruct, ApiType, Field, StructSchema, Ty};
 
 /// The API's version: a frontend checks it before it decodes a snapshot.
@@ -143,7 +143,7 @@ api_struct! {
         /// The list's first row on screen (`g_SaveListTop`).
         save_top: i32,
         /// The rows listed (saving: the files but the first, and a new
-        /// file's row).
+        /// file's row unless the list is full).
         save_rows: i32,
         /// The save files found.
         save_files: i32,
@@ -168,8 +168,9 @@ api_struct! {
         flags: u16,
         /// The mode bits (0x02 a choice, 0x10 waiting, 0x20 a selection).
         mode: u8,
-        /// The choice the player has highlighted now (the text box's slot,
-        /// `TOGetTableKind2Data`), -1 when the window holds no choice.
+        /// The choice the player has highlighted now (the text box's
+        /// record through `0x01868a90`'s table, `TOGetTableKind2Data`), -1
+        /// when the window holds no choice.
         choice: i16,
         /// The choice the script set it to at the start (`+0x1e`).
         initial_choice: i16,
@@ -207,7 +208,8 @@ api_struct! {
         fading: bool,
         /// The language of the game's text (`TOGetFFXLang`: 0 Japanese,
         /// 1 English, 2 French, 3 Spanish, 4 German, 5 Italian, 9 Korean,
-        /// 10 Chinese): the character set that decodes the messages.
+        /// 10 Chinese; 0xff unknown): the character set that decodes the
+        /// messages.
         language: u8,
     }
 }
