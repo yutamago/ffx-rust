@@ -10,7 +10,7 @@
 //!
 //! - `FFX_HARNESS_BACKGROUND=1`: the window is never activated and stays at
 //!   the bottom of the window stack, the mouse is the test's
-//!   ([`crate::win_forward`]);
+//!   ([`crate::platform::windows`]);
 //! - `FFX_HARNESS_HOME=<folder>`: the game's Documents folder (settings,
 //!   saves), the program's `--documents`;
 //! - `FFX_HARNESS_SEED=<n>`: `Rng_ClockSeed` (`0x00798950`) returns `n`.

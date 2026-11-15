@@ -8,7 +8,7 @@
 //! gets a real host device behind it ([`create_device`]), and its methods
 //! go to that device: the data format (the game's 32-bit `DIDATAFORMAT`
 //! rebuilt with host pointers, [`read_format`]), the cooperative level
-//! with the real window (`win_forward`: the game holds the real `HWND`),
+//! with the real window (the Windows platform's: the game holds the real `HWND`),
 //! properties, `Acquire`, `Poll`, `GetDeviceState`, `GetDeviceData`,
 //! `EnumObjects`. So focus works as in `FFX.exe`: the game asks for a
 //! non-exclusive foreground keyboard and mouse (`Input_AddKeyboard`,
@@ -642,8 +642,8 @@ mod host {
     }
 
     pub fn set_cooperative_level(dev: u32, window: u32, flags: u32) -> Option<i32> {
-        let window = HWND(crate::win_forward::hwnd(window));
-        // SAFETY: the real window the game created (win_forward).
+        let window = HWND(crate::platform::windows::hwnd(window));
+        // SAFETY: the real window the game created (the platform's).
         device(dev, |d| {
             code(unsafe { d.SetCooperativeLevel(window, flags) })
         })

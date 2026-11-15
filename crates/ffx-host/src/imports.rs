@@ -60,7 +60,7 @@ impl Imports {
     pub fn bind(&mut self, i: usize, dll: &str, name: &str, from: Option<&str>) {
         let from = from.map(str::to_string);
         let full = format!("{dll}!{name}");
-        let found = platform_table()
+        let found = crate::window::TABLE
             .iter()
             .chain(crate::win32::TABLE)
             .chain(TABLE)
@@ -126,20 +126,6 @@ impl Imports {
     pub fn coverage(&self) -> (usize, usize) {
         let stubbed = self.bound.values().filter(|b| b.run.is_some()).count();
         (stubbed, self.bound.len())
-    }
-}
-
-/// The imports that forward to the real system on this platform, bound
-/// ahead of the stand-ins (on Windows `crate::win_forward`; none
-/// elsewhere).
-fn platform_table() -> &'static [(&'static str, &'static str, Conv, usize, ImportFn)] {
-    #[cfg(windows)]
-    {
-        crate::win_forward::TABLE
-    }
-    #[cfg(not(windows))]
-    {
-        &[]
     }
 }
 
@@ -519,16 +505,6 @@ fn controlfp_s(e: &mut Exec, args: &Args) -> Ret {
         mem.write(a(args, 0), 0x0009_001fu32);
     }
     Ret::eax(0)
-}
-
-/// `GetSystemMetrics(index)`: a 1920 x 1080 primary screen.
-fn system_metrics(_: &mut Exec, args: &Args) -> Ret {
-    Ret::eax(match a(args, 0) {
-        0 | 16 | 78 => 1920, // SM_CXSCREEN, SM_CXFULLSCREEN, SM_CXVIRTUALSCREEN
-        1 | 17 | 79 => 1080,
-        80 => 1, // SM_CMONITORS
-        _ => 0,
-    })
 }
 
 /// Writes `s` (with its NUL, cut to `cap` characters) as bytes or UTF-16;
@@ -1032,32 +1008,6 @@ pub(crate) fn sprintf_s(e: &mut Exec, args: &Args) -> Ret {
     Ret::eax(n)
 }
 
-/// The fake window handle (`CreateWindowExA`).
-pub const HWND: u32 = 0x0001_0010;
-
-/// `CreateWindowExA`: a milestone, recorded; the run goes on with a fake
-/// window ([`HWND`]) that gets no messages (`--stop-at
-/// USER32.dll!CreateWindowExA` stops here instead).
-fn window_milestone(e: &mut Exec, _: &Args) -> Ret {
-    e.stats
-        .milestones
-        .push("first window (CreateWindowExA)".into());
-    Ret::eax(HWND)
-}
-
-/// `GetClientRect` / `GetWindowRect(hwnd, &rect)`: the window is the
-/// 1920 x 1080 screen.
-fn window_rect(e: &mut Exec, args: &Args) -> Ret {
-    let mut mem = e.mem();
-    mem.write(a(args, 1), [0u32, 0, 1920, 1080]);
-    Ret::eax(1)
-}
-
-/// `PeekMessageA/W(&msg, hwnd, min, max, remove)`: no messages.
-fn peek_message(_: &mut Exec, _: &Args) -> Ret {
-    Ret::eax(0)
-}
-
 /// `D3D11CreateDevice(adapter, driver, software, flags, levels, n, sdk,
 /// &device, &level, &context)`. The renderer's start-up first asks only
 /// for the feature level (no device, no context): `S_OK` and `11_0`
@@ -1273,27 +1223,8 @@ pub const TABLE: &[(&str, &str, Conv, usize, ImportFn)] = &[
     ("USER32.dll", "MessageBoxW", Conv::Stdcall, 4, message_box_w),
     ("USER32.dll", "LoadIconA", Conv::Stdcall, 2, new_handle),
     ("USER32.dll", "LoadCursorA", Conv::Stdcall, 2, new_handle),
-    ("USER32.dll", "RegisterClassA", Conv::Stdcall, 1, |_, _| {
-        Ret::eax(0xc001)
-    }),
-    ("USER32.dll", "AdjustWindowRect", Conv::Stdcall, 3, one),
-    ("USER32.dll", "ShowCursor", Conv::Stdcall, 1, zero),
     ("ole32.dll", "CoInitialize", Conv::Stdcall, 1, zero),
-    (
-        "USER32.dll",
-        "GetSystemMetrics",
-        Conv::Stdcall,
-        1,
-        system_metrics,
-    ),
     // milestones
-    (
-        "USER32.dll",
-        "CreateWindowExA",
-        Conv::Stdcall,
-        12,
-        window_milestone,
-    ),
     (
         "d3d11.dll",
         "D3D11CreateDevice",
@@ -1315,20 +1246,6 @@ pub const TABLE: &[(&str, &str, Conv, usize, ImportFn)] = &[
         5,
         crate::gfx::direct_input8_create,
     ),
-    // the window (a fake one, no messages)
-    ("USER32.dll", "ShowWindow", Conv::Stdcall, 2, zero),
-    ("USER32.dll", "SetWindowPos", Conv::Stdcall, 7, one),
-    ("USER32.dll", "SetWindowTextA", Conv::Stdcall, 2, one),
-    ("USER32.dll", "SetWindowLongA", Conv::Stdcall, 3, zero),
-    ("USER32.dll", "GetWindowLongA", Conv::Stdcall, 2, zero),
-    ("USER32.dll", "GetClientRect", Conv::Stdcall, 2, window_rect),
-    ("USER32.dll", "GetWindowRect", Conv::Stdcall, 2, window_rect),
-    ("USER32.dll", "ClientToScreen", Conv::Stdcall, 2, one),
-    ("USER32.dll", "PeekMessageA", Conv::Stdcall, 5, peek_message),
-    ("USER32.dll", "PeekMessageW", Conv::Stdcall, 5, peek_message),
-    ("USER32.dll", "UpdateWindow", Conv::Stdcall, 1, one),
-    ("USER32.dll", "SetCursorPos", Conv::Stdcall, 2, one),
-    ("USER32.dll", "ClipCursor", Conv::Stdcall, 1, one),
     (
         "USER32.dll",
         "RegisterWindowMessageA",
@@ -1352,8 +1269,6 @@ pub const TABLE: &[(&str, &str, Conv, usize, ImportFn)] = &[
     ),
     ("IMM32.dll", "ImmAssociateContext", Conv::Stdcall, 2, zero),
     // timers
-    ("WINMM.dll", "timeBeginPeriod", Conv::Stdcall, 1, zero),
-    ("WINMM.dll", "timeEndPeriod", Conv::Stdcall, 1, zero),
     (
         "WINMM.dll",
         "timeGetTime",
