@@ -23,7 +23,7 @@ pub use read::{Reader, read};
 pub use schema::{ApiStruct, ApiType, Field, StructSchema, Ty};
 
 /// The API's version: a frontend checks it before it decodes a snapshot.
-pub const API_VERSION: u32 = 2;
+pub const API_VERSION: u32 = 3;
 
 /// The first four bytes of an encoded snapshot (`FFXS`).
 pub const MAGIC: u32 = u32::from_le_bytes(*b"FFXS");
@@ -98,6 +98,75 @@ api_struct! {
         /// The field characters in use (party, NPCs, monsters, objects,
         /// weapons), by slot.
         actors: Vec<Actor>,
+        /// The menus' state (which is open, the cursors).
+        menus: Menus,
+        /// The script's message windows that are not closed (dialogue,
+        /// choices, captions).
+        messages: Vec<Message>,
+    }
+}
+
+api_struct! {
+    /// The menus' state, for a native UI (docs/formats/menu.md, save.md,
+    /// battle.md).
+    Menus {
+        /// The open PS2 menus: a bit per slot of `g_TkMenuSlots` (`0x2`
+        /// the main menu, `0x1000` the weapon shop, `0x2000` the item shop;
+        /// `g_TkMenuMainActiveMask`).
+        main_mask: u32,
+        /// The main menu's highlighted option (`g_TkMenuMainOptionCursor`).
+        main_cursor: i32,
+        /// The main menu's options (`g_TkMenuMainMaxOptions`).
+        main_options: i32,
+        /// The battle command window that is open: the character's bit
+        /// (Tidus 1, Yuna 2, Auron 4, Kimahri 8, Wakka 0x10, Lulu 0x20,
+        /// Rikku 0x40; `g_BtlWindowOpen`), 0 none.
+        battle_window: u32,
+        /// The character whose window it is (`g_BtlWindowChr`, 0xff none).
+        battle_character: i16,
+        /// The command window's level (`g_BtlActionDepth`: 0 the top
+        /// commands, then sub-menus).
+        battle_depth: i16,
+        /// That level's highlighted row (its record's `+0x42`, in
+        /// `g_BtlWindowRecords`).
+        battle_cursor: i16,
+        /// That level's ids, `u16` little-endian each (its record's `+0x20`
+        /// list, `+0x44` count; `id >> 12`: 2 item, 3 command, 4 or 6
+        /// monster command).
+        battle_ids: Vec<u8>,
+        /// The PC save/load screen's state (`g_SaveMachineState`: 1..6
+        /// saving, 0xb..0x11 loading, 0 closed).
+        save_state: u32,
+        /// Its highlighted row (`g_SaveListCursor`).
+        save_cursor: i32,
+        /// The save files listed (`+0xc` after the state).
+        save_count: i32,
+        /// The PC menu (Esc, Flash) is up (`g_FFEscMenu`).
+        esc_menu: bool,
+    }
+}
+
+api_struct! {
+    /// A message window of the event script (`g_AtelMsgWindows`, the bank
+    /// `g_AtelMenuExecStatus` selects; docs/formats/script.md).
+    Message {
+        /// The window (0..7).
+        window: u8,
+        /// 1 opening, 2 open, 3 closing, 4 (unknown).
+        state: u16,
+        /// Its place on the PS2 screen (512 x 448).
+        x: i16,
+        /// See `x`.
+        y: i16,
+        /// `Msg_Flags` (the high byte: the number of choices).
+        flags: u16,
+        /// The mode bits (0x02 a choice, 0x10 waiting, 0x20 a selection).
+        mode: u8,
+        /// The highlighted choice.
+        choice: i16,
+        /// The text in the game's encoding (ffx-text's charset decodes
+        /// it; `{VAR}` codes are filled from `g_MsgVars`, not here).
+        text: Vec<u8>,
     }
 }
 
@@ -251,6 +320,8 @@ pub fn structs() -> Vec<&'static StructSchema> {
         Input::schema(),
         Actor::schema(),
         Bone::schema(),
+        Menus::schema(),
+        Message::schema(),
     ]
 }
 
@@ -281,11 +352,15 @@ mod tests {
         let camera = 1 + 48 + 4 + 4 + 4 + 12 + 12;
         let input = 4 + 2 + 1 + 1;
         let actor = 2 + 2 + 1 + (2 + 4) + 12 + 4 + 12 + 1 + 4 + 4 + 4 + 4 + 2 + 2 + 1 + 64 + 2;
-        assert_eq!(b.len(), 8 + 4 + 8 + world + camera + input + 2 + actor);
+        let menus = 4 + 4 + 4 + 4 + 2 + 2 + 2 + 2 + 4 + 4 + 4 + 1;
+        assert_eq!(
+            b.len(),
+            8 + 4 + 8 + world + camera + input + 2 + actor + menus + 2
+        );
     }
 
     /// FNV-1a of `schema::text()` at [`API_VERSION`].
-    const PINNED: u64 = 0x40c3_1bca_8282_db8e;
+    const PINNED: u64 = 0x39e5_5754_f527_0247;
 
     /// A field change must raise [`API_VERSION`]: the schema's text is
     /// pinned to the version here.
@@ -297,7 +372,7 @@ mod tests {
         });
         assert_eq!(
             (API_VERSION, hash),
-            (2, PINNED),
+            (3, PINNED),
             "the schema changed: raise API_VERSION and pin the new hash"
         );
     }
@@ -308,10 +383,19 @@ mod tests {
         let names: Vec<_> = s.fields.iter().map(|f| f.name).collect();
         assert_eq!(
             names,
-            ["update", "game_time", "world", "camera", "input", "actors"]
+            [
+                "update",
+                "game_time",
+                "world",
+                "camera",
+                "input",
+                "actors",
+                "menus",
+                "messages"
+            ]
         );
         assert!(matches!(s.fields[5].ty, Ty::List(_)));
-        assert_eq!(structs().len(), 6);
+        assert_eq!(structs().len(), 8);
         assert!(Actor::schema().fields.iter().all(|f| !f.doc.is_empty()));
     }
 }

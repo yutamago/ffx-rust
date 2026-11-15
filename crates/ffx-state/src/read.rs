@@ -9,7 +9,7 @@
 
 use ffx_chara::layout as l;
 
-use crate::{Actor, Bone, Camera, Input, Snapshot, World};
+use crate::{Actor, Bone, Camera, Input, Menus, Message, Snapshot, World};
 
 /// The game's memory, read only.
 pub trait Reader {
@@ -69,6 +69,39 @@ const STICK_Y: u32 = 0x023c_44a4;
 const STICK_X: u32 = 0x023c_44a5;
 /// `g_PadPressed` (`AtelGetControler`).
 const PAD_PRESSED: u32 = 0x0132_70d0;
+
+/// The menus (docs/formats/menu.md, save.md; symbols/ffx.sym).
+const MENU_MAIN_MASK: u32 = 0x0184_08ec;
+const MENU_MAIN_CURSOR: u32 = 0x0187_1548;
+const MENU_MAIN_OPTIONS: u32 = 0x0187_1688;
+const BTL_WINDOW_OPEN: u32 = 0x023c_c08c;
+const BTL_WINDOW_CHR: u32 = 0x023c_c088;
+const BTL_ACTION_DEPTH: u32 = 0x023c_c092;
+/// `g_BtlWindowRecords`: 8 levels of 0xf0 bytes; `+0x20` the ids' list,
+/// `+0x42` the cursor, `+0x44` the count.
+const BTL_WINDOW_RECORDS: u32 = 0x0133_c950;
+const BTL_RECORD: u32 = 0xf0;
+const BTL_RECORD_IDS: u32 = 0x20;
+const BTL_RECORD_CURSOR: u32 = 0x42;
+const BTL_RECORD_COUNT: u32 = 0x44;
+/// At most this many ids a command window.
+const MAX_IDS: u32 = 128;
+const SAVE_STATE: u32 = 0x00ce_72e8;
+const SAVE_CURSOR: u32 = 0x00ce_72f0;
+const SAVE_COUNT: u32 = 0x00ce_72f4;
+/// `g_FFEscMenu`: up while `+0x70` is set or `+0xe4` is not negative
+/// (`graphicIsEscMenuActive`).
+const ESC_MENU: u32 = 0x00cc_c870;
+/// `g_AtelMsgWindows`: 2 banks x 8 windows of 0x2c bytes; the bank is
+/// `g_AtelMenuExecStatus`; `+0`/`+2` x, y, `+8` the text, `+0x14` the
+/// state, `+0x16` the flags, `+0x1d` the mode, `+0x1e` the choice.
+const MSG_WINDOWS: u32 = 0x0132_6d70;
+const MSG_BANK: u32 = 0x0132_6b82;
+const MSG_WINDOW: u32 = 0x2c;
+/// `g_MsgNone`: an empty text.
+const MSG_NONE: u32 = 0x0132_5b74;
+/// At most this many bytes of a window's text.
+const MAX_TEXT: usize = 2048;
 
 /// `g_ChrCount` (`i32`, slots) and `g_ChrArray` (the records).
 const CHR_COUNT: u32 = 0x023c_44e0;
@@ -134,6 +167,34 @@ impl Mem<'_> {
         let mut b = [0u8; LEN];
         self.0.read_bytes(at, &mut b)
     }
+    /// The game's encoded text at `at`, up to its 0 (at most [`MAX_TEXT`]
+    /// bytes).
+    fn text(&self, at: u32) -> Vec<u8> {
+        let mut out = Vec::new();
+        let mut chunk = [0u8; 64];
+        while out.len() < MAX_TEXT {
+            let here = at.wrapping_add(u32::try_from(out.len()).unwrap_or(0));
+            // the chunk, or byte by byte where it ends in unmapped memory
+            if !self.0.read_bytes(here, &mut chunk) {
+                let b = self.u8(here);
+                if b == 0 {
+                    break;
+                }
+                out.push(b);
+                continue;
+            }
+            match chunk.iter().position(|&b| b == 0) {
+                Some(end) => {
+                    out.extend_from_slice(&chunk[..end]);
+                    break;
+                }
+                None => out.extend_from_slice(&chunk),
+            }
+        }
+        out.truncate(MAX_TEXT);
+        out
+    }
+
     /// A NUL-terminated string of at most `max` bytes (Latin-1 as UTF-8).
     fn c_string(&self, at: u32, max: usize) -> String {
         if at == 0 {
@@ -168,7 +229,68 @@ pub fn read(mem: &dyn Reader, update: u32, game_time: f64) -> Snapshot {
             stick_y: m.u8(STICK_Y),
         },
         actors: actors(&m),
+        menus: menus(&m),
+        messages: messages(&m),
     }
+}
+
+fn menus(m: &Mem<'_>) -> Menus {
+    let depth = m.u8(BTL_ACTION_DEPTH).cast_signed();
+    let record = BTL_WINDOW_RECORDS + u32::from(depth.clamp(0, 7).cast_unsigned()) * BTL_RECORD;
+    let ids_at = m.u32(record + BTL_RECORD_IDS);
+    let count = u32::from(m.u16(record + BTL_RECORD_COUNT)).min(MAX_IDS);
+    let mut ids = Vec::new();
+    if ids_at != 0 && count > 0 {
+        let mut b = vec![0u8; 2 * count as usize];
+        if m.0.read_bytes(ids_at, &mut b) {
+            ids = b;
+        }
+    }
+    let esc = m.u32(ESC_MENU);
+    Menus {
+        main_mask: m.u32(MENU_MAIN_MASK),
+        main_cursor: m.i32(MENU_MAIN_CURSOR),
+        main_options: m.i32(MENU_MAIN_OPTIONS),
+        battle_window: m.u32(BTL_WINDOW_OPEN),
+        battle_character: m.i16(BTL_WINDOW_CHR),
+        battle_depth: i16::from(depth),
+        battle_cursor: m.i16(record + BTL_RECORD_CURSOR),
+        battle_ids: ids,
+        save_state: m.u32(SAVE_STATE),
+        save_cursor: m.i32(SAVE_CURSOR),
+        save_count: m.i32(SAVE_COUNT),
+        esc_menu: esc != 0
+            && (m.u8(esc.wrapping_add(0x70)) != 0 || m.i32(esc.wrapping_add(0xe4)) >= 0),
+    }
+}
+
+/// The open message windows of the current bank.
+fn messages(m: &Mem<'_>) -> Vec<Message> {
+    let bank = u32::from(m.u8(MSG_BANK).min(1));
+    (0..8u8)
+        .filter_map(|w| {
+            let at = MSG_WINDOWS + (u32::from(w) + bank * 8) * MSG_WINDOW;
+            let state = m.u16(at + 0x14);
+            if state == 0 {
+                return None;
+            }
+            let text_at = m.u32(at + 8);
+            Some(Message {
+                window: w,
+                state,
+                x: m.i16(at),
+                y: m.i16(at + 2),
+                flags: m.u16(at + 0x16),
+                mode: m.u8(at + 0x1d),
+                choice: i16::from(m.u8(at + 0x1e).cast_signed()),
+                text: if text_at == 0 || text_at == MSG_NONE {
+                    Vec::new()
+                } else {
+                    m.text(text_at)
+                },
+            })
+        })
+        .collect()
 }
 
 fn world(m: &Mem<'_>) -> World {
@@ -339,6 +461,34 @@ mod tests {
         mem.put(scene + SCENE_LEVEL_NAME, &(text | 1).to_le_bytes());
         mem.put(text, b"/map/znkd/znkd06/\0");
         assert_eq!(read(&mem, 0, 0.0).world.level, "/map/znkd/znkd06/");
+    }
+
+    #[test]
+    fn an_open_message_window_and_the_battle_menu() {
+        let mut mem = Sparse(HashMap::new());
+        // bank 0, window 2 open with a text
+        mem.put(MSG_BANK, &[0]);
+        let w = MSG_WINDOWS + 2 * MSG_WINDOW;
+        mem.put(MSG_WINDOWS, &vec![0u8; 16 * MSG_WINDOW as usize]);
+        let text: u32 = 0x0420_0000;
+        mem.put(w + 8, &text.to_le_bytes());
+        mem.put(w + 0x14, &2u16.to_le_bytes());
+        mem.put(text, &[0x30, 0x31, 0x32, 0x00, 0x99]);
+        // the battle window at level 1: three ids, the cursor on the second
+        mem.put(BTL_ACTION_DEPTH, &[1]);
+        let r = BTL_WINDOW_RECORDS + BTL_RECORD;
+        let ids: u32 = 0x0430_0000;
+        mem.put(r + BTL_RECORD_IDS, &ids.to_le_bytes());
+        mem.put(r + BTL_RECORD_CURSOR, &1u16.to_le_bytes());
+        mem.put(r + BTL_RECORD_COUNT, &3u16.to_le_bytes());
+        mem.put(ids, &[0x01, 0x30, 0x02, 0x30, 0x03, 0x30]);
+        let s = read(&mem, 0, 0.0);
+        assert_eq!(s.messages.len(), 1);
+        assert_eq!((s.messages[0].window, s.messages[0].state), (2, 2));
+        assert_eq!(s.messages[0].text, [0x30, 0x31, 0x32]);
+        assert_eq!(s.menus.battle_depth, 1);
+        assert_eq!(s.menus.battle_cursor, 1);
+        assert_eq!(s.menus.battle_ids, [0x01, 0x30, 0x02, 0x30, 0x03, 0x30]);
     }
 
     #[test]
