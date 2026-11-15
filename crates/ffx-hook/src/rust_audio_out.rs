@@ -43,6 +43,19 @@ pub fn on() -> bool {
     ON.load(Ordering::Acquire)
 }
 
+/// Frames queued for the device and not written to it yet (`ffx-host`'s
+/// feeder keeps this above [`PREFILL`]).
+#[must_use]
+pub fn queued() -> usize {
+    QUEUE.lock().map_or(0, |q| q.len() / 2)
+}
+
+/// Underruns so far.
+#[must_use]
+pub fn underruns() -> u64 {
+    UNDERRUNS.load(Ordering::Relaxed)
+}
+
 /// Hands one mixed block (interleaved stereo) to the device. Never waits
 /// for the device.
 pub fn push(block: &[f32]) {

@@ -1570,6 +1570,12 @@ impl Gfx {
         a: &[u32],
     ) -> Option<u32> {
         let this = a[0];
+        if iface == "IDirectInputDevice8A"
+            && let Some(hr) = crate::input::device_call(e, name, a)
+        {
+            // its real device (`crate::input`)
+            return Some(hr);
+        }
         let mut mem = e.mem();
         let hr = match (iface, name) {
             ("IUnknown", "QueryInterface") => self.query_interface(e, this, class, a[1], a[2]),
@@ -1578,6 +1584,7 @@ impl Gfx {
                 let n = self.com.release(this);
                 if n == 0 {
                     self.backend.release(this);
+                    crate::input::release(this);
                     if let Some(v) = self.views.get(&this) {
                         let r = v.resource;
                         self.com.release(r);
@@ -1842,7 +1849,8 @@ impl Gfx {
                 S_OK
             }
             // DirectInput: a keyboard and a mouse (EnumDevices: in
-            // `method`), untouched
+            // `method`), with the player's real devices behind them
+            // (`crate::input`; else untouched)
             ("IDirectInput8A", "CreateDevice") => {
                 if a[2] == 0 {
                     return Some(E_POINTER);
@@ -1850,10 +1858,17 @@ impl Gfx {
                 let iid = com::read_guid(&mem, a[1]);
                 self.note(&format!("  DirectInput device {}", com::iid_text(iid)));
                 let h = self.com.create(e, class::DINPUT_DEVICE);
+                if let Err(hr) = crate::input::create_device(h, iid) {
+                    self.com.release(h);
+                    e.mem().write(a[2], 0u32);
+                    return Some(hr);
+                }
                 e.mem().write(a[2], h);
                 S_OK
             }
-            ("IDirectInput8A", "GetDeviceStatus") => DI_NOTATTACHED,
+            ("IDirectInput8A", "GetDeviceStatus") => {
+                crate::input::device_status(com::read_guid(&mem, a[1])).unwrap_or(DI_NOTATTACHED)
+            }
             ("IDirectInput8A", "Initialize") => S_OK,
             (
                 "IDirectInputDevice8A",
@@ -2271,6 +2286,11 @@ pub fn method(e: &mut Exec, tag: u32, args: &Args) -> Ret {
         // calls back into the game, which creates the devices: outside
         // the layer's lock
         return crate::stand_ins::dinput_enum_devices(e, args);
+    }
+    if (iface, name) == ("IDirectInputDevice8A", "EnumObjects") {
+        // the real device's objects to the game's callback, outside the
+        // lock too
+        return crate::input::enum_objects(e, args);
     }
     let shared = Arc::clone(e.shared());
     let mut slot = shared.gfx.lock();

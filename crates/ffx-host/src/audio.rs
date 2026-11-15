@@ -43,14 +43,114 @@ mod movie;
 #[cfg_attr(not(windows), allow(unused_imports))]
 mod device;
 
-/// Starts the device output once, as [`device`] says.
-fn start_device(wav: bool) {
+/// Starts the device output once, as [`device`] says; whether it was
+/// asked to start.
+fn start_device(wav: bool) -> bool {
     let env = |n: &str| std::env::var(n).unwrap_or_default();
     let harness = !env("FFX_HARNESS").is_empty();
     if wav || (harness && env("FFX_RUST_AUDIO_OUT") != "1") {
-        return;
+        return false;
     }
     device::start();
+    true
+}
+
+/// Frames the feeder keeps queued for the device: the device's prefill
+/// (it starts, and starts again after an underrun, at 4,800) and one
+/// block more.
+const FEED_TARGET: usize = 4800 + BLOCK;
+/// How often the feeder looks.
+const FEED_PERIOD: std::time::Duration = std::time::Duration::from_millis(4);
+/// Blocks the feeder mixes at most per look on the wall clock (no device):
+/// a longer stall skips that time, as the device would underrun.
+const FEED_CATCH_UP: u64 = 4;
+
+/// Blocks to mix now, by the device's queue (`queued` frames, while the
+/// device runs) or else by the wall clock (`elapsed` frames since the
+/// feeder started, `mixed` blocks so far). Returns the blocks and how
+/// many to count as skipped (wall clock only).
+#[must_use]
+pub fn feed_due(queued: Option<usize>, elapsed: u64, mixed: u64) -> (u64, u64) {
+    let block = BLOCK as u64;
+    match queued {
+        Some(q) => ((FEED_TARGET.saturating_sub(q)).div_ceil(BLOCK) as u64, 0),
+        None => {
+            let due = (elapsed / block).saturating_sub(mixed);
+            (due.min(FEED_CATCH_UP), due.saturating_sub(FEED_CATCH_UP))
+        }
+    }
+}
+
+/// The real-time mix (a player's run: the device on and the real clock,
+/// no capture): as FMOD's own mixer, which runs on its own thread and
+/// follows the device, this thread mixes block after block as the
+/// device's queue needs them ([`feed_due`]), whatever the `FmodManager`
+/// thread's ticks do. `EventSystem::update` then only hands the game the
+/// callbacks and movie reads the blocks raised. The ticks paced the mix
+/// before: one block per `EventSystem::update`, so every tick the game's
+/// thread missed (its `FmodManager_tick` skips periods it is late for)
+/// was 33 ms of sound the device never got, and it played in bursts
+/// between underruns (2026-11-15, m5-player-io: 75 % of the blocks in a
+/// player's run on Windows, 90 % headless).
+fn feeder(shared: &std::sync::Weak<crate::exec::Shared>) {
+    let start = std::time::Instant::now();
+    let mut mixed = 0u64;
+    let mut skipped = 0u64;
+    let mut report = std::time::Instant::now();
+    loop {
+        std::thread::sleep(FEED_PERIOD);
+        let Some(shared) = shared.upgrade() else {
+            return;
+        };
+        if shared.sync.stopping() {
+            return;
+        }
+        let queued = device::on().then(device::queued);
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // >= 0
+        let elapsed = (start.elapsed().as_secs_f64() * 48_000.0) as u64;
+        let (due, skip) = feed_due(queued, elapsed, mixed + skipped);
+        skipped += skip;
+        for _ in 0..due {
+            let asked = std::time::Instant::now();
+            let Ok(mut g) = shared.audio.state.lock() else {
+                return;
+            };
+            let waited = asked.elapsed();
+            if waited >= std::time::Duration::from_millis(50) {
+                crate::log::note(&format!(
+                    "fmod: feeder waited {} ms for the mixer",
+                    waited.as_millis()
+                ));
+            }
+            let Some(s) = g.as_mut() else { break };
+            let block = mix_block(s);
+            drop(g);
+            device::push(&block);
+            shared.audio.blocks.fetch_add(1, Ordering::AcqRel);
+            mixed += 1;
+        }
+        if report.elapsed() >= std::time::Duration::from_secs(10) {
+            report = std::time::Instant::now();
+            crate::log::note(&format!(
+                "fmod: feeder: {mixed} blocks mixed, {skipped} skipped, {} queued, {} underruns",
+                device::queued(),
+                device::underruns()
+            ));
+        }
+    }
+}
+
+/// Mixes one block (one FMOD update): the voices, the movie's stream; the
+/// callbacks it raised and the movie chunks to read are kept for the next
+/// `EventSystem::update`.
+fn mix_block(s: &mut State) -> Vec<f32> {
+    s.engine.update_frames(BLOCK);
+    let mut block = std::mem::take(&mut s.engine.out);
+    s.reads += s.movie.as_mut().map_or(0, |m| m.mix(&mut block));
+    let due = s.engine.callbacks().to_vec();
+    s.due.extend(due);
+    s.updates += 1;
+    block
 }
 use crate::imports::{ImportFn, a};
 use crate::table::{Args, Conv, Ret};
@@ -169,8 +269,13 @@ struct State {
     sounds: HashMap<u32, String>,
     subsounds: HashMap<u32, (u32, u32)>,
     movie: Option<movie::Movie>,
-    /// Movie chunks to read after the block just mixed.
+    /// Movie chunks to read after the blocks mixed.
     reads: usize,
+    /// The end callbacks the blocks mixed raised, `(event, type)`, for
+    /// the next `EventSystem::update`.
+    due: Vec<(u32, u32)>,
+    /// The feeder mixes ([`feeder`]), not `EventSystem::update`.
+    fed: bool,
     wav: Option<std::fs::File>,
     /// Blocks mixed.
     updates: u64,
@@ -301,9 +406,23 @@ fn with<T>(e: &mut Exec, f: impl FnOnce(&mut State) -> T) -> Option<T> {
             .ok()
             .and_then(|w| w.clone())
             .and_then(|p| wav_file(&p));
-        start_device(wav.is_some());
+        let device = start_device(wav.is_some());
+        let fed = device && e.shared().clock.is_real();
+        if fed {
+            let weak = Arc::downgrade(&shared);
+            let spawned = std::thread::Builder::new()
+                .name("ffx-rust-audio-feeder".into())
+                .spawn(move || feeder(&weak));
+            if let Err(err) = spawned {
+                crate::log::note(&format!("fmod: no feeder thread: {err}"));
+            }
+        }
+        let mut engine = Engine::new(SharedFiles(Arc::clone(&files)));
+        // the device: FMOD's stereo speaker mode (pans, mono waves on both
+        // sides); the capture and harness games keep the raw one
+        engine.stereo = device;
         *guard = Some(State {
-            engine: Engine::new(SharedFiles(Arc::clone(&files))),
+            engine,
             files,
             next: 0x100,
             callbacks: HashMap::new(),
@@ -311,6 +430,8 @@ fn with<T>(e: &mut Exec, f: impl FnOnce(&mut State) -> T) -> Option<T> {
             subsounds: HashMap::new(),
             movie: None,
             reads: 0,
+            due: Vec::new(),
+            fed,
             wav,
             updates: 0,
             project_vt: 0,
@@ -559,25 +680,27 @@ fn ok(_: &mut Exec, _: &Args) -> Ret {
 
 /// `EventSystem::update`: one block, then the end callbacks (outside the
 /// state's lock: the game's callback may call FMOD again).
+/// With the feeder ([`feeder`]) it mixes nothing: the callbacks and movie
+/// reads of the blocks the feeder mixed since the last one.
 fn event_system_update(e: &mut Exec, _: &Args) -> Ret {
+    let mut fed = false;
     let due = with(e, |s| {
-        s.engine.update_frames(BLOCK);
-        let mut block = std::mem::take(&mut s.engine.out);
-        s.reads = s.movie.as_mut().map_or(0, |m| m.mix(&mut block));
-        if let Some(f) = s.wav.as_mut() {
-            let bytes: Vec<u8> = block.iter().flat_map(|x| x.to_le_bytes()).collect();
-            let _ = f.write_all(&bytes);
-        } else {
-            device::push(&block);
+        fed = s.fed;
+        if !s.fed {
+            let block = mix_block(s);
+            if let Some(f) = s.wav.as_mut() {
+                let bytes: Vec<u8> = block.iter().flat_map(|x| x.to_le_bytes()).collect();
+                let _ = f.write_all(&bytes);
+            } else {
+                device::push(&block);
+            }
         }
-        s.updates += 1;
-        s.engine
-            .callbacks()
-            .iter()
-            .filter_map(|&(ev, kind)| s.callbacks.get(&ev).map(|&(f, u)| (ev, kind, f, u)))
+        std::mem::take(&mut s.due)
+            .into_iter()
+            .filter_map(|(ev, kind)| s.callbacks.get(&ev).map(|&(f, u)| (ev, kind, f, u)))
             .collect::<Vec<_>>()
     });
-    if due.is_some() {
+    if due.is_some() && !fed {
         e.shared().audio.blocks.fetch_add(1, Ordering::AcqRel);
     }
     let due = due.unwrap_or_default();
@@ -755,7 +878,8 @@ fn system_create_sound(e: &mut Exec, args: &Args) -> Ret {
     })
     .flatten();
     if movie && let Some(h) = r {
-        let m = movie::Movie::new(e, h, exinfo);
+        let mut m = movie::Movie::new(e, h, exinfo);
+        m.stereo = with(e, |s| s.engine.stereo).unwrap_or(false);
         with(e, |s| s.movie = Some(m));
         movie_reads(e, 2);
     }
@@ -1295,6 +1419,24 @@ mod tests {
         assert_eq!(h.len(), 0x44);
         assert_eq!(&h[0x3c..0x40], b"data");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_feeder_keeps_the_devices_queue_and_else_the_wall_clock() {
+        let b = BLOCK as u64;
+        // the device: up to the prefill and one block
+        assert_eq!(feed_due(Some(0), 0, 0), (4, 0));
+        assert_eq!(feed_due(Some(4800), 0, 0), (1, 0));
+        assert_eq!(feed_due(Some(4801), 0, 0), (1, 0));
+        assert_eq!(feed_due(Some(FEED_TARGET), 0, 0), (0, 0));
+        assert_eq!(feed_due(Some(20_000), 0, 0), (0, 0));
+        // the wall clock: whole blocks of elapsed time not yet mixed
+        assert_eq!(feed_due(None, 3 * b - 1, 0), (2, 0));
+        assert_eq!(feed_due(None, 3 * b, 3), (0, 0));
+        assert_eq!(feed_due(None, 10 * b, 9), (1, 0));
+        // a stall of more than four blocks skips the rest
+        assert_eq!(feed_due(None, 10 * b, 0), (4, 6));
+        assert_eq!(feed_due(None, 10 * b, 10), (0, 0));
     }
 
     #[test]

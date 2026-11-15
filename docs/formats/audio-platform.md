@@ -437,10 +437,26 @@ and `~/ffx-work/m5/mixer/ana_*.py`; the waves come from banks `1110`
   (1.704e-5 silent, 2.32e-5 not), silences the voice at once, without a
   ramp; it keeps its place. A larger change ramps as usual, to 0 too
   (battle-attack's music fade from 0.0042 to 0).
-- **Pan.** None: the event system ignores `Channel::setPan`. Pans -1,
-  -0.5, 0, 0.26, 1 on a mono wave and -1, -0.5, 0.5, 1 on a stereo wave
-  all gave gain exactly 1 on the same sides. **Mono waves play on the left
-  only**, the right stays 0; stereo waves on both sides.
+- **Pan.** Under the capture's set-up, none: the event system ignores
+  `Channel::setPan`. Pans -1, -0.5, 0, 0.26, 1 on a mono wave and -1,
+  -0.5, 0.5, 1 on a stereo wave all gave gain exactly 1 on the same sides.
+  **Mono waves play on the left only**, the right stays 0; stereo waves on
+  both sides. That is FMOD's *raw* speaker mode (`getSpeakerMode` 0), the
+  WAV writer's default, which the capture never changes; a real stereo
+  device runs in the stereo mode (2), where the user heard ffx-rust's
+  mono sound effects on the left only (2026-11-15, m5-player-io). Measured
+  there (`PROBE_SPEAKERMODE=2 fmod-probe`, bank `1110`'s mono `28110` and
+  stereo `29110`; `~/ffx-work/m5/finish/player-io/probe/`): a mono wave
+  never panned plays at 1 on both sides; panned to `p`, at
+  `sqrt((1 - p) / 2)` left and `sqrt((1 + p) / 2)` right (0.70710677 each
+  at 0, 0.5 and 0.8660254 at 0.5, one side only at -1 and 1); a stereo
+  wave keeps its sides with the pan as a balance, `min(1, 1 - p)` and
+  `min(1, 1 + p)`. `mixer::Voice::pan_gains` does both modes
+  (`Engine::stereo`, set by `ffx-host` and the hook when the device output
+  runs; the capture and harness games keep the raw mode, so the audio
+  replays are unchanged), and `FMOD_SPEAKERMODE=2 fmod-mix --script`
+  (which now follows the probe's `pan`) is identical to the probe's WAV,
+  sample for sample, in both modes.
 - **Stop, pause.** `stop(false)` and `stop(true)` alike: silent from the
   next block's first frame, no ramp (no event has a fade-out). A pause is
   silent from the next block and the voice resumes where it stopped, at

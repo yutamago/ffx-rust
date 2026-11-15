@@ -9,8 +9,10 @@
 //! left and right gains move to a new value by a linear ramp over the
 //! block's first [`RAMP`] frames (from 0 at the start), added after each
 //! frame, and only for a change of at least [`CHANGE`]; below [`SILENT`] a
-//! voice falls silent at once. The pan is ignored; mono waves play on the
-//! left only. Loops run on whole IMA blocks. All measured against FMOD's
+//! voice falls silent at once. Under the capture (FMOD's raw speaker mode)
+//! the pan is ignored and mono waves play on the left only; on a stereo
+//! device ([`Voice::stereo`]) the pan applies as FMOD's stereo speaker mode
+//! does ([`Voice::pan_gains`]). Loops run on whole IMA blocks. All measured against FMOD's
 //! own mix and with `examples/fmod-probe.rs`; what is still off (float
 //! rounding) is listed in `audio-platform.md`.
 
@@ -76,6 +78,13 @@ pub struct Voice {
     pub volume: f32,
     /// -1..1 (`Channel::setPan`).
     pub pan: f32,
+    /// `Channel::setPan` was called (a mono wave never panned plays at
+    /// full gain on both sides in the stereo speaker mode, panned at 0 at
+    /// 0.707).
+    pub panned: bool,
+    /// FMOD's stereo speaker mode (a real stereo device), not the raw one
+    /// the capture runs in ([`Voice::pan_gains`]).
+    pub stereo: bool,
     pub paused: bool,
     /// Output frames mixed so far.
     pub age: u32,
@@ -101,6 +110,8 @@ impl Voice {
             step,
             volume: 1.0,
             pan: 0.0,
+            panned: false,
+            stereo: false,
             paused: false,
             age: 0,
             gain: [0.0; 2],
@@ -110,15 +121,37 @@ impl Voice {
         }
     }
 
-    /// Left and right gains for the pan.
-    fn pan_gains(&self) -> (f32, f32) {
-        // measured with fmod-probe (audio-platform.md): the event system
-        // ignores `Channel::setPan` (pans -1..1 change nothing); a mono wave
-        // plays on the left only, a stereo wave on both sides at full gain
-        if self.wave.channels == 1 {
-            (1.0, 0.0)
+    /// Left and right gains for the pan, measured with fmod-probe
+    /// (audio-platform.md, "Pan"):
+    ///
+    /// - the raw speaker mode (the capture's: FMOD's default with the WAV
+    ///   writer): `Channel::setPan` changes nothing; a mono wave plays on
+    ///   the left only, a stereo wave on both sides at full gain;
+    /// - the stereo speaker mode (a stereo device, [`Voice::stereo`]): a
+    ///   mono wave never panned plays at 1 on both sides; panned to `p`,
+    ///   at `sqrt((1 - p) / 2)` and `sqrt((1 + p) / 2)` (0.707 each at 0);
+    ///   a stereo wave keeps its sides, the pan a balance: `min(1, 1 - p)`
+    ///   and `min(1, 1 + p)`.
+    #[must_use]
+    pub fn pan_gains(&self) -> (f32, f32) {
+        let mono = self.wave.channels == 1;
+        if !self.stereo {
+            return if mono { (1.0, 0.0) } else { (1.0, 1.0) };
+        }
+        let p = if self.panned {
+            self.pan.clamp(-1.0, 1.0)
         } else {
+            0.0
+        };
+        if mono && self.panned {
+            // in this order, as measured (not `midpoint`)
+            #[allow(clippy::manual_midpoint)]
+            let gains = (((1.0 - p) * 0.5).sqrt(), ((1.0 + p) * 0.5).sqrt());
+            gains
+        } else if mono {
             (1.0, 1.0)
+        } else {
+            ((1.0 - p).min(1.0), (1.0 + p).min(1.0))
         }
     }
 
@@ -268,5 +301,70 @@ mod tests {
             assert_eq!(out[2 * k + c].to_bits(), want.to_bits(), "frame {k}");
         }
         assert_eq!(out[0].to_bits(), 0);
+    }
+
+    fn wave(channels: u16) -> Arc<Wave> {
+        let frames = 4 * BLOCK;
+        Arc::new(Wave {
+            pcm: vec![16384; frames * usize::from(channels)],
+            channels,
+            rate: RATE,
+            frames: u32::try_from(frames).unwrap(),
+            looped: None,
+        })
+    }
+
+    /// Gains measured with fmod-probe in FMOD's stereo speaker mode
+    /// (2026-11-15, `PROBE_SPEAKERMODE=2`, bank 1110's mono 28110 and
+    /// stereo 29110: audio-platform.md, "Pan"), and the raw mode's.
+    #[test]
+    fn pans_follow_fmods_speaker_mode() {
+        let gains = |channels, stereo, pan: Option<f32>| {
+            let mut v = Voice::new(wave(channels), false);
+            v.stereo = stereo;
+            v.panned = pan.is_some();
+            v.pan = pan.unwrap_or(0.0);
+            v.pan_gains()
+        };
+        // raw (the capture): mono left only, pans ignored
+        assert_eq!(gains(1, false, None), (1.0, 0.0));
+        assert_eq!(gains(1, false, Some(0.5)), (1.0, 0.0));
+        assert_eq!(gains(2, false, Some(-1.0)), (1.0, 1.0));
+        // stereo: mono centred, at 1 never panned, constant power panned
+        assert_eq!(gains(1, true, None), (1.0, 1.0));
+        assert_eq!(gains(1, true, Some(0.0)), (0.707_106_77, 0.707_106_77));
+        assert_eq!(gains(1, true, Some(-1.0)), (1.0, 0.0));
+        assert_eq!(gains(1, true, Some(1.0)), (0.0, 1.0));
+        assert_eq!(gains(1, true, Some(0.5)), (0.5, 0.866_025_4));
+        // stereo waves: a balance
+        assert_eq!(gains(2, true, None), (1.0, 1.0));
+        assert_eq!(gains(2, true, Some(0.5)), (0.5, 1.0));
+        assert_eq!(gains(2, true, Some(-1.0)), (1.0, 0.0));
+    }
+
+    /// A mono sound effect on a stereo device lands centred in both
+    /// channels, as FMOD plays it for the original (the user heard
+    /// ffx-rust's on the left only).
+    #[test]
+    fn a_mono_voice_on_a_stereo_device_is_centred() {
+        for pan in [None, Some(0.0)] {
+            let mut v = Voice::new(wave(1), false);
+            v.stereo = true;
+            v.panned = pan.is_some();
+            v.pan = pan.unwrap_or(0.0);
+            let mut out = vec![0.0f32; 2 * BLOCK];
+            v.mix(&mut out);
+            // past the start ramp
+            for f in &out.as_chunks::<2>().0[RAMP as usize..] {
+                assert!(f[0] > 0.0, "{pan:?}");
+                assert_eq!(f[0].to_bits(), f[1].to_bits(), "{pan:?}");
+            }
+        }
+        // the capture's raw mode stays left only
+        let mut v = Voice::new(wave(1), false);
+        let mut out = vec![0.0f32; 2 * BLOCK];
+        v.mix(&mut out);
+        assert!(out.as_chunks::<2>().0.iter().all(|f| f[1] == 0.0));
+        assert!(out[2 * BLOCK - 2] > 0.0);
     }
 }

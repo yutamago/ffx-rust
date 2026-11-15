@@ -184,7 +184,8 @@ struct Instance {
     base: f32,
     /// The game's `setVolume`.
     volume: f32,
-    pan: f32,
+    /// The game's `Channel::setPan` (`None`: never called).
+    pan: Option<f32>,
     paused: bool,
     voice: Option<u64>,
     /// The wave's length (FEV), for `Event::getInfo`.
@@ -233,6 +234,11 @@ pub struct Engine<F: Files> {
     pub updates: u64,
     /// Calls the engine did not follow, by function (for the report).
     pub ignored: HashMap<String, u32>,
+    /// FMOD's stereo speaker mode, as on a real stereo device (pans and
+    /// mono waves, [`Voice::pan_gains`]); `false`: the raw mode the
+    /// capture runs in (the audio replays compare that). For voices
+    /// started after it is set.
+    pub stereo: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -265,6 +271,7 @@ impl<F: Files> Engine<F> {
             out: Vec::new(),
             updates: 0,
             ignored: HashMap::new(),
+            stereo: false,
         }
     }
 
@@ -329,7 +336,7 @@ impl<F: Files> Engine<F> {
                 oneshot,
                 base,
                 volume: 1.0,
-                pan: 0.0,
+                pan: None,
                 paused: false,
                 voice: self.events.get(&handle).and_then(|i| i.voice),
                 length_ms,
@@ -342,7 +349,8 @@ impl<F: Files> Engine<F> {
         v.and_then(|i| self.voices.get_mut(&i))
     }
 
-    fn add_voice(&mut self, voice: Voice) -> u64 {
+    fn add_voice(&mut self, mut voice: Voice) -> u64 {
+        voice.stereo = self.stereo;
         let id = self.next_voice;
         self.next_voice += 1;
         self.voices.insert(id, voice);
@@ -368,7 +376,8 @@ impl<F: Files> Engine<F> {
         };
         if let Some(v) = self.voice(i.voice) {
             v.volume = i.base * i.volume;
-            v.pan = i.pan;
+            v.pan = i.pan.unwrap_or(0.0);
+            v.panned = i.pan.is_some();
             v.paused = i.paused;
         }
     }
@@ -500,13 +509,14 @@ impl<F: Files> Engine<F> {
             "Channel::setPan" => match self.channels.get(&c.arg(0)).copied() {
                 Some(Target::Event(e)) => {
                     if let Some(i) = self.events.get_mut(&e) {
-                        i.pan = f32::from_bits(c.arg(1));
+                        i.pan = Some(f32::from_bits(c.arg(1)));
                     }
                     self.apply_instance(e);
                 }
                 Some(Target::Shout(v)) => {
                     if let Some(v) = self.voice(v) {
                         v.pan = f32::from_bits(c.arg(1));
+                        v.panned = true;
                     }
                 }
                 None => {}

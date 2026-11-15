@@ -370,6 +370,10 @@ unsafe extern "system" fn event_system_init(
     // the device output, unless the mix goes into the capture file
     if with(|s| s.wav.is_none()).unwrap_or(false) {
         crate::rust_audio_out::start();
+        // a device: FMOD's stereo speaker mode (pans, mono waves on both
+        // sides); the capture keeps the raw one
+        let stereo = crate::rust_audio_out::on();
+        with(|s| s.engine.stereo = stereo);
     }
     OK
 }

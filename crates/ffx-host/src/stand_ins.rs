@@ -142,10 +142,12 @@ fn wsprintf(e: &mut Exec, args: &Args, wide: bool) -> Ret {
 /// bytes: `dwDevType` `+0x24` 0x12 mouse, 0x13 keyboard; the game's
 /// callback `0x00623330` makes its Phyre input devices from them), each
 /// handed to `callback(instance, ref)` (stdcall) while it answers
-/// `DIENUM_CONTINUE`. `class` 0 (all), 2 (pointers) or 3 (keyboards).
+/// `DIENUM_CONTINUE`. `class` 0 (all), 2 (pointers) or 3 (keyboards);
+/// then, for 0 and 4, the attached game controllers of the host
+/// (`crate::input::controllers`, their own `DIDEVICEINSTANCEA`s).
 pub fn dinput_enum_devices(e: &mut Exec, args: &Args) -> Ret {
     let w = |i: usize| args.stack.get(i).copied().unwrap_or(0);
-    let (class, callback, user) = (w(1), w(2), w(3));
+    let (class, callback, user, flags) = (w(1), w(2), w(3), w(4));
     let inst = e.alloc(0x244);
     if inst == 0 || callback == 0 {
         return Ret::eax(0x8000_4005);
@@ -170,6 +172,18 @@ pub fn dinput_enum_devices(e: &mut Exec, args: &Args) -> Ret {
         mem.write(inst + 0x24, u32::from(kind) | (1 << 8));
         mem.write_bytes(inst + 0x28, label);
         mem.write_bytes(inst + 0x12c, label);
+        match e.call_stdcall(callback, &[inst, user]) {
+            Ok(1) => {}
+            _ => {
+                e.release(inst);
+                return Ret::eax(0);
+            }
+        }
+    }
+    // the player's game controllers (`crate::input`: none in the harness's
+    // background games and off Windows)
+    for pad in crate::input::controllers(class, flags) {
+        e.mem().write_bytes(inst, &pad);
         match e.call_stdcall(callback, &[inst, user]) {
             Ok(1) => {}
             _ => break,
@@ -274,12 +288,6 @@ fn file_time(e: &mut Exec, args: &Args) -> Ret {
         }
     }
     Ret::eax(1)
-}
-
-/// `XInputGetState` / `XInputSetState`: no controller
-/// (`ERROR_DEVICE_NOT_CONNECTED`).
-fn no_controller(_: &mut Exec, _: &Args) -> Ret {
-    Ret::eax(0x48f)
 }
 
 fn ret0(_: &mut Exec, _: &Args) -> Ret {
@@ -522,14 +530,14 @@ pub const TABLE: &[(&str, &str, Conv, usize, ImportFn)] = &[
         "XInputGetState",
         Conv::Stdcall,
         2,
-        no_controller,
+        crate::input::xinput_get_state,
     ),
     (
         "XINPUT9_1_0.dll",
         "XInputSetState",
         Conv::Stdcall,
         2,
-        no_controller,
+        crate::input::xinput_set_state,
     ),
     (U32, "wsprintfW", Conv::Cdecl, 2, |e, x| {
         wsprintf(e, x, true)
