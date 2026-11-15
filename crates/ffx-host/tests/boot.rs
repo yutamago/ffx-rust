@@ -616,8 +616,10 @@ fn the_state_api_sees_a_subtitle() {
     let mut exec = ffx_host::boot_opts(&exe, ffx_host::ports::table(), &opts).unwrap();
     exec.set_budget(Duration::from_secs(300));
     let seen: Arc<Mutex<Option<ffx_state::Message>>> = Arc::default();
+    let language: Arc<Mutex<Option<u8>>> = Arc::default();
     let id = {
         let seen = Arc::clone(&seen);
+        let language = Arc::clone(&language);
         let shared = Arc::downgrade(exec.shared());
         let asked = std::sync::atomic::AtomicBool::new(false);
         exec.shared().observers.add(Arc::new(move |s| {
@@ -652,6 +654,24 @@ fn the_state_api_sees_a_subtitle() {
     exec.shared().observers.remove(id);
     assert_eq!(stop, Stop::Milestone("a subtitle".into()));
     let m = seen.lock().unwrap().clone().unwrap();
-    eprintln!("message {m:?}");
-    assert!(m.text.len() > 4, "{m:?}");
+    // decoded with the character set of the game's language (a fresh
+    // GameSetting.ini: Japanese): the first line of the arrival, Tidus's
+    // "Rikku!?" ("リュック！？")
+    let lang = match language.lock().unwrap().unwrap_or(0) {
+        1 => ffx_text::Language::English,
+        _ => ffx_text::Language::Japanese,
+    };
+    let game = exe.parent().unwrap();
+    let archive = ffx_vbf::Archive::open(game.join("data/FFX_Data.vbf")).unwrap();
+    let table = archive
+        .read(archive.find(&lang.charset_path()).unwrap())
+        .unwrap();
+    let text = ffx_text::Charset::from_table(&table, lang)
+        .unwrap()
+        .decode(&m.text);
+    eprintln!("message {m:?} ({lang:?}): {text:?}");
+    assert!(
+        text.contains("リュック") || text.contains("Rikku"),
+        "{text:?}"
+    );
 }

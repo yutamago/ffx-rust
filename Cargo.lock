@@ -1036,6 +1036,8 @@ dependencies = [
  "ffx-state",
  "ffx-swf",
  "ffx-system",
+ "ffx-text",
+ "ffx-vbf",
  "goblin",
  "libc",
  "md-5",

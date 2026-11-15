@@ -124,6 +124,9 @@ windows = { version = "0.62.2", features = [
 [dev-dependencies]
 # tests/m5p_stubs.rs: the stubs table (host-only entries)
 ffx-pcore.workspace = true
+# tests/boot.rs: a subtitle's text decoded with the archive's charset
+ffx-text.workspace = true
+ffx-vbf.workspace = true
 
 [lints]
 workspace = true

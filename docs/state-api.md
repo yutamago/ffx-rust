@@ -65,8 +65,9 @@ is, its level, that level's cursor and its ids as `u16`s), the PC save
 screen's state machine and cursor, and whether the PC (Esc, Flash) menu
 is up. `messages` are the event script's message windows that are not
 closed (`g_AtelMsgWindows`, the bank `g_AtelMenuExecStatus` selects):
-state, place, flags, mode, the choice cursor and the text as the game
-encodes it (a frontend decodes it with ffx-text's charset; `{VAR}` codes
+state, place, flags, mode, the choice the player has highlighted (the
+text box's slot at `0x01868a90`, as `Native_MsgSelect_Poll` reads it), the
+one the script started it at, and the text as the game encodes it (a frontend decodes it with ffx-text's charset for `World.language`, the text's language (`g_LocalizationManager` `+4`, as `TOGetFFXLang`; a fresh `GameSetting.ini` gives Japanese); `{VAR}` codes
 are not filled). The battle record's offsets come from the ports
 (`TOBtlMemoryCursorPos`, `ffx_system::tolib`), not yet from a run in
 battle; the title's menu and the Esc menu's pages (Flash) are not covered.
@@ -107,6 +108,7 @@ struct World
   player_control: bool
   paused: bool
   fading: bool
+  language: u8
 struct Camera
   valid: bool
   world: mat3x4
@@ -151,7 +153,9 @@ struct Menus
   battle_ids: bytes
   save_state: u32
   save_cursor: i32
-  save_count: i32
+  save_top: i32
+  save_rows: i32
+  save_files: i32
   esc_menu: bool
 struct Message
   window: u8
@@ -161,6 +165,7 @@ struct Message
   flags: u16
   mode: u8
   choice: i16
+  initial_choice: i16
   text: bytes
 ```
 

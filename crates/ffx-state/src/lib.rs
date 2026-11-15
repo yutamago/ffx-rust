@@ -128,19 +128,25 @@ api_struct! {
         /// commands, then sub-menus).
         battle_depth: i16,
         /// That level's highlighted row (its record's `+0x42`, in
-        /// `g_BtlWindowRecords`).
+        /// `g_BtlWindowRecords`); 0 at level -1 (no command window).
         battle_cursor: i16,
         /// That level's ids, `u16` little-endian each (its record's `+0x20`
         /// list, `+0x44` count; `id >> 12`: 2 item, 3 command, 4 or 6
-        /// monster command).
+        /// monster command); none at level -1.
         battle_ids: Vec<u8>,
         /// The PC save/load screen's state (`g_SaveMachineState`: 1..6
         /// saving, 0xb..0x11 loading, 0 closed).
         save_state: u32,
-        /// Its highlighted row (`g_SaveListCursor`).
+        /// The highlighted row on screen, 0..4 (`g_SaveListCursor`); the
+        /// list's index is `save_top + save_cursor`.
         save_cursor: i32,
-        /// The save files listed (`+0xc` after the state).
-        save_count: i32,
+        /// The list's first row on screen (`g_SaveListTop`).
+        save_top: i32,
+        /// The rows listed (saving: the files but the first, and a new
+        /// file's row).
+        save_rows: i32,
+        /// The save files found.
+        save_files: i32,
         /// The PC menu (Esc, Flash) is up (`g_FFEscMenu`).
         esc_menu: bool,
     }
@@ -162,8 +168,11 @@ api_struct! {
         flags: u16,
         /// The mode bits (0x02 a choice, 0x10 waiting, 0x20 a selection).
         mode: u8,
-        /// The highlighted choice.
+        /// The choice the player has highlighted now (the text box's slot,
+        /// `TOGetTableKind2Data`), -1 when the window holds no choice.
         choice: i16,
+        /// The choice the script set it to at the start (`+0x1e`).
+        initial_choice: i16,
         /// The text in the game's encoding (ffx-text's charset decodes
         /// it; `{VAR}` codes are filled from `g_MsgVars`, not here).
         text: Vec<u8>,
@@ -196,6 +205,10 @@ api_struct! {
         paused: bool,
         /// A screen fade runs (`g_FadeActive` nonzero).
         fading: bool,
+        /// The language of the game's text (`TOGetFFXLang`: 0 Japanese,
+        /// 1 English, 2 French, 3 Spanish, 4 German, 5 Italian, 9 Korean,
+        /// 10 Chinese): the character set that decodes the messages.
+        language: u8,
     }
 }
 
@@ -348,11 +361,11 @@ mod tests {
         assert_eq!(f64::from_le_bytes(b[12..20].try_into().unwrap()), 1.5);
         // update, game time, the world (with an empty event), the camera,
         // the input, then one actor ("c001", no bones)
-        let world = 2 + 2 + 1 + 2 + 2 + 2 + 4 + 4;
+        let world = 2 + 2 + 1 + 2 + 2 + 2 + 4 + 4 + 1;
         let camera = 1 + 48 + 4 + 4 + 4 + 12 + 12;
         let input = 4 + 2 + 1 + 1;
         let actor = 2 + 2 + 1 + (2 + 4) + 12 + 4 + 12 + 1 + 4 + 4 + 4 + 4 + 2 + 2 + 1 + 64 + 2;
-        let menus = 4 + 4 + 4 + 4 + 2 + 2 + 2 + 2 + 4 + 4 + 4 + 1;
+        let menus = 4 + 4 + 4 + 4 + 2 + 2 + 2 + 2 + 4 + 4 + 4 + 4 + 4 + 1;
         assert_eq!(
             b.len(),
             8 + 4 + 8 + world + camera + input + 2 + actor + menus + 2
@@ -360,7 +373,7 @@ mod tests {
     }
 
     /// FNV-1a of `schema::text()` at [`API_VERSION`].
-    const PINNED: u64 = 0x39e5_5754_f527_0247;
+    const PINNED: u64 = 0xfec5_9715_3fec_b198;
 
     /// A field change must raise [`API_VERSION`]: the schema's text is
     /// pinned to the version here.

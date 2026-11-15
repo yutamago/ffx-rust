@@ -41,6 +41,8 @@ const EVENT_FRAME: u32 = 0x0132_5d94;
 const BTL_STATUS: u32 = 0x0112_a8e0;
 /// `g_PauseOn`.
 const PAUSE_ON: u32 = 0x0134_0828;
+/// `g_LocalizationManager`: `+4` the text's language (`TOGetFFXLang`).
+const LOCALIZATION: u32 = 0x00cd_ed58;
 /// `g_FadeActive` (a bit per fade slot).
 const FADE_ACTIVE: u32 = 0x0130_0704;
 
@@ -87,8 +89,10 @@ const BTL_RECORD_COUNT: u32 = 0x44;
 /// At most this many ids a command window.
 const MAX_IDS: u32 = 128;
 const SAVE_STATE: u32 = 0x00ce_72e8;
+const SAVE_TOP: u32 = 0x00ce_72ec;
 const SAVE_CURSOR: u32 = 0x00ce_72f0;
-const SAVE_COUNT: u32 = 0x00ce_72f4;
+const SAVE_FILES: u32 = 0x00ce_72f4;
+const SAVE_ROWS: u32 = 0x00ce_72f8;
 /// `g_FFEscMenu`: up while `+0x70` is set or `+0xe4` is not negative
 /// (`graphicIsEscMenuActive`).
 const ESC_MENU: u32 = 0x00cc_c870;
@@ -98,6 +102,11 @@ const ESC_MENU: u32 = 0x00cc_c870;
 const MSG_WINDOWS: u32 = 0x0132_6d70;
 const MSG_BANK: u32 = 0x0132_6b82;
 const MSG_WINDOW: u32 = 0x2c;
+/// The text boxes' slots (0x138 bytes a window): byte 1 is 2 for a choice,
+/// whose highlighted option is the first byte at `+0x18`
+/// (`TOGetTableKind2Data_008b7fd0`, `Native_MsgSelect_Poll`).
+const MSG_SLOTS: u32 = 0x0186_8a90;
+const MSG_SLOT: u32 = 0x138;
 /// `g_MsgNone`: an empty text.
 const MSG_NONE: u32 = 0x0132_5b74;
 /// At most this many bytes of a window's text.
@@ -235,18 +244,28 @@ pub fn read(mem: &dyn Reader, update: u32, game_time: f64) -> Snapshot {
 }
 
 fn menus(m: &Mem<'_>) -> Menus {
+    // level -1: no command window (`TOSetBtlActiveChr`)
     let depth = m.u8(BTL_ACTION_DEPTH).cast_signed();
-    let record = BTL_WINDOW_RECORDS + u32::from(depth.clamp(0, 7).cast_unsigned()) * BTL_RECORD;
-    let ids_at = m.u32(record + BTL_RECORD_IDS);
-    let count = u32::from(m.u16(record + BTL_RECORD_COUNT)).min(MAX_IDS);
-    let mut ids = Vec::new();
-    if ids_at != 0 && count > 0 {
-        let mut b = vec![0u8; 2 * count as usize];
-        if m.0.read_bytes(ids_at, &mut b) {
-            ids = b;
+    let (cursor, ids) = if depth < 0 {
+        (0, Vec::new())
+    } else {
+        let record = BTL_WINDOW_RECORDS + u32::from(depth.min(7).cast_unsigned()) * BTL_RECORD;
+        let ids_at = m.u32(record + BTL_RECORD_IDS);
+        let count = u32::from(m.u16(record + BTL_RECORD_COUNT)).min(MAX_IDS);
+        let mut ids = Vec::new();
+        if ids_at != 0 && count > 0 {
+            let mut b = vec![0u8; 2 * count as usize];
+            if m.0.read_bytes(ids_at, &mut b) {
+                ids = b;
+            }
         }
-    }
+        (m.i16(record + BTL_RECORD_CURSOR), ids)
+    };
+    // an Esc menu object that is not all mapped is not up
     let esc = m.u32(ESC_MENU);
+    let esc_up = esc != 0
+        && m.mapped::<4>(esc.wrapping_add(0xe4))
+        && (m.u8(esc.wrapping_add(0x70)) != 0 || m.i32(esc.wrapping_add(0xe4)) >= 0);
     Menus {
         main_mask: m.u32(MENU_MAIN_MASK),
         main_cursor: m.i32(MENU_MAIN_CURSOR),
@@ -254,19 +273,21 @@ fn menus(m: &Mem<'_>) -> Menus {
         battle_window: m.u32(BTL_WINDOW_OPEN),
         battle_character: m.i16(BTL_WINDOW_CHR),
         battle_depth: i16::from(depth),
-        battle_cursor: m.i16(record + BTL_RECORD_CURSOR),
+        battle_cursor: cursor,
         battle_ids: ids,
         save_state: m.u32(SAVE_STATE),
         save_cursor: m.i32(SAVE_CURSOR),
-        save_count: m.i32(SAVE_COUNT),
-        esc_menu: esc != 0
-            && (m.u8(esc.wrapping_add(0x70)) != 0 || m.i32(esc.wrapping_add(0xe4)) >= 0),
+        save_top: m.i32(SAVE_TOP),
+        save_rows: m.i32(SAVE_ROWS),
+        save_files: m.i32(SAVE_FILES),
+        esc_menu: esc_up,
     }
 }
 
 /// The open message windows of the current bank.
 fn messages(m: &Mem<'_>) -> Vec<Message> {
-    let bank = u32::from(m.u8(MSG_BANK).min(1));
+    // an i8 the game sets to 0 or 1 (`AtelGetMesWinWork`)
+    let bank = u32::from(m.u8(MSG_BANK).cast_signed().clamp(0, 1).cast_unsigned());
     (0..8u8)
         .filter_map(|w| {
             let at = MSG_WINDOWS + (u32::from(w) + bank * 8) * MSG_WINDOW;
@@ -282,7 +303,15 @@ fn messages(m: &Mem<'_>) -> Vec<Message> {
                 y: m.i16(at + 2),
                 flags: m.u16(at + 0x16),
                 mode: m.u8(at + 0x1d),
-                choice: i16::from(m.u8(at + 0x1e).cast_signed()),
+                choice: {
+                    let slot = MSG_SLOTS + u32::from(w) * MSG_SLOT;
+                    if m.u8(slot + 1) == 2 {
+                        i16::from(m.u8(slot + 0x18))
+                    } else {
+                        -1
+                    }
+                },
+                initial_choice: i16::from(m.u8(at + 0x1e).cast_signed()),
                 text: if text_at == 0 || text_at == MSG_NONE {
                     Vec::new()
                 } else {
@@ -313,6 +342,14 @@ fn world(m: &Mem<'_>) -> World {
         player_control: m.u8(CTRL_WORK) & CTRL_CONTROL != 0,
         paused: m.u8(PAUSE_ON) != 0,
         fading: m.u32(FADE_ACTIVE) != 0,
+        language: {
+            let lm = m.u32(LOCALIZATION);
+            if lm == 0 {
+                0
+            } else {
+                u8::try_from(m.u32(lm.wrapping_add(4))).unwrap_or(0)
+            }
+        },
     }
 }
 
