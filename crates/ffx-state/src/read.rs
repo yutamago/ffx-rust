@@ -10,8 +10,8 @@
 use ffx_chara::layout as l;
 
 use crate::{
-    Actor, Bone, Camera, EffectInstance, Effects, Input, MenuOption, Menus, Message, ScreenFilter,
-    Snapshot, World,
+    Actor, Battler, Bone, Camera, EffectInstance, Effects, Input, MenuOption, Menus, Message,
+    ScreenFilter, Snapshot, World,
 };
 
 /// The game's memory, read only.
@@ -130,6 +130,11 @@ const MSG_TABLE: u32 = 0x0186_8a90;
 const MSG_NONE: u32 = 0x0132_5b74;
 /// At most this many bytes of a window's text.
 const MAX_TEXT: usize = 2048;
+
+/// `g_BtlChrTop`: the battle actors, 0x1f of 0xf90 bytes (`MsGetChr`).
+const BTL_CHR_TOP: u32 = 0x0113_34d4;
+const BTL_CHR_SIZE: u32 = 0xf90;
+const BTL_CHR_COUNT: u32 = 0x1f;
 
 /// `g_MagicFile_MagicId`: the spell playing, -1 none.
 const MAGIC_ID: u32 = 0x00c6_4ca0;
@@ -291,7 +296,35 @@ pub fn read(mem: &dyn Reader, update: u32, game_time: f64) -> Snapshot {
         menus: menus(&m),
         messages: messages(&m),
         effects: effects(&m),
+        battlers: battlers(&m),
     }
+}
+
+/// The battle's actors taking part (`+0xdc8` `in_battle`), in battle only.
+fn battlers(m: &Mem<'_>) -> Vec<Battler> {
+    let top = m.u32(BTL_CHR_TOP);
+    if top == 0 || m.u8(BTL_STATUS) == 0 {
+        return Vec::new();
+    }
+    (0..BTL_CHR_COUNT)
+        .filter_map(|i| {
+            let at = top.wrapping_add(i * BTL_CHR_SIZE);
+            let f = |o: u32| at.wrapping_add(o);
+            if m.u8(f(0xdc8)) == 0 {
+                return None;
+            }
+            Some(Battler {
+                index: u8::try_from(i).unwrap_or(0),
+                hp: m.i32(f(0x5d0)),
+                max_hp: m.i32(f(0x594)),
+                mp: m.i32(f(0x5d4)),
+                max_mp: m.i32(f(0x598)),
+                dead: m.u8(f(0xdcc)) != 0,
+                exists: m.u8(f(0xdd2)) != 0,
+                ctb: m.i32(f(0x6ec)),
+            })
+        })
+        .collect()
 }
 
 fn effects(m: &Mem<'_>) -> Effects {

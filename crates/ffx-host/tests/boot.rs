@@ -764,6 +764,14 @@ fn a_battle_starts_on_request() {
     }
     assert!(s.world.battle);
     assert!(s.menus.battle_depth >= 0);
+    // the battlers: Tidus and Yuna, the two monsters, alive, with HP
+    eprintln!("battlers: {:?}", s.battlers);
+    assert!(
+        s.battlers
+            .iter()
+            .any(|b| b.index == 0 && b.hp > 0 && b.hp <= b.max_hp)
+    );
+    assert!(s.battlers.iter().filter(|b| b.index >= 0x14).count() >= 2);
     assert!(s.menus.battle_ids.len() >= 2, "{:?}", s.menus);
 }
 

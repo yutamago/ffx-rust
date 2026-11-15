@@ -110,6 +110,14 @@ colour and the `+4`..`+0xa` words, whose meaning differs per slot: see
 the field's particle effects (`g_FpData`/`g_FpRun`), effect positions,
 damage numbers, sound effects.
 
+## Battlers (API 6)
+
+`Snapshot.battlers`, in battle only (`g_BtlStatus`): the actors taking part
+(`+0xdc8` `in_battle`) of `g_BtlChrTop` (0x1f x 0xf90; 0..0x11 the party,
+0x14..0x1b the monsters) with HP, MP and their maximums, KO (`+0xdcc`),
+shown (`+0xdd2`) and the turn counter (`+0x6ec`): a frontend's battle HUD
+(docs/formats/battle.md, "The battle actor").
+
 ## Encoding
 
 `Snapshot::encode`: `FFXS`, the API version (`u32`), then the fields in
@@ -124,7 +132,7 @@ floats, `mat3x4` 12, `mat4` 16 (row-major as the game keeps them).
 the fields raises `API_VERSION`.
 
 ```text
-ffx-state API 5
+ffx-state API 6
 struct Snapshot
   update: u32
   game_time: f64
@@ -135,6 +143,7 @@ struct Snapshot
   menus: Menus
   messages: list<Message>
   effects: Effects
+  battlers: list<Battler>
 struct World
   map: u16
   previous_map: u16
@@ -234,6 +243,15 @@ struct ScreenFilter
   level: i16
   target: i16
   step: i16
+struct Battler
+  index: u8
+  hp: i32
+  max_hp: i32
+  mp: i32
+  max_mp: i32
+  dead: bool
+  exists: bool
+  ctb: i32
 ```
 
 ## Sources
