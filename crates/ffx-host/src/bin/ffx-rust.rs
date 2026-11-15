@@ -9,8 +9,10 @@
 //! ```
 //!
 //! `--skip-opening` ends the start-up logos on their first frame on the
-//! real clock too, as fast mode does (`Options::skip_opening`): a build
-//! without Ruffle (no `swf` feature) never gets the movie's end otherwise.
+//! real clock too, as the virtual clock does (`Options::skip_opening`): a
+//! build without Ruffle (no `swf` feature) never gets the movie's end
+//! otherwise, and a player's run on the real clock stays in the start-up
+//! loop.
 //!
 //! The clock (docs/host.md, "The clock"): the real one, as `FFX.exe`
 //! runs (the frame limiter holds 30 updates a second), for a player's run

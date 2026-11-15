@@ -386,3 +386,39 @@ fn import_thunks_run_their_import_without_unicorn() {
     assert_eq!(&got[48..], &bytes[..16]);
     assert_eq!(exec.stats.imports["MSVCR110.dll!memcpy"], 2);
 }
+
+/// On the real clock the start-up logos (`OpeningScreen.swf`) end with the
+/// movie's `Finish` callback, which a build without Ruffle (no `swf`
+/// feature) never sends: the start-up loop then never ends (0 updates,
+/// flips at 30 a second). `Options::skip_opening` ends them on their first
+/// frame, as the virtual clock does, and the main loop's updates begin.
+#[test]
+#[cfg(not(feature = "swf"))]
+fn the_real_clock_skips_the_opening_logos_when_asked() {
+    let Some(exe) = exe() else { return };
+    let opts = ffx_host::Options {
+        documents: Some(documents("skip-opening")),
+        gfx: ffx_host::gfx::Config {
+            backend: ffx_host::gfx::Choice::Null,
+            no_record: true,
+            ..ffx_host::gfx::Config::default()
+        },
+        real_clock: true,
+        skip_opening: true,
+        ..ffx_host::Options::default()
+    };
+    let mut exec = ffx_host::boot_opts(&exe, ffx_host::ports::table(), &opts).unwrap();
+    exec.set_budget(Duration::from_secs(120));
+    let shared = std::sync::Arc::clone(exec.shared());
+    let watch = std::thread::spawn(move || {
+        while shared.clock.frame() < 30 && shared.stopped().is_none() {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        shared.stop_all(Stop::Milestone("30 updates".into()));
+    });
+    let stop = exec.run_entry().unwrap();
+    exec.join_threads(Duration::from_secs(5));
+    watch.join().unwrap();
+    assert_eq!(stop, Stop::Milestone("30 updates".into()));
+    assert!(exec.shared().clock.frame() >= 30);
+}

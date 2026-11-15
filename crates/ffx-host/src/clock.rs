@@ -235,7 +235,8 @@ impl Clock {
     /// outside the harness's fast mode, `docs/host.md` "The clock"): game
     /// time is the host's, every `Sleep` sleeps for real, and the game's
     /// threads (vsync, FMOD, the loader) run free as in the original. No
-    /// lockstep, no turns, the opening logos play.
+    /// lockstep, no turns, the opening logos play (unless
+    /// [`Clock::set_skip_opening`]).
     pub fn set_real(&self, real: bool) {
         if real {
             let _ = self.epoch.set(Instant::now());
@@ -306,9 +307,9 @@ impl Clock {
     }
 
     /// Ends the start-up logos on their first frame on the real clock too,
-    /// as fast mode always does (`crate::Options::skip_opening`).
+    /// as the virtual clock always does (`crate::Options::skip_opening`).
     pub fn set_skip_opening(&self, skip: bool) {
-        self.skip_opening.store(skip, Ordering::Release);
+        self.skip_opening.store(skip, Ordering::Relaxed);
     }
 
     /// Whether the clock is the real one ([`Clock::set_real`]).
@@ -625,7 +626,7 @@ fn present_flip(e: &mut Exec, args: &Args) -> Ret {
     let c = clock(e);
     c.flips.fetch_add(1, Ordering::AcqRel);
     let real = c.is_real();
-    if real && !c.skip_opening.load(Ordering::Acquire) {
+    if real && !c.skip_opening.load(Ordering::Relaxed) {
         return r.unwrap_or(Ret::eax(0));
     }
     let mut mem = e.mem();
