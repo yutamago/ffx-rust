@@ -2249,6 +2249,18 @@ load-screen entry 1), so a test can start from a given save with
 `copy_user_data: false`, and the sandbox's settings. A home inside the
 user's real Documents folder is refused.
 
+Other launchers (2026-11-15, M6). `Game::launch` runs `tools/run-game.sh`
+unless `FFX_HARNESS_LAUNCHER` names another program (`Options::launcher`),
+which gets the same options. `tools/deck/deck-run.sh` is one: it starts
+the game on the Steam Deck under Proton and forwards the harness port over
+SSH, so the harness, the replays and their slots run here unchanged
+(`docs/m6.md`, "The Steam Deck"). `FFX_HARNESS_STARTUP` (seconds, default
+90) is how long `Game::launch` waits for the harness's first answer; a
+new Proton prefix takes longer. `tools/replays/run-all.sh` with
+`FFX_REPLAY_COMPARE_ONLY=<run folder>` starts no game and builds nothing:
+it compares (or with `--record` stores as references) runs made
+elsewhere, laid out as its own (`<folder>/rust`, `orig`, `orig2`).
+
 ### Sandbox settings
 
 `tools/sandbox/GameSetting.ini` is every test game's `GameSetting.ini`

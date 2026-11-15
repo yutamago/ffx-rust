@@ -53,14 +53,15 @@ deck_need_host() {
 
 deck_target() { printf '%s@%s' "$DECK_USER" "$DECK_HOST"; }
 
-# One master connection, reused by every call for 10 minutes; its socket is
-# ours (not /tmp, which WSL empties). accept-new: the first connection
-# records the Deck's host key, a changed key later is refused.
+# One master connection, reused by every call and kept 30 minutes after
+# the last; its socket is ours (not /tmp, which WSL empties). accept-new:
+# the first connection records the Deck's host key, a changed key later is
+# refused.
 deck_ssh_opts=()
 deck_set_ssh_opts() {
     deck_ssh_opts=(-i "$DECK_KEY" -p "$DECK_SSH_PORT" -o IdentitiesOnly=yes -o BatchMode=yes
         -o ConnectTimeout=10 -o ServerAliveInterval=30 -o StrictHostKeyChecking=accept-new
-        -o ControlMaster=auto -o "ControlPath=$DECK_LOCAL_WORK/ctl/%C" -o ControlPersist=600)
+        -o ControlMaster=auto -o "ControlPath=$DECK_LOCAL_WORK/ctl/%C" -o ControlPersist=1800)
 }
 
 # The settings remote.sh reads, as VAR=value words for the remote shell.
