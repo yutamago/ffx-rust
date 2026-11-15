@@ -69,7 +69,7 @@ fn a(args: &Args, i: usize) -> u32 {
     args.stack.get(i).copied().unwrap_or(0)
 }
 
-fn hwnd(v: u32) -> HWND {
+pub(crate) fn hwnd(v: u32) -> HWND {
     v as usize as HWND
 }
 

@@ -46,6 +46,7 @@ pub mod harness;
 pub mod iggy;
 pub mod image;
 pub mod imports;
+pub mod input;
 pub mod leaf;
 pub mod library;
 pub mod log;
