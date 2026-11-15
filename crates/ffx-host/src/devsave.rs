@@ -19,6 +19,8 @@
 //! with the control taken and, on the title, the title script's part around
 //! its Load menu run first, as `loadsave` does.
 
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use ffx_bridge::Mem;
 use ffx_system::wp5h_devsave::bridge as dv;
 
@@ -62,13 +64,18 @@ pub fn register(t: &mut Table) {
     );
 }
 
-/// `debugLoadForViewer(n, buffer, size)`: with the harness, 0 with the
-/// file's bytes (at most `size`) at `buffer`, -1 when the archive has no
-/// save `n`; without it, the original.
+/// [`load`] runs (the game's main thread): its `debugLoadForViewer` reads
+/// from the archive with or without the harness.
+static LOADING: AtomicBool = AtomicBool::new(false);
+
+/// `debugLoadForViewer(n, buffer, size)`: with the harness or inside
+/// [`load`] (a frontend's request, `crate::requests`), 0 with the file's
+/// bytes (at most `size`) at `buffer`, -1 when the archive has no save `n`;
+/// otherwise (the game's own debug calls), the original.
 fn load_for_viewer(e: &mut Exec, args: &Args) -> Ret {
     let a = |i| args.stack.get(i).copied().unwrap_or(0);
     let (n, buffer, size) = (a(0), a(1), a(2));
-    if !crate::harness::enabled() {
+    if !crate::harness::enabled() && !LOADING.load(Ordering::Acquire) {
         return Ret::eax(original(e, n, buffer, size));
     }
     Ret::eax(read(e, n.cast_signed(), buffer, size).map_or(u32::MAX, |_| 0))
@@ -169,7 +176,9 @@ pub fn load(e: &mut Exec, n: i32) -> Result<String, String> {
         mem.write(CTRL_WORKS, flags | 0x80);
         (old, flags & 0x80 == 0)
     };
+    LOADING.store(true, Ordering::Release);
     let r = e.call_cdecl(TK_DEBUG_LOAD_VIEWER_SAVE, &[n.cast_unsigned()]);
+    LOADING.store(false, Ordering::Release);
     e.mem().write(SCRIPT_CONTEXT, old);
     r.map_err(|err| err.to_string())?;
     let mem = e.mem();

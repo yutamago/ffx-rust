@@ -589,6 +589,7 @@ fn animate(e: &mut Exec, args: &Args) -> Ret {
     crate::replay::boundary(e, frame);
     crate::harness::boundary(e, frame);
     crate::observe::boundary(e, frame);
+    crate::requests::boundary(e, frame);
     if !real {
         loader_turn(e, frame);
         run_vsync(e);

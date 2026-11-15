@@ -39,6 +39,7 @@ same memory. The release runs no `FFX.exe` code.
 | `src/report.rs` | the run in numbers: Rust vs Unicorn functions (calls, time), imports, threads, the stop |
 | `src/window.rs` | the window, message, cursor and timer imports, the game-facing side: the game's window procedures, `WM_CREATE`, the sent messages (below, "Windows") |
 | `src/platform.rs` | the platform seam: the `Platform` trait, what the player-facing side asks of the operating system (below, "The platform seam") |
+| `src/requests.rs` | a frontend's requests (a developer save), served between two updates (`docs/state-api.md`, "Requests") |
 | `src/observe.rs` | the game-state API's snapshots (`crates/ffx-state`) at each frame boundary, for a frontend's observers (`docs/state-api.md`) |
 | `src/platform/windows.rs`, `windows/input.rs`, `windows/steam.rs` | `WindowsPlatform`: the real window and its messages, `DirectInput8`/`XInput`/raw input, WASAPI (the hook's `rust_audio_out.rs`), D3D11, `steam_api64.dll`, the documents folder and message box (`ffx-launch`'s `shell.rs`), `TerminateProcess` |
 | `src/platform/headless.rs` | `HeadlessPlatform`: no window, no devices, no device sound, the null device, no Steam (the Linux check, the null-device runs) |

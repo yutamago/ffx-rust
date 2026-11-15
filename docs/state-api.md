@@ -14,6 +14,20 @@ it only reads (the game runs the same with or without it: replays, saves).
   for `remove`; per game, called outside the lock); nothing is read while
   a game has none. `observe::snapshot(&Shared)` reads one at any time.
 
+## Requests
+
+The other direction: `ffx_host::requests`. A frontend queues a request
+on its game (`shared.requests.push(request, reply)`, any thread); the
+game's main thread serves it at the next frame boundary, between two
+updates (where the harness serves its jobs), and calls the reply with
+what it did. A run without requests is unchanged.
+
+- `Request::DevSave(n)`: loads developer save `n` (1..=110, the saves
+  the developers left in the archive: `ffx_host::devsave`, docs/harness.md
+  "Developer saves") and starts its map; its `debugLoadForViewer` reads
+  from the player's archive without the harness. Save 7 is Besaid beach
+  at the save sphere (map 70, scenario 118) with the control.
+
 ## Spaces
 
 - **Field space** (the game's logic: positions, the camera channel's
@@ -124,6 +138,12 @@ the opening's event, so the drawn camera comes from the scene); the pad `g_PadHe
 `ffx_chara::layout`), `g_Player` `0x01300788`.
 
 ## Tests
+
+`crates/ffx-host/tests/boot.rs` `a_developer_save_loads_on_request`: in
+the opening a frontend's `DevSave(7)` loads Besaid without the harness;
+the snapshots then show the level `/map/bsil/bsil00/`, scenario 118, the
+control, and the player character posed.
+
 
 `crates/ffx-state` (the reader on a made-up memory, the encoding, the
 schema) and `crates/ffx-host/tests/boot.rs`

@@ -391,6 +391,8 @@ pub struct Shared {
     pub iggy: crate::iggy::Iggy,
     /// The game-state API's observers (`crate::observe`).
     pub observers: crate::observe::Observers,
+    /// A frontend's requests (`crate::requests`).
+    pub requests: crate::requests::Requests,
 }
 
 impl std::fmt::Debug for Shared {
@@ -503,6 +505,7 @@ impl Shared {
             audio: crate::audio::Audio::default(),
             iggy: crate::iggy::Iggy::default(),
             observers: crate::observe::Observers::default(),
+            requests: crate::requests::Requests::default(),
         };
         s.bind_imports(stubs_at);
         s.find_thunks();
