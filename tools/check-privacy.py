@@ -26,7 +26,8 @@ REPO = pathlib.Path(__file__).resolve().parent.parent
 USER_PATH = re.compile(
     r"(?i)(?:[A-Z]:\\{1,2}Users\\{1,2}|/mnt/[a-z]/Users/|/home/)([A-Za-z][\w.-]*)")
 # a path segment that is no one's name
-GENERIC = {"public", "default", "user", "username", "you", "me", "runner"}
+GENERIC = {"public", "default", "user", "username", "you", "me", "runner",
+           "deck"}  # SteamOS's one user on every Steam Deck (docs/m6.md)
 # quoted from FFX.exe: the PS2 developers' own paths
 ALLOW = {"yonishi"}
 # no-reply addresses only: a user's, or GitHub's own for web commits

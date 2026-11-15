@@ -47,12 +47,19 @@ pub type Result<T> = std::result::Result<T, Error>;
 pub struct Options {
     /// The repository (for `tools/run-game.sh`).
     pub repo: PathBuf,
+    /// The program that starts the game, called with `tools/run-game.sh`'s
+    /// options: `FFX_HARNESS_LAUNCHER`, else `None` for
+    /// `tools/run-game.sh`. `tools/deck/deck-run.sh` starts it on the Steam
+    /// Deck under Proton instead, and forwards the harness port over SSH
+    /// (`docs/m6.md`, "The Steam Deck").
+    pub launcher: Option<PathBuf>,
     /// The harness port; `None` (the default) uses the slot's,
     /// [`base_port`] + slot.
     pub port: Option<u16>,
     /// Show the window without taking the focus.
     pub background: bool,
-    /// How long to wait for the harness to answer.
+    /// How long to wait for the harness to answer (`FFX_HARNESS_STARTUP`
+    /// seconds, default 90).
     pub startup: Duration,
     /// The game's Documents folder: settings and saves are read and
     /// written there, never in the user's own (unless [`Home::Real`]).
@@ -120,9 +127,14 @@ impl Default for Options {
     fn default() -> Self {
         Self {
             repo: PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../.."),
+            launcher: std::env::var_os("FFX_HARNESS_LAUNCHER")
+                .filter(|v| !v.is_empty())
+                .map(PathBuf::from),
             port: None,
             background: true,
-            startup: Duration::from_secs(90),
+            startup: Duration::from_secs(startup_secs(
+                std::env::var("FFX_HARNESS_STARTUP").ok().as_deref(),
+            )),
             home: Home::Instance,
             copy_user_data: true,
             saves: Vec::new(),
@@ -153,6 +165,25 @@ pub enum Home {
     Dir(PathBuf),
     /// The user's real Documents folder (settings and saves are changed).
     Real,
+}
+
+/// The harness's start-up wait in seconds: `value` (`FFX_HARNESS_STARTUP`)
+/// when it is a whole number above 0, else 90. A Proton prefix made on the
+/// first start takes longer than that.
+fn startup_secs(value: Option<&str>) -> u64 {
+    value
+        .and_then(|v| v.trim().parse::<u64>().ok())
+        .filter(|&s| s > 0)
+        .unwrap_or(90)
+}
+
+/// The program [`Game::launch`] runs: [`Options::launcher`], else the
+/// repository's `tools/run-game.sh`.
+fn launcher_path(options: &Options) -> PathBuf {
+    options
+        .launcher
+        .clone()
+        .unwrap_or_else(|| options.repo.join("tools/run-game.sh"))
 }
 
 /// The first slot's harness port (`FFX_HARNESS_PORT`, default 27100); slot
@@ -614,7 +645,8 @@ impl Game {
             .port
             .unwrap_or_else(|| base_port().saturating_add(u16::try_from(number).unwrap_or(0)));
         Self::end_orphan(port)?;
-        let mut cmd = Command::new(options.repo.join("tools/run-game.sh"));
+        let launcher = launcher_path(options);
+        let mut cmd = Command::new(&launcher);
         cmd.arg("--instance").arg(number.to_string());
         cmd.arg("--harness").arg(port.to_string());
         for dir in &options.mods {
@@ -669,7 +701,7 @@ impl Game {
             std::fs::metadata(instance_dir(number).join("ffx-hook.log")).map_or(0, |m| m.len());
         let status = cmd.status()?;
         if !status.success() {
-            return Err(Error::Launch(format!("tools/run-game.sh: {status}")));
+            return Err(Error::Launch(format!("{}: {status}", launcher.display())));
         }
         let start = Instant::now();
         loop {
@@ -1093,6 +1125,34 @@ fn hex(s: &str) -> Result<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn startup_wait_reads_whole_seconds_above_zero() {
+        assert_eq!(startup_secs(None), 90);
+        assert_eq!(startup_secs(Some("600")), 600);
+        assert_eq!(startup_secs(Some(" 30 ")), 30);
+        assert_eq!(startup_secs(Some("0")), 90);
+        assert_eq!(startup_secs(Some("1.5")), 90);
+        assert_eq!(startup_secs(Some("")), 90);
+    }
+
+    #[test]
+    fn launcher_is_run_game_unless_named() {
+        let mut options = Options {
+            repo: PathBuf::from("/repo"),
+            launcher: None,
+            ..Options::default()
+        };
+        assert_eq!(
+            launcher_path(&options),
+            PathBuf::from("/repo/tools/run-game.sh")
+        );
+        options.launcher = Some(PathBuf::from("/repo/tools/deck/deck-run.sh"));
+        assert_eq!(
+            launcher_path(&options),
+            PathBuf::from("/repo/tools/deck/deck-run.sh")
+        );
+    }
 
     #[test]
     fn bmp_round_trip_through_the_parser() {
