@@ -9,7 +9,7 @@
 
 use ffx_chara::layout as l;
 
-use crate::{Actor, Bone, Camera, Input, Menus, Message, Snapshot, World};
+use crate::{Actor, Bone, Camera, Input, MenuOption, Menus, Message, Snapshot, World};
 
 /// The game's memory, read only.
 pub trait Reader {
@@ -78,6 +78,19 @@ const PAD_PRESSED: u32 = 0x0132_70d0;
 const MENU_MAIN_MASK: u32 = 0x0184_08ec;
 const MENU_MAIN_CURSOR: u32 = 0x0187_1548;
 const MENU_MAIN_OPTIONS: u32 = 0x0187_1688;
+/// `g_TkMenuMainOptions`: 8-byte entries (`+0` the menu id, `+4` `i16`
+/// enabled).
+const MENU_MAIN_OPTION_LIST: u32 = 0x0187_1568;
+/// At most this many main menu options.
+const MAX_OPTIONS: i32 = 32;
+/// `TkMenuMainMes`: the main menu's names are menu text 9.
+const MENU_TEXT_MAIN: u32 = 9;
+/// `g_BtlMenuText`: the menu texts' rows (12 bytes each: `+0` busy, `+8`
+/// the table), as `MsMenuGetText` reads them (ffx-battle's `menu_text`).
+const MENU_TEXT: u32 = 0x0113_33f0;
+const MENU_TEXT_ROW: u32 = 12;
+/// `g_SaveMenu`'s word: bit 3 the kana names (`MsGetSaveConfigHiragana`).
+const SAVE_MENU: u32 = 0x0113_079c;
 const BTL_WINDOW_OPEN: u32 = 0x023c_c08c;
 const BTL_WINDOW_CHR: u32 = 0x023c_c088;
 const BTL_ACTION_DEPTH: u32 = 0x023c_c092;
@@ -132,6 +145,23 @@ const ELEM_GLOBAL: u32 = 0x88;
 const MAX_BONES: u32 = 512;
 
 struct Mem<'a>(&'a dyn Reader);
+
+/// The reader as ffx-bridge's memory for the game's own read-only ports
+/// (`MsMenuGetText`): unmapped bytes read as 0; writes are dropped (those
+/// ports never write).
+struct ReadOnly<'a>(&'a dyn Reader);
+
+impl ffx_bridge::Mem for ReadOnly<'_> {
+    fn read_bytes(&self, addr: u32, out: &mut [u8]) {
+        if !self.0.read_bytes(addr, out) {
+            out.fill(0);
+        }
+    }
+    fn write_bytes(&mut self, _: u32, _: &[u8]) {}
+    fn image_base(&self) -> u32 {
+        0x0040_0000
+    }
+}
 
 impl Mem<'_> {
     fn bytes<const N: usize>(&self, at: u32) -> [u8; N] {
@@ -246,6 +276,22 @@ pub fn read(mem: &dyn Reader, update: u32, game_time: f64) -> Snapshot {
     }
 }
 
+/// `TkMenuMainMes(id)`: `MsMenuGetText(i, id, kana)` as the game runs it
+/// on the PC (ffx-battle's `menu_text`; its English rows are never used
+/// there): the name's address, 0 while the row is busy or has no table.
+fn menu_text(m: &Mem<'_>, i: u32, id: u32) -> u32 {
+    let row = MENU_TEXT.wrapping_add(i.wrapping_mul(MENU_TEXT_ROW));
+    let table = m.u32(row.wrapping_add(8));
+    if table == 0 || m.u8(row) != 0 {
+        return 0;
+    }
+    let kana = (m.u32(SAVE_MENU) >> 3) & 1;
+    #[allow(clippy::cast_possible_wrap)] // 12 bits
+    let (record, strings) =
+        ffx_kernel::bridge::excel_data(&ReadOnly(m.0), (id & 0xfff) as i32, table);
+    u32::from(m.u16(record.wrapping_add(kana * 4))).wrapping_add(strings)
+}
+
 fn menus(m: &Mem<'_>) -> Menus {
     // level -1: no command window (`TOSetBtlActiveChr`)
     let depth = m.u8(BTL_ACTION_DEPTH).cast_signed();
@@ -269,10 +315,28 @@ fn menus(m: &Mem<'_>) -> Menus {
     let esc_up = esc != 0
         && m.mapped::<4>(esc.wrapping_add(0xe4))
         && (m.u8(esc.wrapping_add(0x70)) != 0 || m.i32(esc.wrapping_add(0xe4)) >= 0);
+    let options = m.i32(MENU_MAIN_OPTIONS);
+    let main_option_list = (0..options.clamp(0, MAX_OPTIONS).cast_unsigned())
+        .map(|i| {
+            let at = MENU_MAIN_OPTION_LIST + i * 8;
+            let id = m.u16(at);
+            let name_at = menu_text(m, MENU_TEXT_MAIN, u32::from(id));
+            MenuOption {
+                id,
+                enabled: m.i16(at + 4) != 0,
+                name: if name_at == 0 {
+                    Vec::new()
+                } else {
+                    m.text(name_at)
+                },
+            }
+        })
+        .collect();
     Menus {
         main_mask: m.u32(MENU_MAIN_MASK),
         main_cursor: m.i32(MENU_MAIN_CURSOR),
-        main_options: m.i32(MENU_MAIN_OPTIONS),
+        main_options: options,
+        main_option_list,
         battle_window: m.u32(BTL_WINDOW_OPEN),
         battle_character: m.i16(BTL_WINDOW_CHR),
         battle_depth: i16::from(depth),

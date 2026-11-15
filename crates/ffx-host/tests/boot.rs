@@ -766,3 +766,97 @@ fn a_battle_starts_on_request() {
     assert!(s.menus.battle_depth >= 0);
     assert!(s.menus.battle_ids.len() >= 2, "{:?}", s.menus);
 }
+
+/// The main menu's options (API 4): on Besaid (developer save 7) Triangle
+/// opens the main menu; the snapshots list its options with their names
+/// as the game shows them (`MsMenuGetText(9, id)`, decoded with the
+/// game's character set: Japanese for a fresh `GameSetting.ini`).
+#[test]
+fn the_state_api_names_the_main_menu() {
+    use std::sync::atomic::{AtomicU32, Ordering::Relaxed};
+    use std::sync::{Arc, Mutex};
+    let Some(exe) = exe() else { return };
+    let opts = ffx_host::Options {
+        documents: Some(documents("main-menu")),
+        gfx: ffx_host::gfx::Config {
+            backend: ffx_host::gfx::Choice::Null,
+            no_record: true,
+            ..ffx_host::gfx::Config::default()
+        },
+        ..ffx_host::Options::default()
+    };
+    let mut exec = ffx_host::boot_opts(&exe, ffx_host::ports::table(), &opts).unwrap();
+    exec.set_budget(Duration::from_secs(300));
+    let seen: Arc<Mutex<Option<ffx_state::Menus>>> = Arc::default();
+    let language: Arc<Mutex<Option<u8>>> = Arc::default();
+    let id = {
+        let seen = Arc::clone(&seen);
+        let language = Arc::clone(&language);
+        let shared = Arc::downgrade(exec.shared());
+        let step = AtomicU32::new(0);
+        let at = AtomicU32::new(0);
+        exec.shared().observers.add(Arc::new(move |s| {
+            let Some(shared) = shared.upgrade() else {
+                return;
+            };
+            match step.load(Relaxed) {
+                0 if s.world.map == 0x15d && s.world.event_frame > 30 => {
+                    shared
+                        .requests
+                        .push(ffx_host::requests::Request::DevSave(7), Box::new(|_| {}));
+                    step.store(1, Relaxed);
+                }
+                // Triangle (the menu) held for a few updates, once the
+                // beach has the control
+                1 if s.world.map == 0x46 && s.world.player_control => {
+                    shared.clock.buttons.store(0x10, Relaxed);
+                    at.store(s.update, Relaxed);
+                    step.store(2, Relaxed);
+                }
+                2 if s.update > at.load(Relaxed) + 4 => {
+                    shared.clock.buttons.store(0, Relaxed);
+                    step.store(3, Relaxed);
+                }
+                3 if s.menus.main_mask & 0x2 != 0
+                    && s.menus.main_option_list.len() >= 4
+                    && s.menus.main_option_list.iter().all(|o| !o.name.is_empty()) =>
+                {
+                    if let Ok(mut x) = seen.lock() {
+                        *x = Some(s.menus.clone());
+                    }
+                    if let Ok(mut l) = language.lock() {
+                        *l = Some(s.world.language);
+                    }
+                    shared.stop_all(Stop::Milestone("the main menu".into()));
+                }
+                _ => {}
+            }
+        }))
+    };
+    let stop = exec.run_entry().unwrap();
+    exec.join_threads(Duration::from_secs(5));
+    exec.shared().observers.remove(id);
+    assert_eq!(stop, Stop::Milestone("the main menu".into()));
+    let menus = seen.lock().unwrap().clone().unwrap();
+    let game = exe.parent().unwrap();
+    let archive = ffx_vbf::Archive::open(game.join("data/FFX_Data.vbf")).unwrap();
+    // the snapshot's language: Japanese for a fresh GameSetting.ini
+    assert_eq!(language.lock().unwrap().unwrap(), 0);
+    let lang = ffx_text::Language::Japanese;
+    let table = archive
+        .read(archive.find(&lang.charset_path()).unwrap())
+        .unwrap();
+    let cs = ffx_text::Charset::from_table(&table, lang).unwrap();
+    let names: Vec<String> = menus
+        .main_option_list
+        .iter()
+        .map(|o| cs.decode(&o.name))
+        .collect();
+    eprintln!("main menu: cursor {} options {names:?}", menus.main_cursor);
+    assert_eq!(
+        menus.main_option_list.len(),
+        usize::try_from(menus.main_options).unwrap()
+    );
+    // the Japanese main menu: スフィア盤 (Sphere Grid), アイテム, アビリティ (Abilities), ...
+    assert!(names.iter().any(|n| n.contains("アビリティ")), "{names:?}");
+}

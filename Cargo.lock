@@ -1377,7 +1377,9 @@ dependencies = [
 name = "ffx-state"
 version = "0.1.0"
 dependencies = [
+ "ffx-bridge",
  "ffx-chara",
+ "ffx-kernel",
 ]
 
 [[package]]

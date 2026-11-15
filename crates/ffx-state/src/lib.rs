@@ -23,7 +23,7 @@ pub use read::{LANGUAGE_UNKNOWN, Reader, read};
 pub use schema::{ApiStruct, ApiType, Field, StructSchema, Ty};
 
 /// The API's version: a frontend checks it before it decodes a snapshot.
-pub const API_VERSION: u32 = 3;
+pub const API_VERSION: u32 = 4;
 
 /// The first four bytes of an encoded snapshot (`FFXS`).
 pub const MAGIC: u32 = u32::from_le_bytes(*b"FFXS");
@@ -118,6 +118,9 @@ api_struct! {
         main_cursor: i32,
         /// The main menu's options (`g_TkMenuMainMaxOptions`).
         main_options: i32,
+        /// Those options: their menu id, whether they can be chosen and
+        /// their name (`g_TkMenuMainOptions`; `TkMenuMainMes`).
+        main_option_list: Vec<MenuOption>,
         /// The battle command window that is open: the character's bit
         /// (Tidus 1, Yuna 2, Auron 4, Kimahri 8, Wakka 0x10, Lulu 0x20,
         /// Rikku 0x40; `g_BtlWindowOpen`), 0 none.
@@ -149,6 +152,20 @@ api_struct! {
         save_files: i32,
         /// The PC menu (Esc, Flash) is up (`g_FFEscMenu`).
         esc_menu: bool,
+    }
+}
+
+api_struct! {
+    /// An option of the main menu.
+    MenuOption {
+        /// The menu it opens (`g_TkMenuMainOptions` `+0`, a `u32` the game
+        /// reads; its low 16 bits here: the names' lookup takes 12).
+        id: u16,
+        /// It can be chosen (`+4`).
+        enabled: bool,
+        /// Its name in the game's encoding (`MsMenuGetText(9, id, kana)`, the
+        /// menu text the game loaded; kana names when the config says so).
+        name: Vec<u8>,
     }
 }
 
@@ -336,6 +353,7 @@ pub fn structs() -> Vec<&'static StructSchema> {
         Actor::schema(),
         Bone::schema(),
         Menus::schema(),
+        MenuOption::schema(),
         Message::schema(),
     ]
 }
@@ -367,7 +385,7 @@ mod tests {
         let camera = 1 + 48 + 4 + 4 + 4 + 12 + 12;
         let input = 4 + 2 + 1 + 1;
         let actor = 2 + 2 + 1 + (2 + 4) + 12 + 4 + 12 + 1 + 4 + 4 + 4 + 4 + 2 + 2 + 1 + 64 + 2;
-        let menus = 4 + 4 + 4 + 4 + 2 + 2 + 2 + 2 + 4 + 4 + 4 + 4 + 4 + 1;
+        let menus = 4 + 4 + 4 + 2 + 4 + 2 + 2 + 2 + 2 + 4 + 4 + 4 + 4 + 4 + 1;
         assert_eq!(
             b.len(),
             8 + 4 + 8 + world + camera + input + 2 + actor + menus + 2
@@ -375,7 +393,7 @@ mod tests {
     }
 
     /// FNV-1a of `schema::text()` at [`API_VERSION`].
-    const PINNED: u64 = 0xfec5_9715_3fec_b198;
+    const PINNED: u64 = 0x11d5_ee15_5af9_dd1e;
 
     /// A field change must raise [`API_VERSION`]: the schema's text is
     /// pinned to the version here.
@@ -387,7 +405,7 @@ mod tests {
         });
         assert_eq!(
             (API_VERSION, hash),
-            (3, PINNED),
+            (4, PINNED),
             "the schema changed: raise API_VERSION and pin the new hash"
         );
     }
@@ -410,7 +428,7 @@ mod tests {
             ]
         );
         assert!(matches!(s.fields[5].ty, Ty::List(_)));
-        assert_eq!(structs().len(), 8);
+        assert_eq!(structs().len(), 9);
         assert!(Actor::schema().fields.iter().all(|f| !f.doc.is_empty()));
     }
 }
