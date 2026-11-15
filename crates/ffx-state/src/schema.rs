@@ -29,6 +29,8 @@ pub enum Ty {
     Bytes,
     /// `[f32; 3]`.
     Vec3,
+    /// `[u8; 3]`: a colour.
+    Rgb,
     /// `[f32; 12]`.
     Mat34,
     /// `[f32; 16]`.
@@ -55,6 +57,7 @@ impl Ty {
             Self::Str => "string".into(),
             Self::Bytes => "bytes".into(),
             Self::Vec3 => "vec3".into(),
+            Self::Rgb => "rgb".into(),
             Self::Mat34 => "mat3x4".into(),
             Self::Mat4 => "mat4".into(),
             Self::Struct(s) => s().name.into(),
@@ -143,6 +146,13 @@ impl ApiType for Vec<u8> {
         let n = count(self.len());
         out.extend_from_slice(&n.to_le_bytes());
         out.extend_from_slice(&self[..usize::from(n)]);
+    }
+}
+
+impl ApiType for [u8; 3] {
+    const TY: Ty = Ty::Rgb;
+    fn encode(&self, out: &mut Vec<u8>) {
+        out.extend_from_slice(self);
     }
 }
 
