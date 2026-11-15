@@ -669,7 +669,9 @@ Linux and the Steam Deck first, then macOS, then whatever else. The
 native graphics backend (wgpu or Vulkan) is chosen at the start of M6;
 until then Proton runs the 64-bit Windows build. FMOD is already gone
 (M5's mixer). Controller mappings and the PC UI
-screens need a per-platform pass.
+screens need a per-platform pass. The survey that opens M6 (the Windows
+dependencies, the graphics options, a wgpu proof of concept on the
+game's own shaders) is `docs/m6.md`.
 
 ## Determinism
 
