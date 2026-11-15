@@ -642,6 +642,9 @@ fn the_state_api_sees_a_subtitle() {
                 .iter()
                 .find(|m| m.state == 2 && !m.text.is_empty())
             {
+                if let Ok(mut l) = language.lock() {
+                    *l = Some(s.world.language);
+                }
                 if let Ok(mut x) = seen.lock() {
                     *x = Some(m.clone());
                 }
@@ -657,7 +660,8 @@ fn the_state_api_sees_a_subtitle() {
     // decoded with the character set of the game's language (a fresh
     // GameSetting.ini: Japanese): the first line of the arrival, Tidus's
     // "Rikku!?" ("リュック！？")
-    let lang = match language.lock().unwrap().unwrap_or(0) {
+    let language = language.lock().unwrap().expect("the language was read");
+    let lang = match language {
         1 => ffx_text::Language::English,
         _ => ffx_text::Language::Japanese,
     };
@@ -669,7 +673,7 @@ fn the_state_api_sees_a_subtitle() {
     let text = ffx_text::Charset::from_table(&table, lang)
         .unwrap()
         .decode(&m.text);
-    eprintln!("message {m:?} ({lang:?}): {text:?}");
+    eprintln!("message {m:?} (language {language}, {lang:?}): {text:?}");
     assert!(
         text.contains("リュック") || text.contains("Rikku"),
         "{text:?}"
