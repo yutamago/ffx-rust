@@ -675,3 +675,94 @@ fn the_state_api_sees_a_subtitle() {
     eprintln!("message {m:?} (language {language}, {lang:?}): {text:?}");
     assert!(text.contains("リュック"), "{text:?}");
 }
+
+/// A frontend's battle (`Request::Battle`): from Besaid (developer save
+/// 7), battle field 3 (`cdsp00`), group 0, formation 0 starts as a random
+/// encounter would, and the snapshots show the battle: `World.battle`,
+/// the characters, and later a command window open.
+#[test]
+fn a_battle_starts_on_request() {
+    use std::sync::{Arc, Mutex};
+    let Some(exe) = exe() else { return };
+    let opts = ffx_host::Options {
+        documents: Some(documents("battle-request")),
+        gfx: ffx_host::gfx::Config {
+            backend: ffx_host::gfx::Choice::Null,
+            no_record: true,
+            ..ffx_host::gfx::Config::default()
+        },
+        ..ffx_host::Options::default()
+    };
+    let mut exec = ffx_host::boot_opts(&exe, ffx_host::ports::table(), &opts).unwrap();
+    exec.set_budget(Duration::from_secs(300));
+    let reply: Arc<Mutex<Option<Result<String, String>>>> = Arc::default();
+    let window: Arc<Mutex<Option<Arc<ffx_state::Snapshot>>>> = Arc::default();
+    let id = {
+        let (reply, window) = (Arc::clone(&reply), Arc::clone(&window));
+        let shared = Arc::downgrade(exec.shared());
+        let step = std::sync::atomic::AtomicU32::new(0);
+        exec.shared().observers.add(Arc::new(move |s| {
+            use std::sync::atomic::Ordering::Relaxed;
+            let Some(shared) = shared.upgrade() else {
+                return;
+            };
+            match step.load(Relaxed) {
+                0 if s.world.map == 0x15d && s.world.event_frame > 30 => {
+                    shared
+                        .requests
+                        .push(ffx_host::requests::Request::DevSave(7), Box::new(|_| {}));
+                    step.store(1, Relaxed);
+                }
+                1 if s.world.map == 0x46 && s.world.player_control => {
+                    let reply = Arc::clone(&reply);
+                    shared.requests.push(
+                        ffx_host::requests::Request::Battle {
+                            field: 3,
+                            group: 0,
+                            formation: 0,
+                        },
+                        Box::new(move |r| {
+                            if let Ok(mut x) = reply.lock() {
+                                *x = Some(r);
+                            }
+                        }),
+                    );
+                    step.store(2, Relaxed);
+                }
+                2 if s.world.battle && s.menus.battle_window != 0 => {
+                    if let Ok(mut w) = window.lock() {
+                        *w = Some(Arc::clone(s));
+                    }
+                    shared.stop_all(Stop::Milestone("a command window".into()));
+                }
+                _ => {}
+            }
+        }))
+    };
+    let stop = exec.run_entry().unwrap();
+    exec.join_threads(Duration::from_secs(5));
+    exec.shared().observers.remove(id);
+    let r = reply.lock().unwrap().clone();
+    eprintln!("reply: {r:?}");
+    assert!(r.expect("served").is_ok());
+    assert_eq!(stop, Stop::Milestone("a command window".into()));
+    let s = window.lock().unwrap().clone().unwrap();
+    eprintln!(
+        "battle: level {} menus {:?} actors {}",
+        s.world.level,
+        s.menus,
+        s.actors.len()
+    );
+    for a in &s.actors {
+        eprintln!(
+            "  {} {:#06x} hidden {:#x} bones {}",
+            a.model,
+            a.id,
+            a.hidden,
+            a.bones.len()
+        );
+    }
+    assert!(s.world.battle);
+    assert!(s.menus.battle_depth >= 0);
+    assert!(s.menus.battle_ids.len() >= 2, "{:?}", s.menus);
+}

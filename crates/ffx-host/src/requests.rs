@@ -11,6 +11,8 @@ use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, PoisonError};
 
+use ffx_bridge::Mem as _;
+
 use crate::exec::Exec;
 
 /// What a frontend can ask for.
@@ -19,6 +21,45 @@ pub enum Request {
     /// Load developer save `n` (1..=110, the developers' own saves in the
     /// player's archive: `crate::devsave`) and start its map.
     DevSave(i32),
+    /// Start a battle as a random encounter does (`MsBattleEncountExe`'s
+    /// request, as the harness's `start_battle`): the battle field's record
+    /// (`field`, e.g. 3 `cdsp00`), its group and formation. Answered once
+    /// the battle runs (`g_BtlStatus` nonzero), or after 600 updates
+    /// without it; the request is raised again every 30 updates while the
+    /// field drops it (`MsBattleExeClear` while a map loads).
+    Battle {
+        /// The battle field's record (`g_BtlFieldIndex`).
+        field: u16,
+        /// The group in the field.
+        group: u8,
+        /// The formation in the group.
+        formation: u8,
+    },
+}
+
+/// `g_BtlFieldIndex` (`u16`), then the group and the formation.
+const BTL_FIELD_INDEX: u32 = 0x0112_c256;
+/// `ResetEncountExe(full)`.
+const RESET_ENCOUNT_EXE: u32 = 0x0078_0ff0;
+/// `g_BtlExe`: the battle request flag.
+const BTL_EXE: u32 = 0x0112_a8e2;
+/// `g_BtlStatus`: nonzero in battle.
+const BTL_STATUS: u32 = 0x0112_a8e0;
+/// Updates a battle request waits for its battle.
+const BATTLE_WAIT: u32 = 600;
+/// Updates between two raises of a dropped battle request.
+const BATTLE_AGAIN: u32 = 30;
+
+/// A battle asked for and not started yet.
+struct Battle {
+    field: u16,
+    group: u8,
+    formation: u8,
+    reply: Reply,
+    /// The update it was asked at, and last raised at.
+    since: u32,
+    raised: u32,
+    times: u32,
 }
 
 /// A request's reply: what it did, or why not. Called on the game's main
@@ -35,6 +76,8 @@ pub struct Requests {
 #[derive(Default)]
 struct Queue {
     items: VecDeque<(Request, Reply)>,
+    /// A battle request waiting for its battle.
+    battle: Option<Battle>,
     /// The game's run ended ([`Requests::close`]): nothing is served any
     /// more.
     closed: bool,
@@ -66,23 +109,42 @@ impl Requests {
         self.waiting.store(true, Ordering::Release);
     }
 
+    /// The waiting battle, taken out.
+    fn take_battle(&self) -> Option<Battle> {
+        self.queue
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .battle
+            .take()
+    }
+
+    /// Puts a waiting battle back (it keeps the queue looked at).
+    fn keep_battle(&self, b: Battle) {
+        let mut q = self.queue.lock().unwrap_or_else(PoisonError::into_inner);
+        q.battle = Some(b);
+        self.waiting.store(true, Ordering::Release);
+    }
+
     fn take(&self) -> Vec<(Request, Reply)> {
         let mut q = self.queue.lock().unwrap_or_else(PoisonError::into_inner);
-        self.waiting.store(false, Ordering::Release);
+        self.waiting.store(q.battle.is_some(), Ordering::Release);
         q.items.drain(..).collect()
     }
 
     /// The run ended (`Exec::run_entry` returns): what waits is answered
     /// `Err`, and so is every later request.
     pub fn close(&self) {
-        let left = {
+        let (left, battle) = {
             let mut q = self.queue.lock().unwrap_or_else(PoisonError::into_inner);
             q.closed = true;
             self.waiting.store(false, Ordering::Release);
-            q.items.drain(..).collect::<Vec<_>>()
+            (q.items.drain(..).collect::<Vec<_>>(), q.battle.take())
         };
         for (_, reply) in left {
             reply(Err(ENDED.into()));
+        }
+        if let Some(b) = battle {
+            (b.reply)(Err(ENDED.into()));
         }
     }
 }
@@ -92,18 +154,92 @@ pub(crate) fn boundary(e: &mut Exec, frame: u32) {
     if !e.shared().requests.waiting.load(Ordering::Acquire) {
         return;
     }
+    if let Some(b) = e.shared().requests.take_battle() {
+        battle_step(e, frame, b);
+    }
     for (request, reply) in e.shared().requests.take() {
         // a request that stopped the game: the rest are not run on it
         if e.stopped().is_some() {
             reply(Err(ENDED.into()));
             continue;
         }
-        let r = match &request {
-            Request::DevSave(n) => crate::devsave::load(e, *n),
-        };
-        crate::log::note(&format!("requests: {request:?} at frame {frame}: {r:?}"));
-        reply(r);
+        match request {
+            Request::DevSave(n) => {
+                let r = crate::devsave::load(e, n);
+                crate::log::note(&format!("requests: DevSave({n}) at frame {frame}: {r:?}"));
+                reply(r);
+            }
+            Request::Battle {
+                field,
+                group,
+                formation,
+            } => {
+                if let Some(old) = e.shared().requests.take_battle() {
+                    (old.reply)(Err("another battle was asked for".into()));
+                }
+                ask_battle(e, field, group, formation);
+                crate::log::note(&format!(
+                    "requests: Battle({field}, {group}, {formation}) asked at frame {frame}"
+                ));
+                e.shared().requests.keep_battle(Battle {
+                    field,
+                    group,
+                    formation,
+                    reply,
+                    since: frame,
+                    raised: frame,
+                    times: 1,
+                });
+            }
+        }
     }
+}
+
+/// Writes a random encounter's request (as `start_battle` in
+/// ffx-harness's screens.rs): the field, group and formation,
+/// `ResetEncountExe(1)`, the request flag.
+fn ask_battle(e: &mut Exec, field: u16, group: u8, formation: u8) {
+    {
+        let mut mem = e.mem();
+        mem.write(BTL_FIELD_INDEX, field);
+        mem.write(BTL_FIELD_INDEX + 2, group);
+        mem.write(BTL_FIELD_INDEX + 3, formation);
+    }
+    let _ = e.call_cdecl(RESET_ENCOUNT_EXE, &[1]);
+    e.mem().write(BTL_EXE, 1u8);
+}
+
+/// A waiting battle at the boundary: answered when it runs or has waited
+/// too long, raised again while the field drops the request.
+fn battle_step(e: &mut Exec, frame: u32, mut b: Battle) {
+    if e.stopped().is_some() {
+        (b.reply)(Err(ENDED.into()));
+        return;
+    }
+    let (status, flag) = {
+        let mem = e.mem();
+        (mem.read::<u8>(BTL_STATUS), mem.read::<u8>(BTL_EXE))
+    };
+    if status != 0 {
+        (b.reply)(Ok(format!(
+            "battle field {} group {} formation {} started at frame {frame} (asked {} times)",
+            b.field, b.group, b.formation, b.times
+        )));
+        return;
+    }
+    if frame.wrapping_sub(b.since) > BATTLE_WAIT {
+        (b.reply)(Err(format!(
+            "no battle after {BATTLE_WAIT} updates (asked {} times)",
+            b.times
+        )));
+        return;
+    }
+    if flag == 0 && frame.wrapping_sub(b.raised) >= BATTLE_AGAIN {
+        ask_battle(e, b.field, b.group, b.formation);
+        b.raised = frame;
+        b.times += 1;
+    }
+    e.shared().requests.keep_battle(b);
 }
 
 #[cfg(test)]
