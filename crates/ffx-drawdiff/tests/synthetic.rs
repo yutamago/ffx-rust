@@ -573,6 +573,81 @@ fn a_shifted_ring_offset_with_the_same_bytes() {
 }
 
 #[test]
+fn a_draw_of_no_vertices_reads_no_ring_bytes() {
+    // A draw of 0 vertices reads nothing from its rings, wherever their
+    // bindings point: past the ring's end in one capture (the battle's
+    // count-0 draw A#0119, where the hook's ring was shorter than the
+    // offset), at other bytes in the other.
+    let empty = |vb_offset: u32, kind: DrawKind| {
+        let mut cmds = cmds();
+        let mut d = ring_draw(vb_offset, 0);
+        d.count = 0;
+        if kind == DrawKind::Indexed {
+            d.kind = kind;
+            d.index = (IB, 57, 0);
+        }
+        cmds[9] = Cmd::Draw(Box::new(d));
+        capture(&objects(), cmds)
+    };
+    for kind in [DrawKind::Plain, DrawKind::Indexed] {
+        let c = compare(&empty(4096, kind), &empty(16, kind), &Options::default());
+        assert!(classes(&c).is_empty(), "{kind:?}: {:?}", classes(&c));
+    }
+}
+
+#[test]
+fn a_frames_ring_updates_stay_for_the_next_frame() {
+    // Two frames of the ring draw. The hook sends the draw's whole window
+    // in both; ffx-rust's layer sends only the span that changed since its
+    // last look, so its second frame updates the window's first half and
+    // relies on the first frame's bytes for the rest. Both draw the same.
+    let two = |second: Cmd| {
+        let mut msgs = objects();
+        msgs.push(Msg::World {
+            scene: "test0000".into(),
+            camera: None,
+        });
+        let frame = |number: u32, update: Cmd| {
+            Msg::Frame(Frame {
+                number,
+                width: 4,
+                height: 4,
+                cmds: vec![update, Cmd::Draw(Box::new(ring_draw(0, 0)))],
+            })
+        };
+        msgs.push(frame(
+            0,
+            Cmd::UpdateBuffer {
+                id: RING,
+                offset: 0,
+                data: vec![7; 128],
+            },
+        ));
+        msgs.push(frame(1, second));
+        let mut bytes = ffx_gfx::CAPTURE_MAGIC.to_vec();
+        for m in &msgs {
+            m.write(&mut bytes);
+        }
+        Capture::parse(&bytes).unwrap()
+    };
+    let mut changed = [7u8; 128];
+    changed[..64].fill(9);
+    let whole = two(Cmd::UpdateBuffer {
+        id: RING,
+        offset: 0,
+        data: changed[..128].to_vec(),
+    });
+    let span = two(Cmd::UpdateBuffer {
+        id: RING,
+        offset: 0,
+        data: changed[..64].to_vec(),
+    });
+    let c = compare(&whole, &span, &Options::default());
+    assert_eq!(c.frames.len(), 2);
+    assert_eq!(c.unallowed(), 0, "{:?}", c.frames[1].diffs);
+}
+
+#[test]
 fn a_static_buffer_offset_is_compared() {
     let mut cmds = cmds();
     draw_at(&mut cmds, 2).vertex = vec![(0, VB, 12, 12)];

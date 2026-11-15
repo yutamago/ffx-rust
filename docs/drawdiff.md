@@ -31,6 +31,10 @@ unreadable file.
 
 `cargo run --release -p ffx-drawdiff --example items -- <capture> [n]` lists
 a capture's items with their keys, or every field and constant of item `n`.
+`cargo run --release -p ffx-drawdiff --example ring -- <capture> <frame>
+<n> [slot]` prints the bytes item `n` reads from each ring (the window
+drawdiff hashes, `capture::ring_window`), one record a line, to see what
+a `resource vbN: ring ... | ring ...` difference is made of.
 
 ## Design
 
@@ -38,7 +42,7 @@ a capture's items with their keys, or every field and constant of item `n`.
 
 | Module | What it does |
 |---|---|
-| `capture` | Reads the stream (`ffx_gfx::read_all`) and keeps the objects by id, as the stream declares them (a new object at a reused id replaces the old one). Each `Frame` becomes a list of `Item`s: one per draw, clear and copy. The frame's `UpdateBuffer` commands are applied to the dynamic buffers in order, so each draw sees its own version |
+| `capture` | Reads the stream (`ffx_gfx::read_all`) and keeps the objects by id, as the stream declares them (a new object at a reused id replaces the old one). Each `Frame` becomes a list of `Item`s: one per draw, clear and copy. The frame's `UpdateBuffer` commands are applied to the dynamic buffers in order, so each draw sees its own version, and they stay for the frames after it (the hook sends each draw's whole window; ffx-rust's layer only the span that changed since its last look) |
 | `key` | Stable content keys (below). T4 uses this module |
 | `state` | Blend, depth-stencil, rasterizer and sampler descriptions, decoded field by field |
 | `cb` | Constant buffers decoded by the shader's reflection |
@@ -87,7 +91,11 @@ pixel gate.
   `first_instance + ceil(instances / step) - 1`.
 
 Each range is taken from the binding's offset. A stride of 0 reads its
-first 16 bytes. A dynamic index buffer is keyed by the index values it
+first 16 bytes. A draw of 0 vertices or indices (or an instanced draw of
+0 instances) reads none: its rings are keyed as empty wherever their
+bindings point (the battle gate's count-0 draw `A#0119`, whose binding
+pointed past the end of the hook's copy of the ring and into the
+layer's, 2026-11-15). A dynamic index buffer is keyed by the index values it
 holds. These are shifted down by the smallest index when every per-vertex
 slot is a ring, because then the vertex window moves with them. The
 fields that only say where a ring was written are not compared: the
@@ -361,7 +369,7 @@ pair (`scene-gate.sh` against each other, the lists without
 |---|---|
 | bsil0000 | 1 difference: the eye-blink bind of draw 84 (`vs db349612...`, ps srv1, BC1 32x16 in r1, BC3 in r2, frame 0 only): the m4-tex113 flake under load; not on this list (not loosened). Gate against r2 |
 | bsil0300 | 0, nothing allowed was used either: `GlobalTime`, the minimap ring and the chocobo icon all agreed |
-| kami0100 | the cloth ring (allowed, 28-30 draws a frame) and the loader's 16x8 texture (`f1de6dea8bd5f574` srv1, frames 1-2; on bsil0000's list, not on this one): not loosened. Gate against r1 (r2 has the other texture). With every hook on that draw and a texture-animation bind (draw 45) failed more often in replay-flakes7; not `PhyreScene_doOnFieldMapAssetLoaded` (9 of 9 captures passed with its port, the original or neither: `docs/harness.md`, "Not the map-asset callback") |
+| kami0100 | the cloth ring (allowed, 28-30 draws a frame) and the loader's 16x8 texture (`f1de6dea8bd5f574` srv1, frames 1-2; on bsil0000's list; on this one too since m5 scene gates 2, 2026-11-15, which made r1 against r2 pass). Gate against r1. With every hook on that draw and a texture-animation bind (draw 45) failed more often in replay-flakes7; not `PhyreScene_doOnFieldMapAssetLoaded` (9 of 9 captures passed with its port, the original or neither: `docs/harness.md`, "Not the map-asset callback") |
 | menu | PASS |
 | battle | PASS (both loads 77 updates) |
 
@@ -499,6 +507,50 @@ With both left out (a temporary allow list over the m5g captures), the
 menu, battle, bsil0000 (against r2) and kami0100 pass, and bsil0300 has
 GDraw's two clears left (now on `rust.txt`); the ring contents themselves
 need a new capture.
+
+The second `rust` run (`m5s-<replay>`, the build of `bca7c5501`, with the
+rings): menu and bsil0300 passed; battle, bsil0000 and kami0100 failed on
+three things, none of them a port (m5 scene gates 2, 2026-11-15; `examples/ring`
+shows the bytes):
+
+- **A draw of nothing** (battle, `A#0119`, every frame: `vb0`-`vb3` "ring
+  out of bounds" against 8-16 bytes). An indexed draw of 0 indices; drawdiff
+  read one record at the binding anyway, past the end of the hook's copy
+  of the ring. It now reads none (Rings, above).
+- **Updates across frames** (kami0100 frame 2, `A#0170` `vb3`, one word:
+  a texture coordinate `0xbf42c000` for `0xbf44c000`). ffx-rust's layer
+  sends the span of a ring that changed since its last look, frame after
+  frame; the hook sends each draw's whole window. drawdiff started every
+  frame again from the window's start, so the span's unchanged bytes (here
+  the float's high half, the same as in frame 1) came from the window's
+  start. A frame's updates now stay for the frames after it. All 45 kami0100
+  captures (originals, hooked runs) and m5s agree on that draw then.
+- **Draw 31's 16x8 texture** (kami0100, ps srv1 of `f1de6dea8bd5f574`):
+  one of two live textures; r1 binds the first throughout, r2 switches to
+  the second at frame 1, m5s switches from the second to the first at
+  frame 2. It differs between the original's own runs, so it is on
+  kami0100's list now, with that cause (as on bsil0000's).
+
+With these kami0100 passes. Left: **the cloth in frame 1** (battle: 5
+draws, `vb5` of `bb9bf1c768e1480f`; bsil0000: 3), and it is the
+references, not ffx-rust. The references (r1/r2, 2026-10-27) predate the
+cloth order (2026-10-31, `docs/host.md`, "The cloth race"). In every one
+of the original's captures of these scenes the cloth ring of frame 1 is the
+race's result: on the battle it repeats frame 0's vertices (a step
+behind), on bsil0000 it already holds frame 2's (a step ahead: the submit
+of update 1 found its flag clear, the late stage of update 0 set it, and
+the submit of update 2 came before the stage of update 1). Eleven battle
+captures (p3-p6, q1/q2, r1/r2, all, m4, f7all) and nine bsil0000 captures
+(o1/o2, p1/p2, q1/q2, r1/r2, f7all) show the same pattern, so the
+capture's own work at frame 0 (the hook hashes every target at the
+present) makes the render thread late there every time. ffx-rust, with
+the order (`cloth waits` in its log: 180 on the battle), shows three
+different states, and its frames 0 and 2 equal the references' bit for
+bit. New original references with the order are needed:
+`scene-gate-capture.sh <replay> dg-<replay>-s1 original` and `-s2` for
+besaid, kami, deck and battle, then each pair against itself and the
+`rust` runs against `s1`. The cloth entries (kami0100's ring, and what
+the hood residue holds) should then be measured again.
 
 | Scene | Replay (`tools/replays/`) | Capture point |
 |---|---|---|
