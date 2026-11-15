@@ -828,6 +828,12 @@ impl Backend for D3d11 {
         S_OK
     }
 
+    fn object(&self, id: u32) -> Option<usize> {
+        // the IUnknown identity: one per real object, whichever handle
+        // of the layer's it was made for
+        self.objects.get(&id).map(|o| o.unknown.as_raw().addr())
+    }
+
     fn read_texture(&mut self, id: u32, desc: &[u32; 11]) -> Option<Vec<Subresource>> {
         let (d, c) = (self.device.clone()?, self.context.clone()?);
         let texture = self.get::<ID3D11Texture2D>(id)?;
