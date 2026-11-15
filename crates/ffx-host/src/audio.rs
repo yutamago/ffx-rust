@@ -34,24 +34,20 @@ use crate::exec::{Exec, Trap};
 
 mod movie;
 
-/// The mix on the default output device (WASAPI, shared mode): the hook's
-/// `rust_audio_out.rs`, the same file, compiled here too. Off in harness
-/// games (their clock is virtual, as the hook keeps it off under the
-/// virtual clock) unless `FFX_RUST_AUDIO_OUT=1`; off with `--audio-wav`.
-#[path = "../../ffx-hook/src/rust_audio_out.rs"]
-#[allow(dead_code)] // `on` is the hook's; off Windows only `start` and `push`
-#[cfg_attr(not(windows), allow(unused_imports))]
-mod device;
-
-/// Starts the device output once, as [`device`] says; whether it was
-/// asked to start.
+/// Starts the platform's device output once
+/// (`crate::platform::Platform::audio_start`; on Windows WASAPI, shared
+/// mode, the hook's `rust_audio_out.rs`). Off in harness games (their
+/// clock is virtual, as the hook keeps it off under the virtual clock)
+/// unless `FFX_RUST_AUDIO_OUT=1`; off with `--audio-wav`. Whether it was
+/// asked to start (the mix is FMOD's stereo one then, whether or not the
+/// platform has a device).
 fn start_device(wav: bool) -> bool {
     let env = |n: &str| std::env::var(n).unwrap_or_default();
     let harness = !env("FFX_HARNESS").is_empty();
     if wav || (harness && env("FFX_RUST_AUDIO_OUT") != "1") {
         return false;
     }
-    device::start();
+    crate::platform::get().audio_start();
     true
 }
 
@@ -105,7 +101,8 @@ fn feeder(shared: &std::sync::Weak<crate::exec::Shared>) {
         if shared.sync.stopping() {
             return;
         }
-        let queued = device::on().then(device::queued);
+        let device = crate::platform::get();
+        let queued = device.audio_running().then(|| device.audio_queued());
         #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // >= 0
         let elapsed = (start.elapsed().as_secs_f64() * 48_000.0) as u64;
         let (due, skip) = feed_due(queued, elapsed, mixed + skipped);
@@ -125,7 +122,7 @@ fn feeder(shared: &std::sync::Weak<crate::exec::Shared>) {
             let Some(s) = g.as_mut() else { break };
             let block = mix_block(s);
             drop(g);
-            device::push(&block);
+            device.audio_push(&block);
             shared.audio.blocks.fetch_add(1, Ordering::AcqRel);
             mixed += 1;
         }
@@ -133,8 +130,8 @@ fn feeder(shared: &std::sync::Weak<crate::exec::Shared>) {
             report = std::time::Instant::now();
             crate::log::note(&format!(
                 "fmod: feeder: {mixed} blocks mixed, {skipped} skipped, {} queued, {} underruns",
-                device::queued(),
-                device::underruns()
+                device.audio_queued(),
+                device.audio_underruns()
             ));
         }
     }
@@ -692,7 +689,7 @@ fn event_system_update(e: &mut Exec, _: &Args) -> Ret {
                 let bytes: Vec<u8> = block.iter().flat_map(|x| x.to_le_bytes()).collect();
                 let _ = f.write_all(&bytes);
             } else {
-                device::push(&block);
+                crate::platform::get().audio_push(&block);
             }
         }
         std::mem::take(&mut s.due)

@@ -1,5 +1,6 @@
 //! [`HeadlessPlatform`]: no window, no input devices (the layer's
-//! stand-ins and the harness's keys only), no device sound
+//! stand-ins and the harness's keys only), no device sound (the mix goes
+//! to `--audio-wav` or nowhere)
 //! (docs/host.md, "The platform seam"). What the Linux check and the
 //! null-device runs had as stand-ins: a fake window that gets no messages
 //! and is the 1920 x 1080 screen, and the recording null device
@@ -223,4 +224,22 @@ impl Platform for HeadlessPlatform {
     fn xinput_ids(&self) -> Vec<(u32, u32)> {
         Vec::new()
     }
+
+    fn audio_start(&self) {
+        crate::log::note("rust audio out: no output device (headless)");
+    }
+
+    fn audio_running(&self) -> bool {
+        false
+    }
+
+    fn audio_queued(&self) -> usize {
+        0
+    }
+
+    fn audio_underruns(&self) -> u64 {
+        0
+    }
+
+    fn audio_push(&self, _: &[f32]) {}
 }

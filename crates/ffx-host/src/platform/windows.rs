@@ -21,6 +21,8 @@
 //!   do nothing; outside the harness too, for now).
 //! - **Input** ([`input`]): the host's `DirectInput8` behind the game's
 //!   devices, `XInput`, the raw input device names.
+//! - **Sound** (`audio_out`): the mix on the default device through WASAPI
+//!   (the hook's `rust_audio_out.rs`, compiled here too).
 //! - **Graphics.** The real D3D11 device ([`crate::d3d11`]), its swap chain
 //!   on the real window.
 //! - **Timers.** `timeBeginPeriod`/`timeEndPeriod` forward, so `Sleep`
@@ -42,6 +44,11 @@ use windows_sys::Win32::UI::WindowsAndMessaging as wm;
 
 use super::{DeviceCall, DeviceInfo, Message, Platform, Point, Property, Rect, WindowRequest};
 
+/// The mix on the default output device (WASAPI, shared mode, the `wasapi`
+/// crate): the hook's `rust_audio_out.rs`, the same file, compiled here
+/// too.
+#[path = "../../../ffx-hook/src/rust_audio_out.rs"]
+mod audio_out;
 mod input;
 
 const WM_SIZE: u32 = 0x0005;
@@ -541,5 +548,25 @@ impl Platform for WindowsPlatform {
 
     fn xinput_ids(&self) -> Vec<(u32, u32)> {
         input::xinput_ids()
+    }
+
+    fn audio_start(&self) {
+        audio_out::start();
+    }
+
+    fn audio_running(&self) -> bool {
+        audio_out::on()
+    }
+
+    fn audio_queued(&self) -> usize {
+        audio_out::queued()
+    }
+
+    fn audio_underruns(&self) -> u64 {
+        audio_out::underruns()
+    }
+
+    fn audio_push(&self, block: &[f32]) {
+        audio_out::push(block);
     }
 }

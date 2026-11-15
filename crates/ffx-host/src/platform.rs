@@ -320,6 +320,28 @@ pub trait Platform: Send + Sync {
     /// The `XInput` pads' vendor and product ids (the game's
     /// `Input_IsXInputDevice` asks).
     fn xinput_ids(&self) -> Vec<(u32, u32)>;
+
+    // ---- sound (the mixer's threads, `crate::audio`) ---------------------
+    //
+    // The mix is the host's (`ffx_sound`'s mixer, FMOD's 48,000 Hz
+    // interleaved stereo f32, 1,600 frames a block); the platform only
+    // plays it. A player's run on the real clock mixes on a feeder thread
+    // that keeps `audio_queued` above the device's prefill; otherwise each
+    // `EventSystem::update` pushes one block. Neither waits for the device.
+
+    /// Starts the device output (once, on the first FMOD call that needs
+    /// the mixer). It may fail or be switched off: [`Platform::audio_running`]
+    /// says.
+    fn audio_start(&self);
+    /// Whether the device output runs (the feeder follows its queue then,
+    /// else the wall clock).
+    fn audio_running(&self) -> bool;
+    /// Frames queued for the device and not played yet.
+    fn audio_queued(&self) -> usize;
+    /// Underruns so far (the device wanted frames that weren't there).
+    fn audio_underruns(&self) -> u64;
+    /// One mixed block (interleaved stereo) for the device; never waits.
+    fn audio_push(&self, block: &[f32]);
 }
 
 static PLATFORM: OnceLock<Box<dyn Platform>> = OnceLock::new();
