@@ -1098,9 +1098,18 @@ calls"):
   render thread ticking under the game's menu lock while the main
   thread's `IggyMenuManager_dispatchMouse_00a26ce0` waited for it
   (m5-hitch, 2026-11-15);
-- `IggyMakeEventNone`/`MouseMove` write the layer's own 24-byte event
-  (the game's buffers are 24 bytes: writing more broke
-  `IggyMenuManager_dispatchMouse_00a26ce0`'s stack cookie);
+- `IggyMakeEventNone`/`MouseMove`/`MouseButton`/`MouseWheel` (every
+  event maker `FFX.exe` imports) write Iggy's own 24-byte event, six
+  words as `iggy_w32.dll` writes them (`iggy::Event`: type at `+0`, a
+  move's x and y at `+8`/`+0xc`, the wheel's sign-extended 16 bits at
+  `+0x10`; the game's buffers are 24 bytes: writing more broke
+  `IggyMenuManager_dispatchMouse_00a26ce0`'s stack cookie).
+  `IggyPlayerDispatchEventRS` hands each to the player: moves, buttons
+  (types 1/2 left, 3/4 right, 5/6 middle, down/up, at the last move's
+  place as Iggy does) and the wheel (the game's 120 a notch, AS3's
+  `delta`). Until 2026-11-15 only moves were passed and the two other
+  makers were null stand-ins, so clicks in the remaster menu did
+  nothing;
 - an AS3 `ExternalInterface.call` runs the game's callback
   (`IggySetAS3ExternalFunctionCallbackUTF8`; stdcall(user, player, call),
   the call block built in the arena with the NUL-terminated name the
@@ -1135,7 +1144,7 @@ smoothing, the deterministic `getTimer`) on one thread of its own (Ruffle's
 players are not `Send`; the game calls Iggy from the main and the render
 thread):
 
-- **Requests** (create, calls, ticks, size, mouse moves, draws) go to that
+- **Requests** (create, calls, ticks, size, mouse events, draws) go to that
   thread with the asking game thread's reply channel, one at a time.
 - **AS3 external calls answer the movie** (host-iggy): while Ruffle runs
   the movie's `ExternalInterface.call` (`ffx_swf::stage::Answers::live`),

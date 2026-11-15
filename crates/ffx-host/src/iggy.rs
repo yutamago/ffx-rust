@@ -521,37 +521,129 @@ fn composite(e: &Exec, image: Option<&(u32, u32, Vec<u8>)>) {
     }
 }
 
-/// `IggyMakeEventMouseMove(ev, x, y)`: the layer's own event layout
-/// (24 bytes, as `IggyMenuManager_dispatchMouse_00a26ce0`'s; type 7 at
-/// `+0`, x and y at `+8`, `+0xc`), read back by
-/// `DispatchEventRS`.
+/// A mouse button, as an Iggy event names it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Button {
+    Left,
+    Right,
+    Middle,
+}
+
+/// An Iggy event (`IggyEvent`, six words), as `iggy_w32.dll`'s
+/// `IggyMakeEvent*` write them (`0x10093fc0`..`0x100941c5`): the type at
+/// `+0`, a move's x and y at `+8`, `+0xc`, the wheel's delta (the game's
+/// 16 bits, sign-extended) at `+0x10`; every other word 0. The types: 0
+/// none, 1/2 left button down/up, 3/4 right, 5/6 middle (the game's
+/// `IggyMenuManager_dispatchMouse_00a26ce0` passes its queue's 0..5 as
+/// 1, 2, 5, 6, 3, 4: its records 0/1 are the left button, 4/5 the right,
+/// `IggyMouseQueue_update_00a25ab0`; Iggy's dispatch `0x100121e0` sends
+/// types 3/4 as AS3 events 0x2b/0x2c, `rightMouseDown`/`rightMouseUp`,
+/// and 5/6 as 0x22/0x23, `middleMouseDown`/`middleMouseUp`, in its event
+/// name table), 7 move, 8 wheel; Iggy's others (key
+/// 9/10, char 0xb, resize 0xe, mouse leave 0xf, focus lost 0x10) have no
+/// maker among `FFX.exe`'s imports.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Event {
+    None,
+    Button {
+        button: Button,
+        down: bool,
+    },
+    Move {
+        x: i32,
+        y: i32,
+    },
+    Wheel(i32),
+    /// A type the layer passes on to nobody.
+    Other(u32),
+}
+
+impl Event {
+    /// The event in an `IggyEvent`'s words.
+    #[must_use]
+    pub fn decode(w: [u32; 6]) -> Self {
+        let button = |button, down| Self::Button { button, down };
+        match w[0] {
+            0 => Self::None,
+            1 => button(Button::Left, true),
+            2 => button(Button::Left, false),
+            3 => button(Button::Right, true),
+            4 => button(Button::Right, false),
+            5 => button(Button::Middle, true),
+            6 => button(Button::Middle, false),
+            7 => Self::Move {
+                x: w[2].cast_signed(),
+                y: w[3].cast_signed(),
+            },
+            8 => Self::Wheel(w[4].cast_signed()),
+            t => Self::Other(t),
+        }
+    }
+
+    /// `IggyMakeEventMouseButton(ev, type)`: the type as given (Iggy's
+    /// `0x10094080` stores it unchecked; `IggyMakeEventActivate` is the
+    /// same code).
+    #[must_use]
+    pub fn make_button(kind: u32) -> [u32; 6] {
+        [kind, 0, 0, 0, 0, 0]
+    }
+
+    /// `IggyMakeEventMouseMove(ev, x, y)`.
+    #[must_use]
+    pub fn make_move(x: u32, y: u32) -> [u32; 6] {
+        [7, 0, x, y, 0, 0]
+    }
+
+    /// `IggyMakeEventMouseWheel(ev, delta)`: the argument's low 16 bits,
+    /// sign-extended (`movsx ecx, word [ebp+0xc]`).
+    #[must_use]
+    pub fn make_wheel(delta: u32) -> [u32; 6] {
+        #[allow(clippy::cast_possible_truncation)] // the low 16 bits, as Iggy
+        let d = i32::from((delta as u16).cast_signed());
+        [8, 0, 0, 0, d.cast_unsigned(), 0]
+    }
+}
+
+/// Writes an event's words (Iggy writes nothing for a null event pointer).
+fn write_event(e: &Exec, ev: u32, words: [u32; 6]) {
+    if ev != 0 {
+        e.mem().write(ev, words);
+    }
+}
+
+/// `IggyMakeEventMouseMove(ev, x, y)` ([`Event`]).
 fn event_mouse_move(e: &mut Exec, args: &Args) -> Ret {
-    let ev = a(args, 0);
-    let mut mem = e.mem();
-    mem.write_bytes(ev, &[0u8; 24]);
-    mem.write(ev, 7u32);
-    mem.write(ev + 8, a(args, 1));
-    mem.write(ev + 12, a(args, 2));
+    write_event(e, a(args, 0), Event::make_move(a(args, 1), a(args, 2)));
+    Ret::VOID
+}
+
+/// `IggyMakeEventMouseButton(ev, type)` ([`Event`]).
+fn event_mouse_button(e: &mut Exec, args: &Args) -> Ret {
+    write_event(e, a(args, 0), Event::make_button(a(args, 1)));
+    Ret::VOID
+}
+
+/// `IggyMakeEventMouseWheel(ev, delta)` ([`Event`]).
+fn event_mouse_wheel(e: &mut Exec, args: &Args) -> Ret {
+    write_event(e, a(args, 0), Event::make_wheel(a(args, 1)));
     Ret::VOID
 }
 
 fn event_none(e: &mut Exec, args: &Args) -> Ret {
-    e.mem().write_bytes(a(args, 0), &[0u8; 24]);
+    write_event(e, a(args, 0), [0; 6]);
     Ret::VOID
 }
 
+/// `IggyPlayerDispatchEventRS(player, ev, result)`: the event to the
+/// player's movie (moves, buttons, the wheel); the result (12 bytes) 0.
 fn dispatch_event(e: &mut Exec, args: &Args) -> Ret {
     let (p, ev, out) = (a(args, 0), a(args, 1), a(args, 2));
-    let mem = e.mem();
-    if mem.read::<u32>(ev) == 7 {
-        let (x, y) = (
-            mem.read::<u32>(ev + 8).cast_signed(),
-            mem.read::<u32>(ev + 12).cast_signed(),
-        );
+    if ev != 0 {
+        let event = Event::decode(e.mem().read(ev));
         #[cfg(feature = "swf")]
-        swf::mouse_move(e, p, x, y);
+        swf::event(e, p, event);
         #[cfg(not(feature = "swf"))]
-        let _ = (p, x, y);
+        let _ = (p, event);
     }
     if out != 0 {
         e.mem().write_bytes(out, &[0u8; 12]);
@@ -914,6 +1006,20 @@ pub const TABLE: &[(&str, &str, Conv, usize, ImportFn)] = &[
         3,
         event_mouse_move,
     ),
+    (
+        IGGY,
+        "_IggyMakeEventMouseButton@8",
+        Conv::Stdcall,
+        2,
+        event_mouse_button,
+    ),
+    (
+        IGGY,
+        "_IggyMakeEventMouseWheel@8",
+        Conv::Stdcall,
+        2,
+        event_mouse_wheel,
+    ),
     (IGGY, "_IggyMakeEventNone@4", Conv::Stdcall, 1, event_none),
     (
         IGGY,
@@ -1072,5 +1178,47 @@ mod tests {
         c.tick(PERIOD);
         assert!(!c.ready(PERIOD, PERIOD));
         assert_eq!(c.owed, 0.0);
+    }
+
+    #[test]
+    fn events_decode_as_iggy_lays_them_out() {
+        assert_eq!(Event::decode([0; 6]), Event::None);
+        let b = |button, down| Event::Button { button, down };
+        // dispatchMouse's queue types 0..5 go to Iggy as 1, 2, 5, 6, 3, 4
+        let made: Vec<Event> = [1, 2, 5, 6, 3, 4]
+            .into_iter()
+            .map(|k| Event::decode(Event::make_button(k)))
+            .collect();
+        assert_eq!(
+            made,
+            [
+                b(Button::Left, true),
+                b(Button::Left, false),
+                b(Button::Middle, true),
+                b(Button::Middle, false),
+                b(Button::Right, true),
+                b(Button::Right, false),
+            ]
+        );
+        assert_eq!(
+            Event::make_move(640, (-3i32).cast_unsigned()),
+            [7, 0, 640, 0xffff_fffd, 0, 0]
+        );
+        assert_eq!(
+            Event::decode(Event::make_move(640, (-3i32).cast_unsigned())),
+            Event::Move { x: 640, y: -3 }
+        );
+        assert_eq!(Event::decode([0x10, 0, 0, 0, 0, 0]), Event::Other(0x10));
+    }
+
+    #[test]
+    fn the_wheel_keeps_16_bits_sign_extended() {
+        // the game passes u16 ftol(w * 120.0)
+        assert_eq!(Event::make_wheel(120), [8, 0, 0, 0, 120, 0]);
+        assert_eq!(Event::decode(Event::make_wheel(0xff88)), Event::Wheel(-120));
+        assert_eq!(
+            Event::decode(Event::make_wheel(0xdead_ff88)),
+            Event::Wheel(-120)
+        );
     }
 }

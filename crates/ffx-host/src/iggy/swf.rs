@@ -28,7 +28,7 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 use std::thread::ThreadId;
 
 use ffx_swf::stage::RuffleValue;
-use ffx_swf::stage::{GameFont, Gpu, Render, Stage};
+use ffx_swf::stage::{GameFont, Gpu, MouseButton, Render, Stage};
 
 use super::Value;
 use crate::exec::Exec;
@@ -40,7 +40,7 @@ enum Req {
     Create(u32, Vec<u8>, (u32, u32)),
     Destroy(u32),
     Size(u32, (u32, u32)),
-    Mouse(u32, i32, i32),
+    Event(u32, super::Event),
     Tick(u32),
     Call(u32, String, Vec<Value>),
     Draw(u32, Option<std::path::PathBuf>),
@@ -125,8 +125,13 @@ pub(super) fn set_size(e: &mut Exec, p: u32, size: (u32, u32)) {
     ask(e, Req::Size(p, size));
 }
 
-pub(super) fn mouse_move(e: &mut Exec, p: u32, x: i32, y: i32) {
-    ask(e, Req::Mouse(p, x, y));
+/// An `IggyPlayerDispatchEventRS` event (none and unknown types do
+/// nothing).
+pub(super) fn event(e: &mut Exec, p: u32, event: super::Event) {
+    if matches!(event, super::Event::None | super::Event::Other(_)) {
+        return;
+    }
+    ask(e, Req::Event(p, event));
 }
 
 pub(super) fn tick(e: &mut Exec, p: u32) {
@@ -247,9 +252,21 @@ impl Stages {
                 }
                 None
             }
-            Req::Mouse(p, x, y) => {
+            Req::Event(p, event) => {
                 if let Some(s) = self.players.get_mut(&p) {
-                    s.mouse_move(x, y);
+                    match event {
+                        super::Event::Move { x, y } => s.mouse_move(x, y),
+                        super::Event::Button { button, down } => {
+                            let button = match button {
+                                super::Button::Left => MouseButton::Left,
+                                super::Button::Right => MouseButton::Right,
+                                super::Button::Middle => MouseButton::Middle,
+                            };
+                            s.mouse_button(button, down);
+                        }
+                        super::Event::Wheel(delta) => s.mouse_wheel(delta),
+                        super::Event::None | super::Event::Other(_) => {}
+                    }
                 }
                 None
             }

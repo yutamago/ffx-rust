@@ -42,6 +42,8 @@ use ruffle_render_wgpu::wgpu;
 use crate::abc::Arity;
 use crate::log::Arg;
 
+/// Ruffle's mouse buttons ([`Stage::mouse_button`]).
+pub use ruffle_core::events::MouseButton;
 /// Ruffle's external value, for users of [`CallOut`] (`ffx-host`).
 pub use ruffle_core::external::Value as RuffleValue;
 
@@ -248,6 +250,8 @@ pub struct Stage {
     ss: u32,
     /// The offered functions' argument counts (`crate::abc`).
     arities: BTreeMap<String, Arity>,
+    /// Where the last mouse move put the pointer (stage pixels).
+    mouse: (f64, f64),
 }
 
 impl Stage {
@@ -304,6 +308,7 @@ impl Stage {
             size,
             ss,
             arities,
+            mouse: (0.0, 0.0),
         })
     }
 
@@ -329,10 +334,41 @@ impl Stage {
 
     /// A mouse move (`IggyPlayerDispatchEventRS`), in display pixels.
     pub fn mouse_move(&mut self, x: i32, y: i32) {
+        self.mouse = (
+            f64::from(x) * f64::from(self.ss),
+            f64::from(y) * f64::from(self.ss),
+        );
+        let (x, y) = self.mouse;
         self.lock()
-            .handle_event(ruffle_core::PlayerEvent::MouseMove {
-                x: f64::from(x) * f64::from(self.ss),
-                y: f64::from(y) * f64::from(self.ss),
+            .handle_event(ruffle_core::PlayerEvent::MouseMove { x, y });
+    }
+
+    /// A mouse button pressed or let go (`IggyPlayerDispatchEventRS` of an
+    /// `IggyMakeEventMouseButton` event) where the last move left the
+    /// pointer, as Iggy places a button event (`iggy_w32.dll`
+    /// `0x10012b38`: the player's last move position, `+0x22b8`/`+0x22bc`).
+    pub fn mouse_button(&mut self, button: MouseButton, down: bool) {
+        let (x, y) = self.mouse;
+        let event = if down {
+            ruffle_core::PlayerEvent::MouseDown {
+                x,
+                y,
+                button,
+                index: None,
+            }
+        } else {
+            ruffle_core::PlayerEvent::MouseUp { x, y, button }
+        };
+        self.lock().handle_event(event);
+    }
+
+    /// The mouse wheel (`IggyMakeEventMouseWheel`): Iggy hands the game's
+    /// value to AS3 as `MouseEvent.delta` unchanged (`0x10011eb0`; the
+    /// game passes 120 a notch), which Ruffle's delta in lines is.
+    pub fn mouse_wheel(&mut self, delta: i32) {
+        self.lock()
+            .handle_event(ruffle_core::PlayerEvent::MouseWheel {
+                delta: ruffle_core::events::MouseWheelDelta::Lines(f64::from(delta)),
             });
     }
 
