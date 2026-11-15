@@ -88,11 +88,12 @@ the Esc menu's pages (Flash) are not covered.
 ## The main menu's options (API 4)
 
 `Menus.main_option_list`: the main menu's options (`g_TkMenuMainOptions`,
-8 bytes each: the menu id, enabled) with their names as the game shows
-them: `MsMenuGetText(9, id, kana)` (menu text 9 is the main menu's,
-`TkMenuMainMes`) read as ffx-battle's port does (`g_BtlMenuText` rows,
-`ffx_kernel::bridge::excel_data`), with the kana bit of the save config,
-on the snapshot's reader.
+8 bytes each: the menu id, a `u32` of which the low 16 bits are kept, and
+enabled) with their names as the game shows them: `MsMenuGetText(9, id,
+kana)` (menu text 9 is the main menu's, `TkMenuMainMes`), reimplemented
+with ffx-kernel only (`g_BtlMenuText` rows, `ffx_kernel::bridge::excel_data`;
+the English rows are never used on the PC), with the kana bit of the save
+config, on the snapshot's reader.
 
 ## Encoding
 

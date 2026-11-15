@@ -280,7 +280,7 @@ pub fn read(mem: &dyn Reader, update: u32, game_time: f64) -> Snapshot {
 /// on the PC (ffx-battle's `menu_text`; its English rows are never used
 /// there): the name's address, 0 while the row is busy or has no table.
 fn menu_text(m: &Mem<'_>, i: u32, id: u32) -> u32 {
-    let row = MENU_TEXT.wrapping_add(i * MENU_TEXT_ROW);
+    let row = MENU_TEXT.wrapping_add(i.wrapping_mul(MENU_TEXT_ROW));
     let table = m.u32(row.wrapping_add(8));
     if table == 0 || m.u8(row) != 0 {
         return 0;
