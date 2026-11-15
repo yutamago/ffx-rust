@@ -1,0 +1,22 @@
+# Scene gate allow list for ffx-rust.exe captures only: tools/scene-gate.sh
+# adds it to the scene's own list when run B is an ffx-rust capture (its
+# folder holds ffx-rust.log; tools/scene-gate-capture.sh ... rust). What is
+# here differs by design between FFX.exe and ffx-rust.exe, not between two
+# runs of either (docs/drawdiff.md, "Scene gates").
+
+# GDraw: in FFX.exe Iggy (iggy_w32.dll) draws its Flash movies on the game's
+# device, so the original's stream holds GDraw's depth-stencil clears and
+# draws. ffx-rust.exe plays the movies on Ruffle and composites the image
+# with the layer's own objects, which the stream leaves out
+# (crates/ffx-host/src/gfx/composite.rs; docs/host.md, "Iggy"). On the
+# Besaid river (bsil0300) that is the autosave prompt (chocobo.swf, 50x50 at
+# 1220,660), drawn in every frame of the references dg-besaid-r1/r2 and in
+# none of an ffx-rust capture (m5g-besaid, 2026-11-15: 54 items a frame
+# missing, its draws on allow/gate/bsil0300.txt already, and GDraw's two
+# depth-stencil clears before them, target16 R24G8 / target17 D24S8, which no
+# other draw of the scene uses).
+[bsil0300]
+missing kind=clear-depth cause: GDraw's own depth-stencil clears before the autosave prompt; ffx-rust composites Ruffle's image instead (composite.rs)
+any vs=3ed98be438f1788c cause: GDraw's draws of the autosave prompt; ffx-rust composites Ruffle's image instead (composite.rs)
+any vs=db4c42c82f869fe7 cause: GDraw's draws of the autosave prompt; ffx-rust composites Ruffle's image instead (composite.rs)
+any vs=0259336042bd8dbd cause: GDraw's draws of the autosave prompt; ffx-rust composites Ruffle's image instead (composite.rs)

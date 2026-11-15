@@ -926,6 +926,15 @@ device). The harness's `gfxcapture <dir> hash frames N now` then writes the
 presents that show updates `f + 1` .. `f + N` as the hook's hash-mode
 capture writes them (docs/harness.md, "Two processes"), so
 `tools/scene-gate.sh` compares them with the original's references.
+While a capture waits for its presents, the dynamic vertex and index
+buffers' changes go into its frames as `UpdateBuffer`s, from their bytes
+at the window's start, also without the recording (which m5-perf1 had
+made skip them: the draws then read the rings as they were at the
+window's start). A state's description is its D3D11 object's last one,
+as the hook keeps it: D3D11 hands out one object for descriptions it
+counts as the same, and the back end names each state's object
+(`Backend::object`, the `IUnknown` identity; none on the null device).
+docs/drawdiff.md, "Scene gates", has the first gate run (m5 gates).
 
 ## The clock
 
