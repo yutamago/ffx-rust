@@ -273,7 +273,8 @@ an import such as `PS3Data/Shaders/PhyreDefaultLitShader.fx#<md5>`) as
 (`ALPHA_ENABLED`, `IGNORE_CLIP`, `MASK_DEPTH`, `DOUBLE_SIDED`, ...) say
 how the material blends, tests alpha and culls, which glTF has no words
 for (`Material::effect`; a frontend reads the switches from the archive,
-e.g. with `ffx_scene::effect::EffectVariant`).
+e.g. with `ffx_scene::effect::EffectVariant`). It is export-only: the
+import ignores an edit to it.
 
 ### Skins
 

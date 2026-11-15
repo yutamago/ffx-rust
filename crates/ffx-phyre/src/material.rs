@@ -58,7 +58,7 @@ pub struct Material {
     pub textures: Vec<MaterialTexture>,
     pub parameters: Vec<Parameter>,
     /// The effect variant it draws with (`PMaterial.m_effectVariant`, an
-    /// import such as `PS3Data/Shaders/D3D11/phyredefaultlitshader.fx#<md5>`):
+    /// import such as `PS3Data/Shaders/PhyreDefaultLitShader.fx#<md5>`):
     /// its cluster's switches say how the material blends (docs/formats/phyre.md).
     pub effect: Option<String>,
 }
