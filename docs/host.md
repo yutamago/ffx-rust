@@ -548,11 +548,61 @@ Rust past their budget (2 s of grace, then as without the emulator):
 `boot.rs`' run without the DLLs went on for 30 minutes past its minute
 once the ports reached that far.
 
-Two things are left. The software x87 (`ffx_bridge::x87`) is a few
-percent. A `WRITE_DISCARD` map of the 12 MB vertex ring still uploads
-the whole ring on Windows (about 20 MB a frame): the game maps it only
-with `DISCARD`, so the bytes it did not write are undefined and every
-byte has to go up.
+The software x87 (`ffx_bridge::x87`) is a few percent.
+
+**Round 2 (m5-perf2, 2026-11-15).** On Windows the no-Unicorn build
+ran the field at 34 updates a second, faster than `FFX.exe`'s 30, and
+the battle at 22-28. Three changes fixed it:
+
+- **The real clock** (`Clock::set_real`, `Options::real_clock`; "The
+  clock" below). `ffx-rust` always ran on the virtual clock, where the
+  frame limiter's `Sleep` never sleeps, so the game ran as fast as the
+  host could. Player runs and `realtime` replays now use the real
+  clock: field 30.0 a second on Windows, as the original.
+- **Discarding maps upload only what was written.** On Windows the arena
+  is reserved with `MEM_WRITE_WATCH`. A buffer's `WRITE_DISCARD` `Map`
+  resets the watch (`Arena::watch`), and its `Unmap` copies only the
+  pages written since (`Arena::written`, `Op::Unmapped`'s runs) into the
+  driver's discarded buffer. The rest of that buffer stays undefined,
+  as after the original's `DISCARD`. The game's 12 MB vertex ring went
+  up whole at every unmap before (about 20 MB a frame).
+  `FFX_HOST_UNMAP_ALL=1` restores the full copy. Linux has no write
+  watch and copies everything as before.
+- **The render thread's two hottest ports** in a battle,
+  `PShaderResourceTable_unbindSlot_00598b50` (0x1b0 word accesses a
+  call) and `copyConstantBuffer`'s transpose, now read and write their
+  words in blocks: the same bytes.
+
+Windows, `fps-probe` (realtime: 620 field updates, then 601 in a
+battle):
+
+| | field | battle |
+|---|---|---|
+| `FFX.exe` | 29.9 updates/s | 30.0 |
+| before (virtual clock) | 34.2 | 23.1 |
+| after | 30.0 | 30.0 |
+| after, ms per update/flip | update 4.1, main busy 9.3, render busy 8.7 | update 7.4, main busy 15.9, render busy 11.5 (13.3 with `FFX_HOST_UNMAP_ALL=1`) |
+
+Both threads stay below half of the 33 ms frame in the battle. The
+shots match the original's (0-12 pixels; the original's own runs differ
+by 21,538 on the last).
+
+Linux headless (null device, virtual clock, a battle's idle 600
+updates): 76 updates a second, the main thread 12-14 ms of CPU an
+update, the render thread 9.1 → 7.1 ms a flip.
+
+**Timing a run.** The harness's `timing` answers, since the last
+`timing`: updates and flips; the host time an update spends in
+`FFXApplication_animate` and a flip in `Renderer_PresentFlip` (average,
+longest); then the wall time split per update or flip:
+`main_wait_ms` (waits on events, semaphores, mutexes, sections),
+`main_sleep_ms` (sleeps, the limiter's included), `main_busy_ms`,
+`render_wait_ms`, `render_busy_ms`. The first `timing` only opens the
+window. Under the harness, `ffx-rust` with `FFX_HOST_SAMPLE` starts the
+sampler at boot. `sample reset` starts a window, and `sample stop
+<name>` writes `<prefix>.<name>.{entries,pc,cpu}.tsv` (`cpu.tsv`: each
+host thread's CPU time per update and per flip). `replay_attach` with
+`FFX_REPLAY_PACE=1` prints updates per wall second for each script line.
 
 **Measuring.** The sampler is built in: `FFX_HOST_SAMPLE=<prefix>` on
 any run that calls `ffx_host::sample::start` (the no-Unicorn boot test
@@ -878,10 +928,24 @@ capture writes them (docs/harness.md, "Two processes"), so
 
 ## The clock
 
-`src/clock.rs` applies the hook harness's fast mode, virtual clock and
-lockstep rules (docs/harness.md, "Frames and threads", "Load pacing",
-"Sound in lockstep", "Flash on the virtual clock"), always on, so a run
-advances the same way whatever the host's (or the emulator's) speed:
+**Real or virtual** (m5-perf2). On the real clock (`Options::real_clock`,
+`Clock::set_real`), game time is the host's. The frame limiter's `Sleep`
+and every other `Sleep` sleep in full, and the vsync, FMOD and loader
+threads run on their own as in `FFX.exe`: no lockstep, no turns, and the
+logos play. `Game_Main`'s limiter then holds 30 updates a second, with
+the original's catch-up after a slow frame. `ffx-rust` picks the real
+clock for a player's run (no harness, a window) and for a harness game
+outside fast mode (a `realtime` replay: no `FFX_HARNESS_FAST=1`). It
+picks the virtual clock described below for fast-mode harness games,
+`--replay`, and the null device without the harness. `--clock
+real|virtual` (else `FFX_HOST_CLOCK`) overrides the choice. Test:
+`tests/no_unicorn.rs` `the_real_clock_paces_the_updates_as_the_original`.
+
+On the virtual clock, `src/clock.rs` applies the hook harness's fast
+mode, virtual clock and lockstep rules (docs/harness.md, "Frames and
+threads", "Load pacing", "Sound in lockstep", "Flash on the virtual
+clock"), so a run advances the same way whatever the host's (or the
+emulator's) speed:
 
 - **Game time** is `2^20 s` plus the time skipped, never the host's:
   `Phyre_PTimerWin32_GetTime` (`0x0042fd80`, a port returning `ST0`),
