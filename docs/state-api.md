@@ -19,8 +19,11 @@ it only reads (the game runs the same with or without it: replays, saves).
 The other direction: `ffx_host::requests`. A frontend queues a request
 on its game (`shared.requests.push(request, reply)`, any thread); the
 game's main thread serves it at the next frame boundary, between two
-updates (where the harness serves its jobs), and calls the reply with
-what it did. A run without requests is unchanged.
+updates (where the harness serves its jobs; while the harness holds
+lockstep, they wait for its release), and calls the reply with what it
+did. Replies run on the game's main thread and must not panic; requests
+still queued when the game ends are answered `Err("the run ended")`. A
+run without requests is unchanged.
 
 - `Request::DevSave(n)`: loads developer save `n` (1..=110, the saves
   the developers left in the archive: `ffx_host::devsave`, docs/harness.md
@@ -139,12 +142,6 @@ the opening's event, so the drawn camera comes from the scene); the pad `g_PadHe
 
 ## Tests
 
-`crates/ffx-host/tests/boot.rs` `a_developer_save_loads_on_request`: in
-the opening a frontend's `DevSave(7)` loads Besaid without the harness;
-the snapshots then show the level `/map/bsil/bsil00/`, scenario 118, the
-control, and the player character posed.
-
-
 `crates/ffx-state` (the reader on a made-up memory, the encoding, the
 schema) and `crates/ffx-host/tests/boot.rs`
 `the_state_api_sees_the_opening`: on the player's game (virtual clock,
@@ -152,3 +149,8 @@ null device) an observer gets one snapshot an update; in the opening at
 the fire it sees the event `lo/loopdemo`, the level `/map/znkd/znkd06/`,
 the renderer's camera, and the
 party shown, posed by their skeletons and animating.
+
+`crates/ffx-host/tests/boot.rs` `a_developer_save_loads_on_request`: in
+the opening a frontend's `DevSave(7)` loads Besaid without the harness;
+the snapshots then show the level `/map/bsil/bsil00/`, scenario 118, the
+control, and the player character posed.

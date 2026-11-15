@@ -21,7 +21,8 @@ pub enum Request {
     DevSave(i32),
 }
 
-/// A request's reply: what it did, or why not.
+/// A request's reply: what it did, or why not. Called on the game's main
+/// thread; must not panic.
 pub type Reply = Box<dyn FnOnce(Result<String, String>) + Send>;
 
 /// A game's waiting requests.
@@ -52,6 +53,15 @@ impl Requests {
         let mut q = self.queue.lock().unwrap_or_else(PoisonError::into_inner);
         self.waiting.store(false, Ordering::Release);
         q.drain(..).collect()
+    }
+}
+
+impl Drop for Requests {
+    /// Requests the game never served (it ended) are answered.
+    fn drop(&mut self) {
+        for (_, reply) in self.take() {
+            reply(Err("the run ended".into()));
+        }
     }
 }
 

@@ -64,9 +64,21 @@ pub fn register(t: &mut Table) {
     );
 }
 
-/// [`load`] runs (the game's main thread): its `debugLoadForViewer` reads
-/// from the archive with or without the harness.
-static LOADING: AtomicBool = AtomicBool::new(false);
+/// Sets a game's `devsave_loading` while it lives.
+struct Loading<'a>(&'a AtomicBool);
+
+impl<'a> Loading<'a> {
+    fn new(flag: &'a AtomicBool) -> Self {
+        flag.store(true, Ordering::Release);
+        Self(flag)
+    }
+}
+
+impl Drop for Loading<'_> {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Release);
+    }
+}
 
 /// `debugLoadForViewer(n, buffer, size)`: with the harness or inside
 /// [`load`] (a frontend's request, `crate::requests`), 0 with the file's
@@ -75,7 +87,7 @@ static LOADING: AtomicBool = AtomicBool::new(false);
 fn load_for_viewer(e: &mut Exec, args: &Args) -> Ret {
     let a = |i| args.stack.get(i).copied().unwrap_or(0);
     let (n, buffer, size) = (a(0), a(1), a(2));
-    if !crate::harness::enabled() && !LOADING.load(Ordering::Acquire) {
+    if !crate::harness::enabled() && !e.shared().devsave_loading.load(Ordering::Acquire) {
         return Ret::eax(original(e, n, buffer, size));
     }
     Ret::eax(read(e, n.cast_signed(), buffer, size).map_or(u32::MAX, |_| 0))
@@ -176,9 +188,13 @@ pub fn load(e: &mut Exec, n: i32) -> Result<String, String> {
         mem.write(CTRL_WORKS, flags | 0x80);
         (old, flags & 0x80 == 0)
     };
-    LOADING.store(true, Ordering::Release);
-    let r = e.call_cdecl(TK_DEBUG_LOAD_VIEWER_SAVE, &[n.cast_unsigned()]);
-    LOADING.store(false, Ordering::Release);
+    let r = {
+        // this game's `debugLoadForViewer` reads from the archive while
+        // the load runs (cleared on every way out)
+        let shared = std::sync::Arc::clone(e.shared());
+        let _loading = Loading::new(&shared.devsave_loading);
+        e.call_cdecl(TK_DEBUG_LOAD_VIEWER_SAVE, &[n.cast_unsigned()])
+    };
     e.mem().write(SCRIPT_CONTEXT, old);
     r.map_err(|err| err.to_string())?;
     let mem = e.mem();

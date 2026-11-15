@@ -393,6 +393,9 @@ pub struct Shared {
     pub observers: crate::observe::Observers,
     /// A frontend's requests (`crate::requests`).
     pub requests: crate::requests::Requests,
+    /// [`crate::devsave::load`] runs on this game: its
+    /// `debugLoadForViewer` reads from the archive without the harness.
+    pub(crate) devsave_loading: std::sync::atomic::AtomicBool,
 }
 
 impl std::fmt::Debug for Shared {
@@ -506,6 +509,7 @@ impl Shared {
             iggy: crate::iggy::Iggy::default(),
             observers: crate::observe::Observers::default(),
             requests: crate::requests::Requests::default(),
+            devsave_loading: std::sync::atomic::AtomicBool::new(false),
         };
         s.bind_imports(stubs_at);
         s.find_thunks();
