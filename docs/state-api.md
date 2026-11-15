@@ -85,6 +85,13 @@ battle record's offsets come from the ports (`TOBtlMemoryCursorPos`,
 `ffx_system::tolib`), not yet from a run in battle; the title's menu and
 the Esc menu's pages (Flash) are not covered.
 
+## The main menu's options (API 4)
+
+`Menus.main_option_list`: the main menu's options (`g_TkMenuMainOptions`,
+8 bytes each: the menu id, enabled) with their names as the game shows
+them, through ffx-battle's port of `MsMenuGetText(9, id)` (menu text 9 is
+the main menu's: `TkMenuMainMes`) run read-only on the snapshot's reader.
+
 ## Encoding
 
 `Snapshot::encode`: `FFXS`, the API version (`u32`), then the fields in
@@ -99,7 +106,7 @@ floats, `mat3x4` 12, `mat4` 16 (row-major as the game keeps them).
 the fields raises `API_VERSION`.
 
 ```text
-ffx-state API 3
+ffx-state API 4
 struct Snapshot
   update: u32
   game_time: f64
@@ -159,6 +166,7 @@ struct Menus
   main_mask: u32
   main_cursor: i32
   main_options: i32
+  main_option_list: list<MenuOption>
   battle_window: u32
   battle_character: i16
   battle_depth: i16
@@ -170,6 +178,10 @@ struct Menus
   save_rows: i32
   save_files: i32
   esc_menu: bool
+struct MenuOption
+  id: u16
+  enabled: bool
+  name: bytes
 struct Message
   window: u8
   state: u16

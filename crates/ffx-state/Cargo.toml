@@ -8,6 +8,9 @@ rust-version.workspace = true
 publish = false
 
 [dependencies]
+# MsMenuGetText's port (the menus' option names), read only
+ffx-battle.workspace = true
+ffx-bridge.workspace = true
 # the character records' layout (ffx_chara::layout)
 ffx-chara.workspace = true
 
