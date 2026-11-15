@@ -2625,8 +2625,11 @@ home `DIR/<step>/home` (default DIR `~/ffx-work/saves-roundtrip/<time>`):
   files, each identical but the play time and the CRCs, the settings file
   byte for byte); each reader against the writer it read (its
   `GameSetting.ini` written back with the same bytes, its settings object
-  the writer's, its new save the writer's but the play time and CRCs, the
-  block it loaded against the writer's save as a note); the readers
+  the writer's, its new save the writer's but the play time, the CRCs and
+  `saved_*`, block `+0xc0`: the reader saves from where its load put it,
+  so the previous map and entrance there are its own, the same in both
+  readers; every other byte strict; the block it loaded against the
+  writer's save as a note); the readers
   against each other. What may differ and why: `docs/formats/save.md`,
   "What a game writes". Differences come out per field (`ply_saves[2]
   +0x1c`, `script variables (storage 0) block +0x300 (storage 0 +0x114)`).

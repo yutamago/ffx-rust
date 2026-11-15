@@ -19,6 +19,12 @@
 //! every run, original code included) and the two CRCs, which cover it.
 //! [`Field::may_differ`] marks those four fields and nothing else; every
 //! other byte, the settings file's included, must be the same.
+//!
+//! A reader's save against the save it loaded may also differ in the
+//! `saved_*` field (block `+0xc0`, [`SAVED`]): the reader saves from where
+//! its load put it, so the previous map and entrance there are the load's,
+//! not the writer's (both readers agree: `ffx-rust.exe` and `FFX.exe` write
+//! the same bytes). [`reader_may_differ`]; nothing else is excused there.
 
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
@@ -42,6 +48,10 @@ pub const HEADER_PLAY_TIME: usize = 0x10;
 /// The play time in the block, as a file offset (block `+0xbc`, `u32`
 /// seconds, capped at 3599999).
 pub const PLAY_TIME: usize = BLOCK + 0xbc;
+
+/// The `saved_*` values (block `+0xc0`, 16 bytes): where a reader's save
+/// may differ from the save it loaded ([`reader_may_differ`]).
+pub const SAVED: usize = BLOCK + 0xc0;
 
 /// A named range of a save file (file offsets).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -127,7 +137,7 @@ pub const FIELDS: &[Field] = &[
     b(0xb4, 4, "world map marker"),
     b(0xb8, 4, "saved entrance and map (where a load returns)"),
     varies(f(PLAY_TIME, 4, "play time (Atel_PlayTimeUpdate_0086ca20)")),
-    b(0xc0, 0x10, "saved_* (previous map, entrance)"),
+    f(SAVED, 0x10, "saved_* (previous map, entrance)"),
     b(0xd1, 1, "albhed_rikku"),
     b(0xd2, 1, "drop_shadow_mode"),
     b(0xd4, 3, "atel_force_place_id"),
@@ -383,6 +393,17 @@ pub fn diff(a: &[u8], b: &[u8], base: usize) -> Vec<Difference> {
             .to_vec();
     }
     out
+}
+
+/// Whether `d` may differ between a reader's save and the save it loaded
+/// (besides [`Difference::may_differ`]): the `saved_*` field. A game that
+/// loads a save and saves again has the previous map and entrance of the
+/// load's own arrival there (m5 gates: `+0x0106`, `3001000000` in the
+/// writers' saves, `2d01000001` in both readers'), so the field records
+/// the reader's way to the save sphere, not the save it read.
+#[must_use]
+pub fn reader_may_differ(d: &Difference) -> bool {
+    field_at(d.at).is_some_and(|f| f.at == SAVED)
 }
 
 /// What groups differing bytes into one [`Difference`]: the field and,
@@ -716,15 +737,22 @@ impl Verdict {
         self.line(format!("FAIL {}", s.as_ref()));
     }
 
-    /// Two saves: `ok` when only the documented fields differ.
-    fn saves(&mut self, what: &str, a: &[u8], b: &[u8], gate: bool) {
+    /// Two saves: `ok` when only the documented fields differ (`reader`: a
+    /// reader's save against the one it loaded, [`reader_may_differ`]).
+    fn saves(&mut self, what: &str, a: &[u8], b: &[u8], gate: bool, reader: bool) {
         let d = diff(a, b, 0);
-        let other = d.iter().filter(|d| !d.may_differ).count();
+        let excused = |d: &Difference| d.may_differ || (reader && reader_may_differ(d));
+        let other = d.iter().filter(|d| !excused(d)).count();
         if d.is_empty() {
             self.line(format!("ok   {what}: identical"));
         } else if other == 0 {
+            let fields = if d.iter().any(|d| !d.may_differ) {
+                "the play time, CRCs and saved_* (where the reader's load put it)"
+            } else {
+                "the play time and CRCs"
+            };
             self.line(format!(
-                "ok   {what}: only the play time and CRCs differ ({} | {})",
+                "ok   {what}: only {fields} differ ({} | {})",
                 play_time_text(summary(a).play_time),
                 play_time_text(summary(b).play_time)
             ));
@@ -926,6 +954,7 @@ fn check_reader(v: &mut Verdict, r: &Run, w: &Run) {
                 &w_bytes,
                 &r_bytes,
                 true,
+                true,
             );
             v.dumps(
                 &format!("the block {} loaded against {}'s save", r.step, w.step),
@@ -964,7 +993,7 @@ fn check_pair(v: &mut Verdict, a: &Run, b: &Run) {
     for p in pa.iter().filter(|p| pb.contains(p)) {
         let what = short(p);
         if is_save(p) {
-            v.saves(&what, &a.file(p), &b.file(p), true);
+            v.saves(&what, &a.file(p), &b.file(p), true, false);
         } else {
             v.settings(&what, &a.file(p), &b.file(p));
         }
@@ -1032,7 +1061,7 @@ pub fn compare(out: &Path) -> std::io::Result<Verdict> {
     } else if v.missing > 0 {
         format!("INCOMPLETE: {} runs missing, no check failed", v.missing)
     } else {
-        "PASS: every file written by one program reads back in the other and matches byte for byte but the play time and CRCs".into()
+        "PASS: every file written by one program reads back in the other and matches byte for byte but the play time and CRCs (and a reader's saved_*)".into()
     };
     v.line(verdict);
     Ok(v)
@@ -1128,6 +1157,45 @@ mod tests {
             report(&d)
         );
         assert_eq!(diff(&a, &a, 0), []);
+    }
+
+    /// m5 gates (2026-11-15): a reader's save may differ from the save it
+    /// loaded in `saved_*` (as both readers did: `+0x0106` `3001000000 |
+    /// 2d01000001`), and only there; two writers may not.
+    #[test]
+    fn a_readers_save_may_differ_in_saved_only() {
+        let w = save(100, 5000);
+        let with = |at: usize, bytes: &[u8]| {
+            let mut s = save(101, 5000);
+            s[at..at + bytes.len()].copy_from_slice(bytes);
+            s
+        };
+        let r = with(0x106, &[0x2d, 0x01, 0, 0, 0x01]);
+        let d = diff(&w, &r, 0);
+        let saved: Vec<&Difference> = d.iter().filter(|d| !d.may_differ).collect();
+        assert_eq!(saved.len(), 1);
+        assert_eq!(
+            (saved[0].at, saved[0].field.as_str()),
+            (0x106, "saved_* (previous map, entrance)")
+        );
+        assert!(reader_may_differ(saved[0]));
+        let mut v = Verdict::default();
+        v.saves("reader", &w, &r, true, true);
+        assert_eq!(v.failures, 0, "{}", v.text);
+        assert!(v.text.contains("saved_* (where the reader's load put it)"));
+        // between two writers it fails
+        v.saves("writers", &w, &r, true, false);
+        assert_eq!(v.failures, 1, "{}", v.text);
+        // the fields around it stay strict for a reader too (block +0xbb:
+        // the saved entrance and map; +0xd0)
+        for at in [SAVED - 5, SAVED + 0x10] {
+            let mut v = Verdict::default();
+            v.saves("reader", &w, &with(at, &[0x77]), true, true);
+            assert_eq!(v.failures, 1, "{at:#x}: {}", v.text);
+        }
+        let mut v = Verdict::default();
+        v.saves("reader", &w, &with(SAVED + 0xf, &[0x77]), true, true);
+        assert_eq!(v.failures, 0, "{}", v.text);
     }
 
     #[test]
