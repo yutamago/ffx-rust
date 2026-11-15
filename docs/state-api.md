@@ -32,6 +32,15 @@ run without requests is unchanged.
   "Developer saves") and starts its map; its `debugLoadForViewer` reads
   from the player's archive without the harness. Save 7 is Besaid beach
   at the save sphere (map 70, scenario 118) with the control.
+- `Request::Battle { field, group, formation }`: starts a battle as a
+  random encounter does (the harness's `start_battle`: the field's
+  record, group and formation into `g_BtlFieldIndex`, `ResetEncountExe(1)`,
+  `g_BtlExe`), raised again every 30 updates while the field drops it, and
+  answered once `g_BtlStatus` says the battle runs (or after 600 updates
+  without it); refused while a battle runs, and a new one answers a
+  waiting one with `Err`. Field 3 group 0 formation 0 is the salvage ship's deck
+  (`/btlmap/cdsp/cdsp00_a/`); the battle's characters come through the
+  same character records as the field's (`actors`).
 
 ## Spaces
 
@@ -203,4 +212,7 @@ party shown, posed by their skeletons and animating.
 `crates/ffx-host/tests/boot.rs` `a_developer_save_loads_on_request`: in
 the opening a frontend's `DevSave(7)` loads Besaid without the harness;
 the snapshots then show the level `/map/bsil/bsil00/`, scenario 118, the
-control, and the player character posed.
+control, and the player character posed. `a_battle_starts_on_request`: from there
+`Battle { 3, 0, 0 }` starts the deck's battle; the snapshots show
+`World.battle`, the party, their weapons and the two monsters as actors,
+and Tidus's command window (level 0, its command ids).
