@@ -160,12 +160,14 @@ api_struct! {
         slot: u8,
         /// It runs (`g_FadeActive`'s bit).
         active: bool,
-        /// Its mode (`+0`): 0 the cross-fade's level, 2..5 the fade (2, 3
-        /// to and from black, 4, 5 with the colour), 6 a flash, 7, 8 the
-        /// filter.
+        /// Its mode (`+0`): 0 the cross-fade's level, 1 the blur's set byte
+        /// (not drawn by itself), 2 the fade from black, 3 to black (held),
+        /// 4 from white, 5 to white (`Sg_FadeIn`, `Sg_FadeOut`, `..W`; mode
+        /// 4's alpha starts near 2: clamp it), 6 a flash, 7 an additive
+        /// filter (`Sg_FilterAdd`), 8 a subtractive one (`Sg_FilterSub`).
         mode: u8,
-        /// Its colour (`+1..+3`; the black fades write 0xff here and draw
-        /// black).
+        /// Its colour (`+1..+3`; every fade writes 0xff here: modes 2 and 3
+        /// draw black, 4 and 5 that white).
         color: [u8; 3],
         /// `+4`: frames left (the cross-fade, the flash, the fade), or on
         /// (the blur, the filter).
