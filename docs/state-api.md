@@ -51,7 +51,7 @@ floats, `mat3x4` 12, `mat4` 16 (row-major as the game keeps them).
 the fields raises `API_VERSION`.
 
 ```text
-ffx-state API 1
+ffx-state API 2
 struct Snapshot
   update: u32
   game_time: f64
@@ -65,6 +65,7 @@ struct World
   entrance: u8
   story: u16
   event: string
+  level: string
   event_frame: u32
   battle: bool
   player_control: bool
@@ -108,7 +109,8 @@ struct Bone
 ## Sources
 
 The addresses and offsets, with their evidence in `symbols/ffx.sym`:
-`g_SaveData` `0x0112ca90` (docs/formats/save.md), `g_EventName`
+`g_SaveData` `0x0112ca90` (docs/formats/save.md), the scene's level name
+(`g_PhyreScene` `+0xfaf0`, docs/formats/render.md), `g_EventName`
 `0x023cbc60`, control work 0 `0x01325ba0` (its frame count `0x01325d94`),
 `g_BtlStatus` `0x0112a8e0`, `g_PauseOn` `0x01340828`, `g_FadeActive`
 `0x01300704`; the scene `g_PhyreScene` `0x00ccb9d8` (`+0xdc` its main

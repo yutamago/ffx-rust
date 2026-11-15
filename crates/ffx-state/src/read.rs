@@ -55,6 +55,9 @@ const CAMERA_EYE: u32 = 0x61c + 0x50;
 const G_PHYRE_SCENE: u32 = 0x00cc_b9d8;
 const SCENE_CAMERA: u32 = 0xdc;
 const SCENE_CAMERA_WORLD: u32 = 0xfa04;
+/// The scene's current level name: a `PString` (a pointer to the
+/// characters; bit 0 a flag, masked off).
+const SCENE_LEVEL_NAME: u32 = 0xfaf0;
 const PCAMERA_FAR: u32 = 0xbc;
 const PCAMERA_ASPECT: u32 = 0x150;
 const PCAMERA_FOV_Y: u32 = 0x154;
@@ -175,6 +178,14 @@ fn world(m: &Mem<'_>) -> World {
         entrance: m.u8(SAVE_DATA + SAVE_ENTRANCE),
         story: m.u16(SAVE_DATA + SAVE_STORY),
         event: m.c_string(EVENT_NAME, 32),
+        level: {
+            let scene = m.u32(G_PHYRE_SCENE);
+            if scene == 0 {
+                String::new()
+            } else {
+                m.c_string(m.u32(scene.wrapping_add(SCENE_LEVEL_NAME)) & !1, 96)
+            }
+        },
         event_frame: m.u32(EVENT_FRAME),
         battle: m.u8(BTL_STATUS) != 0,
         player_control: m.u8(CTRL_WORK) & CTRL_CONTROL != 0,
