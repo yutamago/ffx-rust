@@ -39,6 +39,7 @@ same memory. The release runs no `FFX.exe` code.
 | `src/report.rs` | the run in numbers: Rust vs Unicorn functions (calls, time), imports, threads, the stop |
 | `src/window.rs` | the window, message, cursor and timer imports, the game-facing side: the game's window procedures, `WM_CREATE`, the sent messages (below, "Windows") |
 | `src/platform.rs` | the platform seam: the `Platform` trait, what the player-facing side asks of the operating system (below, "The platform seam") |
+| `src/observe.rs` | the game-state API's snapshots (`crates/ffx-state`) at each frame boundary, for a frontend's observers (`docs/state-api.md`) |
 | `src/platform/windows.rs`, `windows/input.rs`, `windows/steam.rs` | `WindowsPlatform`: the real window and its messages, `DirectInput8`/`XInput`/raw input, WASAPI (the hook's `rust_audio_out.rs`), D3D11, `steam_api64.dll`, the documents folder and message box (`ffx-launch`'s `shell.rs`), `TerminateProcess` |
 | `src/platform/headless.rs` | `HeadlessPlatform`: no window, no devices, no device sound, the null device, no Steam (the Linux check, the null-device runs) |
 | `src/harness.rs` | the test harness's protocol, served from `ffx-rust` (`docs/harness.md`, "Two processes"); its frames are the clock's updates |
@@ -1875,6 +1876,11 @@ the other.
   (`get_frames_available`, `push_buffer`) and counts an underrun when the
   queue runs dry; `audio_queued` reports the queue, so the feeder keeps it
   full. The mix stays the host's, sample for sample FMOD's.
+- **The state.** The frontend draws from the game-state API
+  (`docs/state-api.md`): `observe::observe` registers an observer that
+  gets a `ffx_state::Snapshot` at every frame boundary (the world, the
+  renderer's camera, the pad, the characters with their bones), read on
+  the game's main thread between two updates; it only reads.
 - **The rest.** `steam` loads the platform's Steam library and implements
   `steam::Backend` over it (on Linux `libsteam_api.so`: the M6 survey
   lists the two ABI differences); `documents_folder` is the folder the
