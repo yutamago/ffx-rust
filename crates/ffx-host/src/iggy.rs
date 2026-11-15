@@ -100,6 +100,62 @@ fn to_int32(n: f64) -> i32 {
     (t as u64 as u32).cast_signed()
 }
 
+/// Ticks a player may run between two draws: `IggyPlayerReadyToTick`'s
+/// check that finds this many since the last `IggyPlayerDraw` drops the
+/// time owed and says not ready (`iggy_w32.dll` `0x1000f1d0`: `[p+0x2620]`
+/// `>= 3` → accumulator `[p+0x28]` = 0, the count 0, warning 0xc9 "Cannot
+/// maintain framerate specified in SWF file"; the tick `0x10014c70` adds 1
+/// to the count, the draw `0x1001a870` sets it to 0).
+pub const TICKS_PER_DRAW: u32 = 3;
+
+/// A player's tick clock, as Iggy keeps it: the time of the last check, the
+/// time owed (`+0x28`), the ticks since the last draw (`+0x2620`).
+#[derive(Debug, Clone, Default)]
+pub struct TickClock {
+    last: Option<f64>,
+    owed: f64,
+    since_draw: u32,
+    /// Times a check dropped what was owed (for the log).
+    pub dropped: u64,
+}
+
+impl TickClock {
+    /// `IggyPlayerReadyToTick` at game time `now` for a movie of
+    /// `period` seconds a frame: adds the time since the last check (a
+    /// player's first check owes nothing) and answers whether a frame is
+    /// owed, unless [`TICKS_PER_DRAW`] ticks ran since the last draw: then
+    /// the time owed is dropped. A menu the game stopped drawing (closed)
+    /// owes nothing when it is drawn again, or the game would tick it for
+    /// all the time it was closed (36,000 Ruffle frames after 20 minutes,
+    /// the >10 s freeze at the first Esc of the user's play test).
+    pub fn ready(&mut self, now: f64, period: f64) -> bool {
+        if self.since_draw >= TICKS_PER_DRAW {
+            self.owed = 0.0;
+            self.since_draw = 0;
+            self.dropped += 1;
+            return false;
+        }
+        let last = self.last.replace(now).unwrap_or(now);
+        self.owed += now - last;
+        self.owed >= period
+    }
+
+    /// `IggyPlayerTickRS`: one frame paid (the time owed past it, or none).
+    pub fn tick(&mut self, period: f64) {
+        self.owed = if self.owed > period {
+            self.owed - period
+        } else {
+            0.0
+        };
+        self.since_draw += 1;
+    }
+
+    /// `IggyPlayerDraw`.
+    pub fn drawn(&mut self) {
+        self.since_draw = 0;
+    }
+}
+
 /// One player.
 #[derive(Debug, Clone)]
 pub struct Player {
@@ -109,12 +165,17 @@ pub struct Player {
     pub width: u32,
     pub height: u32,
     pub fps: f32,
-    /// The tick clock: the game time last seen and the time not ticked.
-    last: Option<f64>,
-    owed: f64,
+    /// The tick clock.
+    clock: TickClock,
     /// Ticks and draws so far.
     pub ticks: u64,
     pub draws: u64,
+}
+
+impl Player {
+    fn period(&self) -> f64 {
+        1.0 / f64::from(self.fps.max(1.0))
+    }
 }
 
 /// The layer's state.
@@ -235,8 +296,7 @@ fn create_from_memory(e: &mut Exec, args: &Args) -> Ret {
         width,
         height,
         fps,
-        last: None,
-        owed: 0.0,
+        clock: TickClock::default(),
         ticks: 0,
         draws: 0,
     };
@@ -332,8 +392,9 @@ fn call_function(e: &mut Exec, args: &Args) -> Ret {
 }
 
 /// `IggyPlayerReadyToTick(player)`: whether the player owes a frame by the
-/// virtual clock (the update's game time: every check of one draw sees
-/// the same time, as on the harness's virtual clock).
+/// game clock (the update's game time on the virtual clock: every check
+/// of one draw sees the same time, as on the harness's virtual clock), at
+/// most [`TICKS_PER_DRAW`] a draw ([`TickClock::ready`]).
 fn ready_to_tick(e: &mut Exec, args: &Args) -> Ret {
     let p = a(args, 0);
     let now = e.shared().clock.now();
@@ -343,18 +404,26 @@ fn ready_to_tick(e: &mut Exec, args: &Args) -> Ret {
     let Some(pl) = ps.get_mut(&p) else {
         return Ret::eax(0);
     };
-    let last = pl.last.replace(now).unwrap_or(now);
-    pl.owed += now - last;
-    let period = 1.0 / f64::from(pl.fps.max(1.0));
-    Ret::eax(u32::from(pl.owed >= period))
+    let period = pl.period();
+    let before = pl.clock.dropped;
+    let ready = pl.clock.ready(now, period);
+    let dropped = pl.clock.dropped;
+    drop(ps);
+    if dropped != before && dropped.is_power_of_two() {
+        crate::log::note(&format!(
+            "iggy: {p:#x} cannot keep its frame rate: the time owed dropped after \
+             {TICKS_PER_DRAW} ticks without a draw ({dropped} times so far)"
+        ));
+    }
+    Ret::eax(u32::from(ready))
 }
 
 fn tick(e: &mut Exec, args: &Args) -> Ret {
     let p = a(args, 0);
     let ticked = iggy(e).players.lock().is_ok_and(|mut ps| {
         ps.get_mut(&p).is_some_and(|pl| {
-            let period = 1.0 / f64::from(pl.fps.max(1.0));
-            pl.owed = (pl.owed - period).max(0.0);
+            let period = pl.period();
+            pl.clock.tick(period);
             pl.ticks += 1;
             if pl.ticks.is_power_of_two() {
                 crate::log::note(&format!("iggy: {p:#x} tick {}", pl.ticks));
@@ -398,6 +467,7 @@ fn draw(e: &mut Exec, args: &Args) -> Ret {
         && let Some(pl) = ps.get_mut(&p)
     {
         pl.draws += 1;
+        pl.clock.drawn();
         if pl.draws.is_power_of_two() {
             crate::log::note(&format!("iggy: {p:#x} draw {}", pl.draws));
         }
@@ -942,3 +1012,65 @@ pub const TABLE: &[(&str, &str, Conv, usize, ImportFn)] = &[
 
 #[cfg(feature = "swf")]
 mod swf;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A period whose multiples are exact (1/32 s).
+    const PERIOD: f64 = 1.0 / 32.0;
+
+    /// Ticks a draw runs (`IggyPlayer_tickDraw_00a3d9f0`: `while
+    /// ReadyToTick: TickRS`, then the draw) at game time `now`.
+    fn frame(c: &mut TickClock, now: f64) -> u32 {
+        let mut n = 0;
+        while c.ready(now, PERIOD) {
+            c.tick(PERIOD);
+            n += 1;
+            assert!(n <= TICKS_PER_DRAW, "more than Iggy's ticks a draw");
+        }
+        c.drawn();
+        n
+    }
+
+    #[test]
+    fn a_player_ticks_once_a_frame_and_owes_nothing_at_its_first_check() {
+        let mut c = TickClock::default();
+        assert_eq!(frame(&mut c, 100.0), 0);
+        for i in 1..=60 {
+            assert_eq!(frame(&mut c, 100.0 + f64::from(i) * PERIOD), 1);
+        }
+        assert_eq!(c.dropped, 0);
+    }
+
+    #[test]
+    fn a_menu_drawn_again_after_a_long_time_runs_at_most_three_ticks() {
+        let mut c = TickClock::default();
+        frame(&mut c, 0.0);
+        frame(&mut c, PERIOD);
+        // closed for 20 minutes: 36,000 frames owed, 3 run, the rest dropped
+        assert_eq!(frame(&mut c, 1200.0), TICKS_PER_DRAW);
+        assert_eq!(c.dropped, 1);
+        assert_eq!(frame(&mut c, 1200.0 + PERIOD), 1);
+    }
+
+    #[test]
+    fn a_short_stall_is_caught_up_within_three_ticks() {
+        let mut c = TickClock::default();
+        frame(&mut c, 0.0);
+        assert_eq!(frame(&mut c, 2.5 * PERIOD), 2);
+        assert_eq!(c.dropped, 0);
+        // the half frame left over is still owed
+        assert_eq!(frame(&mut c, 3.5 * PERIOD), 1);
+    }
+
+    #[test]
+    fn a_tick_pays_a_period_or_clears_what_is_owed() {
+        let mut c = TickClock::default();
+        c.ready(0.0, PERIOD);
+        c.ready(PERIOD, PERIOD);
+        c.tick(PERIOD);
+        assert!(!c.ready(PERIOD, PERIOD));
+        assert_eq!(c.owed, 0.0);
+    }
+}

@@ -1088,8 +1088,16 @@ calls"):
 - `IggyPlayerCallFunctionRS` decodes the `IggyDataValue`s (types 3-6) and
   hands the call to the player; it writes no result (the game never reads
   it, and some of its result buffers are 12 bytes);
-- `IggyPlayerReadyToTick` keeps each player's accumulator on the virtual
-  clock (ready while it holds a frame period), `TickRS` takes one off;
+- `IggyPlayerReadyToTick` keeps each player's accumulator on the game
+  clock (ready while it holds a frame period), `TickRS` takes one off
+  (`iggy::TickClock`). As in Iggy (`0x1000f1d0`), a check that finds 3
+  ticks since the last `IggyPlayerDraw` drops the time owed and answers
+  not ready. Without that, a menu the game stopped drawing (closed) owed
+  all the time it was closed: the first Esc after 20 minutes of play ran
+  the menu for about 36,000 Ruffle frames, a freeze of over 10 s, the
+  render thread ticking under the game's menu lock while the main
+  thread's `IggyMenuManager_dispatchMouse_00a26ce0` waited for it
+  (m5-hitch, 2026-11-15);
 - `IggyMakeEventNone`/`MouseMove` write the layer's own 24-byte event
   (the game's buffers are 24 bytes: writing more broke
   `IggyMenuManager_dispatchMouse_00a26ce0`'s stack cookie);
