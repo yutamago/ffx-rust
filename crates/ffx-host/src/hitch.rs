@@ -97,12 +97,13 @@ impl Hitch {
         )
     }
 
-    /// `update U N ms (in <the most sampled place>)`, for the summary.
+    /// `update U N ms (in <the most sampled place>)`, for the summary
+    /// (each chain cut to its [`BRIEF`] innermost entries).
     fn short(&self) -> String {
-        let at = self
-            .places
-            .first()
-            .map_or_else(|| "no sample".to_owned(), |(p, _)| format!("in {p}"));
+        let at = self.places.first().map_or_else(
+            || "no sample".to_owned(),
+            |(p, _)| format!("in {}", brief(p)),
+        );
         format!(
             "{} {} {:.1} ms ({} {at})",
             self.kind.name(),
@@ -111,6 +112,26 @@ impl Hitch {
             self.kind.thread()
         )
     }
+}
+
+/// Entries of each chain the summary keeps.
+const BRIEF: usize = 3;
+
+/// A place with each host-entry chain (`a <- b <- c`, the parts between
+/// `; `) cut to its [`BRIEF`] innermost entries.
+fn brief(place: &str) -> String {
+    place
+        .split("; ")
+        .map(|part| {
+            let chain: Vec<&str> = part.split(" <- ").collect();
+            if chain.len() > BRIEF {
+                format!("{} <- ...", chain[..BRIEF].join(" <- "))
+            } else {
+                part.to_owned()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
 }
 
 /// An update or flip under way.
@@ -368,6 +389,17 @@ mod tests {
         assert_eq!(h.worst.len(), WORST);
         assert!(h.worst.windows(2).all(|w| w[0].ms >= w[1].ms));
         assert!((h.worst[0].ms - 119.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn the_summary_cuts_each_chain_to_its_innermost_entries() {
+        assert_eq!(
+            brief(
+                "EnterCriticalSection <- a <- b <- c <- d; it waits for x; thread 0x10 holding it is in t <- u <- v <- w"
+            ),
+            "EnterCriticalSection <- a <- b <- ...; it waits for x; thread 0x10 holding it is in t <- u <- v <- ..."
+        );
+        assert_eq!(brief("a <- b"), "a <- b");
     }
 
     #[test]

@@ -1135,7 +1135,16 @@ impl Shared {
         use crate::hitch::{Kind, due, sample};
         if due(Kind::Update) {
             let (chain, _, blocked) = self.main_place();
-            sample(Kind::Update, format!("{chain}{blocked}"));
+            // a section another thread holds: where that one is (the
+            // menu lock the render thread holds while it draws a movie)
+            let holder = self
+                .sync
+                .section_holder(MAIN_THREAD)
+                .and_then(|t| Some((t, self.thread_place(t)?)))
+                .map_or_else(String::new, |(t, place)| {
+                    format!("; thread {t:#x} holding it is in {place}")
+                });
+            sample(Kind::Update, format!("{chain}{blocked}{holder}"));
         }
         if due(Kind::Flip) {
             let render = self.clock.roles().0;

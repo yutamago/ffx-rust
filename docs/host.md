@@ -1583,14 +1583,20 @@ host time in `FFXApplication_animate`, a flip the time in
 - **Where the time went.** Once one has run for half the limit, the
   watchdog (every 20 ms) notes where its thread stands: the main thread
   for an update, the render thread for a flip, with their host entries
-  and what they wait for (`Shared::sample_hitches`).
+  and what they wait for (`Shared::sample_hitches`). A main thread
+  waiting to enter a critical section another thread holds also names
+  where that thread is (`Objects::section_holder`): the menu lock
+  (`0x01a858cc`) the render thread holds while it ticks and draws the
+  Iggy movies (`IggyPlayer_tickDraw_00a3d9f0`), which a flip's time
+  does not include.
 - **As it happens.** One that ends over the limit writes
   `ffx-host: hitch: update U took N ms; main thread: <place> (k of n
   samples); …` to `ffx-rust.log` (the three most sampled places; the
   first 200 hitches, the rest only counted).
 - **The run's line.** The harness's `quit` and the report end with
   `hitches: N over 100 ms (updates U, flips F); worst: update U N ms
-  (main thread in <place>), …` (the eight longest).
+  (main thread in <place>), …` (the eight longest, each chain cut to
+  its three innermost entries).
   `tools/replays/run-all.sh` prints it for each replay with
   `FFX_HARNESS_EXE=rust`. Compare against the original's frame times: a
   load may take as long as the original's.
