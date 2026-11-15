@@ -129,7 +129,17 @@ mod tests {
         q.push(Request::DevSave(7), reply());
         assert!(q.waiting.load(Ordering::Acquire));
         assert_eq!(got.lock().unwrap().len(), 0);
+        // a reply that asks again while the queue closes is answered too
+        let q = Arc::new(q);
+        let again = Arc::clone(&q);
+        let (got2, reply2) = recorder();
+        let r2 = reply2();
+        q.push(
+            Request::DevSave(9),
+            Box::new(move |_| again.push(Request::DevSave(10), r2)),
+        );
         q.close();
+        assert_eq!(*got2.lock().unwrap(), vec![Err(ENDED.to_string())]);
         assert!(!q.waiting.load(Ordering::Acquire));
         q.push(Request::DevSave(8), reply());
         let got = got.lock().unwrap();
