@@ -418,6 +418,9 @@ fn material(
         .map(|t| (t.sampler.clone(), json!(t.path)))
         .collect();
     out["extras"] = json!({"ffx_parameters": parameters, "ffx_textures": samplers});
+    if let Some(e) = &m.effect {
+        out["extras"]["ffx_effect"] = json!(e);
+    }
     out
 }
 

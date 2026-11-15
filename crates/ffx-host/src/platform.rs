@@ -349,6 +349,13 @@ pub trait Platform: Send + Sync {
     fn audio_queued(&self) -> usize;
     /// Underruns so far (the device wanted frames that weren't there).
     fn audio_underruns(&self) -> u64;
+    /// Frames the feeder keeps queued for the device (default
+    /// [`crate::audio::FEED_TARGET`], 6,400: the WASAPI output's prefill and
+    /// a block); a platform whose output buffers little itself may ask
+    /// for less (lower latency) and must then start its output at that.
+    fn audio_target(&self) -> usize {
+        crate::audio::FEED_TARGET
+    }
     /// One mixed block (interleaved stereo) for the device; never waits.
     fn audio_push(&self, block: &[f32]);
 

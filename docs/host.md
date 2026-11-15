@@ -1843,8 +1843,8 @@ Who calls what, when. Every method is on `&self`; the implementation is
 | | `input_open`, `input_has`, `input_release`, `input_status`, `input_controllers`, `input_objects`, `input_set_format`, `input_set_cooperative_level`, `input_property`, `input_call`, `input_state`, `input_data`, `input_info` | the game threads that use DirectInput (`Input_AddKeyboard`, `Input_AddMouse`, `Input_AddPadDevice` at start-up, `Keyboard_Update` and the mouse and pad updates each update), inside the layer's call (`input_controllers` and `input_objects` outside it: the game's callbacks run afterwards) |
 | | `xinput_state`, `xinput_set_state`, `xinput_ids` | the pad updates each update; `xinput_ids` from `Input_IsXInputDevice` when a pad is added |
 | sound | `audio_start` | once, at the first FMOD call that needs the mixer (not with `--audio-wav`, not in a harness game unless `FFX_RUST_AUDIO_OUT=1`) |
-| | `audio_push` | a player's run on the real clock: the feeder thread (`ffx-rust-audio-feeder`), whenever `audio_queued` is below 6,400 frames; otherwise the FMOD thread at each `EventSystem::update`, one block. A block is 1,600 frames of 48,000 Hz interleaved stereo f32 |
-| | `audio_running`, `audio_queued`, `audio_underruns` | the feeder thread, every 4 ms (`audio_running` false: it follows the wall clock) |
+| | `audio_push` | a player's run on the real clock: the feeder thread (`ffx-rust-audio-feeder`), whenever `audio_queued` is below `audio_target` (default 6,400 frames); otherwise the FMOD thread at each `EventSystem::update`, one block. A block is 1,600 frames of 48,000 Hz interleaved stereo f32 |
+| | `audio_running`, `audio_queued`, `audio_target`, `audio_underruns` | the feeder thread, every 4 ms (`audio_running` false: it follows the wall clock) |
 | Steam | `steam` | the main thread at the game's `SteamAPI_Init`; the `steam::Backend` it returns is then used from the main thread only (`SteamAPI_RunCallbacks` once a frame) |
 | folders, dialogs | `documents_folder`, `message_box` | the program's own start-up (a frontend's; `ffx-launch` runs the same Windows code) |
 | process | `end_process` | the harness thread at `quit`; never returns |
