@@ -863,9 +863,9 @@ fn the_state_api_names_the_main_menu() {
 
 /// The effects (API 5): in the deck's battle (Besaid, then `Battle { 3, 0,
 /// 0 }`; Attack chosen, Circle twice), the snapshots show the effect
-/// records in use: the battle's bind effects, there from its start, one
-/// per character (`0x40000400 +` its character byte, the monsters' 20 and
-/// 21 among them), each targeting its own character; the battle music; the
+/// records in use, there from its start (`0x50001800`/`01` targeting the
+/// party's characters 0 and 4, `0x40000405`/`06` the monsters' 20 and 21),
+/// the monsters' each targeting its own character; the battle music; the
 /// five screen filter slots.
 #[test]
 fn the_state_api_sees_a_battles_effects() {
