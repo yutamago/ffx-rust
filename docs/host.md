@@ -1663,6 +1663,8 @@ host time in `FFXApplication_animate`, a flip the time in
 The remaster menu's freeze was one (above, "Iggy": the tick clock). The
 10 s slow-update report ("Hangs") stays as it was.
 
+Tests: `hitch`'s unit tests (the limit, sampling, the summary).
+
 **`VirtualAlloc` commits** (2026-11-15, gdffx-hitch). On Linux with
 Unicorn, updates stalled for seconds in `VirtualAlloc <- user_malloc`
 (16.9 s at update 197 on the way into the field; 25 s in the cloth jobs,
@@ -1692,7 +1694,7 @@ release, Unicorn):
 | before | 848 | 16,970 ms (update 197, `VirtualAlloc`) | 4,554 |
 | after | 1,713-1,725 | 1,517-1,785 ms (update 196, the scene's synchronous reads, `Ch_ReadSync`) | 11 |
 
-Tests: `hitch`'s unit tests (the limit, sampling, the summary).
+Test: `imports::tests::a_commit_inside_a_reservation_maps_nothing`.
 
 A headless replay on Linux: start `ffx-rust --gfx-null` with
 `FFX_HARNESS=<port>`, `FFX_HARNESS_HOME=<dir>` (the sandbox's

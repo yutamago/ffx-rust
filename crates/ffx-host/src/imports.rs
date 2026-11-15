@@ -476,8 +476,9 @@ fn heap_realloc(e: &mut Exec, args: &Args) -> Ret {
 }
 
 /// `VirtualAlloc(addr, size, type, protect)`: a commit inside what is
-/// already mapped is done in place ([`commit_in_place`]); anything else is
-/// a fresh arena region.
+/// already mapped is done in place ([`commit_in_place`]); anything else
+/// (no address, a reservation, an address not fully mapped) is a fresh
+/// arena region.
 fn virtual_alloc(e: &mut Exec, args: &Args) -> Ret {
     if let Some(at) = commit_in_place(e.arena(), a(args, 0), a(args, 1), a(args, 2)) {
         return Ret::eax(at);
