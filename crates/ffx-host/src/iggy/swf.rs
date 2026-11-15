@@ -312,14 +312,21 @@ impl Stages {
         let own = GameFont::from_swf(swf).ok();
         let url = format!("file:///{p:08x}.swf");
         let render = Render::gdraw();
-        let made = [own.as_ref(), self.font.as_ref(), None]
-            .into_iter()
-            .enumerate()
-            .find_map(|(i, f)| {
-                Stage::new(gpu, swf, &url, size, f, &render)
-                    .ok()
-                    .map(|s| (i, s))
-            });
+        // a movie without a font is no candidate of its own (its stage is
+        // built once, with the kept font: building it to find out cost a
+        // second stage a create)
+        let made = [
+            own.as_ref().map(|f| (0, Some(f))),
+            self.font.as_ref().map(|f| (1, Some(f))),
+            Some((2, None)),
+        ]
+        .into_iter()
+        .flatten()
+        .find_map(|(i, f)| {
+            Stage::new(gpu, swf, &url, size, f, &render)
+                .ok()
+                .map(|s| (i, s))
+        });
         match made {
             Some((i, s)) => {
                 if i == 0 {
