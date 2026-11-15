@@ -1620,15 +1620,7 @@ fn quit(shared: &Shared) {
         SEEDED_JOBS.load(Ordering::Relaxed),
         CLOTH_WAITS.load(Ordering::Relaxed)
     );
-    #[cfg(windows)]
-    {
-        use windows_sys::Win32::System::Threading::{GetCurrentProcess, TerminateProcess};
-        // SAFETY: ends this process.
-        unsafe {
-            TerminateProcess(GetCurrentProcess(), 0);
-        }
-    }
-    std::process::exit(0);
+    crate::platform::get().end_process(0)
 }
 
 #[cfg(test)]

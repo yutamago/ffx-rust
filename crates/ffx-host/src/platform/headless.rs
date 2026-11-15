@@ -1,6 +1,7 @@
 //! [`HeadlessPlatform`]: no window, no input devices (the layer's
 //! stand-ins and the harness's keys only), no device sound (the mix goes
-//! to `--audio-wav` or nowhere), no Steam
+//! to `--audio-wav` or nowhere), no Steam, no documents folder (the
+//! harness's sandbox or `--documents` only), message boxes on stderr
 //! (docs/host.md, "The platform seam"). What the Linux check and the
 //! null-device runs had as stand-ins: a fake window that gets no messages
 //! and is the 1920 x 1080 screen, and the recording null device
@@ -245,5 +246,22 @@ impl Platform for HeadlessPlatform {
 
     fn steam(&self) -> Result<Box<dyn crate::steam::Backend>, String> {
         Err("no Steam on the headless platform".into())
+    }
+
+    fn documents_folder(&self) -> Option<std::path::PathBuf> {
+        None
+    }
+
+    fn message_box(&self, title: &str, text: &str, _: bool) {
+        eprintln!("{title}: {text}");
+    }
+
+    fn end_process(&self, code: u32) -> ! {
+        // a headless run on Windows is still a Windows process: no DLL
+        // detach there either
+        #[cfg(windows)]
+        super::windows::terminate(code);
+        #[allow(clippy::cast_possible_wrap)] // an exit code's bits
+        std::process::exit(code as i32)
     }
 }

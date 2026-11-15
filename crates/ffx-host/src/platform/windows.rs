@@ -24,6 +24,9 @@
 //! - **Sound** (`audio_out`): the mix on the default device through WASAPI
 //!   (the hook's `rust_audio_out.rs`, compiled here too).
 //! - **Steam** ([`steam`]): `steam_api64.dll`, loaded at run time.
+//! - **The documents folder and message boxes** (`shell`, `ffx-launch`'s):
+//!   `SHGetFolderPathW(CSIDL_PERSONAL)`, `MessageBoxW`.
+//! - **The process end**: `TerminateProcess`.
 //! - **Graphics.** The real D3D11 device ([`crate::d3d11`]), its swap chain
 //!   on the real window.
 //! - **Timers.** `timeBeginPeriod`/`timeEndPeriod` forward, so `Sleep`
@@ -51,6 +54,10 @@ use super::{DeviceCall, DeviceInfo, Message, Platform, Point, Property, Rect, Wi
 #[path = "../../../ffx-hook/src/rust_audio_out.rs"]
 mod audio_out;
 mod input;
+/// The documents folder and the message box: `ffx-launch`'s, the same
+/// file, compiled here too.
+#[path = "../../../ffx-launch/src/shell.rs"]
+mod shell;
 pub mod steam;
 
 const WM_SIZE: u32 = 0x0005;
@@ -574,5 +581,28 @@ impl Platform for WindowsPlatform {
 
     fn steam(&self) -> Result<Box<dyn crate::steam::Backend>, String> {
         steam::load()
+    }
+
+    fn documents_folder(&self) -> Option<std::path::PathBuf> {
+        shell::documents()
+    }
+
+    fn message_box(&self, title: &str, text: &str, warning: bool) {
+        shell::message_box(title, text, warning);
+    }
+
+    fn end_process(&self, code: u32) -> ! {
+        terminate(code);
+        #[allow(clippy::cast_possible_wrap)] // an exit code's bits
+        std::process::exit(code as i32)
+    }
+}
+
+/// `TerminateProcess` of this process: no `atexit` handlers, no DLL detach.
+pub(crate) fn terminate(code: u32) {
+    use windows_sys::Win32::System::Threading::{GetCurrentProcess, TerminateProcess};
+    // SAFETY: ends this process.
+    unsafe {
+        TerminateProcess(GetCurrentProcess(), code);
     }
 }

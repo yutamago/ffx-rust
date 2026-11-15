@@ -364,6 +364,26 @@ pub trait Platform: Send + Sync {
     /// # Errors
     /// Why there is no Steam (a note).
     fn steam(&self) -> Result<Box<dyn crate::steam::Backend>, String>;
+
+    // ---- the player's folders and dialogs (any thread) -------------------
+
+    /// The documents folder `FFX.exe` uses (`GameSetting.ini` and the saves
+    /// under `Square Enix\FINAL FANTASY X&X-2 HD Remaster`), so the
+    /// player's settings and saves are shared with the original; `None`:
+    /// none. `ffx-launch` asks Windows the same and passes it as
+    /// `--documents`; a frontend that starts the game itself asks here.
+    fn documents_folder(&self) -> Option<std::path::PathBuf>;
+    /// A problem shown to the player, in the player's words (the program's
+    /// own; the game's `MessageBoxW` stays a note, as it is in a run of
+    /// `FFX.exe` nobody watches). Returns when the player closed it.
+    fn message_box(&self, title: &str, text: &str, warning: bool);
+
+    // ---- the process (any thread) ----------------------------------------
+
+    /// Ends the process at once with `code`, without the game's own
+    /// shutdown (the harness's `quit`: the game's shutdown from the
+    /// harness thread can deadlock).
+    fn end_process(&self, code: u32) -> !;
 }
 
 static PLATFORM: OnceLock<Box<dyn Platform>> = OnceLock::new();
