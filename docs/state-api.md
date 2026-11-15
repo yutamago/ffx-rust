@@ -129,5 +129,6 @@ the opening's event, so the drawn camera comes from the scene); the pad `g_PadHe
 schema) and `crates/ffx-host/tests/boot.rs`
 `the_state_api_sees_the_opening`: on the player's game (virtual clock,
 null device) an observer gets one snapshot an update; in the opening at
-the fire it sees the event `lo/loopdemo`, the renderer's camera, and the
+the fire it sees the event `lo/loopdemo`, the level `/map/znkd/znkd06/`,
+the renderer's camera, and the
 party shown, posed by their skeletons and animating.

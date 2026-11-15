@@ -500,7 +500,7 @@ fn the_state_api_sees_the_opening() {
     );
     assert_eq!(last.world.event, "lo/loopdemo", "{:?}", last.world);
     // the renderer's level: the opening's map model
-    assert!(!last.world.level.is_empty(), "{:?}", last.world);
+    assert_eq!(last.world.level, "/map/znkd/znkd06/", "{:?}", last.world);
     // the party at the fire: party characters (kind 0) shown, posed by
     // their skeletons (the event's motions place them: their records stay
     // at the origin), animating

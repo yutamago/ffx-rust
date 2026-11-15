@@ -331,6 +331,17 @@ mod tests {
     }
 
     #[test]
+    fn the_level_name_through_a_tagged_pointer() {
+        let mut mem = Sparse(HashMap::new());
+        let (scene, text): (u32, u32) = (0x0400_0000, 0x0410_0000);
+        mem.put(G_PHYRE_SCENE, &scene.to_le_bytes());
+        // a PString: the characters' pointer, bit 0 a flag
+        mem.put(scene + SCENE_LEVEL_NAME, &(text | 1).to_le_bytes());
+        mem.put(text, b"/map/znkd/znkd06/\0");
+        assert_eq!(read(&mem, 0, 0.0).world.level, "/map/znkd/znkd06/");
+    }
+
+    #[test]
     fn garbage_pointers_read_as_nothing() {
         // pointers near the top of the address space: every offset wraps
         let mut mem = Sparse(HashMap::new());
