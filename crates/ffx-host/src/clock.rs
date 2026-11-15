@@ -590,9 +590,11 @@ fn animate(e: &mut Exec, args: &Args) -> Ret {
         *s = Some(Instant::now());
     }
     c.notify();
+    crate::hitch::begin(crate::hitch::Kind::Update, frame);
     let t = Instant::now();
     let r = e.call_original(0x0042_f520, Conv::Thiscall, args);
     clock(e).update_time.add(t.elapsed());
+    crate::hitch::end(crate::hitch::Kind::Update);
     clock(e).frame.store(frame + 1, Ordering::Release);
     r.unwrap_or(Ret::eax(0))
 }
@@ -604,9 +606,11 @@ fn present_flip(e: &mut Exec, args: &Args) -> Ret {
     let c = clock(e);
     c.render.store(e.id, Ordering::Release);
     crate::harness::before_present_flip(e.shared());
+    crate::hitch::begin(crate::hitch::Kind::Flip, c.flips());
     let t = Instant::now();
     let r = e.call_original(0x0059_3760, Conv::Thiscall, args);
     clock(e).flip_time.add(t.elapsed());
+    crate::hitch::end(crate::hitch::Kind::Flip);
     crate::harness::after_present_flip();
     let c = clock(e);
     c.flips.fetch_add(1, Ordering::AcqRel);

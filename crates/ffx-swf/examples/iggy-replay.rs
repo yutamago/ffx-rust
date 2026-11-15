@@ -6,7 +6,14 @@
 //! iggy-replay <log> <out dir> [--vbf <FFX_Data.vbf>] [--no-pace] [--smooth]
 //!     [--quality <q>] [--ss <k>] [--force-smooth] [--mipmaps] [--virtual-clock]
 //!     [--no-font] [--float-bounds] [--filter-phase] [--gdraw]
+//!     [--slow <ms>] [--draw-all]
 //! ```
+//!
+//! `--slow <ms>` prints each log event that took that long or longer
+//! (`slow: tick b261510 (init false) at Some(1234): 52.0 ms`): where a
+//! movie's time goes, its first tick and draw included. `--draw-all`
+//! renders and reads back every draw, not only the screenshots' (a draw's
+//! real cost).
 //!
 //! `--gdraw` is what `ffx-host` plays with (`stage::gdraw_like`,
 //! `Render::gdraw`): every switch below and stage quality `low`; put
@@ -52,6 +59,25 @@ fn fnv(data: &[u8]) -> u64 {
     h
 }
 
+/// An event for `--slow`'s lines: what, which player, which update.
+fn event_label(e: &Event) -> String {
+    match e {
+        Event::Create { player, size, .. } => format!("create {player:x} ({size} bytes)"),
+        Event::Destroy { player } => format!("destroy {player:x}"),
+        Event::DisplaySize { player, .. } => format!("size {player:x}"),
+        Event::Tick {
+            player,
+            init,
+            update,
+        } => format!("tick {player:x} (init {init}) at {update:?}"),
+        Event::Draw { player, update } => format!("draw {player:x} at {update:?}"),
+        Event::Call { player, name, .. } => format!("call {player:x} {name}"),
+        Event::MouseMove { player, .. } => format!("mouse {player:x}"),
+        Event::Callback { player, name, .. } => format!("callback {player:x} {name}"),
+        Event::Shot { update, .. } => format!("shot at {update:?}"),
+    }
+}
+
 #[allow(clippy::too_many_lines)]
 fn main() -> Result<()> {
     if std::env::var_os("FFX_SWF_TRACE").is_some() {
@@ -72,6 +98,8 @@ fn main() -> Result<()> {
     let mut pace = true;
     let mut smooth = false;
     let mut no_font = false;
+    let mut slow_ms: Option<f64> = None;
+    let mut draw_all = false;
     let mut render = ffx_swf::stage::Render::default();
     while let Some(a) = args.next() {
         match a.as_str() {
@@ -92,6 +120,8 @@ fn main() -> Result<()> {
                 ffx_swf::stage::deterministic_get_timer(true);
                 pace = false;
             }
+            "--slow" => slow_ms = args.next().and_then(|v| v.parse().ok()),
+            "--draw-all" => draw_all = true,
             "--quality" => render.quality = args.next(),
             "--ss" => render.ss = args.next().and_then(|v| v.parse().ok()).unwrap_or(1),
             _ => bail!("unknown argument {a}"),
@@ -143,6 +173,8 @@ fn main() -> Result<()> {
     let start = Instant::now();
     let mut first_update: Option<u32> = None;
     for e in &events {
+        let t0 = Instant::now();
+        let what = slow_ms.map(|_| event_label(e));
         match e {
             Event::Create { player, size, hash } => {
                 let Some((name, data)) = movies
@@ -206,6 +238,9 @@ fn main() -> Result<()> {
                 }
             }
             Event::Draw { player, update } => {
+                if draw_all && let Some((_, s)) = stages.get_mut(player) {
+                    s.capture_premultiplied()?;
+                }
                 if let Some(u) = update
                     && shots.contains(u)
                     && let Some((_, s)) = stages.get_mut(player)
@@ -252,6 +287,12 @@ fn main() -> Result<()> {
                     "{name}: update {update:?}, {} layers",
                     kept.get(&update.unwrap_or(u32::MAX)).map_or(0, Vec::len)
                 );
+            }
+        }
+        if let (Some(limit), Some(what)) = (slow_ms, what) {
+            let ms = t0.elapsed().as_secs_f64() * 1e3;
+            if ms >= limit {
+                eprintln!("slow: {what}: {ms:.1} ms");
             }
         }
     }

@@ -42,6 +42,8 @@ use ruffle_render_wgpu::wgpu;
 use crate::abc::Arity;
 use crate::log::Arg;
 
+/// Ruffle's mouse buttons ([`Stage::mouse_button`]).
+pub use ruffle_core::events::MouseButton;
 /// Ruffle's external value, for users of [`CallOut`] (`ffx-host`).
 pub use ruffle_core::external::Value as RuffleValue;
 
@@ -135,38 +137,77 @@ pub fn to_value(a: &Arg) -> Value {
     }
 }
 
-/// The font the game's movies draw their text with.
+/// The font the game's movies draw their text with: a movie's first
+/// `DefineFont2`/`DefineFont3`, read once. `box.swf`'s is 2.6 MB, 7,646
+/// glyphs: reading the whole movie again for each new stage took about
+/// 20 ms, reading the tag 30-40 ms (this machine), every create.
 pub struct GameFont {
-    swf: swf::SwfBuf,
+    /// The tag, its name left empty (the name is borrowed from the movie's
+    /// bytes; each registration names its copy).
+    font: swf::Font<'static>,
+    /// The tag's own name.
+    original: String,
 }
 
 impl GameFont {
-    /// Takes the first `DefineFont3` of `box.swf` (or any movie with one).
+    /// Takes the first `DefineFont2`/`DefineFont3` of `box.swf` (or any
+    /// movie with one), scanning the top-level tags' headers only.
     ///
     /// # Errors
-    /// Not a SWF.
+    /// Not a SWF, or no such tag (a movie without a font: no stage is
+    /// built to find out), or a tag that does not read.
     pub fn from_swf(data: &[u8]) -> Result<Self> {
         let swf = swf::decompress_swf(data).map_err(|e| anyhow!("{e}"))?;
-        Ok(Self { swf })
+        let (font_version, tag) =
+            find_font_tag(&swf.data).ok_or_else(|| anyhow!("no DefineFont2/3"))?;
+        let f = swf::read::Reader::new(tag, swf.header.version())
+            .read_define_font_2(font_version)
+            .map_err(|e| anyhow!("{e}"))?;
+        let original = f.name.to_str_lossy(swf::UTF_8).into_owned();
+        let font = swf::Font {
+            version: f.version,
+            id: f.id,
+            name: swf::SwfStr::from_utf8_str(""),
+            language: f.language,
+            layout: f.layout,
+            glyphs: f.glyphs,
+            flags: f.flags,
+        };
+        Ok(Self { font, original })
     }
 
-    fn register(&self, player: &mut Player) -> Result<String> {
-        let parsed = swf::parse_swf(&self.swf).map_err(|e| anyhow!("{e}"))?;
-        let font = parsed
-            .tags
-            .iter()
-            .find_map(|t| match t {
-                swf::Tag::DefineFont2(f) => Some(f),
-                _ => None,
-            })
-            .ok_or_else(|| anyhow!("no DefineFont2/3"))?;
-        let original = font.name.to_str_lossy(swf::UTF_8).into_owned();
-        for alias in ["$NormalFont", "$TitleFont", original.as_str()] {
-            let mut f = (**font).clone();
+    fn register(&self, player: &mut Player) {
+        for alias in ["$NormalFont", "$TitleFont", self.original.as_str()] {
+            let mut f = self.font.clone();
             f.name = swf::SwfStr::from_utf8_str(alias);
             player.register_device_font(FontDefinition::SwfTag(f, swf::UTF_8));
         }
-        Ok(original)
+    }
+}
+
+/// The first top-level `DefineFont2` (48) or `DefineFont3` (75) tag of a
+/// decompressed tag stream: its version and body. A tag's header is a
+/// little-endian u16, the code in its top 10 bits, the length in the low
+/// 6 (63: a u32 length follows); `End` (0) ends the list.
+fn find_font_tag(data: &[u8]) -> Option<(u8, &[u8])> {
+    let mut at = 0usize;
+    loop {
+        let head = u16::from_le_bytes(data.get(at..at + 2)?.try_into().ok()?);
+        at += 2;
+        let code = head >> 6;
+        let mut len = usize::from(head & 0x3f);
+        if len == 0x3f {
+            len =
+                usize::try_from(u32::from_le_bytes(data.get(at..at + 4)?.try_into().ok()?)).ok()?;
+            at += 4;
+        }
+        let body = data.get(at..at.checked_add(len)?)?;
+        match code {
+            0 => return None,
+            48 => return Some((2, body)),
+            75 => return Some((3, body)),
+            _ => at += len,
+        }
     }
 }
 
@@ -248,6 +289,8 @@ pub struct Stage {
     ss: u32,
     /// The offered functions' argument counts (`crate::abc`).
     arities: BTreeMap<String, Arity>,
+    /// Where the last mouse move put the pointer (stage pixels).
+    mouse: (f64, f64),
 }
 
 impl Stage {
@@ -287,7 +330,7 @@ impl Stage {
         {
             let mut p = player.lock().map_err(|_| anyhow!("poisoned"))?;
             if let Some(font) = font {
-                font.register(&mut p)?;
+                font.register(&mut p);
             }
             p.set_window_mode("transparent");
             if let Some(q) = &render.quality {
@@ -304,6 +347,7 @@ impl Stage {
             size,
             ss,
             arities,
+            mouse: (0.0, 0.0),
         })
     }
 
@@ -329,10 +373,41 @@ impl Stage {
 
     /// A mouse move (`IggyPlayerDispatchEventRS`), in display pixels.
     pub fn mouse_move(&mut self, x: i32, y: i32) {
+        self.mouse = (
+            f64::from(x) * f64::from(self.ss),
+            f64::from(y) * f64::from(self.ss),
+        );
+        let (x, y) = self.mouse;
         self.lock()
-            .handle_event(ruffle_core::PlayerEvent::MouseMove {
-                x: f64::from(x) * f64::from(self.ss),
-                y: f64::from(y) * f64::from(self.ss),
+            .handle_event(ruffle_core::PlayerEvent::MouseMove { x, y });
+    }
+
+    /// A mouse button pressed or let go (`IggyPlayerDispatchEventRS` of an
+    /// `IggyMakeEventMouseButton` event) where the last move left the
+    /// pointer, as Iggy places a button event (`iggy_w32.dll`
+    /// `0x10012b38`: the player's last move position, `+0x22b8`/`+0x22bc`).
+    pub fn mouse_button(&mut self, button: MouseButton, down: bool) {
+        let (x, y) = self.mouse;
+        let event = if down {
+            ruffle_core::PlayerEvent::MouseDown {
+                x,
+                y,
+                button,
+                index: None,
+            }
+        } else {
+            ruffle_core::PlayerEvent::MouseUp { x, y, button }
+        };
+        self.lock().handle_event(event);
+    }
+
+    /// The mouse wheel (`IggyMakeEventMouseWheel`): Iggy hands the game's
+    /// value to AS3 as `MouseEvent.delta` unchanged (`0x10011eb0`; the
+    /// game passes 120 a notch), which Ruffle's delta in lines is.
+    pub fn mouse_wheel(&mut self, delta: i32) {
+        self.lock()
+            .handle_event(ruffle_core::PlayerEvent::MouseWheel {
+                delta: ruffle_core::events::MouseWheelDelta::Lines(f64::from(delta)),
             });
     }
 
@@ -408,5 +483,52 @@ impl Stage {
         } else {
             img
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::find_font_tag;
+
+    /// A tag header: short form below 63 bytes, else the long form.
+    fn tag(code: u16, body: &[u8]) -> Vec<u8> {
+        let mut out = Vec::new();
+        if body.len() < 0x3f {
+            out.extend_from_slice(
+                &((code << 6) | u16::try_from(body.len()).unwrap()).to_le_bytes(),
+            );
+        } else {
+            out.extend_from_slice(&((code << 6) | 0x3f).to_le_bytes());
+            out.extend_from_slice(&u32::try_from(body.len()).unwrap().to_le_bytes());
+        }
+        out.extend_from_slice(body);
+        out
+    }
+
+    #[test]
+    fn the_first_font_tag_is_found_past_long_and_short_tags() {
+        let big = vec![7u8; 300];
+        let data = [
+            tag(69, &[1, 0, 0, 0]),
+            tag(36, &big),
+            tag(75, b"font3"),
+            tag(48, b"font2"),
+            tag(0, &[]),
+        ]
+        .concat();
+        assert_eq!(find_font_tag(&data), Some((3, &b"font3"[..])));
+        let data = [tag(48, &big), tag(0, &[])].concat();
+        assert_eq!(find_font_tag(&data), Some((2, &big[..])));
+    }
+
+    #[test]
+    fn a_movie_without_a_font_or_cut_short_has_none() {
+        let data = [tag(1, &[]), tag(0, &[])].concat();
+        assert_eq!(find_font_tag(&data), None);
+        // a length past the end, or no End at all
+        let mut cut = tag(75, b"font3");
+        cut.truncate(4);
+        assert_eq!(find_font_tag(&cut), None);
+        assert_eq!(find_font_tag(&tag(1, &[])), None);
     }
 }

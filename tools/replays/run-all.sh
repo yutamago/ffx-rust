@@ -239,6 +239,9 @@ run() { # replay, tag, [original]
         slot="$(sed -n 's/^replay: slot \([0-9]*\),.*/\1/p' "$dir/$1.out" | head -1)"
         [[ -n "$slot" ]] && cp "${FFX_INSTANCES_DIR:-$HOME/ffx-work/instances}/$slot/ffx-rust.log" "$dir/$1.ffx-rust.log" 2>/dev/null
         grep -h '^overlay calls in all' "$dir/$1.ffx-rust.log" 2>/dev/null | sed "s/^/$1: /"
+        # updates and flips over FFX_HOST_HITCH_MS (100 ms), the longest
+        # with where the time went (docs/host.md, "Hitches")
+        grep -h '^hitches:' "$dir/$1.ffx-rust.log" 2>/dev/null | tail -1 | sed "s/^/$1: /"
         if [[ -n "$profile" && -n "$slot" ]]; then
             cp "${FFX_INSTANCES_DIR:-$HOME/ffx-work/instances}/$slot/ffx-rust.profile.tsv" "$dir/$1.profile.tsv" 2>/dev/null ||
                 echo "$1: no Unicorn profile (ended before the harness's quit?)"

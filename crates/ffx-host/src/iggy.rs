@@ -100,6 +100,62 @@ fn to_int32(n: f64) -> i32 {
     (t as u64 as u32).cast_signed()
 }
 
+/// Ticks a player may run between two draws: `IggyPlayerReadyToTick`'s
+/// check that finds this many since the last `IggyPlayerDraw` drops the
+/// time owed and says not ready (`iggy_w32.dll` `0x1000f1d0`: `[p+0x2620]`
+/// `>= 3` → accumulator `[p+0x28]` = 0, the count 0, warning 0xc9 "Cannot
+/// maintain framerate specified in SWF file"; the tick `0x10014c70` adds 1
+/// to the count, the draw `0x1001a870` sets it to 0).
+pub const TICKS_PER_DRAW: u32 = 3;
+
+/// A player's tick clock, as Iggy keeps it: the time of the last check, the
+/// time owed (`+0x28`), the ticks since the last draw (`+0x2620`).
+#[derive(Debug, Clone, Default)]
+pub struct TickClock {
+    last: Option<f64>,
+    owed: f64,
+    since_draw: u32,
+    /// Times a check dropped what was owed (for the log).
+    pub dropped: u64,
+}
+
+impl TickClock {
+    /// `IggyPlayerReadyToTick` at game time `now` for a movie of
+    /// `period` seconds a frame: adds the time since the last check (a
+    /// player's first check owes nothing) and answers whether a frame is
+    /// owed, unless [`TICKS_PER_DRAW`] ticks ran since the last draw: then
+    /// the time owed is dropped. A menu the game stopped drawing (closed)
+    /// owes nothing when it is drawn again, or the game would tick it for
+    /// all the time it was closed (36,000 Ruffle frames after 20 minutes,
+    /// the >10 s freeze at the first Esc of the user's play test).
+    pub fn ready(&mut self, now: f64, period: f64) -> bool {
+        if self.since_draw >= TICKS_PER_DRAW {
+            self.owed = 0.0;
+            self.since_draw = 0;
+            self.dropped += 1;
+            return false;
+        }
+        let last = self.last.replace(now).unwrap_or(now);
+        self.owed += now - last;
+        self.owed >= period
+    }
+
+    /// `IggyPlayerTickRS`: one frame paid (the time owed past it, or none).
+    pub fn tick(&mut self, period: f64) {
+        self.owed = if self.owed > period {
+            self.owed - period
+        } else {
+            0.0
+        };
+        self.since_draw += 1;
+    }
+
+    /// `IggyPlayerDraw`.
+    pub fn drawn(&mut self) {
+        self.since_draw = 0;
+    }
+}
+
 /// One player.
 #[derive(Debug, Clone)]
 pub struct Player {
@@ -109,12 +165,17 @@ pub struct Player {
     pub width: u32,
     pub height: u32,
     pub fps: f32,
-    /// The tick clock: the game time last seen and the time not ticked.
-    last: Option<f64>,
-    owed: f64,
+    /// The tick clock.
+    clock: TickClock,
     /// Ticks and draws so far.
     pub ticks: u64,
     pub draws: u64,
+}
+
+impl Player {
+    fn period(&self) -> f64 {
+        1.0 / f64::from(self.fps.max(1.0))
+    }
 }
 
 /// The layer's state.
@@ -235,8 +296,7 @@ fn create_from_memory(e: &mut Exec, args: &Args) -> Ret {
         width,
         height,
         fps,
-        last: None,
-        owed: 0.0,
+        clock: TickClock::default(),
         ticks: 0,
         draws: 0,
     };
@@ -332,8 +392,9 @@ fn call_function(e: &mut Exec, args: &Args) -> Ret {
 }
 
 /// `IggyPlayerReadyToTick(player)`: whether the player owes a frame by the
-/// virtual clock (the update's game time: every check of one draw sees
-/// the same time, as on the harness's virtual clock).
+/// game clock (the update's game time on the virtual clock: every check
+/// of one draw sees the same time, as on the harness's virtual clock), at
+/// most [`TICKS_PER_DRAW`] a draw ([`TickClock::ready`]).
 fn ready_to_tick(e: &mut Exec, args: &Args) -> Ret {
     let p = a(args, 0);
     let now = e.shared().clock.now();
@@ -343,18 +404,26 @@ fn ready_to_tick(e: &mut Exec, args: &Args) -> Ret {
     let Some(pl) = ps.get_mut(&p) else {
         return Ret::eax(0);
     };
-    let last = pl.last.replace(now).unwrap_or(now);
-    pl.owed += now - last;
-    let period = 1.0 / f64::from(pl.fps.max(1.0));
-    Ret::eax(u32::from(pl.owed >= period))
+    let period = pl.period();
+    let before = pl.clock.dropped;
+    let ready = pl.clock.ready(now, period);
+    let dropped = pl.clock.dropped;
+    drop(ps);
+    if dropped != before && dropped.is_power_of_two() {
+        crate::log::note(&format!(
+            "iggy: {p:#x} cannot keep its frame rate: the time owed dropped after \
+             {TICKS_PER_DRAW} ticks without a draw ({dropped} times so far)"
+        ));
+    }
+    Ret::eax(u32::from(ready))
 }
 
 fn tick(e: &mut Exec, args: &Args) -> Ret {
     let p = a(args, 0);
     let ticked = iggy(e).players.lock().is_ok_and(|mut ps| {
         ps.get_mut(&p).is_some_and(|pl| {
-            let period = 1.0 / f64::from(pl.fps.max(1.0));
-            pl.owed = (pl.owed - period).max(0.0);
+            let period = pl.period();
+            pl.clock.tick(period);
             pl.ticks += 1;
             if pl.ticks.is_power_of_two() {
                 crate::log::note(&format!("iggy: {p:#x} tick {}", pl.ticks));
@@ -398,6 +467,7 @@ fn draw(e: &mut Exec, args: &Args) -> Ret {
         && let Some(pl) = ps.get_mut(&p)
     {
         pl.draws += 1;
+        pl.clock.drawn();
         if pl.draws.is_power_of_two() {
             crate::log::note(&format!("iggy: {p:#x} draw {}", pl.draws));
         }
@@ -451,37 +521,129 @@ fn composite(e: &Exec, image: Option<&(u32, u32, Vec<u8>)>) {
     }
 }
 
-/// `IggyMakeEventMouseMove(ev, x, y)`: the layer's own event layout
-/// (24 bytes, as `IggyMenuManager_dispatchMouse_00a26ce0`'s; type 7 at
-/// `+0`, x and y at `+8`, `+0xc`), read back by
-/// `DispatchEventRS`.
+/// A mouse button, as an Iggy event names it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Button {
+    Left,
+    Right,
+    Middle,
+}
+
+/// An Iggy event (`IggyEvent`, six words), as `iggy_w32.dll`'s
+/// `IggyMakeEvent*` write them (`0x10093fc0`..`0x100941c5`): the type at
+/// `+0`, a move's x and y at `+8`, `+0xc`, the wheel's delta (the game's
+/// 16 bits, sign-extended) at `+0x10`; every other word 0. The types: 0
+/// none, 1/2 left button down/up, 3/4 right, 5/6 middle (the game's
+/// `IggyMenuManager_dispatchMouse_00a26ce0` passes its queue's 0..5 as
+/// 1, 2, 5, 6, 3, 4: its records 0/1 are the left button, 4/5 the right,
+/// `IggyMouseQueue_update_00a25ab0`; Iggy's dispatch `0x100121e0` sends
+/// types 3/4 as AS3 events 0x2b/0x2c, `rightMouseDown`/`rightMouseUp`,
+/// and 5/6 as 0x22/0x23, `middleMouseDown`/`middleMouseUp`, in its event
+/// name table), 7 move, 8 wheel; Iggy's others (key
+/// 9/10, char 0xb, resize 0xe, mouse leave 0xf, focus lost 0x10) have no
+/// maker among `FFX.exe`'s imports.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Event {
+    None,
+    Button {
+        button: Button,
+        down: bool,
+    },
+    Move {
+        x: i32,
+        y: i32,
+    },
+    Wheel(i32),
+    /// A type the layer passes on to nobody.
+    Other(u32),
+}
+
+impl Event {
+    /// The event in an `IggyEvent`'s words.
+    #[must_use]
+    pub fn decode(w: [u32; 6]) -> Self {
+        let button = |button, down| Self::Button { button, down };
+        match w[0] {
+            0 => Self::None,
+            1 => button(Button::Left, true),
+            2 => button(Button::Left, false),
+            3 => button(Button::Right, true),
+            4 => button(Button::Right, false),
+            5 => button(Button::Middle, true),
+            6 => button(Button::Middle, false),
+            7 => Self::Move {
+                x: w[2].cast_signed(),
+                y: w[3].cast_signed(),
+            },
+            8 => Self::Wheel(w[4].cast_signed()),
+            t => Self::Other(t),
+        }
+    }
+
+    /// `IggyMakeEventMouseButton(ev, type)`: the type as given (Iggy's
+    /// `0x10094080` stores it unchecked; `IggyMakeEventActivate` is the
+    /// same code).
+    #[must_use]
+    pub fn make_button(kind: u32) -> [u32; 6] {
+        [kind, 0, 0, 0, 0, 0]
+    }
+
+    /// `IggyMakeEventMouseMove(ev, x, y)`.
+    #[must_use]
+    pub fn make_move(x: u32, y: u32) -> [u32; 6] {
+        [7, 0, x, y, 0, 0]
+    }
+
+    /// `IggyMakeEventMouseWheel(ev, delta)`: the argument's low 16 bits,
+    /// sign-extended (`movsx ecx, word [ebp+0xc]`).
+    #[must_use]
+    pub fn make_wheel(delta: u32) -> [u32; 6] {
+        #[allow(clippy::cast_possible_truncation)] // the low 16 bits, as Iggy
+        let d = i32::from((delta as u16).cast_signed());
+        [8, 0, 0, 0, d.cast_unsigned(), 0]
+    }
+}
+
+/// Writes an event's words (Iggy writes nothing for a null event pointer).
+fn write_event(e: &Exec, ev: u32, words: [u32; 6]) {
+    if ev != 0 {
+        e.mem().write(ev, words);
+    }
+}
+
+/// `IggyMakeEventMouseMove(ev, x, y)` ([`Event`]).
 fn event_mouse_move(e: &mut Exec, args: &Args) -> Ret {
-    let ev = a(args, 0);
-    let mut mem = e.mem();
-    mem.write_bytes(ev, &[0u8; 24]);
-    mem.write(ev, 7u32);
-    mem.write(ev + 8, a(args, 1));
-    mem.write(ev + 12, a(args, 2));
+    write_event(e, a(args, 0), Event::make_move(a(args, 1), a(args, 2)));
+    Ret::VOID
+}
+
+/// `IggyMakeEventMouseButton(ev, type)` ([`Event`]).
+fn event_mouse_button(e: &mut Exec, args: &Args) -> Ret {
+    write_event(e, a(args, 0), Event::make_button(a(args, 1)));
+    Ret::VOID
+}
+
+/// `IggyMakeEventMouseWheel(ev, delta)` ([`Event`]).
+fn event_mouse_wheel(e: &mut Exec, args: &Args) -> Ret {
+    write_event(e, a(args, 0), Event::make_wheel(a(args, 1)));
     Ret::VOID
 }
 
 fn event_none(e: &mut Exec, args: &Args) -> Ret {
-    e.mem().write_bytes(a(args, 0), &[0u8; 24]);
+    write_event(e, a(args, 0), [0; 6]);
     Ret::VOID
 }
 
+/// `IggyPlayerDispatchEventRS(player, ev, result)`: the event to the
+/// player's movie (moves, buttons, the wheel); the result (12 bytes) 0.
 fn dispatch_event(e: &mut Exec, args: &Args) -> Ret {
     let (p, ev, out) = (a(args, 0), a(args, 1), a(args, 2));
-    let mem = e.mem();
-    if mem.read::<u32>(ev) == 7 {
-        let (x, y) = (
-            mem.read::<u32>(ev + 8).cast_signed(),
-            mem.read::<u32>(ev + 12).cast_signed(),
-        );
+    if ev != 0 {
+        let event = Event::decode(e.mem().read(ev));
         #[cfg(feature = "swf")]
-        swf::mouse_move(e, p, x, y);
+        swf::event(e, p, event);
         #[cfg(not(feature = "swf"))]
-        let _ = (p, x, y);
+        let _ = (p, event);
     }
     if out != 0 {
         e.mem().write_bytes(out, &[0u8; 12]);
@@ -844,6 +1006,20 @@ pub const TABLE: &[(&str, &str, Conv, usize, ImportFn)] = &[
         3,
         event_mouse_move,
     ),
+    (
+        IGGY,
+        "_IggyMakeEventMouseButton@8",
+        Conv::Stdcall,
+        2,
+        event_mouse_button,
+    ),
+    (
+        IGGY,
+        "_IggyMakeEventMouseWheel@8",
+        Conv::Stdcall,
+        2,
+        event_mouse_wheel,
+    ),
     (IGGY, "_IggyMakeEventNone@4", Conv::Stdcall, 1, event_none),
     (
         IGGY,
@@ -942,3 +1118,107 @@ pub const TABLE: &[(&str, &str, Conv, usize, ImportFn)] = &[
 
 #[cfg(feature = "swf")]
 mod swf;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A period whose multiples are exact (1/32 s).
+    const PERIOD: f64 = 1.0 / 32.0;
+
+    /// Ticks a draw runs (`IggyPlayer_tickDraw_00a3d9f0`: `while
+    /// ReadyToTick: TickRS`, then the draw) at game time `now`.
+    fn frame(c: &mut TickClock, now: f64) -> u32 {
+        let mut n = 0;
+        while c.ready(now, PERIOD) {
+            c.tick(PERIOD);
+            n += 1;
+            assert!(n <= TICKS_PER_DRAW, "more than Iggy's ticks a draw");
+        }
+        c.drawn();
+        n
+    }
+
+    #[test]
+    fn a_player_ticks_once_a_frame_and_owes_nothing_at_its_first_check() {
+        let mut c = TickClock::default();
+        assert_eq!(frame(&mut c, 100.0), 0);
+        for i in 1..=60 {
+            assert_eq!(frame(&mut c, 100.0 + f64::from(i) * PERIOD), 1);
+        }
+        assert_eq!(c.dropped, 0);
+    }
+
+    #[test]
+    fn a_menu_drawn_again_after_a_long_time_runs_at_most_three_ticks() {
+        let mut c = TickClock::default();
+        frame(&mut c, 0.0);
+        frame(&mut c, PERIOD);
+        // closed for 20 minutes: 36,000 frames owed, 3 run, the rest dropped
+        assert_eq!(frame(&mut c, 1200.0), TICKS_PER_DRAW);
+        assert_eq!(c.dropped, 1);
+        assert_eq!(frame(&mut c, 1200.0 + PERIOD), 1);
+    }
+
+    #[test]
+    fn a_short_stall_is_caught_up_within_three_ticks() {
+        let mut c = TickClock::default();
+        frame(&mut c, 0.0);
+        assert_eq!(frame(&mut c, 2.5 * PERIOD), 2);
+        assert_eq!(c.dropped, 0);
+        // the half frame left over is still owed
+        assert_eq!(frame(&mut c, 3.5 * PERIOD), 1);
+    }
+
+    #[test]
+    fn a_tick_pays_a_period_or_clears_what_is_owed() {
+        let mut c = TickClock::default();
+        c.ready(0.0, PERIOD);
+        c.ready(PERIOD, PERIOD);
+        c.tick(PERIOD);
+        assert!(!c.ready(PERIOD, PERIOD));
+        assert_eq!(c.owed, 0.0);
+    }
+
+    #[test]
+    fn events_decode_as_iggy_lays_them_out() {
+        assert_eq!(Event::decode([0; 6]), Event::None);
+        let b = |button, down| Event::Button { button, down };
+        // dispatchMouse's queue types 0..5 go to Iggy as 1, 2, 5, 6, 3, 4
+        let made: Vec<Event> = [1, 2, 5, 6, 3, 4]
+            .into_iter()
+            .map(|k| Event::decode(Event::make_button(k)))
+            .collect();
+        assert_eq!(
+            made,
+            [
+                b(Button::Left, true),
+                b(Button::Left, false),
+                b(Button::Middle, true),
+                b(Button::Middle, false),
+                b(Button::Right, true),
+                b(Button::Right, false),
+            ]
+        );
+        assert_eq!(
+            Event::make_move(640, (-3i32).cast_unsigned()),
+            [7, 0, 640, 0xffff_fffd, 0, 0]
+        );
+        assert_eq!(
+            Event::decode(Event::make_move(640, (-3i32).cast_unsigned())),
+            Event::Move { x: 640, y: -3 }
+        );
+        assert_eq!(Event::decode([0x10, 0, 0, 0, 0, 0]), Event::Other(0x10));
+    }
+
+    #[test]
+    fn the_wheel_keeps_16_bits_sign_extended() {
+        // the game passes u16 ftol(w * 120.0)
+        assert_eq!(Event::make_wheel(120), [8, 0, 0, 0, 120, 0]);
+        assert_eq!(Event::decode(Event::make_wheel(0xff88)), Event::Wheel(-120));
+        assert_eq!(
+            Event::decode(Event::make_wheel(0xdead_ff88)),
+            Event::Wheel(-120)
+        );
+    }
+}

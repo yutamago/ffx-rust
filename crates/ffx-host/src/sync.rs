@@ -323,6 +323,17 @@ impl Objects {
         self.lock().blocked_text(id)
     }
 
+    /// The thread holding the critical section game thread `id` waits
+    /// to enter (`None` when it waits for nothing, or for something else).
+    #[must_use]
+    pub fn section_holder(&self, id: u32) -> Option<u32> {
+        let inner = self.lock();
+        match inner.blocked.get(&id)? {
+            Blocked::Section(at) => inner.sections.get(at).map(|s| s.owner).filter(|&o| o != 0),
+            Blocked::Objects(_) => None,
+        }
+    }
+
     /// Whether any thread was terminated.
     #[must_use]
     pub fn any_killed(&self) -> bool {

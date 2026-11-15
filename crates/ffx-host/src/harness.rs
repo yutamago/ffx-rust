@@ -1613,6 +1613,8 @@ fn quit(shared: &Shared) {
     crate::sample::finish_global(shared);
     // run-all.sh fails a run with any (docs/harness.md)
     eprintln!("{}", crate::log::bad_accesses_line());
+    // run-all.sh prints it for each replay (docs/host.md, "Hitches")
+    eprintln!("{}", crate::hitch::summary_line());
     eprintln!(
         "harness: {} seeded jobs, {} cloth waits",
         SEEDED_JOBS.load(Ordering::Relaxed),

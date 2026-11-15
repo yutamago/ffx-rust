@@ -668,6 +668,8 @@ log; `swf-compare` builds the comparison page
 | `IggyPlayerTickRS` | `Player::tick(1/fps)` (one frame, timers by the same time) |
 | `IggyPlayerSetDisplaySize` | `set_viewport_dimensions` |
 | `DispatchEventRS` mouse move | `PlayerEvent::MouseMove` |
+| `DispatchEventRS` mouse button (types 1-6) | `PlayerEvent::MouseDown`/`MouseUp` (left, right, middle) at the last move's place |
+| `DispatchEventRS` mouse wheel | `PlayerEvent::MouseWheel` (`MouseWheelDelta::Lines`, the game's value: AS3's `delta`) |
 | `IggyPlayerDraw` | `render` + `capture_frame` (straight alpha), or `capture_premultiplied` (the target's premultiplied bytes, which `ffx-host` composites with `GDraw`'s blend) |
 
 Mismatches found (round 2, 2026-10-27, measured: `tools/swf-pilot/measure.sh`):

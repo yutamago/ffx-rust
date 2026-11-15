@@ -511,6 +511,7 @@ pub fn text(exec: &Exec, syms: &Symbols, outcome: &str) -> String {
         let _ = writeln!(out, "  {n:>8}  {name} ({addr:#010x})");
     }
     let _ = writeln!(out, "{}", crate::log::bad_accesses_line());
+    let _ = writeln!(out, "{}", crate::hitch::summary_line());
     out
 }
 

@@ -1088,11 +1088,28 @@ calls"):
 - `IggyPlayerCallFunctionRS` decodes the `IggyDataValue`s (types 3-6) and
   hands the call to the player; it writes no result (the game never reads
   it, and some of its result buffers are 12 bytes);
-- `IggyPlayerReadyToTick` keeps each player's accumulator on the virtual
-  clock (ready while it holds a frame period), `TickRS` takes one off;
-- `IggyMakeEventNone`/`MouseMove` write the layer's own 24-byte event
-  (the game's buffers are 24 bytes: writing more broke
-  `IggyMenuManager_dispatchMouse_00a26ce0`'s stack cookie);
+- `IggyPlayerReadyToTick` keeps each player's accumulator on the game
+  clock (ready while it holds a frame period), `TickRS` takes one off
+  (`iggy::TickClock`). As in Iggy (`0x1000f1d0`), a check that finds 3
+  ticks since the last `IggyPlayerDraw` drops the time owed and answers
+  not ready. Without that, a menu the game stopped drawing (closed) owed
+  all the time it was closed: the first Esc after 20 minutes of play ran
+  the menu for about 36,000 Ruffle frames, a freeze of over 10 s, the
+  render thread ticking under the game's menu lock while the main
+  thread's `IggyMenuManager_dispatchMouse_00a26ce0` waited for it
+  (m5-hitch, 2026-11-15);
+- `IggyMakeEventNone`/`MouseMove`/`MouseButton`/`MouseWheel` (every
+  event maker `FFX.exe` imports) write Iggy's own 24-byte event, six
+  words as `iggy_w32.dll` writes them (`iggy::Event`: type at `+0`, a
+  move's x and y at `+8`/`+0xc`, the wheel's sign-extended 16 bits at
+  `+0x10`; the game's buffers are 24 bytes: writing more broke
+  `IggyMenuManager_dispatchMouse_00a26ce0`'s stack cookie).
+  `IggyPlayerDispatchEventRS` hands each to the player: moves, buttons
+  (types 1/2 left, 3/4 right, 5/6 middle, down/up, at the last move's
+  place as Iggy does) and the wheel (the game's 120 a notch, AS3's
+  `delta`). Until 2026-11-15 only moves were passed and the two other
+  makers were null stand-ins, so clicks in the remaster menu did
+  nothing;
 - an AS3 `ExternalInterface.call` runs the game's callback
   (`IggySetAS3ExternalFunctionCallbackUTF8`; stdcall(user, player, call),
   the call block built in the arena with the NUL-terminated name the
@@ -1127,7 +1144,7 @@ smoothing, the deterministic `getTimer`) on one thread of its own (Ruffle's
 players are not `Send`; the game calls Iggy from the main and the render
 thread):
 
-- **Requests** (create, calls, ticks, size, mouse moves, draws) go to that
+- **Requests** (create, calls, ticks, size, mouse events, draws) go to that
   thread with the asking game thread's reply channel, one at a time.
 - **AS3 external calls answer the movie** (host-iggy): while Ruffle runs
   the movie's `ExternalInterface.call` (`ffx_swf::stage::Answers::live`),
@@ -1554,6 +1571,40 @@ Tests: `sync`'s unit tests (dead waits and sections),
 `tests/no_unicorn.rs`'s `a_threads_failure_ends_the_main_threads_wait_on_it`
 and `a_main_thread_that_makes_no_progress_after_a_failure_ends_the_run`
 (30 s).
+
+### Hitches
+
+An update or flip that takes far longer than the original's is a hitch
+(2026-11-15, m5-hitch; `src/hitch.rs`). `FFX_HOST_HITCH_MS` is the limit
+(default 100 ms, three of the game's frames; 0 off). An update is the
+host time in `FFXApplication_animate`, a flip the time in
+`Renderer_PresentFlip`, the same times the harness's `timing` averages.
+
+- **Where the time went.** Once one has run for half the limit, the
+  watchdog (every 20 ms) notes where its thread stands: the main thread
+  for an update, the render thread for a flip, with their host entries
+  and what they wait for (`Shared::sample_hitches`). A main thread
+  waiting to enter a critical section another thread holds also names
+  where that thread is (`Objects::section_holder`): the menu lock
+  (`0x01a858cc`) the render thread holds while it ticks and draws the
+  Iggy movies (`IggyPlayer_tickDraw_00a3d9f0`), which a flip's time
+  does not include.
+- **As it happens.** One that ends over the limit writes
+  `ffx-host: hitch: update U took N ms; main thread: <place> (k of n
+  samples); …` to `ffx-rust.log` (the three most sampled places; the
+  first 200 hitches, the rest only counted).
+- **The run's line.** The harness's `quit` and the report end with
+  `hitches: N over 100 ms (updates U, flips F); worst: update U N ms
+  (main thread in <place>), …` (the eight longest, each chain cut to
+  its three innermost entries).
+  `tools/replays/run-all.sh` prints it for each replay with
+  `FFX_HARNESS_EXE=rust`. Compare against the original's frame times: a
+  load may take as long as the original's.
+
+The remaster menu's freeze was one (above, "Iggy": the tick clock). The
+10 s slow-update report ("Hangs") stays as it was.
+
+Tests: `hitch`'s unit tests (the limit, sampling, the summary).
 
 A headless replay on Linux: start `ffx-rust --gfx-null` with
 `FFX_HARNESS=<port>`, `FFX_HARNESS_HOME=<dir>` (the sandbox's

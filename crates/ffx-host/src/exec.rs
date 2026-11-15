@@ -1128,6 +1128,49 @@ impl Shared {
         self.stop_all(stop);
     }
 
+    /// The hitch check's samples, once a [`WATCH`]: where the main thread
+    /// stands in an update, and the render thread in a flip, that has run
+    /// for half the limit (`crate::hitch`).
+    fn sample_hitches(&self) {
+        use crate::hitch::{Kind, due, sample};
+        if due(Kind::Update) {
+            let (chain, _, blocked) = self.main_place();
+            // a section another thread holds: where that one is (the
+            // menu lock the render thread holds while it draws a movie)
+            let holder = self
+                .sync
+                .section_holder(MAIN_THREAD)
+                .and_then(|t| Some((t, self.thread_place(t)?)))
+                .map_or_else(String::new, |(t, place)| {
+                    format!("; thread {t:#x} holding it is in {place}")
+                });
+            sample(Kind::Update, format!("{chain}{blocked}{holder}"));
+        }
+        if due(Kind::Flip) {
+            let render = self.clock.roles().0;
+            if let Some(place) = self.thread_place(render) {
+                sample(Kind::Flip, place);
+            }
+        }
+    }
+
+    /// Where a game thread stands: its host entries and what it waits
+    /// for (`None` for a thread with no spot).
+    fn thread_place(&self, id: u32) -> Option<String> {
+        let chain = self
+            .spots
+            .lock()
+            .ok()?
+            .iter()
+            .find(|p| p.id == id)
+            .map(|p| self.spot_chain(p))?;
+        let blocked = self
+            .sync
+            .blocked(id)
+            .map_or_else(String::new, |b| format!("; it {b}"));
+        Some(format!("{chain}{blocked}"))
+    }
+
     /// Where the main thread stands: its host entries, the innermost
     /// one's address, and what it waits for ("; it waits for …" or "").
     fn main_place(&self) -> (String, u32, String) {
@@ -1247,8 +1290,11 @@ fn watchdog(shared: &std::sync::Weak<Shared>) {
         std::thread::sleep(WATCH);
         let Some(s) = shared.upgrade() else { return };
         s.stop_killed();
-        if !s.sync.stopping() && hang.due() {
-            s.check_hang(&mut hang);
+        if !s.sync.stopping() {
+            s.sample_hitches();
+            if hang.due() {
+                s.check_hang(&mut hang);
+            }
         }
         if s.overdue()
             && let Ok(list) = s.emulators.lock()
@@ -1303,8 +1349,11 @@ fn watchdog(shared: &std::sync::Weak<Shared>) {
     loop {
         std::thread::sleep(WATCH);
         let Some(s) = shared.upgrade() else { return };
-        if !s.sync.stopping() && hang.due() {
-            s.check_hang(&mut hang);
+        if !s.sync.stopping() {
+            s.sample_hitches();
+            if hang.due() {
+                s.check_hang(&mut hang);
+            }
         }
         if s.overdue() && !s.sync.stopping() {
             budget_stop(&s);
