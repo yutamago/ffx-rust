@@ -1071,8 +1071,39 @@ hook's `rust_audio.rs` is its other driver), with the same calls:
   play position passes a multiple of 0x1000, interpolated and ramped like
   every voice. The callback is game code, run through `Exec::call_stdcall`
   into an arena block outside the audio state's lock (it asks for the
-  sound's user data). Releasing the sound notes the frames read and
-  played. Not measured against FMOD (the hook's isn't either).
+  sound's user data). Notes (`FFX_HOST_NOTES=1`): `playSound` and every
+  pause of the movie's channel (the game pauses it right after
+  `playSound`, `PVideoPlaybackWin32_togglePause`, and resumes it when the
+  movie starts), and at the sound's release the frames read and played.
+  Measured (2026-11-15, m5-movie-sound): movie-fmv's window on
+  `ffx-rust.exe` is identical to FMOD's two references sample for sample
+  (WP4's gate run, Windows), and the references hold the movie: the
+  movie (`IWK_us.webm`) starts at the window's start, the window's level
+  (peak 0.048, rms 0.0034) is ten times the beach's before it, and a
+  headless run (fast mode, after the pin fix below) that mixed 513,600
+  of the movie's frames matches both references sample for sample from
+  2.8 s into the window to its end (7.8 s, the movie included); before
+  that 44,984 frames differ by at most 3.7e-9 (rounding, from the first
+  block on: a sound already playing when a pin from another time set the
+  clocks, below). In-field movies play too: devsave-22-luca's
+  `LCI_us.webm` mixes 1,289,600 frames (headless, real clock).
+- **`pin` and FMOD's clock** (2026-11-15, m5-movie-sound): `pin` sets
+  the game time to 64 s. Reached later than that (a headless Linux run
+  reaches the title at update ~4,400, about 150 s), the pin moves the
+  game time back, and `FmodManager_tick` (`0x006fa700`) waits until the
+  game time passes its last period again (`+0x20`, f64 ms): about 90 s
+  with no `FfxFmod_soundLoop`, so no `EventSystem::update`, every voice
+  silent and the movie's stream never read past `createSound` ("fmod:
+  movie stream released: 8192 frames read, 0 played" in every such run;
+  the audio marks' `updates` stand still). The pin now moves FMOD's last
+  period and `g_FfxFmodLastLoop` (`0x00cec168`, u64 us) back by the same
+  whole number of periods (`replay::fmod_clock_after_pin`), the fewest
+  that make both the tick and `soundLoop` (more than 0x80e8 us since its
+  last run) due at the next turn, in FMOD's phase, as after a pin that
+  moves the time on. A pin that moves the time on (the replays on
+  Windows: the title at a few hundred updates) changes nothing. The
+  hook's pin (`crates/ffx-hook/src/harness.rs`) does not do this; its
+  games reach the title early.
 
 ## Iggy
 
@@ -1611,10 +1642,18 @@ A headless replay on Linux: start `ffx-rust --gfx-null` with
 `GameSetting.ini`, comment lines dropped, in `<dir>/Square Enix/FINAL
 FANTASY X&X-2 HD Remaster/`) and `FFX_HARNESS_BACKGROUND=1`, then play a
 script with `crates/ffx-harness/examples/replay_attach.rs <port> <script>
-<trace>` (no game slot, `shot` lines skipped). devsave-22-luca's script
+<trace>` (no game slot, `shot` lines skipped, `shotwhen` waits without
+the shot). devsave-22-luca's script
 after its `load` line (sent as `devsave 22 lockstep` on the title) plays
 to the end this way on the no-Unicorn build, the in-field movie
-`LCI_us.webm` included (2026-11-14).
+`LCI_us.webm` included (2026-11-14). Without `FFX_HARNESS_FAST=1` the
+game runs on the real clock (no turns: an audio capture's marks say
+`turns false` and do not compare); with it and `FFX_HARNESS_SEED=1`, as
+the replays run, plus `--audio-wav FILE`, movie-fmv's capture compares
+with `tools/wav-compare.py` against the references (2026-11-15; "FMOD",
+the pin). movie-fmv's `load direct 3` is sent as `loadsave 3 lockstep`
+(the save copied into `<dir>/Square Enix/FINAL FANTASY X&X-2 HD
+Remaster/FINAL FANTASY X/`, `--documents <dir>`).
 
 ## Windows
 

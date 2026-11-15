@@ -358,6 +358,52 @@ const ATEL_PLAY_TIME_LAST: u32 = 0x0132_5b84;
 /// The clock and the game time the pin sets.
 const PINNED_CLOCK: f64 = 4096.0;
 const PINNED_GAME_TIME: f64 = 64.0;
+/// `g_FmodManager` (its `+0x20`: `FmodManager_tick`'s last period, `f64`
+/// ms of `graphicGetTimeInMicroseconds`), `g_FfxFmodLastLoop`
+/// (`FfxFmod_soundLoop`'s last run, `u64` us) and the tick's period
+/// (`f64` ms, 1000 / 30).
+const FMOD_MANAGER: u32 = 0x00ce_9010;
+const FMOD_LAST_LOOP: u32 = 0x00ce_c168;
+const FMOD_TICK_PERIOD: u32 = 0x00b4_c368;
+
+/// `FfxFmod_soundLoop` runs when more than this many us passed since its
+/// last run (`0x80e8`, an immediate in `0x007070d0`).
+const FMOD_LOOP_GAP_US: u64 = 0x80e8;
+
+/// FMOD's clock after a pin that moved the game time back to `now_ms`
+/// (`FmodManager +0x20` at `tick_ms`, `FfxFmod_soundLoop`'s last run at
+/// `last_us`): both moved back by the same whole number of tick periods,
+/// the fewest after which the next turn finds a period gone by (`tick_ms`
+/// at least one period before `now_ms`) and `soundLoop` due (its last run
+/// more than [`FMOD_LOOP_GAP_US`] before). FMOD then mixes at the next
+/// turn, in the same phase, as after a pin that moved the time on.
+/// Without it `FmodManager_tick` waits until the game time is back where
+/// it was (no `soundLoop`, so no `EventSystem::update`: every voice and
+/// the movie's stream silent): about 90 s for a title reached at update
+/// 4,400, as a headless Linux run reaches it (docs/host.md, "FMOD").
+/// `None` when the time moved on.
+#[must_use]
+pub fn fmod_clock_after_pin(
+    now_ms: f64,
+    tick_ms: f64,
+    last_us: u64,
+    period_ms: f64,
+) -> Option<(f64, u64)> {
+    let behind = tick_ms - (now_ms - period_ms);
+    // NaNs included: nothing to move
+    if behind.is_nan() || behind <= 0.0 || period_ms.is_nan() || period_ms <= 0.0 {
+        return None;
+    }
+    #[allow(clippy::cast_precision_loss)] // microseconds of game time
+    let loop_behind = (last_us as f64 + FMOD_LOOP_GAP_US as f64 + 1.0) / 1000.0 - now_ms;
+    let periods = (behind / period_ms)
+        .ceil()
+        .max((loop_behind / period_ms).ceil());
+    let shift = periods * period_ms;
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // > 0
+    let shift_us = (shift * 1000.0).ceil() as u64;
+    Some((tick_ms - shift, last_us.saturating_sub(shift_us)))
+}
 /// `rand`'s seed in the CRT's per-thread data.
 const HOLDRAND: u32 = 0x14;
 
@@ -393,6 +439,19 @@ pub(crate) fn pin(e: &mut Exec) -> String {
             mem.write(ATEL_PLAY_TIME_LAST, game_time);
             pinned.push("time");
             pinned.push("global time");
+            let manager: u32 = mem.read(FMOD_MANAGER);
+            if manager != 0 {
+                let tick: f64 = mem.read(manager + 0x20);
+                let last: u64 = mem.read(FMOD_LAST_LOOP);
+                let period: f64 = mem.read(FMOD_TICK_PERIOD);
+                if let Some((tick, last)) =
+                    fmod_clock_after_pin(PINNED_GAME_TIME * 1000.0, tick, last, period)
+                {
+                    mem.write(manager + 0x20, tick);
+                    mem.write(FMOD_LAST_LOOP, last);
+                    pinned.push("FMOD's clock");
+                }
+            }
         }
     }
     let getptd = e
@@ -432,6 +491,39 @@ mod tests {
         assert_eq!(parse_buttons("start").unwrap(), 0x800);
         assert_eq!(parse_buttons("cross+up").unwrap(), 0x1040);
         assert!(parse_buttons("jump").is_err());
+    }
+
+    #[test]
+    fn a_pin_back_in_time_moves_fmods_clock_back_by_whole_periods() {
+        let p = 1000.0 / 30.0;
+        // the headless probe: the title at update 4,640, FMOD's last
+        // period at 154,866.67 ms, the pin to 64 s
+        let (tick, last) = fmod_clock_after_pin(64_000.0, 154_866.666_666_665_96, 154_888_066, p)
+            .expect("moved back");
+        let behind = 64_000.0 - tick;
+        // a period gone by at the next turn (two here: the last soundLoop
+        // ran 21 ms into its period)
+        assert!((p..3.0 * p).contains(&behind), "{behind}");
+        // the same phase: a whole number of periods
+        let periods = (154_866.666_666_665_96 - tick) / p;
+        assert!((periods - periods.round()).abs() < 1e-6, "{periods}");
+        // the last soundLoop by as much, so its next one is due too
+        let gap = 64_000_000 - last;
+        assert!(
+            gap > FMOD_LOOP_GAP_US && gap < FMOD_LOOP_GAP_US + 33_334,
+            "{gap}"
+        );
+        // a pin that moves the time on, or leaves FMOD a period behind,
+        // changes nothing
+        assert_eq!(fmod_clock_after_pin(64_000.0, 9_700.0, 9_700_000, p), None);
+        assert_eq!(fmod_clock_after_pin(64_000.0, 64_000.0 - p, 1, p), None);
+        assert!(fmod_clock_after_pin(64_000.0, 64_000.0 - p + 0.001, 1, p).is_some());
+        assert_eq!(fmod_clock_after_pin(64_000.0, f64::NAN, 1, p), None);
+        // a last run nearer than the shift: 0, not a wrap
+        assert_eq!(
+            fmod_clock_after_pin(64_000.0, 100_000.0, 5, p).map(|r| r.1),
+            Some(0)
+        );
     }
 
     #[test]
