@@ -2133,7 +2133,9 @@ The harness command `devsave <n> [lockstep]` then calls the original
 2026-11-01, host-devsave): `debugLoadForViewer` is wrapped in the
 function table, so the original `TkDebugLoadViewerSave` (in Unicorn) calls
 the same reader through the same file layer; without the harness the wrap
-runs the original. The title's part is `loadsave`'s `leave_title`, shared
+runs the original, except inside `devsave::load` itself (a frontend's
+`Request::DevSave`, docs/state-api.md "Requests"), which reads from the
+archive too. The title's part is `loadsave`'s `leave_title`, shared
 with `loadsave` there too.
 
 No save file is read or written: the sweep's games run with

@@ -14,6 +14,8 @@
 //!   headless implementation;
 //! - [`observe`]: the game-state API's snapshots between two updates
 //!   ([`ffx_state`]), for a frontend's observers;
+//! - [`requests`]: a frontend's requests, served between two updates
+//!   (a developer save);
 //! - [`ports`]: what this crate registers in the table;
 //! - [`report`]: what a run reached, for the log and the tests.
 
@@ -61,6 +63,7 @@ pub mod platform;
 pub mod ports;
 pub mod replay;
 pub mod report;
+pub mod requests;
 pub mod rsrc;
 pub mod sample;
 pub mod stacks;

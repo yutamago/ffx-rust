@@ -391,6 +391,11 @@ pub struct Shared {
     pub iggy: crate::iggy::Iggy,
     /// The game-state API's observers (`crate::observe`).
     pub observers: crate::observe::Observers,
+    /// A frontend's requests (`crate::requests`).
+    pub requests: crate::requests::Requests,
+    /// [`crate::devsave::load`] runs on this game: its
+    /// `debugLoadForViewer` reads from the archive without the harness.
+    pub(crate) devsave_loading: std::sync::atomic::AtomicBool,
 }
 
 impl std::fmt::Debug for Shared {
@@ -503,6 +508,8 @@ impl Shared {
             audio: crate::audio::Audio::default(),
             iggy: crate::iggy::Iggy::default(),
             observers: crate::observe::Observers::default(),
+            requests: crate::requests::Requests::default(),
+            devsave_loading: std::sync::atomic::AtomicBool::new(false),
         };
         s.bind_imports(stubs_at);
         s.find_thunks();
@@ -2241,6 +2248,8 @@ impl Exec {
             Err(Error::Stopped) => Ok(self.stopped.clone().unwrap_or(Stop::Returned)),
             Err(e) => Err(e),
         };
+        // a frontend's requests are not served any more (`crate::requests`)
+        self.shared.requests.close();
         if let Ok(stop) = &r {
             self.shared.stop_all(stop.clone());
         }

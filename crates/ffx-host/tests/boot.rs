@@ -525,3 +525,74 @@ fn the_state_api_sees_the_opening() {
     assert!(last.camera.world[8..11].iter().any(|v| v.abs() > 1.0));
     assert_eq!(&last.encode()[0..4], b"FFXS");
 }
+
+/// A frontend's request (`ffx_host::requests`): in the opening, developer
+/// save 7 (Besaid, scenario 118: the beach at the save sphere) loads from
+/// the player's archive without the harness, and the beach comes up with
+/// the control: the level `/map/bsil/bsil00/`, the player character shown.
+#[test]
+fn a_developer_save_loads_on_request() {
+    use std::sync::{Arc, Mutex};
+    let Some(exe) = exe() else { return };
+    let opts = ffx_host::Options {
+        documents: Some(documents("devsave-request")),
+        gfx: ffx_host::gfx::Config {
+            backend: ffx_host::gfx::Choice::Null,
+            no_record: true,
+            ..ffx_host::gfx::Config::default()
+        },
+        ..ffx_host::Options::default()
+    };
+    let mut exec = ffx_host::boot_opts(&exe, ffx_host::ports::table(), &opts).unwrap();
+    exec.set_budget(Duration::from_secs(300));
+    let reply: Arc<Mutex<Option<Result<String, String>>>> = Arc::default();
+    let besaid: Arc<Mutex<Option<Arc<ffx_state::Snapshot>>>> = Arc::default();
+    let id = {
+        let (reply, besaid) = (Arc::clone(&reply), Arc::clone(&besaid));
+        let shared = Arc::downgrade(exec.shared());
+        let asked = std::sync::atomic::AtomicBool::new(false);
+        exec.shared().observers.add(Arc::new(move |s| {
+            let Some(shared) = shared.upgrade() else {
+                return;
+            };
+            if s.world.map == 0x15d
+                && s.world.event_frame > 30
+                && !asked.swap(true, std::sync::atomic::Ordering::Relaxed)
+            {
+                let reply = Arc::clone(&reply);
+                shared.requests.push(
+                    ffx_host::requests::Request::DevSave(7),
+                    Box::new(move |r| {
+                        if let Ok(mut x) = reply.lock() {
+                            *x = Some(r);
+                        }
+                    }),
+                );
+            }
+            let player = s.actors.iter().any(|a| a.player && a.hidden == 0);
+            if s.world.map == 0x46 && s.world.player_control && player {
+                if let Ok(mut b) = besaid.lock() {
+                    *b = Some(Arc::clone(s));
+                }
+                shared.stop_all(Stop::Milestone("Besaid with the control".into()));
+            }
+        }))
+    };
+    let stop = exec.run_entry().unwrap();
+    exec.join_threads(Duration::from_secs(5));
+    exec.shared().observers.remove(id);
+    let reply = reply.lock().unwrap().clone();
+    eprintln!("reply: {reply:?}");
+    let r = reply
+        .expect("the request was served")
+        .expect("the save loaded");
+    assert!(r.starts_with("developer save 7 map 70 "), "{r}");
+    assert_eq!(stop, Stop::Milestone("Besaid with the control".into()));
+    let s = besaid.lock().unwrap().clone().unwrap();
+    eprintln!("world {:?}", s.world);
+    assert_eq!(s.world.level, "/map/bsil/bsil00/", "{:?}", s.world);
+    assert_eq!(s.world.story, 118);
+    let p = s.actors.iter().find(|a| a.player).unwrap();
+    assert!(p.bones.len() > 50, "{p:?}");
+    eprintln!("player {} at {:?}", p.model, p.position);
+}
