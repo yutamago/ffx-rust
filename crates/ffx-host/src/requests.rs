@@ -175,14 +175,17 @@ pub(crate) fn boundary(e: &mut Exec, frame: u32) {
                 formation,
             } => {
                 if let Some(old) = e.shared().requests.take_battle() {
+                    crate::log::note("requests: a waiting battle replaced");
                     (old.reply)(Err("another battle was asked for".into()));
                 }
                 // a battle runs: the request would only rewrite its field
                 if e.mem().read::<u8>(BTL_STATUS) != 0 {
+                    crate::log::note("requests: battle refused: a battle is running");
                     reply(Err("a battle is running".into()));
                     continue;
                 }
                 if let Err(err) = ask_battle(e, field, group, formation) {
+                    crate::log::note(&format!("requests: battle: ResetEncountExe: {err}"));
                     reply(Err(format!("ResetEncountExe: {err}")));
                     continue;
                 }
@@ -205,7 +208,8 @@ pub(crate) fn boundary(e: &mut Exec, frame: u32) {
 
 /// Writes a random encounter's request (as `start_battle` in
 /// ffx-harness's screens.rs): the field, group and formation,
-/// `ResetEncountExe(1)`, the request flag (not raised when the call fails).
+/// `ResetEncountExe(1)`, the request flag (not raised when the call fails;
+/// the field, group and formation stay written then, as in the harness).
 fn ask_battle(e: &mut Exec, field: u16, group: u8, formation: u8) -> crate::Result<()> {
     {
         let mut mem = e.mem();
@@ -299,6 +303,7 @@ mod tests {
         q.close();
         assert_eq!(*got.lock().unwrap(), vec![Err(ENDED.to_string())]);
         assert!(q.take_battle().is_none());
+        assert!(!q.waiting.load(Ordering::Acquire));
     }
 
     #[test]
