@@ -267,7 +267,13 @@ The glTF export maps `MaterialColour` to the base color factor,
 the normal texture (with `TANGENT` from the stored tangents and
 binormals), and `EmissionMapSampler` and `MaterialEmissiveness` to
 emission. It keeps every parameter and sampler in the material's
-`extras`.
+`extras`, and the material's effect variant (`PMaterial.m_effectVariant`,
+an import such as `PS3Data/Shaders/PhyreDefaultLitShader.fx#<md5>`) as
+`extras.ffx_effect`: that cluster's `PEffectVariant.m_switches`
+(`ALPHA_ENABLED`, `IGNORE_CLIP`, `MASK_DEPTH`, `DOUBLE_SIDED`, ...) say
+how the material blends, tests alpha and culls, which glTF has no words
+for (`Material::effect`; a frontend reads the switches from the archive,
+e.g. with `ffx_scene::effect::EffectVariant`).
 
 ### Skins
 

@@ -57,6 +57,10 @@ pub struct Parameter {
 pub struct Material {
     pub textures: Vec<MaterialTexture>,
     pub parameters: Vec<Parameter>,
+    /// The effect variant it draws with (`PMaterial.m_effectVariant`, an
+    /// import such as `PS3Data/Shaders/D3D11/phyredefaultlitshader.fx#<md5>`):
+    /// its cluster's switches say how the material blends (docs/formats/phyre.md).
+    pub effect: Option<String>,
 }
 
 impl Material {
@@ -159,8 +163,36 @@ impl Resolver<'_> {
             .collect()
     }
 
-    /// One `PMaterial` object's textures.
+    /// A `PMaterial` object's effect variant: an import, by index in the
+    /// `m_effectVariant` pointer's user data.
+    fn effect(&self, list: usize, obj: u32, imports: &[Option<String>]) -> Option<String> {
+        self.pointers_of(list, obj, "PMaterial", "m_effectVariant", 0)
+            .next()
+            .and_then(PointerFixup::user_fixup)
+            .and_then(|u| self.c.user_fixups.get(u as usize))
+            .and_then(|f| match f.data[..] {
+                [hi, lo] => imports
+                    .get(usize::from(u16::from_be_bytes([hi, lo])))
+                    .cloned()
+                    .flatten(),
+                _ => None,
+            })
+    }
+
+    /// One `PMaterial` object: its textures, parameters and effect.
     fn material(&self, list: usize, obj: u32, imports: &[Option<String>]) -> Result<Material> {
+        let mut m = self.material_values(list, obj, imports)?;
+        m.effect = self.effect(list, obj, imports);
+        Ok(m)
+    }
+
+    /// One `PMaterial` object's textures and parameters.
+    fn material_values(
+        &self,
+        list: usize,
+        obj: u32,
+        imports: &[Option<String>],
+    ) -> Result<Material> {
         let c = self.c;
         let Some(buffer) = self
             .pointers_of(list, obj, "PMaterial", "m_parameterBuffer", 0)
@@ -259,6 +291,7 @@ impl Resolver<'_> {
         Ok(Material {
             textures,
             parameters,
+            effect: None,
         })
     }
 

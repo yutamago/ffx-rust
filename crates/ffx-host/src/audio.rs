@@ -51,10 +51,11 @@ fn start_device(wav: bool) -> bool {
     true
 }
 
-/// Frames the feeder keeps queued for the device: the device's prefill
-/// (it starts, and starts again after an underrun, at 4,800) and one
-/// block more.
-const FEED_TARGET: usize = 4800 + BLOCK;
+/// Frames the feeder keeps queued for the device by default: the device's
+/// prefill (it starts, and starts again after an underrun, at 4,800) and
+/// one block more. A platform may ask for another target
+/// ([`crate::platform::Platform::audio_target`]).
+pub const FEED_TARGET: usize = 4800 + BLOCK;
 /// How often the feeder looks.
 const FEED_PERIOD: std::time::Duration = std::time::Duration::from_millis(4);
 /// Blocks the feeder mixes at most per look on the wall clock (no device):
@@ -67,9 +68,15 @@ const FEED_CATCH_UP: u64 = 4;
 /// many to count as skipped (wall clock only).
 #[must_use]
 pub fn feed_due(queued: Option<usize>, elapsed: u64, mixed: u64) -> (u64, u64) {
+    feed_due_to(FEED_TARGET, queued, elapsed, mixed)
+}
+
+/// [`feed_due`] with the device's queue kept at `target` frames.
+#[must_use]
+pub fn feed_due_to(target: usize, queued: Option<usize>, elapsed: u64, mixed: u64) -> (u64, u64) {
     let block = BLOCK as u64;
     match queued {
-        Some(q) => ((FEED_TARGET.saturating_sub(q)).div_ceil(BLOCK) as u64, 0),
+        Some(q) => ((target.saturating_sub(q)).div_ceil(BLOCK) as u64, 0),
         None => {
             let due = (elapsed / block).saturating_sub(mixed);
             (due.min(FEED_CATCH_UP), due.saturating_sub(FEED_CATCH_UP))
@@ -103,9 +110,10 @@ fn feeder(shared: &std::sync::Weak<crate::exec::Shared>) {
         }
         let device = crate::platform::get();
         let queued = device.audio_running().then(|| device.audio_queued());
+        let target = device.audio_target();
         #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // >= 0
         let elapsed = (start.elapsed().as_secs_f64() * 48_000.0) as u64;
-        let (due, skip) = feed_due(queued, elapsed, mixed + skipped);
+        let (due, skip) = feed_due_to(target, queued, elapsed, mixed + skipped);
         skipped += skip;
         for _ in 0..due {
             let asked = std::time::Instant::now();
@@ -1434,6 +1442,9 @@ mod tests {
         assert_eq!(feed_due(Some(4800), 0, 0), (1, 0));
         assert_eq!(feed_due(Some(4801), 0, 0), (1, 0));
         assert_eq!(feed_due(Some(FEED_TARGET), 0, 0), (0, 0));
+        // a platform's lower target: one block more below it
+        assert_eq!(feed_due_to(3200, Some(3200), 0, 0), (0, 0));
+        assert_eq!(feed_due_to(3200, Some(1600), 0, 0), (1, 0));
         assert_eq!(feed_due(Some(20_000), 0, 0), (0, 0));
         // the wall clock: whole blocks of elapsed time not yet mixed
         assert_eq!(feed_due(None, 3 * b - 1, 0), (2, 0));
