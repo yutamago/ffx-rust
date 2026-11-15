@@ -573,6 +573,29 @@ fn a_shifted_ring_offset_with_the_same_bytes() {
 }
 
 #[test]
+fn a_draw_of_no_vertices_reads_no_ring_bytes() {
+    // A draw of 0 vertices reads nothing from its rings, wherever their
+    // bindings point: past the ring's end in one capture (the battle's
+    // count-0 draw A#0119, where the hook's ring was shorter than the
+    // offset), at other bytes in the other.
+    let empty = |vb_offset: u32, kind: DrawKind| {
+        let mut cmds = cmds();
+        let mut d = ring_draw(vb_offset, 0);
+        d.count = 0;
+        if kind == DrawKind::Indexed {
+            d.kind = kind;
+            d.index = (IB, 57, 0);
+        }
+        cmds[9] = Cmd::Draw(Box::new(d));
+        capture(&objects(), cmds)
+    };
+    for kind in [DrawKind::Plain, DrawKind::Indexed] {
+        let c = compare(&empty(4096, kind), &empty(16, kind), &Options::default());
+        assert!(classes(&c).is_empty(), "{kind:?}: {:?}", classes(&c));
+    }
+}
+
+#[test]
 fn a_static_buffer_offset_is_compared() {
     let mut cmds = cmds();
     draw_at(&mut cmds, 2).vertex = vec![(0, VB, 12, 12)];

@@ -31,6 +31,10 @@ unreadable file.
 
 `cargo run --release -p ffx-drawdiff --example items -- <capture> [n]` lists
 a capture's items with their keys, or every field and constant of item `n`.
+`cargo run --release -p ffx-drawdiff --example ring -- <capture> <frame>
+<n> [slot]` prints the bytes item `n` reads from each ring (the window
+drawdiff hashes, `capture::ring_window`), one record a line, to see what
+a `resource vbN: ring ... | ring ...` difference is made of.
 
 ## Design
 
@@ -87,7 +91,11 @@ pixel gate.
   `first_instance + ceil(instances / step) - 1`.
 
 Each range is taken from the binding's offset. A stride of 0 reads its
-first 16 bytes. A dynamic index buffer is keyed by the index values it
+first 16 bytes. A draw of 0 vertices or indices (or an instanced draw of
+0 instances) reads none: its rings are keyed as empty wherever their
+bindings point (the battle gate's count-0 draw `A#0119`, whose binding
+pointed past the end of the hook's copy of the ring and into the
+layer's, 2026-11-15). A dynamic index buffer is keyed by the index values it
 holds. These are shifted down by the smallest index when every per-vertex
 slot is a ring, because then the vertex window moves with them. The
 fields that only say where a ring was written are not compared: the

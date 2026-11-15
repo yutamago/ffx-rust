@@ -408,6 +408,97 @@ fn indices(data: &[u8], format: u32, offset: u32, start: u32, count: u32) -> Opt
     )
 }
 
+/// Whether a draw reads any vertex at all: a draw of 0 vertices (or
+/// indices), or an instanced draw of 0 instances, reads none.
+fn reads_vertices(d: &Draw) -> bool {
+    let instanced = matches!(d.kind, DrawKind::IndexedInstanced | DrawKind::Instanced);
+    d.count != 0 && (!instanced || d.instances != 0)
+}
+
+/// The bytes `from..to` a draw reads from the vertex buffer bound with
+/// `stride` and `offset`: per instance (`step`, from the layout), from
+/// the indices' range `lo..=hi` for an indexed draw, or from `start` for a
+/// plain one. Empty (`from == to`) when the draw reads no vertices.
+fn window(
+    d: &Draw,
+    step: Option<u32>,
+    lo: u32,
+    hi: u32,
+    stride: u32,
+    offset: u32,
+) -> (usize, usize) {
+    let indexed = matches!(d.kind, DrawKind::Indexed | DrawKind::IndexedInstanced);
+    let (first, last) = match step {
+        Some(step) => {
+            let n = if step == 0 {
+                1
+            } else {
+                d.instances.div_ceil(step)
+            };
+            (d.first_instance, d.first_instance + n.max(1) - 1)
+        }
+        None if indexed => (
+            lo.wrapping_add_signed(d.base),
+            hi.wrapping_add_signed(d.base),
+        ),
+        None => (d.start, d.start + d.count.max(1) - 1),
+    };
+    let from = offset as usize + first as usize * stride as usize;
+    if !reads_vertices(d) {
+        return (from, from);
+    }
+    // A stride of 0 reads one record for every vertex: its first 16 bytes
+    // stand for it.
+    let to = if stride == 0 {
+        from + 16
+    } else {
+        offset as usize + (last as usize + 1) * stride as usize
+    };
+    (from, to)
+}
+
+/// The windows a draw reads from its dynamic vertex buffers, as the draw's
+/// item keys them: `(slot, buffer, stride, from, to)` per ring slot.
+/// `bytes` gives a buffer's contents as the frame's updates have left them
+/// at the draw (for a dynamic index buffer). For tools that look at the
+/// bytes themselves (`examples/ring.rs`).
+pub fn ring_window<'b>(
+    objects: &Objects,
+    d: &Draw,
+    bytes: &dyn Fn(Id) -> Option<&'b [u8]>,
+) -> Vec<(u8, Id, u32, usize, usize)> {
+    let indexed = matches!(d.kind, DrawKind::Indexed | DrawKind::IndexedInstanced);
+    let ring = |id: Id| {
+        objects
+            .buffers
+            .get(&id)
+            .is_some_and(|b| key::is_ring(&b.desc))
+    };
+    let layout = objects.layouts.get(&d.layout);
+    let step = |slot: u8| -> Option<u32> {
+        layout?
+            .1
+            .iter()
+            .find(|e| e.slot == u32::from(slot) && e.per_instance)
+            .map(|e| e.step)
+    };
+    let (ib, ifmt, ioff) = d.index;
+    let idx = indexed
+        .then(|| bytes(ib).and_then(|data| indices(data, ifmt, ioff, d.start, d.count)))
+        .flatten()
+        .unwrap_or_default();
+    let lo = idx.iter().copied().min().unwrap_or(0);
+    let hi = idx.iter().copied().max().unwrap_or(0);
+    d.vertex
+        .iter()
+        .filter(|v| v.1 != 0 && ring(v.1))
+        .map(|&(slot, id, stride, offset)| {
+            let (from, to) = window(d, step(slot), lo, hi, stride, offset);
+            (slot, id, stride, from, to)
+        })
+        .collect()
+}
+
 impl Builder<'_> {
     fn resource_of(&self, view: Id) -> Id {
         self.objects.views.get(&view).map_or(view, |v| v.resource)
@@ -614,35 +705,20 @@ impl Builder<'_> {
         mh.u32(d.kind as u32).u64(vs).u64(ps);
         for &&(slot, id, stride, offset) in &vertex {
             let (k, label) = if self.ring(id) {
-                let (first, last) = match per_instance(slot) {
-                    Some(step) => {
-                        let n = if step == 0 {
-                            1
-                        } else {
-                            d.instances.div_ceil(step)
-                        };
-                        (d.first_instance, d.first_instance + n.max(1) - 1)
-                    }
-                    None if indexed => (
-                        lo.wrapping_add_signed(d.base),
-                        hi.wrapping_add_signed(d.base),
-                    ),
-                    None => (d.start, d.start + d.count.max(1) - 1),
-                };
-                let from = offset as usize + first as usize * stride as usize;
-                // A stride of 0 reads one record for every vertex: its
-                // first 16 bytes stand for it.
-                let to = if stride == 0 {
-                    from + 16
+                let (from, to) = window(d, per_instance(slot), lo, hi, stride, offset);
+                if from == to {
+                    (
+                        key::ring(&[]),
+                        "ring 0 B (the draw reads no vertices)".to_owned(),
+                    )
                 } else {
-                    offset as usize + (last as usize + 1) * stride as usize
-                };
-                match self.bytes(id).and_then(|b| b.get(from..to)) {
-                    Some(bytes) => (
-                        key::ring(bytes),
-                        format!("ring {:016x} {} B", key::ring(bytes), bytes.len()),
-                    ),
-                    None => (key::ring(&[]), format!("ring out of bounds {from}..{to}")),
+                    match self.bytes(id).and_then(|b| b.get(from..to)) {
+                        Some(bytes) => (
+                            key::ring(bytes),
+                            format!("ring {:016x} {} B", key::ring(bytes), bytes.len()),
+                        ),
+                        None => (key::ring(&[]), format!("ring out of bounds {from}..{to}")),
+                    }
                 }
             } else {
                 let (k, label) = self.resource_key(id);
