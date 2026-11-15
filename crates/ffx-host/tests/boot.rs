@@ -422,3 +422,96 @@ fn the_real_clock_skips_the_opening_logos_when_asked() {
     assert_eq!(stop, Stop::Milestone("30 updates".into()));
     assert!(exec.shared().clock.frame() >= 30);
 }
+
+/// The game-state API (`ffx_host::observe`, `ffx_state`): an observer gets a
+/// snapshot at every update boundary. In the opening (map 0x15d: the party
+/// at the campfire) it sees the camera and the party's characters, which
+/// move and animate from update to update.
+#[test]
+fn the_state_api_sees_the_opening() {
+    use std::sync::{Arc, Mutex};
+    let Some(exe) = exe() else { return };
+    let opts = ffx_host::Options {
+        documents: Some(documents("state-api")),
+        gfx: ffx_host::gfx::Config {
+            backend: ffx_host::gfx::Choice::Null,
+            no_record: true,
+            ..ffx_host::gfx::Config::default()
+        },
+        ..ffx_host::Options::default()
+    };
+    let mut exec = ffx_host::boot_opts(&exe, ffx_host::ports::table(), &opts).unwrap();
+    exec.set_budget(Duration::from_secs(300));
+    // the snapshots from 120 updates into the opening on
+    let seen: Arc<Mutex<Vec<Arc<ffx_state::Snapshot>>>> = Arc::default();
+    let opening_at: Arc<Mutex<Option<u32>>> = Arc::default();
+    {
+        let (seen, opening_at) = (Arc::clone(&seen), Arc::clone(&opening_at));
+        let shared = Arc::clone(exec.shared());
+        ffx_host::observe::observe(Box::new(move |s| {
+            if s.world.map != 0x15d {
+                return;
+            }
+            let mut at = opening_at.lock().unwrap();
+            let start = *at.get_or_insert(s.update);
+            if s.world.event_frame >= 900 && s.update >= start + 120 {
+                let mut v = seen.lock().unwrap();
+                v.push(Arc::clone(s));
+                if v.len() >= 60 {
+                    shared.stop_all(Stop::Milestone("60 snapshots".into()));
+                }
+            }
+        }));
+    }
+    let stop = exec.run_entry().unwrap();
+    exec.join_threads(Duration::from_secs(5));
+    assert_eq!(stop, Stop::Milestone("60 snapshots".into()));
+    let seen = seen.lock().unwrap();
+    let (first, last) = (&seen[0], &seen[seen.len() - 1]);
+    for a in &last.actors {
+        eprintln!(
+            "slot {} id {:#06x} {} hidden {:#x} motion {:#x} frame {:.1} bones {}",
+            a.slot,
+            a.id,
+            a.model,
+            a.hidden,
+            a.motion,
+            a.motion_frame,
+            a.bones.len()
+        );
+    }
+    eprintln!("camera {:?}", last.camera);
+    eprintln!("world {:?}", last.world);
+    // one snapshot an update, in order
+    assert!(seen.windows(2).all(|w| w[1].update == w[0].update + 1));
+    assert!(last.camera.valid);
+    assert!(
+        last.camera.fov_y > 0.1 && last.camera.fov_y < 2.0,
+        "{:?}",
+        last.camera
+    );
+    assert_eq!(last.world.event, "lo/loopdemo", "{:?}", last.world);
+    // the party at the fire: party characters (kind 0) shown, posed by
+    // their skeletons (the event's motions place them: their records stay
+    // at the origin), animating
+    let party: Vec<_> = last
+        .actors
+        .iter()
+        .filter(|a| a.kind == 0 && a.hidden == 0)
+        .collect();
+    assert!(party.len() >= 3, "{:?}", last.actors);
+    assert!(party.iter().all(|a| a.bones.len() > 50));
+    let animating = party
+        .iter()
+        .filter(|a| {
+            first
+                .actors
+                .iter()
+                .any(|b| b.slot == a.slot && (b.motion_frame - a.motion_frame).abs() > 0.01)
+        })
+        .count();
+    assert!(animating >= 1, "no party member's motion advanced");
+    // the renderer's camera: a world matrix with the eye in it
+    assert!(last.camera.world[8..11].iter().any(|v| v.abs() > 1.0));
+    assert_eq!(&last.encode()[0..4], b"FFXS");
+}
