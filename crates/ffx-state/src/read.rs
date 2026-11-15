@@ -9,7 +9,10 @@
 
 use ffx_chara::layout as l;
 
-use crate::{Actor, Bone, Camera, Input, MenuOption, Menus, Message, Snapshot, World};
+use crate::{
+    Actor, Bone, Camera, EffectInstance, Effects, Input, MenuOption, Menus, Message, ScreenFilter,
+    Snapshot, World,
+};
 
 /// The game's memory, read only.
 pub trait Reader {
@@ -127,6 +130,20 @@ const MSG_TABLE: u32 = 0x0186_8a90;
 const MSG_NONE: u32 = 0x0132_5b74;
 /// At most this many bytes of a window's text.
 const MAX_TEXT: usize = 2048;
+
+/// `g_MagicFile_MagicId`: the spell playing, -1 none.
+const MAGIC_ID: u32 = 0x00c6_4ca0;
+/// `g_EtEff`: 512 records of 0x20 bytes, `+0` the id (-1 free; record 0
+/// reserved).
+const ET_EFF: u32 = 0x012a_4100;
+const ET_EFF_COUNT: u32 = 512;
+const ET_EFF_SIZE: u32 = 0x20;
+/// `g_FadeSlots`: 5 x 0x10.
+const FADE_SLOTS: u32 = 0x0130_0708;
+/// `g_Screens[0]`'s shake offset.
+const SCREEN_SHAKE: u32 = 0x0113_7030;
+/// `g_SndNowPlayMusic`.
+const MUSIC: u32 = 0x0132_ff5c;
 
 /// `g_ChrCount` (`i32`, slots) and `g_ChrArray` (the records).
 const CHR_COUNT: u32 = 0x023c_44e0;
@@ -273,6 +290,61 @@ pub fn read(mem: &dyn Reader, update: u32, game_time: f64) -> Snapshot {
         actors: actors(&m),
         menus: menus(&m),
         messages: messages(&m),
+        effects: effects(&m),
+    }
+}
+
+fn effects(m: &Mem<'_>) -> Effects {
+    let mut running = Vec::new();
+    // the whole table in one read when it is mapped
+    let mut table = vec![0u8; (ET_EFF_COUNT * ET_EFF_SIZE) as usize];
+    if m.0.read_bytes(ET_EFF, &mut table) {
+        for (slot, r) in table
+            .as_chunks::<{ ET_EFF_SIZE as usize }>()
+            .0
+            .iter()
+            .enumerate()
+            .skip(1)
+        {
+            let id = u32::from_le_bytes([r[0], r[1], r[2], r[3]]);
+            // -1 free; 0 in a table not set up yet
+            if id == u32::MAX || id == 0 {
+                continue;
+            }
+            let n = usize::from(r[8].min(8));
+            running.push(EffectInstance {
+                slot: u16::try_from(slot).unwrap_or(0),
+                id,
+                character: r[0x18],
+                kind: r[0x1c],
+                ended: r[0x1d] != 0,
+                targets: r[0x10..0x10 + n].to_vec(),
+            });
+        }
+    }
+    let active = m.u32(FADE_ACTIVE);
+    let filters = (0..5u8)
+        .map(|i| {
+            let at = FADE_SLOTS + u32::from(i) * 0x10;
+            ScreenFilter {
+                slot: i,
+                active: active & (1 << i) != 0,
+                mode: m.u8(at),
+                color: [m.u8(at + 1), m.u8(at + 2), m.u8(at + 3)],
+                frames: m.i16(at + 4),
+                level: m.i16(at + 6),
+                target: m.i16(at + 8),
+                step: m.i16(at + 0xa),
+            }
+        })
+        .collect();
+    Effects {
+        magic: m.i32(MAGIC_ID),
+        running,
+        filters,
+        shake_x: m.f32(SCREEN_SHAKE),
+        shake_y: m.f32(SCREEN_SHAKE + 4),
+        music: m.i32(MUSIC),
     }
 }
 

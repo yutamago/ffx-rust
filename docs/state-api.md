@@ -95,11 +95,26 @@ with ffx-kernel only (`g_BtlMenuText` rows, `ffx_kernel::bridge::excel_data`;
 the English rows are never used on the PC), with the kana bit of the save
 config, on the snapshot's reader.
 
+## Effects, screen filters, music (API 5)
+
+`Snapshot.effects`, for G3 (effects as events, Godot's post-processing and
+audio): the spell playing (`g_MagicFile_MagicId`), the effect records in
+use (`g_EtEff`, 512 x 0x20: the id as `MsGetEffID` builds it, the effect
+character, kind, ended flag and targets; no start frame is stored, so a
+frontend sees starts by comparing slots between snapshots), the five
+screen filter slots (`g_FadeSlots` with `g_FadeActive`'s bits: 0
+cross-fade, 1 motion blur, 2 flash, 3 colour filter, 4 fade; mode,
+colour and the `+4`..`+0xa` words, whose meaning differs per slot: see
+`ScreenFilter`'s fields), the screen's shake offset (`g_Screens[0]`
+`+0x30`, `+0x34`) and the music playing (`g_SndNowPlayMusic`). Not yet:
+the field's particle effects (`g_FpData`/`g_FpRun`), effect positions,
+damage numbers, sound effects.
+
 ## Encoding
 
 `Snapshot::encode`: `FFXS`, the API version (`u32`), then the fields in
 their declared order. Little-endian; `bool` one byte; `string` a `u16`
-byte count and UTF-8; `bytes` a `u16` count and the bytes; `list<T>` a `u16` count and the items; `vec3` 3
+byte count and UTF-8; `bytes` a `u16` count and the bytes; `rgb` 3 bytes; `list<T>` a `u16` count and the items; `vec3` 3
 floats, `mat3x4` 12, `mat4` 16 (row-major as the game keeps them).
 
 ## Schema
@@ -109,7 +124,7 @@ floats, `mat3x4` 12, `mat4` 16 (row-major as the game keeps them).
 the fields raises `API_VERSION`.
 
 ```text
-ffx-state API 4
+ffx-state API 5
 struct Snapshot
   update: u32
   game_time: f64
@@ -119,6 +134,7 @@ struct Snapshot
   actors: list<Actor>
   menus: Menus
   messages: list<Message>
+  effects: Effects
 struct World
   map: u16
   previous_map: u16
@@ -195,6 +211,29 @@ struct Message
   choice: i16
   initial_choice: i16
   text: bytes
+struct Effects
+  magic: i32
+  running: list<EffectInstance>
+  filters: list<ScreenFilter>
+  shake_x: f32
+  shake_y: f32
+  music: i32
+struct EffectInstance
+  slot: u16
+  id: u32
+  character: u8
+  kind: u8
+  ended: bool
+  targets: bytes
+struct ScreenFilter
+  slot: u8
+  active: bool
+  mode: u8
+  color: rgb
+  frames: i16
+  level: i16
+  target: i16
+  step: i16
 ```
 
 ## Sources

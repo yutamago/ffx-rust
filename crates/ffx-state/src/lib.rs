@@ -23,7 +23,7 @@ pub use read::{LANGUAGE_UNKNOWN, Reader, read};
 pub use schema::{ApiStruct, ApiType, Field, StructSchema, Ty};
 
 /// The API's version: a frontend checks it before it decodes a snapshot.
-pub const API_VERSION: u32 = 4;
+pub const API_VERSION: u32 = 5;
 
 /// The first four bytes of an encoded snapshot (`FFXS`).
 pub const MAGIC: u32 = u32::from_le_bytes(*b"FFXS");
@@ -103,6 +103,83 @@ api_struct! {
         /// The script's message windows that are not closed (dialogue,
         /// choices, captions).
         messages: Vec<Message>,
+        /// What a frontend plays and draws besides the world: effects,
+        /// screen filters, the music.
+        effects: Effects,
+    }
+}
+
+api_struct! {
+    /// The effects running, the screen's filters and shake, the music
+    /// (docs/formats/vfx.md, main.md, sound.md).
+    Effects {
+        /// The spell (magic file) playing (`g_MagicFile_MagicId`), -1 none.
+        magic: i32,
+        /// The effect records in use (`g_EtEff`: battle and event effects),
+        /// by slot.
+        running: Vec<EffectInstance>,
+        /// The screen filters (`g_FadeSlots`, `g_FadeActive`): slot 0 the
+        /// cross-fade, 1 motion blur, 2 a flash, 3 a colour filter, 4 the
+        /// fade.
+        filters: Vec<ScreenFilter>,
+        /// The screen's shake offset (`g_Screens[0]` `+0x30`, `+0x34`).
+        shake_x: f32,
+        /// See `shake_x`.
+        shake_y: f32,
+        /// The music playing (`g_SndNowPlayMusic`), -1 none.
+        music: i32,
+    }
+}
+
+api_struct! {
+    /// An effect record of `g_EtEff`.
+    EffectInstance {
+        /// Its slot (0..511): the key between snapshots.
+        slot: u16,
+        /// The effect id (`MsGetEffID`: group << 16 | a << 8 | b; bind
+        /// effects 0x40000400.. + the character).
+        id: u32,
+        /// The effect's first character (`+0x18`: out of battle
+        /// `g_EtChr`'s index, in battle `MsGetEff2Chr`'s).
+        character: u8,
+        /// Its kind (`+0x1c`).
+        kind: u8,
+        /// It ended (`+0x1d`).
+        ended: bool,
+        /// Its targets' character indices (`+0x10`, `+8` the count).
+        targets: Vec<u8>,
+    }
+}
+
+api_struct! {
+    /// A screen filter slot of `g_FadeSlots` (ffx-sg's `Sg_DrawFilter`):
+    /// its `+4`..`+0xa` words mean different things per slot.
+    ScreenFilter {
+        /// The slot: 0 the cross-fade, 1 motion blur, 2 a flash, 3 a colour
+        /// filter, 4 the fade.
+        slot: u8,
+        /// It runs (`g_FadeActive`'s bit).
+        active: bool,
+        /// Its mode (`+0`): 0 the cross-fade's level, 1 the blur's set byte
+        /// (not drawn by itself), 2 the fade from black, 3 to black (held),
+        /// 4 from white, 5 to white (`Sg_FadeIn`, `Sg_FadeOut`, `..W`; mode
+        /// 4's alpha starts near 2: clamp it), 6 a flash, 7 an additive
+        /// filter (`Sg_FilterAdd`), 8 a subtractive one (`Sg_FilterSub`).
+        mode: u8,
+        /// Its colour (`+1..+3`; every fade writes 0xff here: modes 2 and 3
+        /// draw black, 4 and 5 that white).
+        color: [u8; 3],
+        /// `+4`: frames left (the cross-fade, the flash, the fade), or on
+        /// (the blur, the filter).
+        frames: i16,
+        /// `+6`: the frames in all (the flash, the fade), the alpha now
+        /// (the cross-fade), the weight (the blur), the level / 127 (the
+        /// filter).
+        level: i16,
+        /// `+8`: the cross-fade's target alpha.
+        target: i16,
+        /// `+0xa`: the cross-fade's step.
+        step: i16,
     }
 }
 
@@ -355,6 +432,9 @@ pub fn structs() -> Vec<&'static StructSchema> {
         Menus::schema(),
         MenuOption::schema(),
         Message::schema(),
+        Effects::schema(),
+        EffectInstance::schema(),
+        ScreenFilter::schema(),
     ]
 }
 
@@ -386,14 +466,17 @@ mod tests {
         let input = 4 + 2 + 1 + 1;
         let actor = 2 + 2 + 1 + (2 + 4) + 12 + 4 + 12 + 1 + 4 + 4 + 4 + 4 + 2 + 2 + 1 + 64 + 2;
         let menus = 4 + 4 + 4 + 2 + 4 + 2 + 2 + 2 + 2 + 4 + 4 + 4 + 4 + 4 + 1;
+        // the effects (default: no running ones, no filters): magic, the
+        // two list counts, shake, music
+        let effects = 4 + 2 + 2 + 4 + 4 + 4;
         assert_eq!(
             b.len(),
-            8 + 4 + 8 + world + camera + input + 2 + actor + menus + 2
+            8 + 4 + 8 + world + camera + input + 2 + actor + menus + 2 + effects
         );
     }
 
     /// FNV-1a of `schema::text()` at [`API_VERSION`].
-    const PINNED: u64 = 0x11d5_ee15_5af9_dd1e;
+    const PINNED: u64 = 0x9ab8_fa46_5e25_1490;
 
     /// A field change must raise [`API_VERSION`]: the schema's text is
     /// pinned to the version here.
@@ -405,7 +488,7 @@ mod tests {
         });
         assert_eq!(
             (API_VERSION, hash),
-            (4, PINNED),
+            (5, PINNED),
             "the schema changed: raise API_VERSION and pin the new hash"
         );
     }
@@ -424,11 +507,12 @@ mod tests {
                 "input",
                 "actors",
                 "menus",
-                "messages"
+                "messages",
+                "effects"
             ]
         );
         assert!(matches!(s.fields[5].ty, Ty::List(_)));
-        assert_eq!(structs().len(), 9);
+        assert_eq!(structs().len(), 12);
         assert!(Actor::schema().fields.iter().all(|f| !f.doc.is_empty()));
     }
 }

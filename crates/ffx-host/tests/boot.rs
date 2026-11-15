@@ -860,3 +860,105 @@ fn the_state_api_names_the_main_menu() {
     // the Japanese main menu: スフィア盤 (Sphere Grid), アイテム, アビリティ (Abilities), ...
     assert!(names.iter().any(|n| n.contains("アビリティ")), "{names:?}");
 }
+
+/// The effects (API 5): in the deck's battle (Besaid, then `Battle { 3, 0,
+/// 0 }`; Attack chosen, Circle twice), the snapshots show the effect
+/// records in use, there from its start (`0x50001800`/`01` targeting the
+/// party's characters 0 and 4, `0x40000405`/`06` the monsters' 20 and 21),
+/// the monsters' each targeting its own character; the battle music; the
+/// five screen filter slots.
+#[test]
+fn the_state_api_sees_a_battles_effects() {
+    use std::sync::atomic::{AtomicU32, Ordering::Relaxed};
+    use std::sync::{Arc, Mutex};
+    let Some(exe) = exe() else { return };
+    let opts = ffx_host::Options {
+        documents: Some(documents("effects")),
+        gfx: ffx_host::gfx::Config {
+            backend: ffx_host::gfx::Choice::Null,
+            no_record: true,
+            ..ffx_host::gfx::Config::default()
+        },
+        ..ffx_host::Options::default()
+    };
+    let mut exec = ffx_host::boot_opts(&exe, ffx_host::ports::table(), &opts).unwrap();
+    exec.set_budget(Duration::from_secs(300));
+    let seen: Arc<Mutex<Option<ffx_state::Effects>>> = Arc::default();
+    let id = {
+        let seen = Arc::clone(&seen);
+        let shared = Arc::downgrade(exec.shared());
+        let step = AtomicU32::new(0);
+        let at = AtomicU32::new(0);
+        exec.shared().observers.add(Arc::new(move |s| {
+            let Some(shared) = shared.upgrade() else {
+                return;
+            };
+            let since = s.update.saturating_sub(at.load(Relaxed));
+            match step.load(Relaxed) {
+                0 if s.world.map == 0x15d && s.world.event_frame > 30 => {
+                    shared
+                        .requests
+                        .push(ffx_host::requests::Request::DevSave(7), Box::new(|_| {}));
+                    step.store(1, Relaxed);
+                }
+                1 if s.world.map == 0x46 && s.world.player_control => {
+                    shared.requests.push(
+                        ffx_host::requests::Request::Battle {
+                            field: 3,
+                            group: 0,
+                            formation: 0,
+                        },
+                        Box::new(|_| {}),
+                    );
+                    step.store(2, Relaxed);
+                }
+                // the command window: Circle (Attack), then Circle (the
+                // target), each a few updates
+                2 if s.world.battle && s.menus.battle_window != 0 => {
+                    shared.clock.buttons.store(0x20, Relaxed);
+                    at.store(s.update, Relaxed);
+                    step.store(3, Relaxed);
+                }
+                3 if since > 4 => {
+                    shared.clock.buttons.store(0, Relaxed);
+                    at.store(s.update, Relaxed);
+                    step.store(4, Relaxed);
+                }
+                4 if since > 30 => {
+                    shared.clock.buttons.store(0x20, Relaxed);
+                    at.store(s.update, Relaxed);
+                    step.store(5, Relaxed);
+                }
+                5 if since > 4 => {
+                    shared.clock.buttons.store(0, Relaxed);
+                    step.store(6, Relaxed);
+                }
+                6 if !s.effects.running.is_empty() => {
+                    if let Ok(mut x) = seen.lock() {
+                        *x = Some(s.effects.clone());
+                    }
+                    shared.stop_all(Stop::Milestone("effects".into()));
+                }
+                _ => {}
+            }
+        }))
+    };
+    let stop = exec.run_entry().unwrap();
+    exec.join_threads(Duration::from_secs(5));
+    exec.shared().observers.remove(id);
+    assert_eq!(stop, Stop::Milestone("effects".into()));
+    let e = seen.lock().unwrap().clone().unwrap();
+    eprintln!("effects: {e:?}");
+    assert!(e.running.iter().all(|r| r.id != 0 && r.id != u32::MAX));
+    // the monsters' (characters 20, 21) bind effects, each on its own one
+    for chr in [20u8, 21] {
+        assert!(
+            e.running
+                .iter()
+                .any(|r| r.id & 0xf000_0000 == 0x4000_0000 && r.targets == [chr]),
+            "{e:?}"
+        );
+    }
+    assert_eq!(e.filters.len(), 5);
+    assert_ne!(e.music, -1, "{e:?}");
+}
