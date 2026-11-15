@@ -148,14 +148,20 @@ impl Objects {
                 self.forget(*id);
                 self.states.insert(*id, (*kind, desc.clone()));
             }
-            Msg::UpdateBuffer { id, offset, data } => {
-                if let Some(b) = self.buffers.get_mut(id) {
-                    write_at(&mut b.data, *offset, data);
-                    b.key = key::buffer(&b.desc, &b.data);
-                }
-            }
+            Msg::UpdateBuffer { id, offset, data } => self.update(*id, *offset, data),
             Msg::Release { id } => self.forget(*id),
             _ => {}
+        }
+    }
+
+    /// New bytes for part of a buffer. A ring's key is not kept (draws key
+    /// the bytes they read), so it is not hashed again.
+    fn update(&mut self, id: Id, offset: u32, data: &[u8]) {
+        if let Some(b) = self.buffers.get_mut(&id) {
+            write_at(&mut b.data, offset, data);
+            if !key::is_ring(&b.desc) {
+                b.key = key::buffer(&b.desc, &b.data);
+            }
         }
     }
 
@@ -258,6 +264,18 @@ impl Capture {
                         scene: scene.clone(),
                         items,
                     });
+                    // A frame's updates stay for the frames after it: a
+                    // stream's `UpdateBuffer` says what the buffer holds
+                    // from then on. The hook sends each draw's whole
+                    // window again; ffx-rust's layer sends the span that
+                    // changed since its last look (m5 scene gates,
+                    // 2026-11-15: the unchanged high half of a float
+                    // read as the window's start in kami0100's frame 2).
+                    for cmd in &f.cmds {
+                        if let Cmd::UpdateBuffer { id, offset, data } = cmd {
+                            c.objects.update(*id, *offset, data);
+                        }
+                    }
                 }
                 m => c.objects.apply(m),
             }

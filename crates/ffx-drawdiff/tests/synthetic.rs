@@ -596,6 +596,58 @@ fn a_draw_of_no_vertices_reads_no_ring_bytes() {
 }
 
 #[test]
+fn a_frames_ring_updates_stay_for_the_next_frame() {
+    // Two frames of the ring draw. The hook sends the draw's whole window
+    // in both; ffx-rust's layer sends only the span that changed since its
+    // last look, so its second frame updates the window's first half and
+    // relies on the first frame's bytes for the rest. Both draw the same.
+    let two = |second: Cmd| {
+        let mut msgs = objects();
+        msgs.push(Msg::World {
+            scene: "test0000".into(),
+            camera: None,
+        });
+        let frame = |number: u32, update: Cmd| {
+            Msg::Frame(Frame {
+                number,
+                width: 4,
+                height: 4,
+                cmds: vec![update, Cmd::Draw(Box::new(ring_draw(0, 0)))],
+            })
+        };
+        msgs.push(frame(
+            0,
+            Cmd::UpdateBuffer {
+                id: RING,
+                offset: 0,
+                data: vec![7; 128],
+            },
+        ));
+        msgs.push(frame(1, second));
+        let mut bytes = ffx_gfx::CAPTURE_MAGIC.to_vec();
+        for m in &msgs {
+            m.write(&mut bytes);
+        }
+        Capture::parse(&bytes).unwrap()
+    };
+    let mut changed = [7u8; 128];
+    changed[..64].fill(9);
+    let whole = two(Cmd::UpdateBuffer {
+        id: RING,
+        offset: 0,
+        data: changed[..128].to_vec(),
+    });
+    let span = two(Cmd::UpdateBuffer {
+        id: RING,
+        offset: 0,
+        data: changed[..64].to_vec(),
+    });
+    let c = compare(&whole, &span, &Options::default());
+    assert_eq!(c.frames.len(), 2);
+    assert_eq!(c.unallowed(), 0, "{:?}", c.frames[1].diffs);
+}
+
+#[test]
 fn a_static_buffer_offset_is_compared() {
     let mut cmds = cmds();
     draw_at(&mut cmds, 2).vertex = vec![(0, VB, 12, 12)];

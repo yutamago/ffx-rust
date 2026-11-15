@@ -42,7 +42,7 @@ a `resource vbN: ring ... | ring ...` difference is made of.
 
 | Module | What it does |
 |---|---|
-| `capture` | Reads the stream (`ffx_gfx::read_all`) and keeps the objects by id, as the stream declares them (a new object at a reused id replaces the old one). Each `Frame` becomes a list of `Item`s: one per draw, clear and copy. The frame's `UpdateBuffer` commands are applied to the dynamic buffers in order, so each draw sees its own version |
+| `capture` | Reads the stream (`ffx_gfx::read_all`) and keeps the objects by id, as the stream declares them (a new object at a reused id replaces the old one). Each `Frame` becomes a list of `Item`s: one per draw, clear and copy. The frame's `UpdateBuffer` commands are applied to the dynamic buffers in order, so each draw sees its own version, and they stay for the frames after it (the hook sends each draw's whole window; ffx-rust's layer only the span that changed since its last look) |
 | `key` | Stable content keys (below). T4 uses this module |
 | `state` | Blend, depth-stencil, rasterizer and sampler descriptions, decoded field by field |
 | `cb` | Constant buffers decoded by the shader's reflection |
