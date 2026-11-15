@@ -512,7 +512,26 @@ impl Renderer {
         let (cull, front, bias, _) = formats::raster(self.state(d.raster, StateKind::Raster));
         let depth_stencil = depth_format
             .map(|(f, _)| formats::depth_stencil(self.state(d.depth, StateKind::Depth), f, bias));
+        let alpha_to_coverage = formats::alpha_to_coverage(blend_desc.as_deref());
         let scope = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
+        // Alpha to coverage on a single-sampled target: Direct3D 11 covers
+        // the one sample when the output alpha is at least 0.5 (the
+        // prerendered backgrounds' cut-outs: without it their transparent
+        // texels write depth and hide what stands behind them, kami0100's
+        // book). wgpu allows alpha to coverage only with multisampling, so
+        // the pixel shader discards instead (docs/m6.md).
+        let alpha_test = (samples == 1 && alpha_to_coverage).then(|| {
+            let source = linked.ps.wgsl.replacen(
+                "    run();\n    var out: Out;",
+                "    run();\n    if (bitcast<vec4<f32>>(o0).w < 0.5) { discard; }\n    var out: Out;",
+                1,
+            );
+            self.device
+                .create_shader_module(wgpu::ShaderModuleDescriptor {
+                    label: Some("ps, alpha to coverage as a test"),
+                    source: wgpu::ShaderSource::Wgsl(source.into()),
+                })
+        });
         let pipeline = self
             .device
             .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -541,11 +560,10 @@ impl Renderer {
                 multisample: wgpu::MultisampleState {
                     count: samples,
                     mask: !0,
-                    alpha_to_coverage_enabled: samples > 1
-                        && formats::alpha_to_coverage(blend_desc.as_deref()),
+                    alpha_to_coverage_enabled: samples > 1 && alpha_to_coverage,
                 },
                 fragment: Some(wgpu::FragmentState {
-                    module: &linked.ps_module,
+                    module: alpha_test.as_ref().unwrap_or(&linked.ps_module),
                     entry_point: Some("main"),
                     compilation_options: wgpu::PipelineCompilationOptions::default(),
                     targets: &targets,

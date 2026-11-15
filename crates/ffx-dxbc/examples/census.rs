@@ -97,7 +97,10 @@ impl Census {
         println!("  failed to decode {}", self.failed);
         println!("  resource dims (declarations) {:?}", self.dims);
         println!("  comparison samplers {}", self.comparison_samplers);
-        println!("  system values (D3D_NAME, declarations) {:?}", self.system_values);
+        println!(
+            "  system values (D3D_NAME, declarations) {:?}",
+            self.system_values
+        );
         println!("  special outputs {:?}", self.special_outputs);
         println!("  shaders with indexable temps {}", self.indexable_temps);
         let ops: Vec<String> = self.ops.iter().map(|(o, n)| format!("{o} {n}")).collect();
