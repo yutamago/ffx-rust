@@ -144,10 +144,11 @@ api_struct! {
         aspect: f32,
         /// The far plane (`+0xbc`).
         far: f32,
-        /// The battle camera's eye in field space (`g_Camera`,
-        /// `MsCameraGetPosNow`; zeros where the battle camera is unused).
+        /// The camera channel's eye in field space (`g_Camera`,
+        /// `MsCameraGetPosNow`, which the battle reads; zeros in the
+        /// opening's event, where the scene's camera above is the one drawn).
         eye: [f32; 3],
-        /// The battle camera's look-at point in field space.
+        /// The camera channel's look-at point in field space.
         target: [f32; 3],
     }
 }
@@ -271,8 +272,31 @@ mod tests {
         assert_eq!(u32::from_le_bytes(b[4..8].try_into().unwrap()), API_VERSION);
         assert_eq!(u32::from_le_bytes(b[8..12].try_into().unwrap()), 7);
         assert_eq!(f64::from_le_bytes(b[12..20].try_into().unwrap()), 1.5);
-        // the size the schema gives, with the one actor and its name
-        assert_eq!(b.len(), 8 + schema::encoded_size(&s));
+        // update, game time, the world (with an empty event), the camera,
+        // the input, then one actor ("c001", no bones)
+        let world = 2 + 2 + 1 + 2 + 2 + 4 + 4;
+        let camera = 1 + 48 + 4 + 4 + 4 + 12 + 12;
+        let input = 4 + 2 + 1 + 1;
+        let actor = 2 + 2 + 1 + (2 + 4) + 12 + 4 + 12 + 1 + 4 + 4 + 4 + 4 + 2 + 2 + 1 + 64 + 2;
+        assert_eq!(b.len(), 8 + 4 + 8 + world + camera + input + 2 + actor);
+    }
+
+    /// FNV-1a of `schema::text()` at [`API_VERSION`].
+    const PINNED: u64 = 0xf99e_8408_da0c_b9a0;
+
+    /// A field change must raise [`API_VERSION`]: the schema's text is
+    /// pinned to the version here.
+    #[test]
+    fn the_version_pins_the_schema() {
+        let text = schema::text();
+        let hash = text.bytes().fold(0xcbf2_9ce4_8422_2325_u64, |h, b| {
+            (h ^ u64::from(b)).wrapping_mul(0x0000_0100_0000_01b3)
+        });
+        assert_eq!(
+            (API_VERSION, hash),
+            (1, PINNED),
+            "the schema changed: raise API_VERSION and pin the new hash"
+        );
     }
 
     #[test]

@@ -445,26 +445,34 @@ fn the_state_api_sees_the_opening() {
     // the snapshots from 120 updates into the opening on
     let seen: Arc<Mutex<Vec<Arc<ffx_state::Snapshot>>>> = Arc::default();
     let opening_at: Arc<Mutex<Option<u32>>> = Arc::default();
-    {
+    let id = {
         let (seen, opening_at) = (Arc::clone(&seen), Arc::clone(&opening_at));
-        let shared = Arc::clone(exec.shared());
-        ffx_host::observe::observe(Box::new(move |s| {
+        let shared = Arc::downgrade(exec.shared());
+        exec.shared().observers.add(Arc::new(move |s| {
             if s.world.map != 0x15d {
                 return;
             }
-            let mut at = opening_at.lock().unwrap();
+            let Ok(mut at) = opening_at.lock() else {
+                return;
+            };
             let start = *at.get_or_insert(s.update);
-            if s.world.event_frame >= 900 && s.update >= start + 120 {
-                let mut v = seen.lock().unwrap();
+            if s.world.event_frame >= 900
+                && s.update >= start + 120
+                && let Ok(mut v) = seen.lock()
+            {
                 v.push(Arc::clone(s));
-                if v.len() >= 60 {
+                if v.len() >= 60
+                    && let Some(shared) = shared.upgrade()
+                {
                     shared.stop_all(Stop::Milestone("60 snapshots".into()));
                 }
             }
-        }));
-    }
+        }))
+    };
     let stop = exec.run_entry().unwrap();
     exec.join_threads(Duration::from_secs(5));
+    exec.shared().observers.remove(id);
+    assert!(!exec.shared().observers.any());
     assert_eq!(stop, Stop::Milestone("60 snapshots".into()));
     let seen = seen.lock().unwrap();
     let (first, last) = (&seen[0], &seen[seen.len() - 1]);

@@ -389,6 +389,8 @@ pub struct Shared {
     pub audio: crate::audio::Audio,
     /// Iggy's imports on `ffx-swf` (`crate::iggy`).
     pub iggy: crate::iggy::Iggy,
+    /// The game-state API's observers (`crate::observe`).
+    pub observers: crate::observe::Observers,
 }
 
 impl std::fmt::Debug for Shared {
@@ -500,6 +502,7 @@ impl Shared {
             clock: crate::clock::Clock::default(),
             audio: crate::audio::Audio::default(),
             iggy: crate::iggy::Iggy::default(),
+            observers: crate::observe::Observers::default(),
         };
         s.bind_imports(stubs_at);
         s.find_thunks();

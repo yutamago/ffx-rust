@@ -1877,8 +1877,8 @@ the other.
   queue runs dry; `audio_queued` reports the queue, so the feeder keeps it
   full. The mix stays the host's, sample for sample FMOD's.
 - **The state.** The frontend draws from the game-state API
-  (`docs/state-api.md`): `observe::observe` registers an observer that
-  gets a `ffx_state::Snapshot` at every frame boundary (the world, the
+  (`docs/state-api.md`): `shared.observers.add` registers an observer
+  that gets a `ffx_state::Snapshot` at every frame boundary (the world, the
   renderer's camera, the pad, the characters with their bones), read on
   the game's main thread between two updates; it only reads.
 - **The rest.** `steam` loads the platform's Steam library and implements

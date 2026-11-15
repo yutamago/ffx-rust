@@ -171,14 +171,6 @@ impl<T: ApiStruct> ApiType for Vec<T> {
     }
 }
 
-/// The encoded size of `s`'s fields (for the tests).
-#[must_use]
-pub fn encoded_size<T: ApiStruct>(s: &T) -> usize {
-    let mut out = Vec::new();
-    s.encode_fields(&mut out);
-    out.len()
-}
-
 /// The schema as text: one line per struct and field (`name: type`), the
 /// root first: what a frontend's generator reads, and a stable record of
 /// the API's shape (docs/state-api.md).

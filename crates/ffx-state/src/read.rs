@@ -44,7 +44,7 @@ const PAUSE_ON: u32 = 0x0134_0828;
 /// `g_FadeActive` (a bit per fade slot).
 const FADE_ACTIVE: u32 = 0x0130_0704;
 
-/// `g_Camera`: the battle camera's channel; `+0x50` the point looked at,
+/// `g_Camera`: the camera channel (`MsCameraGetPosNow`); `+0x50` the point looked at,
 /// `+0x61c + 0x50` the eye (`MsCameraGetPosNow`).
 const G_CAMERA: u32 = 0x0231_1430;
 const CAMERA_TARGET: u32 = 0x50;
@@ -112,12 +112,22 @@ impl Mem<'_> {
         let v = f32::from_le_bytes(self.bytes(at));
         if v.is_finite() { v } else { 0.0 }
     }
+    /// `N` floats (at most 16) in one read; non-finite ones read as 0.
     fn floats<const N: usize>(&self, at: u32) -> [f32; N] {
-        std::array::from_fn(|i| self.f32(at + 4 * u32::try_from(i).unwrap_or(0)))
+        let mut b = [0u8; 64];
+        let n = 4 * N.min(16);
+        if !self.0.read_bytes(at, &mut b[..n]) {
+            return [0.0; N];
+        }
+        std::array::from_fn(|i| {
+            let v = f32::from_le_bytes([b[4 * i], b[4 * i + 1], b[4 * i + 2], b[4 * i + 3]]);
+            if v.is_finite() { v } else { 0.0 }
+        })
     }
+    /// Whether `len` (at most 64) bytes at `at` are mapped.
     fn mapped(&self, at: u32, len: usize) -> bool {
-        let mut b = vec![0u8; len];
-        self.0.read_bytes(at, &mut b)
+        let mut b = [0u8; 64];
+        self.0.read_bytes(at, &mut b[..len.min(64)])
     }
     /// A NUL-terminated string of at most `max` bytes (Latin-1 as UTF-8).
     fn c_string(&self, at: u32, max: usize) -> String {
@@ -126,7 +136,7 @@ impl Mem<'_> {
         }
         let mut s = String::new();
         for i in 0..max {
-            let b = self.u8(at + u32::try_from(i).unwrap_or(0));
+            let b = self.u8(at.wrapping_add(u32::try_from(i).unwrap_or(0)));
             if b == 0 {
                 break;
             }
@@ -167,7 +177,7 @@ fn world(m: &Mem<'_>) -> World {
         battle: m.u8(BTL_STATUS) != 0,
         player_control: m.u8(CTRL_WORK) & CTRL_CONTROL != 0,
         paused: m.u8(PAUSE_ON) != 0,
-        fading: m.u8(FADE_ACTIVE) != 0,
+        fading: m.u32(FADE_ACTIVE) != 0,
     }
 }
 
@@ -176,43 +186,28 @@ fn camera(m: &Mem<'_>) -> Camera {
     let pcamera = if scene == 0 {
         0
     } else {
-        m.u32(scene + SCENE_CAMERA)
+        m.u32(scene.wrapping_add(SCENE_CAMERA))
     };
-    let valid = pcamera != 0 && m.mapped(scene + SCENE_CAMERA_WORLD, 48);
+    let world_at = scene.wrapping_add(SCENE_CAMERA_WORLD);
+    let valid = pcamera != 0 && m.mapped(world_at, 48);
     let channel = m.u32(G_CAMERA);
-    let battle = channel != 0 && m.mapped(channel, (CAMERA_EYE + 12) as usize);
+    let (eye, target) = if channel == 0 {
+        ([0.0; 3], [0.0; 3])
+    } else {
+        (
+            m.floats(channel.wrapping_add(CAMERA_EYE)),
+            m.floats(channel.wrapping_add(CAMERA_TARGET)),
+        )
+    };
+    let at = |o: u32| m.f32(pcamera.wrapping_add(o));
     Camera {
         valid,
-        world: if valid {
-            m.floats(scene + SCENE_CAMERA_WORLD)
-        } else {
-            [0.0; 12]
-        },
-        fov_y: if valid {
-            m.f32(pcamera + PCAMERA_FOV_Y)
-        } else {
-            0.0
-        },
-        aspect: if valid {
-            m.f32(pcamera + PCAMERA_ASPECT)
-        } else {
-            0.0
-        },
-        far: if valid {
-            m.f32(pcamera + PCAMERA_FAR)
-        } else {
-            0.0
-        },
-        eye: if battle {
-            m.floats(channel + CAMERA_EYE)
-        } else {
-            [0.0; 3]
-        },
-        target: if battle {
-            m.floats(channel + CAMERA_TARGET)
-        } else {
-            [0.0; 3]
-        },
+        world: if valid { m.floats(world_at) } else { [0.0; 12] },
+        fov_y: if valid { at(PCAMERA_FOV_Y) } else { 0.0 },
+        aspect: if valid { at(PCAMERA_ASPECT) } else { 0.0 },
+        far: if valid { at(PCAMERA_FAR) } else { 0.0 },
+        eye,
+        target,
     }
 }
 
@@ -236,31 +231,32 @@ fn actors(m: &Mem<'_>) -> Vec<Actor> {
     };
     (0..count)
         .filter_map(|slot| {
-            let at = base + slot * l::SIZE;
-            if m.u8(at + l::ACTIVE) == 0 {
+            let at = base.wrapping_add(slot * l::SIZE);
+            let f = |o: u32| at.wrapping_add(o);
+            if m.u8(f(l::ACTIVE)) == 0 {
                 return None;
             }
-            let id = m.u16(at + l::ID);
-            let frame = m.u32(at + l::MOTION_FRAME);
+            let id = m.u16(f(l::ID));
+            let frame = m.u32(f(l::MOTION_FRAME));
             #[allow(clippy::cast_precision_loss)] // 8.8 fixed frames
             let motion_frame = frame as f32 / 256.0;
             Some(Actor {
                 slot: u16::try_from(slot).unwrap_or(0),
                 id,
                 kind: u8::try_from(id >> 12).unwrap_or(0),
-                model: m.c_string(m.u32(at + l::NAME), 16),
-                position: m.floats(at + l::POS),
-                yaw: m.f32(at + l::ROT),
-                scale: m.floats(at + l::SCALE),
-                hidden: m.u8(at + l::HIDE),
-                alpha: m.f32(at + l::FADE_ALPHA),
-                motion: m.u32(at + l::MOTION_ID),
+                model: m.c_string(m.u32(f(l::NAME)), 16),
+                position: m.floats(f(l::POS)),
+                yaw: m.f32(f(l::ROT)),
+                scale: m.floats(f(l::SCALE)),
+                hidden: m.u8(f(l::HIDE)),
+                alpha: m.f32(f(l::FADE_ALPHA)),
+                motion: m.u32(f(l::MOTION_ID)),
                 motion_frame,
-                motion_speed: f32::from(m.i16(at + l::MOTION_SPEED)) / 256.0,
-                parent: slot_of(m.u32(at + l::BIND_PARENT)),
-                parent_bone: u16::try_from(m.u32(at + l::BIND_ELEM)).unwrap_or(0),
+                motion_speed: f32::from(m.i16(f(l::MOTION_SPEED))) / 256.0,
+                parent: slot_of(m.u32(f(l::BIND_PARENT))),
+                parent_bone: u16::try_from(m.u32(f(l::BIND_ELEM))).unwrap_or(0),
                 player: at == player,
-                world: m.floats(at + WORLD_MATRIX),
+                world: m.floats(f(WORLD_MATRIX)),
                 bones: bones(m, at),
             })
         })
@@ -269,15 +265,15 @@ fn actors(m: &Mem<'_>) -> Vec<Actor> {
 
 /// The record at `at`'s elements, posed.
 fn bones(m: &Mem<'_>, at: u32) -> Vec<Bone> {
-    let header = m.u32(at + l::MODEL_HEADER);
-    let elems = m.u32(at + l::ELEMS);
+    let header = m.u32(at.wrapping_add(l::MODEL_HEADER));
+    let elems = m.u32(at.wrapping_add(l::ELEMS));
     if header == 0 || elems == 0 {
         return Vec::new();
     }
-    let n = u32::from(m.u16(header + HEADER_ELEMENTS)).min(MAX_BONES);
+    let n = u32::from(m.u16(header.wrapping_add(HEADER_ELEMENTS))).min(MAX_BONES);
     (0..n)
         .map(|i| Bone {
-            matrix: m.floats(elems + i * l::ELEM_SIZE + ELEM_GLOBAL),
+            matrix: m.floats(elems.wrapping_add(i * l::ELEM_SIZE + ELEM_GLOBAL)),
         })
         .collect()
 }
@@ -293,7 +289,7 @@ mod tests {
     impl Sparse {
         fn put(&mut self, at: u32, b: &[u8]) {
             for (i, &v) in b.iter().enumerate() {
-                self.0.insert(at + u32::try_from(i).unwrap(), v);
+                self.0.insert(at.wrapping_add(u32::try_from(i).unwrap()), v);
             }
         }
     }
@@ -302,7 +298,7 @@ mod tests {
         fn read_bytes(&self, at: u32, out: &mut [u8]) -> bool {
             let mut tmp = vec![0u8; out.len()];
             for (i, b) in tmp.iter_mut().enumerate() {
-                match self.0.get(&(at + u32::try_from(i).unwrap())) {
+                match self.0.get(&at.wrapping_add(u32::try_from(i).unwrap())) {
                     Some(&v) => *b = v,
                     None => return false,
                 }
@@ -319,6 +315,22 @@ mod tests {
         assert_eq!(s.world, World::default());
         assert!(!s.camera.valid);
         assert_eq!(s.actors.len(), 0);
+    }
+
+    #[test]
+    fn garbage_pointers_read_as_nothing() {
+        // pointers near the top of the address space: every offset wraps
+        let mut mem = Sparse(HashMap::new());
+        let top: u32 = 0xffff_fff0;
+        mem.put(CHR_ARRAY, &top.to_le_bytes());
+        mem.put(CHR_COUNT, &i32::MAX.to_le_bytes());
+        mem.put(G_PHYRE_SCENE, &top.to_le_bytes());
+        mem.put(G_CAMERA, &top.to_le_bytes());
+        mem.put(top, &[1; 16]);
+        let s = read(&mem, 0, 0.0);
+        assert!(!s.camera.valid);
+        // the slot at the top reads as in use; its fields and bones wrap to nothing
+        assert!(s.actors.iter().all(|a| a.bones.is_empty()));
     }
 
     #[test]

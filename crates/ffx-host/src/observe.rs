@@ -1,33 +1,77 @@
-//! Observers of the game between two updates (docs/host.md, "The
-//! game-state API"): at each frame boundary (`FFXApplication_animate`'s
-//! entry, `crate::clock`) the main thread reads an [`ffx_state::Snapshot`]
-//! and hands it to every observer, a frontend's (gd-ffx's Godot side) or a
-//! test's. Nothing is read while no observer is registered.
+//! Observers of a game between two updates (docs/state-api.md): at each
+//! frame boundary (`FFXApplication_animate`'s entry, `crate::clock`) the
+//! game's main thread reads an [`ffx_state::Snapshot`] and hands it to the
+//! game's observers ([`Observers`], `Shared::observers`): a frontend's
+//! (gd-ffx's Godot side) or a test's. Nothing is read while a game has no
+//! observer.
 //!
 //! Observers only get the snapshot: they cannot write the game's memory or
 //! call into the game, so the game runs the same with or without them
-//! (replays, saves). They run on the game's main thread: they must return
-//! quickly (hand the snapshot on, don't wait).
+//! (replays, saves). They run on the game's main thread, outside any lock
+//! of this module: they must return quickly (hand the snapshot on, don't
+//! wait); one may add or remove observers.
 
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, RwLock};
-
-use ffx_bridge::Mem as _;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, PoisonError, RwLock};
 
 use crate::exec::{Exec, Shared};
 
 /// An observer.
-pub type Observer = Box<dyn Fn(&Arc<ffx_state::Snapshot>) + Send + Sync>;
+pub type Observer = Arc<dyn Fn(&Arc<ffx_state::Snapshot>) + Send + Sync>;
 
-static OBSERVERS: RwLock<Vec<Observer>> = RwLock::new(Vec::new());
-static ANY: AtomicBool = AtomicBool::new(false);
+/// An observer's registration, to remove it ([`Observers::remove`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ObserverId(u64);
 
-/// Registers `f`: from the next boundary on it gets every snapshot (one
-/// game per process: the observers are the process's).
-pub fn observe(f: Observer) {
-    if let Ok(mut o) = OBSERVERS.write() {
-        o.push(f);
-        ANY.store(true, Ordering::Release);
+/// A game's observers.
+#[derive(Default)]
+pub struct Observers {
+    list: RwLock<Vec<(ObserverId, Observer)>>,
+    any: AtomicBool,
+    next: AtomicU64,
+}
+
+impl std::fmt::Debug for Observers {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let n = self.list.read().map_or(0, |l| l.len());
+        f.debug_struct("Observers")
+            .field("count", &n)
+            .finish_non_exhaustive()
+    }
+}
+
+impl Observers {
+    /// Registers `f`: from the next boundary on it gets every snapshot of
+    /// this game, until [`Observers::remove`].
+    pub fn add(&self, f: Observer) -> ObserverId {
+        let id = ObserverId(self.next.fetch_add(1, Ordering::Relaxed));
+        let mut l = self.list.write().unwrap_or_else(PoisonError::into_inner);
+        l.push((id, f));
+        self.any.store(true, Ordering::Release);
+        id
+    }
+
+    /// Removes the observer `id` (nothing when it is gone already).
+    pub fn remove(&self, id: ObserverId) {
+        let mut l = self.list.write().unwrap_or_else(PoisonError::into_inner);
+        l.retain(|(i, _)| *i != id);
+        self.any.store(!l.is_empty(), Ordering::Release);
+    }
+
+    /// Whether any observer is registered.
+    #[must_use]
+    pub fn any(&self) -> bool {
+        self.any.load(Ordering::Acquire)
+    }
+
+    /// The observers now (called outside the lock).
+    fn current(&self) -> Vec<Observer> {
+        self.list
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .iter()
+            .map(|(_, f)| Arc::clone(f))
+            .collect()
     }
 }
 
@@ -36,14 +80,11 @@ pub fn observe(f: Observer) {
 #[must_use]
 pub fn snapshot(shared: &Shared) -> ffx_state::Snapshot {
     let arena = shared.arena();
-    let mem = crate::arena::ArenaMem {
-        arena: Arc::clone(arena),
-    };
     let reader = |at: u32, out: &mut [u8]| {
         if !arena.is_mapped(at, out.len()) {
             return false;
         }
-        mem.read_bytes(at, out);
+        arena.read_bytes(at, out);
         true
     };
     ffx_state::read(
@@ -55,13 +96,12 @@ pub fn snapshot(shared: &Shared) -> ffx_state::Snapshot {
 
 /// The boundary before update `frame` (the main thread, `crate::clock`).
 pub(crate) fn boundary(e: &Exec, _frame: u32) {
-    if !ANY.load(Ordering::Acquire) {
+    let observers = &e.shared().observers;
+    if !observers.any() {
         return;
     }
     let s = Arc::new(snapshot(e.shared()));
-    if let Ok(o) = OBSERVERS.read() {
-        for f in o.iter() {
-            f(&s);
-        }
+    for f in observers.current() {
+        f(&s);
     }
 }

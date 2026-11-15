@@ -10,14 +10,14 @@ it only reads (the game runs the same with or without it: replays, saves).
   encoding and the schema a frontend generates its bindings from.
 - `ffx_host::observe`: at each frame boundary (`FFXApplication_animate`'s
   entry, the main thread, between two updates) a snapshot is read and
-  handed to every registered observer (`observe::observe`); nothing is
-  read while there is none. `observe::snapshot(&Shared)` reads one at any
-  time.
+  handed to the game's observers (`shared.observers.add(f)` gives an id
+  for `remove`; per game, called outside the lock); nothing is read while
+  a game has none. `observe::snapshot(&Shared)` reads one at any time.
 
 ## Spaces
 
-- **Field space** (the game's logic: positions, the battle camera's eye
-  and target): x right, y down, z forward.
+- **Field space** (the game's logic: positions, the camera channel's
+  eye and target): x right, y down, z forward.
 - **Render space** (what the renderer draws with; `Camera.world`): the
   field's x and y negated. Right-handed, y up, the camera looking along
   its −z: Godot's convention. A field point (x, y, z) is (−x, −y, z) there.
@@ -27,7 +27,7 @@ it only reads (the game runs the same with or without it: replays, saves).
   X, Y, Z are the camera's axes and P its position in render space (the
   camera's world rows 1 to 3, with row 0 spread over their fourth
   column). Measured in the opening: the three axes are orthonormal and
-  right-handed, P is the battle camera's eye with x and y negated.
+  right-handed, P is the camera channel's eye (`g_Camera`) with x and y negated.
 - An actor's `world` is its root matrix (`+0x1d0`): rotation × 0.001 and
   its field position. Its `bones` are the elements' global matrices
   (`+0x88`), relative to the character; the root places them
@@ -111,8 +111,9 @@ The addresses and offsets, with their evidence in `symbols/ffx.sym`:
 `g_BtlStatus` `0x0112a8e0`, `g_PauseOn` `0x01340828`, `g_FadeActive`
 `0x01300704`; the scene `g_PhyreScene` `0x00ccb9d8` (`+0xdc` its main
 camera: `+0xbc` far, `+0x150` aspect, `+0x154` vertical FOV; `+0xfa04`
-the camera world; docs/formats/render.md, "Cameras"); the battle camera
-`g_Camera` `0x02311430` (`MsCameraGetPosNow`); the pad `g_PadHeld`
+the camera world; docs/formats/render.md, "Cameras"); the camera
+channel `g_Camera` `0x02311430` (`MsCameraGetPosNow`; zeros in the
+opening's event, so the drawn camera comes from the scene); the pad `g_PadHeld`
 `0x023c44ac` (stick y, x at `0x023c44a4`, `0x023c44a5`) and
 `g_PadPressed` `0x013270d0`; the characters `g_ChrCount` `0x023c44e0`,
 `g_ChrArray` `0x023c44e4` (records of `0x880` bytes,
