@@ -22,7 +22,8 @@ game's main thread serves it at the next frame boundary, between two
 updates (where the harness serves its jobs; while the harness holds
 lockstep, they wait for its release), and calls the reply with what it
 did. Replies run on the game's main thread and must not panic; requests
-still queued when the game ends are answered `Err("the run ended")`. A
+still queued when the game's run ends (`Exec::run_entry` returns) are
+answered `Err("the run ended")`, and so is any later request, at once. A
 run without requests is unchanged.
 
 - `Request::DevSave(n)`: loads developer save `n` (1..=110, the saves

@@ -2248,6 +2248,8 @@ impl Exec {
             Err(Error::Stopped) => Ok(self.stopped.clone().unwrap_or(Stop::Returned)),
             Err(e) => Err(e),
         };
+        // a frontend's requests are not served any more (`crate::requests`)
+        self.shared.requests.close();
         if let Ok(stop) = &r {
             self.shared.stop_all(stop.clone());
         }
