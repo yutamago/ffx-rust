@@ -219,6 +219,15 @@ pub trait Platform: Send + Sync {
     /// makes them fine here.
     fn timer_period(&self, begin: bool, ms: u32) -> u32;
 
+    // ---- graphics (the game's render thread, through `crate::gfx`) ------
+
+    /// The back end behind the game's D3D11 calls when the run asks for
+    /// the default ([`crate::gfx::Choice::Default`]): made at the game's
+    /// `D3D11CreateDevice(AndSwapChain)`. Every call reaches it after the
+    /// layer recorded it (`crate::gfx`: the draw-stream gate compares the
+    /// recording, so it doesn't depend on the back end); `Present` shows a
+    /// frame.
+    fn graphics(&self) -> Box<dyn crate::gfx::Backend>;
 }
 
 static PLATFORM: OnceLock<Box<dyn Platform>> = OnceLock::new();

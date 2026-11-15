@@ -1,7 +1,8 @@
 //! [`HeadlessPlatform`]: no window, no input devices, no device sound
 //! (docs/host.md, "The platform seam"). What the Linux check and the
 //! null-device runs had as stand-ins: a fake window that gets no messages
-//! and is the 1920 x 1080 screen.
+//! and is the 1920 x 1080 screen, and the recording null device
+//! ([`crate::gfx::Null`]).
 
 use super::{Message, Platform, Point, Rect, WindowRequest};
 
@@ -150,5 +151,9 @@ impl Platform for HeadlessPlatform {
 
     fn timer_period(&self, _: bool, _: u32) -> u32 {
         0
+    }
+
+    fn graphics(&self) -> Box<dyn crate::gfx::Backend> {
+        Box::new(crate::gfx::Null::default())
     }
 }

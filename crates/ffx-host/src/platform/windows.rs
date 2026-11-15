@@ -19,6 +19,8 @@
 //!   window, as `ffx-hook`'s harness does for `FFX.exe`. The game never
 //!   moves or clips the user's mouse pointer (`SetCursorPos`, `ClipCursor`
 //!   do nothing; outside the harness too, for now).
+//! - **Graphics.** The real D3D11 device ([`crate::d3d11`]), its swap chain
+//!   on the real window.
 //! - **Timers.** `timeBeginPeriod`/`timeEndPeriod` forward, so `Sleep`
 //!   has the 1 ms granularity the game asks for, not Windows' default
 //!   15.6 ms.
@@ -452,5 +454,9 @@ impl Platform for WindowsPlatform {
                 timeEndPeriod(ms)
             }
         }
+    }
+
+    fn graphics(&self) -> Box<dyn crate::gfx::Backend> {
+        Box::new(crate::d3d11::D3d11::default())
     }
 }
