@@ -683,8 +683,9 @@ the game's own shaders) is `docs/m6.md`.
   in there.
 - **No native graphics back end now.** The wgpu back end the survey
   recommended is not built. Native Linux, Deck and macOS builds come with
-  the Godot frontend, a future goal: `ffx-rust` stays the game-logic core
-  and Godot draws, plays and takes input on top. macOS waits for it.
+  the Godot frontend: `ffx-rust` stays the game-logic core and Godot
+  draws, plays and takes input on top. macOS waits for it. The plan is
+  `docs/godot-plan.md` (the `gd-ffx` repository, started alongside M6).
 - Linux system libraries (Vulkan loader, libasound, libudev, X11/Wayland,
   `libsteam_api.so`) are acceptable at run time; nothing is vendored.
   macOS builds, when they come, are unsigned test builds first.
