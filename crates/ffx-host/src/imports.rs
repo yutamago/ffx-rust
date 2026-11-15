@@ -475,10 +475,34 @@ fn heap_realloc(e: &mut Exec, args: &Args) -> Ret {
     Ret::eax(resize(e, a(args, 2), a(args, 3), a(args, 1) & 8 != 0))
 }
 
-/// `VirtualAlloc(addr, size, type, protect)`: a fresh arena region.
+/// `VirtualAlloc(addr, size, type, protect)`: a commit inside what is
+/// already mapped is done in place ([`commit_in_place`]); anything else
+/// (no address, a reservation, an address not fully mapped) is a fresh
+/// arena region.
 fn virtual_alloc(e: &mut Exec, args: &Args) -> Ret {
+    if let Some(at) = commit_in_place(e.arena(), a(args, 0), a(args, 1), a(args, 2)) {
+        return Ret::eax(at);
+    }
     let size = a(args, 1).next_multiple_of(PAGE);
     Ret::eax(e.map_region(size, "VirtualAlloc").unwrap_or(0))
+}
+
+/// `MEM_COMMIT`.
+const MEM_COMMIT: u32 = 0x1000;
+
+/// `VirtualAlloc(addr, size, MEM_COMMIT, …)` of pages the arena already
+/// maps: their address rounded down to a page, as Windows answers a commit
+/// inside a reservation (every reservation is mapped whole, read-write).
+/// The page manager reserves 768 MB and commits it a few pages at a time
+/// (`VirtualAlloc_Commit_RW`, `PageManager_CommitRange`; their callers read
+/// only `al`). Each of those commits used to map a fresh region the game
+/// never touched: about 4,500 a minute on the way into the field, every
+/// one mapped into every thread's emulator at a cost that grew with the
+/// region count, until a single update took seconds (docs/host.md,
+/// "Hitches"). `None` for anything else.
+fn commit_in_place(arena: &Arena, addr: u32, size: u32, kind: u32) -> Option<u32> {
+    (addr != 0 && kind & MEM_COMMIT != 0 && arena.is_mapped(addr, size.max(1) as usize))
+        .then_some(addr & !(PAGE - 1))
 }
 
 /// `GetSystemInfo(&info)`: one x86 processor, 4 KiB pages.
@@ -1277,3 +1301,32 @@ pub const TABLE: &[(&str, &str, Conv, usize, ImportFn)] = &[
         clock::tick_count,
     ),
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_commit_inside_a_reservation_maps_nothing() {
+        let arena = Arena::new().unwrap();
+        arena.map(0x0400_0000, 0x10_0000, "reserved").unwrap();
+        let g = arena.generation();
+        // VirtualAlloc_Commit_RW's call: the address rounded down to a page
+        assert_eq!(
+            commit_in_place(&arena, 0x0400_3010, 0x2000, MEM_COMMIT),
+            Some(0x0400_3000)
+        );
+        assert_eq!(
+            commit_in_place(&arena, 0x0400_0000, 0x10_0000, MEM_COMMIT),
+            Some(0x0400_0000)
+        );
+        // past the reservation, no address, a reservation: a fresh region
+        assert_eq!(
+            commit_in_place(&arena, 0x040f_f000, 0x2000, MEM_COMMIT),
+            None
+        );
+        assert_eq!(commit_in_place(&arena, 0, 0x1000, MEM_COMMIT), None);
+        assert_eq!(commit_in_place(&arena, 0x0400_3000, 0x1000, 0x2000), None);
+        assert_eq!(arena.generation(), g, "nothing mapped");
+    }
+}
