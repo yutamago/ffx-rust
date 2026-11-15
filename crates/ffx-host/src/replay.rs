@@ -395,6 +395,12 @@ pub(crate) fn pin(e: &mut Exec) -> String {
             pinned.push("global time");
         }
     }
+    // the game's `rand` is always the Rust side's (`exec::RUST_WITH_DLLS`):
+    // its state is this thread's, the main thread's here (m5 gates: without
+    // the player's DLLs, as `ffx-rust.exe` runs, nothing was pinned, and the
+    // reply had no "main CRT seed")
+    e.crt.rand = 1;
+    // the DLL's own, for its own callers
     let getptd = e
         .shared()
         .dll("MSVCR110.dll")
@@ -404,14 +410,30 @@ pub(crate) fn pin(e: &mut Exec) -> String {
         && ptd != 0
     {
         e.mem().write(ptd + HOLDRAND, 1u32);
-        pinned.push("main CRT seed");
     }
+    pinned.push("main CRT seed");
     pinned.join(", ")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// m5 gates (2026-11-15): `pin` resets the main thread's `rand` (the
+    /// Rust side's state, which the game's import always reaches), with or
+    /// without the player's DLLs. Needs `FFX_GAME_DIR`.
+    #[test]
+    fn pin_resets_the_main_threads_rand() {
+        let Some(dir) = std::env::var_os("FFX_GAME_DIR") else {
+            eprintln!("FFX_GAME_DIR is not set; skipping");
+            return;
+        };
+        let mut e = crate::boot(&std::path::Path::new(&dir).join("FFX.exe")).unwrap();
+        e.crt.rand = 0x1234_5678;
+        let reply = pin(&mut e);
+        assert_eq!(e.crt.rand, 1);
+        assert!(reply.ends_with("main CRT seed"), "{reply}");
+    }
 
     #[test]
     fn ranges_values_and_buttons_parse_as_the_harness_reads_them() {
