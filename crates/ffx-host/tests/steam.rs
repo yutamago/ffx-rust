@@ -258,6 +258,6 @@ fn steam_api64_has_every_export_the_bridge_calls() {
     {
         // loads and resolves every export (no SteamAPI_Init: that needs
         // Steam and touches the account)
-        steam::dll::Dll::load(std::path::Path::new(&path)).unwrap();
+        ffx_host::platform::windows::steam::Dll::load(std::path::Path::new(&path)).unwrap();
     }
 }

@@ -193,16 +193,8 @@ pub fn dinput_enum_devices(e: &mut Exec, args: &Args) -> Ret {
     Ret::eax(0)
 }
 
-/// `GetCursorPos(&pt)`: far outside the window, where the harness's
-/// background games keep the pointer the game reads (docs/harness.md, "The
-/// mouse in background games"), so no menu sees a hover.
-fn cursor_pos(e: &mut Exec, args: &Args) -> Ret {
-    e.mem().write(a(args, 0), [-32108i32, -32131]);
-    Ret::eax(1)
-}
-
-/// `GetWindowInfo(hwnd, &info)` / `GetClipCursor(&rect)`: the fake
-/// window, 1920 x 1080 at the origin (as `GetClientRect`).
+/// `GetWindowInfo(hwnd, &info)`: the fake window, 1920 x 1080 at the
+/// origin (as the headless platform's `GetClientRect`).
 fn window_info(e: &mut Exec, args: &Args) -> Ret {
     let info = a(args, 1);
     let mut mem = e.mem();
@@ -212,11 +204,6 @@ fn window_info(e: &mut Exec, args: &Args) -> Ret {
     // WS_VISIBLE | WS_POPUP, active
     mem.write(info + 0x24, 0x9000_0000u32);
     mem.write(info + 0x2c, 1u32);
-    Ret::eax(1)
-}
-
-fn clip_cursor_rect(e: &mut Exec, args: &Args) -> Ret {
-    e.mem().write(a(args, 0), [0u32, 0, 1920, 1080]);
     Ret::eax(1)
 }
 
@@ -495,16 +482,7 @@ pub const TABLE: &[(&str, &str, Conv, usize, ImportFn)] = &[
     // the C runtime's file names: ANSI code page
     (K32, "AreFileApisANSI", Conv::Stdcall, 0, one),
     (K32, "GetSystemTime", Conv::Stdcall, 1, system_time),
-    (U32, "GetCursorPos", Conv::Stdcall, 1, cursor_pos),
     (U32, "GetWindowInfo", Conv::Stdcall, 2, window_info),
-    (U32, "GetClipCursor", Conv::Stdcall, 1, clip_cursor_rect),
-    (U32, "TranslateMessage", Conv::Stdcall, 1, ret1),
-    (U32, "DispatchMessageA", Conv::Stdcall, 1, ret0),
-    (U32, "DispatchMessageW", Conv::Stdcall, 1, ret0),
-    (U32, "DefWindowProcA", Conv::Stdcall, 4, ret0),
-    (U32, "SendMessageA", Conv::Stdcall, 4, ret0),
-    (U32, "SendMessageW", Conv::Stdcall, 4, ret0),
-    (U32, "PostMessageA", Conv::Stdcall, 4, ret1),
     (U32, "ReleaseDC", Conv::Stdcall, 2, ret1),
     (
         K32,
@@ -595,10 +573,7 @@ pub const TABLE: &[(&str, &str, Conv, usize, ImportFn)] = &[
     (U32, "CallNextHookEx", Conv::Stdcall, 4, ret0),
     // the embedded mode's parent (PWindowWin32_AttachToHost,
     // PApplication_InitWindowAndApp_00629ab0); Windows forwards it
-    (U32, "SetParent", Conv::Stdcall, 2, ret0),
     // the window's WM_CLOSE / WM_DESTROY; Windows forwards both
-    (U32, "DestroyWindow", Conv::Stdcall, 1, ret1),
-    (U32, "PostQuitMessage", Conv::Stdcall, 1, |_, _| Ret::VOID),
     (
         "iggy_w32.dll",
         "IggyGDrawSendWarning",

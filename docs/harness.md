@@ -2494,7 +2494,7 @@ records).
   longer.
 - **Background mode.** `FFX_HARNESS_BACKGROUND=1` reaches `ffx-rust.exe`
   as it reaches the hook. Its window imports are real on Windows
-  (`win_forward.rs`): the window is made without `WS_VISIBLE`,
+  (the Windows platform, `src/platform/windows.rs`): the window is made without `WS_VISIBLE`,
   `ShowWindow` shows it without activating it and drops it to the bottom
   of the window stack, `SetWindowPos` never raises or activates it,
   `SetCursorPos` and `ClipCursor` do nothing, and `GetCursorPos` reads a

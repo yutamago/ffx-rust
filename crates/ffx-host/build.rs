@@ -1,6 +1,6 @@
 //! Gives `ffx-rust.exe` its file icon (`res/ffx-rust.ico`, the project's
 //! own artwork; the game's window shows `FFX.exe`'s icon at run time,
-//! `win_forward::game_icon`). Windows targets only: the icon is compiled
+//! `platform::windows`' `game_icon`). Windows targets only: the icon is compiled
 //! with LLVM's resource compiler (`llvm-rc`, or the newest `llvm-rc-<n>` on
 //! the PATH) and the `.res` goes to the linker. Without one the build goes
 //! on with the default icon and a warning.

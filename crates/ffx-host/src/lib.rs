@@ -9,6 +9,9 @@
 //!   same memory; without the feature a call to an address with no Rust
 //!   side is a hard stop that names it ([`Error::Unported`]);
 //! - [`imports`]: the original's imports, their Rust sides;
+//! - [`platform`]: what the player-facing side asks of the operating system
+//!   (window, input, sound, graphics, Steam), one trait with a Windows and a
+//!   headless implementation;
 //! - [`ports`]: what this crate registers in the table;
 //! - [`report`]: what a run reached, for the log and the tests.
 
@@ -51,6 +54,7 @@ pub mod input;
 pub mod leaf;
 pub mod library;
 pub mod log;
+pub mod platform;
 pub mod ports;
 pub mod replay;
 pub mod report;
@@ -64,8 +68,7 @@ pub mod table;
 #[cfg(all(windows, feature = "dev-unicorn"))]
 pub mod tcg_commit;
 pub mod win32;
-#[cfg(windows)]
-pub mod win_forward;
+pub mod window;
 
 use std::path::Path;
 use std::sync::Arc;
@@ -182,8 +185,7 @@ pub struct Options {
 /// As [`boot`]; a DLL whose `DllMain` fails stops the boot.
 pub fn boot_opts(exe: &Path, table: table::Table, opts: &Options) -> Result<exec::Exec> {
     let bytes = std::fs::read(exe)?;
-    #[cfg(windows)]
-    win_forward::set_icon_source(exe);
+    platform::get().set_icon_source(exe);
     let arena = Arc::new(arena::Arena::new()?);
     let image = image::load(&arena, &bytes)?;
     let dir = exe.parent().unwrap_or(Path::new("."));

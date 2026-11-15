@@ -10,7 +10,7 @@
 //!
 //! - `FFX_HARNESS_BACKGROUND=1`: the window is never activated and stays at
 //!   the bottom of the window stack, the mouse is the test's
-//!   ([`crate::win_forward`]);
+//!   ([`crate::platform::windows`]);
 //! - `FFX_HARNESS_HOME=<folder>`: the game's Documents folder (settings,
 //!   saves), the program's `--documents`;
 //! - `FFX_HARNESS_SEED=<n>`: `Rng_ClockSeed` (`0x00798950`) returns `n`.
@@ -1620,15 +1620,7 @@ fn quit(shared: &Shared) {
         SEEDED_JOBS.load(Ordering::Relaxed),
         CLOTH_WAITS.load(Ordering::Relaxed)
     );
-    #[cfg(windows)]
-    {
-        use windows_sys::Win32::System::Threading::{GetCurrentProcess, TerminateProcess};
-        // SAFETY: ends this process.
-        unsafe {
-            TerminateProcess(GetCurrentProcess(), 0);
-        }
-    }
-    std::process::exit(0);
+    crate::platform::get().end_process(0)
 }
 
 #[cfg(test)]

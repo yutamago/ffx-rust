@@ -88,7 +88,8 @@ impl Slot {
 /// Which back end a run uses.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum Choice {
-    /// The real device on Windows, the null one elsewhere.
+    /// The platform's (`crate::platform::Platform::graphics`): the real
+    /// device on Windows, the null one headless.
     #[default]
     Default,
     /// The recording null device everywhere.
@@ -707,7 +708,7 @@ impl Gfx {
     pub fn new(e: &Exec, config: Config, desc: SwapChainDesc, flags: u32) -> crate::Result<Self> {
         let backend: Box<dyn Backend> = match config.backend {
             Choice::Null => Box::new(Null::default()),
-            Choice::Default => default_backend(),
+            Choice::Default => crate::platform::get().graphics(),
         };
         let mut com = Com::new(e, method)?;
         let device = com.create(e, class::DEVICE);
@@ -2304,16 +2305,6 @@ fn adapter_desc(mem: &mut impl ffx_bridge::Mem, at: u32, one: bool) {
     d[272..276].copy_from_slice(&0x1000_0000u32.to_le_bytes());
     d[280..284].copy_from_slice(&0x2000_0000u32.to_le_bytes());
     mem.write_bytes(at, &d);
-}
-
-#[cfg(windows)]
-fn default_backend() -> Box<dyn Backend> {
-    Box::new(crate::d3d11::D3d11::default())
-}
-
-#[cfg(not(windows))]
-fn default_backend() -> Box<dyn Backend> {
-    Box::new(Null::default())
 }
 
 /// Every COM method's trap ([`crate::com::Com::new`]): runs the call on

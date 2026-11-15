@@ -5,7 +5,7 @@
 //! interfaces). Nothing here hands a host pointer to the game (the
 //! arena's addresses are not the process's).
 //!
-//! On Windows the window is real (`crate::win_forward`): the device is
+//! On Windows the window is real (`crate::platform::windows`): the device is
 //! made with its swap chain on the game's window
 //! (`D3D11CreateDeviceAndSwapChain`, the game's description), the back
 //! buffer is the swap chain's buffer 0 and `Present` presents. Without a
