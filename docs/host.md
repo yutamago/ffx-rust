@@ -952,11 +952,11 @@ docs/drawdiff.md, "Scene gates", has the first gate run (m5 gates).
 `Clock::set_real`), game time is the host's. The frame limiter's `Sleep`
 and every other `Sleep` sleep in full, and the vsync, FMOD and loader
 threads run on their own as in `FFX.exe`: no lockstep, no turns, and the
-logos play (unless `Options::skip_opening`, `--skip-opening`: they end on
-their first frame, as on the virtual clock; a frontend that shows its own
-picture sets it, and a build without `swf` needs it, since its null Iggy
-player never ends the logos). `Game_Main`'s limiter then holds 30 updates a second, with
-the original's catch-up after a slow frame. `ffx-rust` picks the real
+logos play (unless `Options::skip_opening`, `--skip-opening`: they end
+on their first frame, as on the virtual clock; a frontend that shows its
+own picture sets it, and a build without `swf` needs it, since its null
+Iggy player never ends the logos). `Game_Main`'s limiter then holds 30
+updates a second, with the original's catch-up after a slow frame. `ffx-rust` picks the real
 clock for a player's run (no harness, a window) and for a harness game
 outside fast mode (a `realtime` replay: no `FFX_HARNESS_FAST=1`). It
 picks the virtual clock described below for fast-mode harness games,
@@ -1025,8 +1025,8 @@ emulator's) speed:
 - **Reads.** `FileSys_SubmitRead` (`0x0061c220`) runs the read and the
   decompression on the calling thread at once.
 - **The opening logos** end on their first frame, as in fast mode: after
-  each flip `g_PhyreSceneOpeningPlaying` (`0x00ccb9c2`) is cleared. On the real clock only with
-  `Options::skip_opening` (above).
+  each flip `g_PhyreSceneOpeningPlaying` (`0x00ccb9c2`) is cleared. On
+  the real clock only with `Options::skip_opening` (above).
 - **Input.** `Input_KeyHeld` (`0x00629d50`) is wrapped as the harness
   wraps it: the buttons the script holds read as their first keyboard
   binding. DirectInput enumerates a mouse and a keyboard (the game's
@@ -1831,10 +1831,11 @@ stays the game-logic core; Godot draws, plays the sound and takes the
 input. It plugs in as a third `Platform`, `GodotPlatform`, in the same
 process (a GDExtension written in Rust): it calls `platform::install`,
 then `ffx_host::boot_opts`, and runs the game's entry (`Exec::run_entry`)
-on a thread of its own (with `Options::skip_opening`: Godot shows its own
-picture, and a build without Ruffle never ends the Iggy logos). Godot's main
-thread never calls into the executor. The two meet in the platform's own state (a few mutexes and
-queues), so neither waits for the other.
+on a thread of its own, with `Options::skip_opening` (Godot shows its
+own picture; a build without Ruffle would never end the Iggy logos).
+Godot's main thread never calls into the executor. The two meet in the
+platform's own state (a few mutexes and queues), so neither waits for
+the other.
 
 - **The window.** `windowed` is true; `create_window` hands out one handle
   for Godot's window; `client_rect`, `window_rect` and `system_metric`
