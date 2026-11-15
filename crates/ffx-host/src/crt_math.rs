@@ -220,7 +220,7 @@ pub fn ext_of(x: f64) -> Ext {
         }
         _ => Ext {
             neg,
-            exp: e - 1023 + 0x3fff,
+            exp: e + (0x3fff - 1023),
             mant: (1 << 63) | (m << 11),
         },
     }
