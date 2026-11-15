@@ -19,6 +19,8 @@
 //!   window, as `ffx-hook`'s harness does for `FFX.exe`. The game never
 //!   moves or clips the user's mouse pointer (`SetCursorPos`, `ClipCursor`
 //!   do nothing; outside the harness too, for now).
+//! - **Input** ([`input`]): the host's `DirectInput8` behind the game's
+//!   devices, `XInput`, the raw input device names.
 //! - **Graphics.** The real D3D11 device ([`crate::d3d11`]), its swap chain
 //!   on the real window.
 //! - **Timers.** `timeBeginPeriod`/`timeEndPeriod` forward, so `Sleep`
@@ -38,7 +40,9 @@ use windows_sys::Win32::System::LibraryLoader::{
 };
 use windows_sys::Win32::UI::WindowsAndMessaging as wm;
 
-use super::{Message, Platform, Point, Rect, WindowRequest};
+use super::{DeviceCall, DeviceInfo, Message, Platform, Point, Property, Rect, WindowRequest};
+
+mod input;
 
 const WM_SIZE: u32 = 0x0005;
 const WM_ACTIVATE: u32 = 0x0006;
@@ -458,5 +462,84 @@ impl Platform for WindowsPlatform {
 
     fn graphics(&self) -> Box<dyn crate::gfx::Backend> {
         Box::new(crate::d3d11::D3d11::default())
+    }
+
+    fn input_devices(&self) -> bool {
+        true
+    }
+
+    fn input_open(&self, handle: u32, guid: u128) -> Result<String, i32> {
+        input::create_device(handle, guid)
+    }
+
+    fn input_has(&self, handle: u32) -> bool {
+        input::has(handle)
+    }
+
+    fn input_release(&self, handle: u32) {
+        input::release(handle);
+    }
+
+    fn input_status(&self, guid: u128) -> Option<i32> {
+        input::device_status(guid)
+    }
+
+    fn input_controllers(&self, flags: u32) -> Vec<Vec<u8>> {
+        input::controllers(flags)
+    }
+
+    fn input_objects(&self, handle: u32, flags: u32) -> Option<Vec<Vec<u8>>> {
+        input::objects(handle, flags)
+    }
+
+    fn input_set_format(&self, handle: u32, format: &crate::input::Format) -> Option<i32> {
+        input::set_data_format(handle, format)
+    }
+
+    fn input_set_cooperative_level(&self, handle: u32, window: u32, flags: u32) -> Option<i32> {
+        input::set_cooperative_level(handle, window, flags)
+    }
+
+    fn input_property(
+        &self,
+        handle: u32,
+        prop: &Property,
+        data: &mut [u8],
+        set: bool,
+    ) -> Option<i32> {
+        input::property(handle, prop, data, set)
+    }
+
+    fn input_call(&self, handle: u32, call: DeviceCall) -> Option<i32> {
+        input::simple(handle, call)
+    }
+
+    fn input_state(&self, handle: u32, size: usize) -> Option<Result<Vec<u8>, i32>> {
+        input::device_state(handle, size)
+    }
+
+    fn input_data(
+        &self,
+        handle: u32,
+        flags: u32,
+        max: u32,
+    ) -> Option<Result<(Vec<[u32; 5]>, i32), i32>> {
+        input::device_data(handle, flags, max)
+    }
+
+    fn input_info(&self, handle: u32, what: DeviceInfo, data: &mut [u8]) -> Option<i32> {
+        input::info(handle, what, data)
+    }
+
+    fn xinput_state(&self, user: u32) -> Result<[u8; 16], u32> {
+        input::xinput_get_state(user)
+    }
+
+    fn xinput_set_state(&self, user: u32, vibration: [u8; 4]) -> u32 {
+        input::xinput_set_state(user, vibration)
+    }
+
+    fn xinput_ids(&self) -> Vec<(u32, u32)> {
+        input::xinput_ids()
     }
 }

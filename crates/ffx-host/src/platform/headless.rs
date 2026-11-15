@@ -1,10 +1,11 @@
-//! [`HeadlessPlatform`]: no window, no input devices, no device sound
+//! [`HeadlessPlatform`]: no window, no input devices (the layer's
+//! stand-ins and the harness's keys only), no device sound
 //! (docs/host.md, "The platform seam"). What the Linux check and the
 //! null-device runs had as stand-ins: a fake window that gets no messages
 //! and is the 1920 x 1080 screen, and the recording null device
 //! ([`crate::gfx::Null`]).
 
-use super::{Message, Platform, Point, Rect, WindowRequest};
+use super::{DeviceCall, DeviceInfo, Message, Platform, Point, Property, Rect, WindowRequest};
 
 /// The stand-in window's handle (`CreateWindowExA`).
 pub const WINDOW: u32 = 0x0001_0010;
@@ -155,5 +156,71 @@ impl Platform for HeadlessPlatform {
 
     fn graphics(&self) -> Box<dyn crate::gfx::Backend> {
         Box::new(crate::gfx::Null::default())
+    }
+
+    fn input_devices(&self) -> bool {
+        false
+    }
+
+    fn input_open(&self, _: u32, _: u128) -> Result<String, i32> {
+        Err(-1)
+    }
+
+    fn input_has(&self, _: u32) -> bool {
+        false
+    }
+
+    fn input_release(&self, _: u32) {}
+
+    fn input_status(&self, _: u128) -> Option<i32> {
+        None
+    }
+
+    fn input_controllers(&self, _: u32) -> Vec<Vec<u8>> {
+        Vec::new()
+    }
+
+    fn input_objects(&self, _: u32, _: u32) -> Option<Vec<Vec<u8>>> {
+        None
+    }
+
+    fn input_set_format(&self, _: u32, _: &crate::input::Format) -> Option<i32> {
+        None
+    }
+
+    fn input_set_cooperative_level(&self, _: u32, _: u32, _: u32) -> Option<i32> {
+        None
+    }
+
+    fn input_property(&self, _: u32, _: &Property, _: &mut [u8], _: bool) -> Option<i32> {
+        None
+    }
+
+    fn input_call(&self, _: u32, _: DeviceCall) -> Option<i32> {
+        None
+    }
+
+    fn input_state(&self, _: u32, _: usize) -> Option<Result<Vec<u8>, i32>> {
+        None
+    }
+
+    fn input_data(&self, _: u32, _: u32, _: u32) -> Option<Result<(Vec<[u32; 5]>, i32), i32>> {
+        None
+    }
+
+    fn input_info(&self, _: u32, _: DeviceInfo, _: &mut [u8]) -> Option<i32> {
+        None
+    }
+
+    fn xinput_state(&self, _: u32) -> Result<[u8; 16], u32> {
+        Err(crate::input::NOT_CONNECTED)
+    }
+
+    fn xinput_set_state(&self, _: u32, _: [u8; 4]) -> u32 {
+        crate::input::NOT_CONNECTED
+    }
+
+    fn xinput_ids(&self) -> Vec<(u32, u32)> {
+        Vec::new()
     }
 }

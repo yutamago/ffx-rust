@@ -112,6 +112,35 @@ pub struct WindowRequest<'a> {
     pub height: i32,
 }
 
+/// A `DirectInput` property (`Set/GetProperty`): `MAKEDIPROP(n)` or a GUID.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Property {
+    /// `MAKEDIPROP(n)` (a number where the API takes a GUID pointer).
+    Id(u32),
+    /// A property GUID.
+    Guid(u128),
+}
+
+/// The argument-less device calls.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeviceCall {
+    /// `Acquire`.
+    Acquire,
+    /// `Unacquire`.
+    Unacquire,
+    /// `Poll`.
+    Poll,
+}
+
+/// What a device describes about itself.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeviceInfo {
+    /// `GetCapabilities` (`DIDEVCAPS`).
+    Capabilities,
+    /// `GetDeviceInfo` (`DIDEVICEINSTANCEA`).
+    Instance,
+}
+
 /// The process's platform.
 ///
 /// **Threads.** The implementation is shared by every game thread
@@ -228,6 +257,69 @@ pub trait Platform: Send + Sync {
     /// recording, so it doesn't depend on the back end); `Present` shows a
     /// frame.
     fn graphics(&self) -> Box<dyn crate::gfx::Backend>;
+
+    // ---- input (the game's input threads, inside the layer's calls) -----
+    //
+    // The game's `IDirectInput8A` and its devices stay the layer's COM
+    // objects (`crate::gfx`); each device the game creates may get one of
+    // the platform's behind it, by the layer's handle. A device the
+    // platform has none for is the layer's stand-in (the keyboard reads
+    // only the harness's keys, the mouse nothing). The keyboard's state is
+    // DirectInput's 256 scan-code bytes (0x80: down), the mouse's the
+    // game's data format (`DIMOUSESTATE2`), a pad's `XINPUT_STATE`.
+    // `crate::input` decides whether the devices are used at all
+    // (`input_devices`, `FFX_HOST_INPUT`, not in a background harness
+    // game) and adds the harness's keys.
+
+    /// Whether the platform has the player's devices.
+    fn input_devices(&self) -> bool;
+    /// `CreateDevice(guid)` for the layer's device `handle`: the device's
+    /// name, or the `HRESULT`.
+    ///
+    /// # Errors
+    /// The `HRESULT` when there is no such device.
+    fn input_open(&self, handle: u32, guid: u128) -> Result<String, i32>;
+    /// Whether `handle` has a device of the platform's.
+    fn input_has(&self, handle: u32) -> bool;
+    /// The game released `handle`.
+    fn input_release(&self, handle: u32);
+    /// `GetDeviceStatus(guid)` (`None`: no devices).
+    fn input_status(&self, guid: u128) -> Option<i32>;
+    /// The attached game controllers' `DIDEVICEINSTANCEA`s (0x244 bytes
+    /// each) for `EnumDevices(DI8DEVCLASS_GAMECTRL, flags)`.
+    fn input_controllers(&self, flags: u32) -> Vec<Vec<u8>>;
+    /// `EnumObjects(flags)`: each `DIDEVICEOBJECTINSTANCEA` (0x13c bytes;
+    /// `None`: no device).
+    fn input_objects(&self, handle: u32, flags: u32) -> Option<Vec<Vec<u8>>>;
+    /// `SetDataFormat` (the game's format, read from the arena).
+    fn input_set_format(&self, handle: u32, format: &crate::input::Format) -> Option<i32>;
+    /// `SetCooperativeLevel(window, flags)` (the platform's window handle).
+    fn input_set_cooperative_level(&self, handle: u32, window: u32, flags: u32) -> Option<i32>;
+    /// `SetProperty`/`GetProperty` (`set`) on the property's bytes.
+    fn input_property(&self, handle: u32, prop: &Property, data: &mut [u8], set: bool)
+    -> Option<i32>;
+    /// `Acquire`, `Unacquire`, `Poll`.
+    fn input_call(&self, handle: u32, call: DeviceCall) -> Option<i32>;
+    /// `GetDeviceState(size)`: the state, or the `HRESULT`.
+    fn input_state(&self, handle: u32, size: usize) -> Option<Result<Vec<u8>, i32>>;
+    /// `GetDeviceData(flags, max)`: buffered items (offset, data, time
+    /// stamp, sequence, app data) and the `HRESULT`, or the failure.
+    #[allow(clippy::type_complexity)] // items and the HRESULT
+    fn input_data(&self, handle: u32, flags: u32, max: u32)
+    -> Option<Result<(Vec<[u32; 5]>, i32), i32>>;
+    /// `GetCapabilities` / `GetDeviceInfo` into the game's struct.
+    fn input_info(&self, handle: u32, what: DeviceInfo, data: &mut [u8]) -> Option<i32>;
+    /// `XInputGetState(user)`: `XINPUT_STATE`, or the error
+    /// (`ERROR_DEVICE_NOT_CONNECTED`).
+    ///
+    /// # Errors
+    /// No pad there.
+    fn xinput_state(&self, user: u32) -> Result<[u8; 16], u32>;
+    /// `XInputSetState(user, vibration)`.
+    fn xinput_set_state(&self, user: u32, vibration: [u8; 4]) -> u32;
+    /// The `XInput` pads' vendor and product ids (the game's
+    /// `Input_IsXInputDevice` asks).
+    fn xinput_ids(&self) -> Vec<(u32, u32)>;
 }
 
 static PLATFORM: OnceLock<Box<dyn Platform>> = OnceLock::new();
