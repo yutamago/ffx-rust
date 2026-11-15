@@ -1,0 +1,330 @@
+//! `ffx-state`: the game-state API (docs/state-api.md). What a frontend
+//! (gd-ffx, the Godot frontend: docs/godot-plan.md) reads of the game after
+//! each update: the world, the camera, the input and the characters, typed
+//! and versioned, so that scenes and mods never read game memory and the
+//! game's data can later move to Rust types without breaking them.
+//!
+//! - [`Snapshot`] and its parts: plain Rust structs.
+//! - [`read`]: a snapshot read from the game's memory through a function
+//!   that reads bytes where they are mapped (no executor, no arena type: the
+//!   frontend's side and the host's tests call it alike). It only reads.
+//! - [`Snapshot::encode`]: the snapshot as bytes (little-endian, the fields
+//!   in their declared order), the form the `GDExtension` hands to Godot.
+//! - [`schema`]: every struct's fields and types, from which a frontend
+//!   generates its bindings (gd-ffx generates C#).
+//!
+//! [`API_VERSION`] changes with every change of the fields; an encoded
+//! snapshot starts with [`MAGIC`] and the version.
+
+mod read;
+pub mod schema;
+
+pub use read::{Reader, read};
+pub use schema::{ApiStruct, ApiType, Field, StructSchema, Ty};
+
+/// The API's version: a frontend checks it before it decodes a snapshot.
+pub const API_VERSION: u32 = 1;
+
+/// The first four bytes of an encoded snapshot (`FFXS`).
+pub const MAGIC: u32 = u32::from_le_bytes(*b"FFXS");
+
+/// Declares an API struct: the struct, its encoding and its schema.
+macro_rules! api_struct {
+    (
+        $(#[doc = $doc:literal])*
+        $name:ident {
+            $(
+                $(#[doc = $fdoc:literal])*
+                $field:ident : $ty:ty
+            ),* $(,)?
+        }
+    ) => {
+        $(#[doc = $doc])*
+        #[derive(Debug, Clone, Default, PartialEq)]
+        pub struct $name {
+            $(
+                $(#[doc = $fdoc])*
+                pub $field: $ty,
+            )*
+        }
+
+        impl $crate::schema::ApiStruct for $name {
+            fn schema() -> &'static $crate::schema::StructSchema {
+                static SCHEMA: $crate::schema::StructSchema = $crate::schema::StructSchema {
+                    name: stringify!($name),
+                    doc: concat!($($doc, "\n"),*),
+                    fields: &[
+                        $(
+                            $crate::schema::Field {
+                                name: stringify!($field),
+                                ty: <$ty as $crate::schema::ApiType>::TY,
+                                doc: concat!($($fdoc, "\n"),*),
+                            },
+                        )*
+                    ],
+                };
+                &SCHEMA
+            }
+
+            fn encode_fields(&self, out: &mut Vec<u8>) {
+                $( $crate::schema::ApiType::encode(&self.$field, out); )*
+            }
+        }
+
+        impl $crate::schema::ApiType for $name {
+            const TY: $crate::schema::Ty =
+                $crate::schema::Ty::Struct(<$name as $crate::schema::ApiStruct>::schema);
+            fn encode(&self, out: &mut Vec<u8>) {
+                $crate::schema::ApiStruct::encode_fields(self, out);
+            }
+        }
+    };
+}
+
+api_struct! {
+    /// The game after one update: everything a frontend draws from.
+    Snapshot {
+        /// Updates the game has run (30 a second); the snapshot is taken
+        /// between update `update - 1` and update `update`.
+        update: u32,
+        /// The game's clock in seconds.
+        game_time: f64,
+        /// The map, the story, what runs.
+        world: World,
+        /// The view.
+        camera: Camera,
+        /// The pad as the game logic reads it.
+        input: Input,
+        /// The field characters in use (party, NPCs, monsters, objects,
+        /// weapons), by slot.
+        actors: Vec<Actor>,
+    }
+}
+
+api_struct! {
+    /// The map and the state of play.
+    World {
+        /// The current map (`g_SaveData` `+0`).
+        map: u16,
+        /// The map before it (`+2`).
+        previous_map: u16,
+        /// The entrance the map was entered by (`+0xc`).
+        entrance: u8,
+        /// The story progress (`g_SaveScenario`, `+0xbec`).
+        story: u16,
+        /// The running event's name, e.g. `bl/bltz0000` (`g_EventName`).
+        event: String,
+        /// The running event's frame count (control work 0).
+        event_frame: u32,
+        /// A battle runs (`g_BtlStatus` nonzero).
+        battle: bool,
+        /// The player controls the party (control work 0, bit 1).
+        player_control: bool,
+        /// The game is paused (`g_PauseOn`).
+        paused: bool,
+        /// A screen fade runs (`g_FadeActive` nonzero).
+        fading: bool,
+    }
+}
+
+api_struct! {
+    /// The view the game's renderer draws with: the scene's main camera
+    /// (`PhyreScene` `+0xdc`) and its world matrix (`+0xfa04`), in render
+    /// space (the field's x and y negated: y up).
+    Camera {
+        /// A scene and its camera exist (the values below were read).
+        valid: bool,
+        /// The camera's world matrix, 3x4 as the scene keeps it
+        /// (`graphicCameraSetWorldMatrix`: `PMatrix4_toWorldMatrix3x4` of
+        /// the inverted view).
+        world: [f32; 12],
+        /// The vertical field of view, radians (`PCamera` `+0x154`).
+        fov_y: f32,
+        /// Width over height (`+0x150`).
+        aspect: f32,
+        /// The far plane (`+0xbc`).
+        far: f32,
+        /// The camera channel's eye in field space (`g_Camera`,
+        /// `MsCameraGetPosNow`, which the battle reads; zeros early in the
+        /// opening's event, where the scene's camera above is the one drawn).
+        eye: [f32; 3],
+        /// The camera channel's look-at point in field space.
+        target: [f32; 3],
+    }
+}
+
+api_struct! {
+    /// The pad as the game logic reads it (PS2 bits: `0x10` triangle,
+    /// `0x20` circle, `0x40` cross, `0x80` square, `0x800` start,
+    /// `0x1000`.. up, right, down, left; ffx-rust docs/harness.md "Input
+    /// facts").
+    Input {
+        /// Buttons held (`g_PadHeld`, the field's movement reads it).
+        held: u32,
+        /// Buttons newly pressed this update (`g_PadPressed`, the scripts'
+        /// `AtelGetControler`).
+        pressed: u16,
+        /// The left stick, 0..255 with 128 at rest.
+        stick_x: u8,
+        /// See `stick_x`.
+        stick_y: u8,
+    }
+}
+
+api_struct! {
+    /// A field character (a `Ch` record, ffx-rust docs/formats/chara.md).
+    Actor {
+        /// The record's slot in `g_ChrArray`: stable while the character
+        /// lives, the key to match it between snapshots.
+        slot: u16,
+        /// The character id: `kind << 12 | number`.
+        id: u16,
+        /// The kind: 0 party (`c`), 1 monster (`m`), 2 NPC (`n`), 3 aeon
+        /// (`s`), 4 weapon (`w`), 5 object (`f`), 6 skeleton (`k`).
+        kind: u8,
+        /// The model's name (its folder: `chr/<kind>/<name>`).
+        model: String,
+        /// The position in field space.
+        position: [f32; 3],
+        /// The facing, radians (the world matrix turns by `-yaw - pi/2`).
+        yaw: f32,
+        /// The scale.
+        scale: [f32; 3],
+        /// Hidden: by an event (1), an effect (2), a battle (0x10), or the
+        /// distance cull (8, 0x20); 0 shown.
+        hidden: u8,
+        /// The fade's alpha, 0..1 (0 also hides).
+        alpha: f32,
+        /// The motion playing: `character << 16 | number`.
+        motion: u32,
+        /// The motion's frame (frames of 1/30 s, fractional).
+        motion_frame: f32,
+        /// The motion's speed (1 normal).
+        motion_speed: f32,
+        /// The slot of the character this one is bound to (a weapon to its
+        /// holder), -1 none.
+        parent: i16,
+        /// The parent's element (bone) it is bound to.
+        parent_bone: u16,
+        /// The player's character (`g_Player`).
+        player: bool,
+        /// The root's world matrix as the game builds it (rotation x 0.001,
+        /// translation the position; row-major, field space).
+        world: [f32; 16],
+        /// The skeleton's elements (bones) as posed this update, in the
+        /// model's order (an HD model's `SkeletonNode_i` takes bone `i`).
+        bones: Vec<Bone>,
+    }
+}
+
+api_struct! {
+    /// One element (bone) of a character's skeleton.
+    Bone {
+        /// Its global matrix relative to the character (`+0x88` of the
+        /// element; row-major): the root's `world` places it in the field.
+        matrix: [f32; 16],
+    }
+}
+
+impl Snapshot {
+    /// The snapshot as bytes: [`MAGIC`], [`API_VERSION`], then the fields.
+    #[must_use]
+    pub fn encode(&self) -> Vec<u8> {
+        let mut out = Vec::with_capacity(256 + self.actors.len() * 160);
+        out.extend_from_slice(&MAGIC.to_le_bytes());
+        out.extend_from_slice(&API_VERSION.to_le_bytes());
+        ApiStruct::encode_fields(self, &mut out);
+        out
+    }
+}
+
+/// Every struct of the API, the root ([`Snapshot`]) first.
+#[must_use]
+pub fn structs() -> Vec<&'static StructSchema> {
+    vec![
+        Snapshot::schema(),
+        World::schema(),
+        Camera::schema(),
+        Input::schema(),
+        Actor::schema(),
+        Bone::schema(),
+    ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_snapshot_encodes_its_fields_in_order() {
+        let s = Snapshot {
+            update: 7,
+            game_time: 1.5,
+            actors: vec![Actor {
+                slot: 3,
+                model: "c001".into(),
+                ..Actor::default()
+            }],
+            ..Snapshot::default()
+        };
+        let b = s.encode();
+        assert_eq!(&b[0..4], b"FFXS");
+        assert_eq!(u32::from_le_bytes(b[4..8].try_into().unwrap()), API_VERSION);
+        assert_eq!(u32::from_le_bytes(b[8..12].try_into().unwrap()), 7);
+        assert_eq!(f64::from_le_bytes(b[12..20].try_into().unwrap()), 1.5);
+        // update, game time, the world (with an empty event), the camera,
+        // the input, then one actor ("c001", no bones)
+        let world = 2 + 2 + 1 + 2 + 2 + 4 + 4;
+        let camera = 1 + 48 + 4 + 4 + 4 + 12 + 12;
+        let input = 4 + 2 + 1 + 1;
+        let actor = 2 + 2 + 1 + (2 + 4) + 12 + 4 + 12 + 1 + 4 + 4 + 4 + 4 + 2 + 2 + 1 + 64 + 2;
+        assert_eq!(b.len(), 8 + 4 + 8 + world + camera + input + 2 + actor);
+    }
+
+    /// FNV-1a of `schema::text()` at [`API_VERSION`].
+    const PINNED: u64 = 0xf99e_8408_da0c_b9a0;
+
+    /// A field change must raise [`API_VERSION`]: the schema's text is
+    /// pinned to the version here.
+    #[test]
+    fn the_version_pins_the_schema() {
+        let text = schema::text();
+        let hash = text.bytes().fold(0xcbf2_9ce4_8422_2325_u64, |h, b| {
+            (h ^ u64::from(b)).wrapping_mul(0x0000_0100_0000_01b3)
+        });
+        assert_eq!(
+            (API_VERSION, hash),
+            (1, PINNED),
+            "the schema changed: raise API_VERSION and pin the new hash"
+        );
+    }
+
+    #[test]
+    fn the_schema_lists_every_field() {
+        let s = Snapshot::schema();
+        let names: Vec<_> = s.fields.iter().map(|f| f.name).collect();
+        assert_eq!(
+            names,
+            ["update", "game_time", "world", "camera", "input", "actors"]
+        );
+        assert!(matches!(s.fields[5].ty, Ty::List(_)));
+        assert_eq!(structs().len(), 6);
+        assert!(Actor::schema().fields.iter().all(|f| !f.doc.is_empty()));
+    }
+}
+
+#[cfg(test)]
+mod doc_tests {
+    #[test]
+    fn the_doc_lists_the_schema() {
+        let doc = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../docs/state-api.md"
+        ))
+        .unwrap();
+        assert!(
+            doc.contains(&crate::schema::text()),
+            "docs/state-api.md's schema block is not `cargo run -p ffx-state --example schema`'s output"
+        );
+    }
+}

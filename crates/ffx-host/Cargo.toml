@@ -75,6 +75,8 @@ ffx-kernel.workspace = true
 # the spell overlays' Rust ports, bound by code identity (src/library.rs)
 ffx-magic.workspace = true
 ffx-sound.workspace = true
+# the game-state API (src/observe.rs)
+ffx-state.workspace = true
 # the developers' save reader's port (src/devsave.rs)
 ffx-system.workspace = true
 # The Flash screens on Ruffle (src/iggy/swf.rs): heavy (wgpu), so a feature.

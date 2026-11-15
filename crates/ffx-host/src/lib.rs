@@ -12,6 +12,8 @@
 //! - [`platform`]: what the player-facing side asks of the operating system
 //!   (window, input, sound, graphics, Steam), one trait with a Windows and a
 //!   headless implementation;
+//! - [`observe`]: the game-state API's snapshots between two updates
+//!   ([`ffx_state`]), for a frontend's observers;
 //! - [`ports`]: what this crate registers in the table;
 //! - [`report`]: what a run reached, for the log and the tests.
 
@@ -54,6 +56,7 @@ pub mod input;
 pub mod leaf;
 pub mod library;
 pub mod log;
+pub mod observe;
 pub mod platform;
 pub mod ports;
 pub mod replay;

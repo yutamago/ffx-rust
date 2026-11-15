@@ -1033,6 +1033,7 @@ dependencies = [
  "ffx-magic",
  "ffx-pcore",
  "ffx-sound",
+ "ffx-state",
  "ffx-swf",
  "ffx-system",
  "goblin",
@@ -1368,6 +1369,13 @@ dependencies = [
  "ffx-graphic",
  "ffx-vbf",
  "thiserror",
+]
+
+[[package]]
+name = "ffx-state"
+version = "0.1.0"
+dependencies = [
+ "ffx-chara",
 ]
 
 [[package]]
