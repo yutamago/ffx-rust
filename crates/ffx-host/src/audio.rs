@@ -920,6 +920,10 @@ fn system_play_sound(e: &mut Exec, args: &Args) -> Ret {
         if let Some(m) = s.movie.as_mut().filter(|m| m.sound == sound) {
             m.channel = sound | 4;
             m.paused = paused != 0;
+            crate::log::note(&format!(
+                "fmod: movie playSound: sound {sound:#x} channel {:#x} paused {}",
+                m.channel, m.paused
+            ));
             return m.channel;
         }
         // CHANNEL_REUSE: the channel the game passes back, else a new one
@@ -1061,6 +1065,10 @@ fn channel_set_paused(e: &mut Exec, args: &Args) -> Ret {
         if is_movie_channel(s, ch) {
             if let Some(m) = s.movie.as_mut() {
                 m.paused = p != 0;
+                crate::log::note(&format!(
+                    "fmod: movie channel {ch:#x} paused {} ({} frames played)",
+                    m.paused, m.mixed
+                ));
             }
         } else {
             s.call("Channel::setPaused", &[ch, p], &[], &[]);

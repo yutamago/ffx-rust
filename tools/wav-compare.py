@@ -180,7 +180,11 @@ def main():
         count_frames = len({i // ch for i in bad})
         largest = max((abs(xa[i] - xb[i]) for i in bad), default=0.0)
         first = bad[0] if bad else None
-    if first is None:
+    if first is None and not ok:
+        # the lengths differ: a window A never mixed (FMOD not ticking,
+        # 0 frames) compared "identical" before, under a failing exit code
+        out.append(f"DIFFERENT: the lengths differ (the {n} frames both hold are the same)")
+    elif first is None:
         out.append("identical" + (f" (tolerance {args.tolerance})" if args.tolerance else ""))
     else:
         ok = False
