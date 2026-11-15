@@ -23,7 +23,7 @@ pub use read::{Reader, read};
 pub use schema::{ApiStruct, ApiType, Field, StructSchema, Ty};
 
 /// The API's version: a frontend checks it before it decodes a snapshot.
-pub const API_VERSION: u32 = 1;
+pub const API_VERSION: u32 = 2;
 
 /// The first four bytes of an encoded snapshot (`FFXS`).
 pub const MAGIC: u32 = u32::from_le_bytes(*b"FFXS");
@@ -114,6 +114,9 @@ api_struct! {
         story: u16,
         /// The running event's name, e.g. `bl/bltz0000` (`g_EventName`).
         event: String,
+        /// The level the renderer has loaded (the scene's current level
+        /// name, `PhyreScene` `+0xfaf0`): the map model to draw.
+        level: String,
         /// The running event's frame count (control work 0).
         event_frame: u32,
         /// A battle runs (`g_BtlStatus` nonzero).
@@ -274,7 +277,7 @@ mod tests {
         assert_eq!(f64::from_le_bytes(b[12..20].try_into().unwrap()), 1.5);
         // update, game time, the world (with an empty event), the camera,
         // the input, then one actor ("c001", no bones)
-        let world = 2 + 2 + 1 + 2 + 2 + 4 + 4;
+        let world = 2 + 2 + 1 + 2 + 2 + 2 + 4 + 4;
         let camera = 1 + 48 + 4 + 4 + 4 + 12 + 12;
         let input = 4 + 2 + 1 + 1;
         let actor = 2 + 2 + 1 + (2 + 4) + 12 + 4 + 12 + 1 + 4 + 4 + 4 + 4 + 2 + 2 + 1 + 64 + 2;
@@ -282,7 +285,7 @@ mod tests {
     }
 
     /// FNV-1a of `schema::text()` at [`API_VERSION`].
-    const PINNED: u64 = 0xf99e_8408_da0c_b9a0;
+    const PINNED: u64 = 0x40c3_1bca_8282_db8e;
 
     /// A field change must raise [`API_VERSION`]: the schema's text is
     /// pinned to the version here.
@@ -294,7 +297,7 @@ mod tests {
         });
         assert_eq!(
             (API_VERSION, hash),
-            (1, PINNED),
+            (2, PINNED),
             "the schema changed: raise API_VERSION and pin the new hash"
         );
     }
