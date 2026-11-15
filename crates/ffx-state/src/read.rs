@@ -114,6 +114,7 @@ impl Mem<'_> {
     }
     /// `N` floats (at most 16) in one read; non-finite ones read as 0.
     fn floats<const N: usize>(&self, at: u32) -> [f32; N] {
+        const { assert!(N <= 16) };
         let mut b = [0u8; 64];
         let n = 4 * N.min(16);
         if !self.0.read_bytes(at, &mut b[..n]) {
@@ -124,10 +125,11 @@ impl Mem<'_> {
             if v.is_finite() { v } else { 0.0 }
         })
     }
-    /// Whether `len` (at most 64) bytes at `at` are mapped.
-    fn mapped(&self, at: u32, len: usize) -> bool {
-        let mut b = [0u8; 64];
-        self.0.read_bytes(at, &mut b[..len.min(64)])
+    /// Whether `LEN` (at most 64) bytes at `at` are mapped.
+    fn mapped<const LEN: usize>(&self, at: u32) -> bool {
+        const { assert!(LEN <= 64) };
+        let mut b = [0u8; LEN];
+        self.0.read_bytes(at, &mut b)
     }
     /// A NUL-terminated string of at most `max` bytes (Latin-1 as UTF-8).
     fn c_string(&self, at: u32, max: usize) -> String {
@@ -189,7 +191,7 @@ fn camera(m: &Mem<'_>) -> Camera {
         m.u32(scene.wrapping_add(SCENE_CAMERA))
     };
     let world_at = scene.wrapping_add(SCENE_CAMERA_WORLD);
-    let valid = pcamera != 0 && m.mapped(world_at, 48);
+    let valid = pcamera != 0 && m.mapped::<48>(world_at);
     let channel = m.u32(G_CAMERA);
     let (eye, target) = if channel == 0 {
         ([0.0; 3], [0.0; 3])

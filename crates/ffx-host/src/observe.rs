@@ -9,7 +9,8 @@
 //! call into the game, so the game runs the same with or without them
 //! (replays, saves). They run on the game's main thread, outside any lock
 //! of this module: they must return quickly (hand the snapshot on, don't
-//! wait); one may add or remove observers.
+//! wait) and must not panic (the panic would unwind through the game's
+//! update); one may add or remove observers.
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, PoisonError, RwLock};

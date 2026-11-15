@@ -26,8 +26,10 @@ it only reads (the game runs the same with or without it: replays, saves).
   12 floats, `[Y.x Y.y Y.z X.x | Z.x Z.y Z.z X.y | P.x P.y P.z X.z]`, where
   X, Y, Z are the camera's axes and P its position in render space (the
   camera's world rows 1 to 3, with row 0 spread over their fourth
-  column). Measured in the opening: the three axes are orthonormal and
-  right-handed, P is the camera channel's eye (`g_Camera`) with x and y negated.
+  column). Measured in the opening at the fire (event frame 959): the
+  three axes are orthonormal and right-handed, and P is the camera
+  channel's eye (`g_Camera`) with x and y negated. Early in the same event
+  (frame 163) the channel reads zeros while the scene's camera is set.
 - An actor's `world` is its root matrix (`+0x1d0`): rotation × 0.001 and
   its field position. Its `bones` are the elements' global matrices
   (`+0x88`), relative to the character; the root places them
@@ -112,8 +114,8 @@ The addresses and offsets, with their evidence in `symbols/ffx.sym`:
 `0x01300704`; the scene `g_PhyreScene` `0x00ccb9d8` (`+0xdc` its main
 camera: `+0xbc` far, `+0x150` aspect, `+0x154` vertical FOV; `+0xfa04`
 the camera world; docs/formats/render.md, "Cameras"); the camera
-channel `g_Camera` `0x02311430` (`MsCameraGetPosNow`; zeros in the
-opening's event, so the drawn camera comes from the scene); the pad `g_PadHeld`
+channel `g_Camera` `0x02311430` (`MsCameraGetPosNow`; zeros early in
+the opening's event, so the drawn camera comes from the scene); the pad `g_PadHeld`
 `0x023c44ac` (stick y, x at `0x023c44a4`, `0x023c44a5`) and
 `g_PadPressed` `0x013270d0`; the characters `g_ChrCount` `0x023c44e0`,
 `g_ChrArray` `0x023c44e4` (records of `0x880` bytes,
