@@ -26,6 +26,18 @@ resource vs=bb9bf1c768e1480f field=vb5 cause: cloth state carried from the free-
 # when load timing moves a batch (docs/drawdiff.md, fw-101's draw 113).
 resource vs=db349612ecc598d8 field=ps.srv1 cause: eye-blink texture animation whose timing follows the load (BC1/BC3 frame)
 
+# r1/r2 (2026-10-27, original code), and the first ffx-rust capture with
+# its rings (m5s-kami, 2026-11-15): draw 31's ps srv1 (vs f1de6dea8bd5f574)
+# is one of two live 16x8 BC3 textures, 64533f44103b9ee6 or
+# a7b96f39a6027d56 (two texture objects with their own views, both
+# declared before frame 0 in r2 and in m5s). r1 binds the first in all three frames, r2 switches to the
+# second at frame 1, m5s binds the second and switches to the first at
+# frame 2; of 45 captures of this scene (originals and hooked runs) 42
+# bind the first throughout, three hooked runs the second. Which one is
+# bound is not pinned to the event count. bsil0000's list has the same
+# draw (there laid to the loader's timing).
+resource vs=f1de6dea8bd5f574 field=ps.srv1 cause: the draw binds one of two 16x8 textures and switches at a frame not pinned to the event count; differs between original runs (r1/r2)
+
 # Not seen between kami0100's own original runs (0x001af8ec in all four),
 # but the same junk read differs between original runs on bsil0000 and
 # cdsp0000 (every pair): Ch_DrawMain (0x0082ed50) passes
