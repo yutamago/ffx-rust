@@ -663,10 +663,7 @@ fn the_state_api_sees_a_subtitle() {
     let language = language.lock().unwrap().expect("the language was read");
     // a fresh GameSetting.ini: Japanese
     assert_eq!(language, 0);
-    let lang = match language {
-        1 => ffx_text::Language::English,
-        _ => ffx_text::Language::Japanese,
-    };
+    let lang = ffx_text::Language::Japanese;
     let game = exe.parent().unwrap();
     let archive = ffx_vbf::Archive::open(game.join("data/FFX_Data.vbf")).unwrap();
     let table = archive
@@ -676,8 +673,5 @@ fn the_state_api_sees_a_subtitle() {
         .unwrap()
         .decode(&m.text);
     eprintln!("message {m:?} (language {language}, {lang:?}): {text:?}");
-    assert!(
-        text.contains("リュック") || text.contains("Rikku"),
-        "{text:?}"
-    );
+    assert!(text.contains("リュック"), "{text:?}");
 }

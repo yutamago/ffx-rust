@@ -59,19 +59,22 @@ run without requests is unchanged.
 ## Menus and messages (API 3)
 
 For a native UI (gd-ffx's G4): `Menus` says which PS2 menu is open
-(`g_TkMenuMainActiveMask`, a bit per menu slot: `0x2` the main menu), the
-main menu's cursor and option count, the battle command window (whose it
-is, its level, that level's cursor and its ids as `u16`s), the PC save
-screen's state machine and cursor, and whether the PC (Esc, Flash) menu
-is up. `messages` are the event script's message windows that are not
-closed (`g_AtelMsgWindows`, the bank `g_AtelMenuExecStatus` selects):
-state, place, flags, mode, the choice the player has highlighted (the
-text box's record that `0x01868a90`'s table points at, as
-`Native_MsgSelect_Poll` reads it), the
-one the script started it at, and the text as the game encodes it (a frontend decodes it with ffx-text's charset for `World.language`, the text's language (`g_LocalizationManager` `+4`, as `TOGetFFXLang`; 0xff unknown; a fresh `GameSetting.ini` gives Japanese, 0); `{VAR}` codes
-are not filled). The battle record's offsets come from the ports
-(`TOBtlMemoryCursorPos`, `ffx_system::tolib`), not yet from a run in
-battle; the title's menu and the Esc menu's pages (Flash) are not covered.
+(`g_TkMenuMainActiveMask`, a bit per menu slot: `0x2` the main menu),
+the main menu's cursor and option count, the battle command window
+(whose it is, its level, that level's cursor and its ids as `u16`s), the
+PC save screen's state machine and cursor, and whether the PC (Esc,
+Flash) menu is up. `messages` are the event script's message windows
+that are not closed (`g_AtelMsgWindows`, the bank `g_AtelMenuExecStatus`
+selects): state, place, flags, mode, the choice the player has
+highlighted (the text box's record that `0x01868a90`'s table points at,
+as `Native_MsgSelect_Poll` reads it), the one the script started it at,
+and the text as the game encodes it (a frontend decodes it with ffx-
+text's charset for `World.language`, the text's language
+(`g_LocalizationManager` `+4`, as `TOGetFFXLang`; 0xff unknown; a fresh
+`GameSetting.ini` gives Japanese, 0); `{VAR}` codes are not filled). The
+battle record's offsets come from the ports (`TOBtlMemoryCursorPos`,
+`ffx_system::tolib`), not yet from a run in battle; the title's menu and
+the Esc menu's pages (Flash) are not covered.
 
 ## Encoding
 

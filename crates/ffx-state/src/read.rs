@@ -356,7 +356,7 @@ fn world(m: &Mem<'_>) -> World {
             } else {
                 u8::try_from(m.u32(lm.wrapping_add(4)))
                     .ok()
-                    .filter(|&l| l <= 10)
+                    .filter(|&l| matches!(l, 0..=5 | 9 | 10))
                     .unwrap_or(LANGUAGE_UNKNOWN)
             }
         },
@@ -576,8 +576,12 @@ mod tests {
         let lm: u32 = 0x0450_0000;
         mem.put(LOCALIZATION, &lm.to_le_bytes());
         mem.put(lm, &[0u8; 8]);
+        mem.put(lm + 4, &0u32.to_le_bytes());
+        assert_eq!(read(&mem, 0, 0.0).world.language, 0);
         mem.put(lm + 4, &1u32.to_le_bytes());
         assert_eq!(read(&mem, 0, 0.0).world.language, 1);
+        mem.put(lm + 4, &7u32.to_le_bytes());
+        assert_eq!(read(&mem, 0, 0.0).world.language, LANGUAGE_UNKNOWN);
         mem.put(lm + 4, &0x1234u32.to_le_bytes());
         assert_eq!(read(&mem, 0, 0.0).world.language, LANGUAGE_UNKNOWN);
         // the save list: the index is top + cursor
@@ -599,9 +603,11 @@ mod tests {
         // an Esc menu object that is not mapped is not up
         mem.put(ESC_MENU, &0x0460_0000u32.to_le_bytes());
         assert!(!read(&mem, 0, 0.0).menus.esc_menu);
-        // a bank byte of -1 reads bank 0
+        // a bank byte of -1 reads bank 0: its open window is listed
+        mem.put(MSG_WINDOWS, &vec![0u8; 16 * MSG_WINDOW as usize]);
+        mem.put(MSG_WINDOWS + 0x14, &2u16.to_le_bytes());
         mem.put(MSG_BANK, &[0xff]);
-        assert_eq!(read(&mem, 0, 0.0).messages.len(), 0);
+        assert_eq!(read(&mem, 0, 0.0).messages.len(), 1);
     }
 
     #[test]
