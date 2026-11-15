@@ -29157,7 +29157,7 @@
 0x00cdec88 label g_ShadowTileRects_00cdec88 # static PArray of 16-byte {x0, y0, x1, y1} (count +0, top bit not owned; data +4): the tiles ShadowManager_renderCharacterTiles_006caee0 drew last frame, cleared at the start of the next; guard word 0x00cdec90 bit 0; name ours
 0x00cded31 label g_FMVSkipped # set by handleInput's skip, cleared by initialize (platform census 2026-10-25, docs/formats/platform.md; movie)
 0x00cded3c label g_FMVPlayerManager # sFMVPlayerManager singleton (platform census 2026-10-25, docs/formats/platform.md; movie)
-0x00cded58 label    g_LocalizationManager     # the language manager (+4 language, TOGetFFXLang)
+0x00cded58 label    g_LocalizationManager     # the language manager (+4 language, TOGetFFXLang); measured: a fresh GameSetting.ini gives language 0 (Japanese) under ffx-rust; the arrival's first subtitle then decodes with the jp charset (Rikku!?)
 0x00cdedf0 label    g_DynGeoFillBuffer        # graphicDynGeoFillBufferIsValid: *(*this) != 0
 0x00ce5170 label    g_FogEffectManager        # Phyre_FogEffectManager_GetInstance; graphicSetChrFogFade
 0x00ce5176 label    g_DepthBias_Dirty         # u8: DepthBiasHooks_clearDepthBias resets the table only when set, and clears it
@@ -29175,7 +29175,7 @@
 0x00ce72e4 label g_SaveMachineTimer # frames before SaveDataMachine_CheckFile checks (30 after a read)
 0x00ce72e8 label g_SaveMachineState # SaveDataMachine_Update's state (0xb..0x11 load, 0xa idle after a load)
 0x00ce72ec label g_SaveListTop # first visible entry of the save list; SaveDataMachine_ReadFile reads entry top + g_SaveListCursor
-0x00ce72f0 label g_SaveListCursor # cursor in the save list
+0x00ce72f0 label g_SaveListCursor # cursor in the save list; the row on screen only (0..4): the list index is g_SaveListTop (0x00ce72ec) + this; 0x00ce72f4 the files found, 0x00ce72f8 the rows listed (SaveDataMachine_ReadFile, m5a_savedata)
 0x00ce7304 label g_SaveMachineSize # bytes to read or write (0x6900), SaveDataMachine_StartLoad
 0x00ce7308 label g_SaveMachineBuffer # buffer to read into or write from (0x01597f70), SaveDataMachine_StartLoad
 0x00ce7310 label g_SaveMachineBusy # 1 from SaveDataMachine_StartLoad until the load is done
@@ -29732,7 +29732,7 @@
 0x012a22c0 label    g_EtChr                      # 240 x 0x20 effect character records: +0 handle, +4 chr number, +0xc u16 bind flags, +0xe draw flag index, +0x17 bit 0 stone (op_et_*, op_get_chr*)
 0x012a40c0 label    g_OpusBattle                 # the battle's opus object: +0x1c draw list, +0x20 parts, +0x3a genko counter (opus_get_osu_by_draw default, op_et_battle_genko_counter_get)
 0x012a40c4 label    g_OpusAlt                 # an opus object next to g_OpusBattle that opu_debug_check prefers when set and opus_end_all_sub clears (+0x10..+0x1c lists, +0x20 object base, u16 +0x34 count); no writer in the dump; name ours
-0x012a4100 label    g_EtEff                      # 512 x 0x20 effect records: +0 ID (bind effects 0x40000400/500/600/700 + chr record), +4 object (u16 signals at +0xb0: 0x4000 off, 0x8000 fade)
+0x012a4100 label    g_EtEff                      # 512 x 0x20 effect records: +0 ID (bind effects 0x40000400/500/600/700 + chr record), +4 object (u16 signals at +0xb0: 0x4000 off, 0x8000 fade); -1 = free (0 in a table not set up yet); +8 u8 target count, +0x10 u8[8] targets, +0x18 first character, +0x1c kind, +0x1d ended; measured in the deck's battle (cdsp00, 3/0/0): effect records from the battle's start: 0x50001800/01 targeting characters 0 and 4 (party), 0x40000405/06 targeting 20 and 21 (the monsters): the low byte is not the character byte
 0x012a4104 label    g_OpusNoTable                # 32-byte entries, a unit pointer at +4 (this address): opus_no_get / opus_parent_get take the number for 0xfe00..0xfeff from its +0x1a & 0x7ff0, indexed by the unit's u16 +0x14
 0x012a8100 label    g_EtChrHandles            # 240 character handles in draw flag layout order (opus_chr_index_map)
 0x012a84c0 label    g_EtChrDrawFlags             # byte per draw flag index: 4 hides the bind effect, 8 the second one (op_et_bindeff_draw_on/off)
@@ -30386,7 +30386,7 @@
 0x0187155c label g_TkMenuMainSwapFrom     # i32 party-order row picked first (TkMenuCtrlMain states 10-0x18; -1 none); name ours
 0x01871560 label g_TkMenuMainSwapTo       # i32 party-order row to swap with (TkMenuCtrlMain states 0x11-0x15; -1 none); name ours
 0x01871564 label g_TkMenuMainCmdBusy      # u16 TkMenuCtrlMain state 1 waits for it to be 0; name ours
-0x01871568 label    g_TkMenuMainOptions       # 8-byte entries: +0 menu (TkMenuMainGetOptionMenu), +4 i16 enabled (TkMenuMainGetOptionEnabled)
+0x01871568 label    g_TkMenuMainOptions       # 8-byte entries: +0 menu (TkMenuMainGetOptionMenu), +4 i16 enabled (TkMenuMainGetOptionEnabled); the +0 menu is a u32; names TkMenuMainMes(+0): measured on Besaid (devsave 7, Japanese): スフィア盤, アイテム, アビリティ, オーバードライブ, ステータス, コンフィグ, ヘルプ
 0x01871668 label g_TkMenuMainRowDelay     # u16[8] = 4*row (TkMenuAppearMainCmdWindow), counted down by 0x008e2040; name ours
 0x01871678 label g_TkMenuMainRowSlide     # u16[8] cleared by TkMenuAppearMainCmdWindow; 0x008e22a0 reads it as the row offset; name ours
 0x01871688 label    g_TkMenuMainMaxOptions    # TkMenuMainGetMaxOptions
@@ -30584,7 +30584,7 @@
 0x02311424 label g_CameraPriorityMask        # not 0: MsCameraPriority (0x007be0a0) changes nothing (MsCameraPriorityMask 0x007be100)
 0x02311428 label    g_CamOverrideScreenDepth     # override projection distance (default 1024.0; Native_CamSetScreenDepth's units)
 0x0231142c label    g_CamOverrideOn              # nonzero: the view comes from the override camera (Cam_OverrideSet), else from the active channel
-0x02311430 label    g_Camera                     # pointer to the active camera channel (FUN_007bd470 reads its sides): +0x50 look-at point (ref, side 0) xyz, +0x66c eye (side 1) xyz; live: the look-at follows the player at chest height on the S.S. Winno deck
+0x02311430 label    g_Camera                     # pointer to the active camera channel (FUN_007bd470 reads its sides): +0x50 look-at point (ref, side 0) xyz, +0x66c eye (side 1) xyz; live: the look-at follows the player at chest height on the S.S. Winno deck; measured from ffx-rust (gd-ffx state API, 2026-11-15): zeros early in the opening's event (lo/loopdemo frame 163) while the scene's own camera (g_PhyreScene +0xdc, world at +0xfa04) is set; at the fire (frame 959) the eye matches that camera world's position with x and y negated
 0x02311440 label g_CameraMatrix              # MsGetCameraMatrix (0x007c04b0); the game's 4x4 view: Cam_Apply 0x007bc980 passes it to graphicCameraSetWorldMatrix 0x00639860, which inverts it into g_PhyreScene +0xfa04; Copy_009da750 fills it from 0x022fb660 (MsScreenProcess); a reference-capture scene input
 0x02311480 label g_ScreenMatrix              # MsGetScreenMatrix (0x007bbd70); view to screen: a point is drawn at p x g_CameraMatrix x g_ScreenMatrix (ffx-prender l6_map.rs); MsScreenProcess computes it (MsScreenMatrix 0x007c3d60) and g_CameraMatrix (MsCameraMatrix 0x007c1be0) before its Cam_Apply, once per screen of each Sg_MainLoop draw
 0x023114c0 label g_BtlScreen                  # u32; Pointer to the screen in use (MsScreenOffset: its offset at +0x30).
