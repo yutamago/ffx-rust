@@ -81,15 +81,23 @@
 # (tools/unicorn-report.py, also written to <run>/rust/unicorn-report.txt
 # and unicorn-summed.tsv). The exit code stays the comparison's.
 # `run-all.sh [--extra|--audio] --list` prints the list's replays and exits.
+# FFX_REPLAY_COMPARE_ONLY=<run folder>: no build and no game; the folder
+# already holds the runs (<folder>/rust, or orig and orig2 with --record)
+# in this script's layout, made elsewhere, and only the comparison (or,
+# with --record, the storing of the references) happens. The Steam Deck's
+# replays use it (tools/deck/deck-replays.sh, docs/m6.md "The Steam Deck").
 set -u
 repo="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$repo"
 . tools/timing/timing.sh && timing_start run-all.sh "$@"  # ~/ffx-work/timing (docs/workflow.md)
 export FFX_GAME_DIR="${FFX_GAME_DIR:-$HOME/steam-games/FFX-X2-HD}"
-temp_win="$(powershell.exe -NoProfile -Command '[IO.Path]::GetTempPath()' | tr -d '\r')"
-temp_win="${temp_win%\\}"
-win="$temp_win\\ffx-snap"
-lin="$(wslpath "$win")"
+compare_only="${FFX_REPLAY_COMPARE_ONLY:-}"
+if [[ -z "$compare_only" ]]; then
+    temp_win="$(powershell.exe -NoProfile -Command '[IO.Path]::GetTempPath()' | tr -d '\r')"
+    temp_win="${temp_win%\\}"
+    win="$temp_win\\ffx-snap"
+    lin="$(wslpath "$win")"
+fi
 shots="${FFX_REPLAY_SHOTS:-$HOME/ffx-work/replay-shots-nrt}"  # outlives a WSL restart (/tmp does not)
 # --extra: the extra list instead (below), recorded apart, so that their
 # recordings never show up as missing shots in the main list's comparison
@@ -100,15 +108,20 @@ if [ "${1:-}" = --extra ]; then
     shots="${FFX_REPLAY_SHOTS_EXTRA:-$HOME/ffx-work/replay-shots-extra-nrt}"
 fi
 id="$(date +%Y%m%d-%H%M%S)-$$"
-runs="$lin/runs/$id"
+if [[ -n "$compare_only" ]]; then
+    runs="$compare_only"
+    [[ -d "$runs" ]] || { echo "FFX_REPLAY_COMPARE_ONLY: no folder $runs" >&2; exit 2; }
+else
+    runs="$lin/runs/$id"
+fi
 traces="$shots/traces"
 mkdir -p "$traces"
 # older recordings lived in %TEMP%\ffx-snap: take them over once
-for f in "$lin"/*-orig.trace "$lin"/*-orig2.trace; do
+[[ -z "$compare_only" ]] && for f in "$lin"/*-orig.trace "$lin"/*-orig2.trace; do
     [ -f "$f" ] && [ ! -f "$traces/$(basename "$f")" ] && cp "$f" "$traces/"
 done
 # keep the newest KEEP_RUNS run folders (each is ~30 MB of screenshots)
-ls -1dt "$lin"/runs/*/ 2>/dev/null | tail -n +"$((${KEEP_RUNS:-20} + 1))" | while read -r d; do rm -rf "$d"; done
+[[ -z "$compare_only" ]] && ls -1dt "$lin"/runs/*/ 2>/dev/null | tail -n +"$((${KEEP_RUNS:-20} + 1))" | while read -r d; do rm -rf "$d"; done
 replays=(field-walk battle-attack menu-browse boot battle-magic battle-overdrive event-besaid event-cliff menu-shop menu-grid menu-save)
 eye=(battle-overdrive event-cliff)
 # rp-events2 (docs/harness.md): the Thunder Plains agency and the Besaid arrival
@@ -205,13 +218,15 @@ bad_access_report() { # tag; returns 1 when a run had any
 # Build once, not three times side by side. With FFX_NO_BUILD=1 already set,
 # ffx-rust.exe is the one in target/ (built elsewhere and copied in: PC2 has
 # no Java, which Ruffle's build needs).
-if [[ -n "$host" ]]; then
+if [[ -n "$compare_only" ]]; then
+    :  # the runs are made already
+elif [[ -n "$host" ]]; then
     [[ "${FFX_NO_BUILD:-}" == 1 ]] || tools/build-host.sh >/dev/null || exit 1
     export FFX_NO_BUILD=1  # run-game.sh installs the build above
 else
     tools/build-hook.sh >/dev/null || exit 1
 fi
-cargo build -q --release -p ffx-harness --example replay || exit 1
+[[ -n "$compare_only" ]] || cargo build -q --release -p ffx-harness --example replay || exit 1
 replay="$repo/target/release/examples/replay"
 
 # Each replay gets 900 s from its game's start (FFX_REPLAY_TIMEOUT, counted
@@ -253,6 +268,7 @@ run() { # replay, tag, [original]
 # Runs `run` for each replay with these arguments, side by side unless
 # FFX_REPLAY_SERIAL=1.
 each() {
+    [[ -n "$compare_only" ]] && return 0
     for r in "${replays[@]}"; do
         if [[ "${FFX_REPLAY_SERIAL:-}" == 1 ]]; then
             run "$r" "$@"
@@ -329,6 +345,10 @@ while [ "${1:-}" = --hits ] || [ "${1:-}" = --iggy-log ] || [ "${1:-}" = --rust-
     esac
     shift
 done
+if [[ -n "$compare_only" && -n "$hits" ]]; then
+    echo "FFX_REPLAY_COMPARE_ONLY: no --hits (its session starts games)" >&2
+    exit 2
+fi
 if [ -z "$rust_map" ]; then
     unset FFX_RUST_MAP  # only through --rust-map
 fi
