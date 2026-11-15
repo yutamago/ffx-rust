@@ -296,8 +296,13 @@ pub trait Platform: Send + Sync {
     /// `SetCooperativeLevel(window, flags)` (the platform's window handle).
     fn input_set_cooperative_level(&self, handle: u32, window: u32, flags: u32) -> Option<i32>;
     /// `SetProperty`/`GetProperty` (`set`) on the property's bytes.
-    fn input_property(&self, handle: u32, prop: &Property, data: &mut [u8], set: bool)
-    -> Option<i32>;
+    fn input_property(
+        &self,
+        handle: u32,
+        prop: &Property,
+        data: &mut [u8],
+        set: bool,
+    ) -> Option<i32>;
     /// `Acquire`, `Unacquire`, `Poll`.
     fn input_call(&self, handle: u32, call: DeviceCall) -> Option<i32>;
     /// `GetDeviceState(size)`: the state, or the `HRESULT`.
@@ -305,8 +310,12 @@ pub trait Platform: Send + Sync {
     /// `GetDeviceData(flags, max)`: buffered items (offset, data, time
     /// stamp, sequence, app data) and the `HRESULT`, or the failure.
     #[allow(clippy::type_complexity)] // items and the HRESULT
-    fn input_data(&self, handle: u32, flags: u32, max: u32)
-    -> Option<Result<(Vec<[u32; 5]>, i32), i32>>;
+    fn input_data(
+        &self,
+        handle: u32,
+        flags: u32,
+        max: u32,
+    ) -> Option<Result<(Vec<[u32; 5]>, i32), i32>>;
     /// `GetCapabilities` / `GetDeviceInfo` into the game's struct.
     fn input_info(&self, handle: u32, what: DeviceInfo, data: &mut [u8]) -> Option<i32>;
     /// `XInputGetState(user)`: `XINPUT_STATE`, or the error
@@ -342,6 +351,19 @@ pub trait Platform: Send + Sync {
     fn audio_underruns(&self) -> u64;
     /// One mixed block (interleaved stereo) for the device; never waits.
     fn audio_push(&self, block: &[f32]);
+
+    // ---- Steam (the game's main thread, `crate::steam`) ------------------
+
+    /// The Steam library behind the game's `steam_api.dll` imports and
+    /// interfaces, loaded at the game's `SteamAPI_Init`, or why there is
+    /// none (Steam is then absent, as `FFX.exe` without Steam: the game
+    /// never asks for an interface). `crate::steam` keeps the game's
+    /// side: the interface handles, the callback objects' order, the calls
+    /// never forwarded (`SteamAPI_RestartAppIfNecessary`, `ResetAllStats`).
+    ///
+    /// # Errors
+    /// Why there is no Steam (a note).
+    fn steam(&self) -> Result<Box<dyn crate::steam::Backend>, String>;
 }
 
 static PLATFORM: OnceLock<Box<dyn Platform>> = OnceLock::new();

@@ -10,7 +10,9 @@ use windows::Win32::Foundation::{HINSTANCE, HWND};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::core::{GUID, Interface as _};
 
-use crate::input::{CLASS_GAME_CONTROLLERS, DEVICE_INSTANCE, Format, NOT_CONNECTED, OBJECT_INSTANCE};
+use crate::input::{
+    CLASS_GAME_CONTROLLERS, DEVICE_INSTANCE, Format, NOT_CONNECTED, OBJECT_INSTANCE,
+};
 use crate::platform::{DeviceCall, DeviceInfo, Property};
 
 struct Host {
@@ -461,10 +463,7 @@ mod tests {
             .iter()
             .flat_map(|w| w.to_le_bytes())
             .collect();
-        assert_eq!(
-            property(0x7001, &Property::Id(1), &mut prop, true),
-            Some(0)
-        );
+        assert_eq!(property(0x7001, &Property::Id(1), &mut prop, true), Some(0));
         prop[16..].fill(0);
         assert_eq!(
             property(0x7001, &Property::Id(1), &mut prop, false),

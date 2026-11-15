@@ -434,7 +434,10 @@ fn is_xinput_device(e: &mut Exec, args: &Args) -> Ret {
     } else {
         e.mem().read::<u32>(guid)
     };
-    let yes = data1 != 0 && platform::get().xinput_ids().contains(&(data1 & 0xffff, data1 >> 16));
+    let yes = data1 != 0
+        && platform::get()
+            .xinput_ids()
+            .contains(&(data1 & 0xffff, data1 >> 16));
     Ret::eax(u32::from(yes))
 }
 

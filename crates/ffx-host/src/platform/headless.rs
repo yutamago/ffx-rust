@@ -1,6 +1,6 @@
 //! [`HeadlessPlatform`]: no window, no input devices (the layer's
 //! stand-ins and the harness's keys only), no device sound (the mix goes
-//! to `--audio-wav` or nowhere)
+//! to `--audio-wav` or nowhere), no Steam
 //! (docs/host.md, "The platform seam"). What the Linux check and the
 //! null-device runs had as stand-ins: a fake window that gets no messages
 //! and is the 1920 x 1080 screen, and the recording null device
@@ -242,4 +242,8 @@ impl Platform for HeadlessPlatform {
     }
 
     fn audio_push(&self, _: &[f32]) {}
+
+    fn steam(&self) -> Result<Box<dyn crate::steam::Backend>, String> {
+        Err("no Steam on the headless platform".into())
+    }
 }

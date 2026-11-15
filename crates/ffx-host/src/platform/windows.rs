@@ -23,6 +23,7 @@
 //!   devices, `XInput`, the raw input device names.
 //! - **Sound** (`audio_out`): the mix on the default device through WASAPI
 //!   (the hook's `rust_audio_out.rs`, compiled here too).
+//! - **Steam** ([`steam`]): `steam_api64.dll`, loaded at run time.
 //! - **Graphics.** The real D3D11 device ([`crate::d3d11`]), its swap chain
 //!   on the real window.
 //! - **Timers.** `timeBeginPeriod`/`timeEndPeriod` forward, so `Sleep`
@@ -50,6 +51,7 @@ use super::{DeviceCall, DeviceInfo, Message, Platform, Point, Property, Rect, Wi
 #[path = "../../../ffx-hook/src/rust_audio_out.rs"]
 mod audio_out;
 mod input;
+pub mod steam;
 
 const WM_SIZE: u32 = 0x0005;
 const WM_ACTIVATE: u32 = 0x0006;
@@ -568,5 +570,9 @@ impl Platform for WindowsPlatform {
 
     fn audio_push(&self, block: &[f32]) {
         audio_out::push(block);
+    }
+
+    fn steam(&self) -> Result<Box<dyn crate::steam::Backend>, String> {
+        steam::load()
     }
 }

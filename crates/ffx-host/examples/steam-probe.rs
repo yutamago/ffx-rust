@@ -21,7 +21,8 @@ fn main() {
     use std::ffi::CString;
     use std::time::{Duration, Instant};
 
-    use ffx_host::steam::{self, Backend, Call, Iface, Reply};
+    use ffx_host::platform::windows::steam::Dll;
+    use ffx_host::steam::{Backend, Call, Iface, Reply};
 
     let mut args = std::env::args().skip(1);
     let first = args.next();
@@ -30,7 +31,7 @@ fn main() {
         .map(std::path::PathBuf::from)
         .or_else(|| first.filter(|a| !a.starts_with("--")).map(Into::into))
         .unwrap_or_else(|| "steam_api64.dll".into());
-    let mut dll = match steam::dll::Dll::load(&path) {
+    let mut dll = match Dll::load(&path) {
         Ok(d) => d,
         Err(why) => {
             eprintln!("steam-probe: {why}");
@@ -55,7 +56,7 @@ fn main() {
             if dll.has(i) { "served" } else { "NOT served" }
         );
     }
-    let ask = |dll: &mut steam::dll::Dll, c: Call| dll.call(&c);
+    let ask = |dll: &mut Dll, c: Call| dll.call(&c);
     println!("GetAppID: {:?}", ask(&mut dll, Call::GetAppId));
     println!("BLoggedOn: {:?}", ask(&mut dll, Call::LoggedOn));
     // a twin for UserStatsReceived_t, as the game's constructor registers
@@ -87,7 +88,7 @@ fn main() {
             continue;
         };
         let got = ask(&mut dll, Call::GetAchievement(n.clone()));
-        let text = |dll: &mut steam::dll::Dll, key: &str| match ask(
+        let text = |dll: &mut Dll, key: &str| match ask(
             dll,
             Call::GetAchievementDisplayAttribute(n.clone(), CString::new(key).unwrap_or_default()),
         ) {
