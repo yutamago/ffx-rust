@@ -4,8 +4,9 @@
 //! game's Rust engine does (`crates/ffx-hook/src/rust_audio.rs`, "The
 //! movie's user stream"): two chunks are read in `createSound` (before the
 //! game sets the user data: silence), then one each time the play position
-//! passes a multiple of [`CHUNK`] frames, in that update. Not measured
-//! against FMOD yet (the hook's isn't either).
+//! passes a multiple of [`CHUNK`] frames, in that update (the reads FMOD
+//! makes in the movie-fmv log). Matched against FMOD's captures by the
+//! audio gate's movie-fmv, sample for sample (docs/host.md, "FMOD").
 //!
 //! The read callback is game code (the movie player's, stdcall(sound,
 //! data, bytes)): it runs through [`Exec::call_stdcall`] into a block of
@@ -161,4 +162,115 @@ pub fn read(e: &mut Exec, (callback, sound, bytes): (u32, u32, u32)) -> Vec<i16>
         .iter()
         .map(|b| i16::from_le_bytes(*b))
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ffx_sound::mixer::BLOCK;
+
+    /// A stereo 48 kHz stream as the movie player's `createSound` makes it,
+    /// with the two chunks `createSound` reads (`first`: their samples).
+    fn stream(first: i16) -> Movie {
+        let mut m = Movie {
+            sound: 0x1_2501,
+            channel: 0,
+            read: 0x00a2_7ee0,
+            channels: 2,
+            rate: 48_000,
+            voice: None,
+            pcm: Vec::new(),
+            base: 0,
+            volume: 1.0,
+            paused: false,
+            stereo: false,
+            fetched: 0,
+            mixed: 0,
+        };
+        m.push(&vec![first; CHUNK * 2]);
+        m.push(&vec![first; CHUNK * 2]);
+        m
+    }
+
+    fn block() -> Vec<f32> {
+        vec![0.0; BLOCK * 2]
+    }
+
+    #[test]
+    fn the_stream_mixes_only_once_played_and_not_while_paused() {
+        let mut m = stream(1000);
+        assert_eq!(m.fetched, 2 * CHUNK as u64);
+        assert_eq!(m.request(), Some((0x00a2_7ee0, 0x1_2501, 0x4000)));
+        // before playSound: no channel, nothing mixed, nothing read
+        let mut b = block();
+        assert_eq!(m.mix(&mut b), 0);
+        assert!(b.iter().all(|&x| x == 0.0));
+        assert_eq!(m.mixed, 0);
+        // paused (the game pauses it right after playSound)
+        m.channel = m.sound | 4;
+        m.paused = true;
+        assert_eq!(m.mix(&mut b), 0);
+        assert_eq!(m.mixed, 0);
+        assert!(b.iter().all(|&x| x == 0.0));
+        // resumed: one block of the stream's frames, the samples heard
+        m.paused = false;
+        m.mix(&mut b);
+        assert_eq!(m.mixed, BLOCK as u64);
+        assert!(b.iter().any(|&x| x != 0.0));
+        // paused again: the position stands
+        m.paused = true;
+        let mut b = block();
+        m.mix(&mut b);
+        assert_eq!(m.mixed, BLOCK as u64);
+        assert!(b.iter().all(|&x| x == 0.0));
+    }
+
+    #[test]
+    fn a_chunk_is_read_each_time_the_play_position_passes_a_multiple_of_one() {
+        // FMOD's reads in the movie-fmv log (docs/formats/audio-platform.md,
+        // "Residue"): for a start in update 350, updates 352, 355, 357, 360
+        let mut m = stream(0);
+        m.channel = m.sound | 4;
+        let mut reads = Vec::new();
+        for update in 350..361 {
+            let n = m.mix(&mut block());
+            for _ in 0..n {
+                m.push(&vec![0; CHUNK * 2]);
+                reads.push(update);
+            }
+        }
+        assert_eq!(reads, [352, 355, 357, 360]);
+        assert_eq!(m.mixed, 11 * BLOCK as u64);
+        assert_eq!(m.fetched, 6 * CHUNK as u64);
+    }
+
+    #[test]
+    fn the_samples_read_are_the_samples_played_in_order() {
+        // a ramp over two chunks: the mix follows it, the frames played are
+        // dropped, and what is kept stays aligned to the play position
+        let mut m = stream(0);
+        m.pcm.clear();
+        m.fetched = 0;
+        let ramp: Vec<i16> = (0..CHUNK * 2)
+            .flat_map(|i| {
+                let v = i16::try_from(i % 8000).unwrap();
+                [v, -v]
+            })
+            .collect();
+        m.push(&ramp);
+        m.channel = m.sound | 4;
+        let mut last = Vec::new();
+        for _ in 0..4 {
+            let mut b = block();
+            m.mix(&mut b);
+            last = b;
+        }
+        // the 4th block holds frames 4800..6400: left rises, right mirrors it
+        let (l, r): (Vec<f32>, Vec<f32>) = last.chunks(2).map(|f| (f[0], f[1])).unzip();
+        assert!(l.windows(2).skip(64).all(|w| w[1] > w[0]), "left rises");
+        assert!(l.iter().zip(&r).skip(64).all(|(a, b)| (a + b).abs() < 1e-6));
+        assert_eq!(m.base + m.pcm.len() as u64 / 2, 2 * CHUNK as u64);
+        // dropped at the next mix: all but one frame before its start
+        assert_eq!(m.base, 3 * BLOCK as u64 - 1);
+    }
 }
