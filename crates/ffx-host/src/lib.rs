@@ -43,6 +43,7 @@ pub mod exec;
 pub mod files;
 pub mod gfx;
 pub mod harness;
+pub mod hitch;
 pub mod iggy;
 pub mod image;
 pub mod imports;

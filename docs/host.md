@@ -1572,6 +1572,34 @@ Tests: `sync`'s unit tests (dead waits and sections),
 and `a_main_thread_that_makes_no_progress_after_a_failure_ends_the_run`
 (30 s).
 
+### Hitches
+
+An update or flip that takes far longer than the original's is a hitch
+(2026-11-15, m5-hitch; `src/hitch.rs`). `FFX_HOST_HITCH_MS` is the limit
+(default 100 ms, three of the game's frames; 0 off). An update is the
+host time in `FFXApplication_animate`, a flip the time in
+`Renderer_PresentFlip`, the same times the harness's `timing` averages.
+
+- **Where the time went.** Once one has run for half the limit, the
+  watchdog (every 20 ms) notes where its thread stands: the main thread
+  for an update, the render thread for a flip, with their host entries
+  and what they wait for (`Shared::sample_hitches`).
+- **As it happens.** One that ends over the limit writes
+  `ffx-host: hitch: update U took N ms; main thread: <place> (k of n
+  samples); …` to `ffx-rust.log` (the three most sampled places; the
+  first 200 hitches, the rest only counted).
+- **The run's line.** The harness's `quit` and the report end with
+  `hitches: N over 100 ms (updates U, flips F); worst: update U N ms
+  (main thread in <place>), …` (the eight longest).
+  `tools/replays/run-all.sh` prints it for each replay with
+  `FFX_HARNESS_EXE=rust`. Compare against the original's frame times: a
+  load may take as long as the original's.
+
+The remaster menu's freeze was one (above, "Iggy": the tick clock). The
+10 s slow-update report ("Hangs") stays as it was.
+
+Tests: `hitch`'s unit tests (the limit, sampling, the summary).
+
 A headless replay on Linux: start `ffx-rust --gfx-null` with
 `FFX_HARNESS=<port>`, `FFX_HARNESS_HOME=<dir>` (the sandbox's
 `GameSetting.ini`, comment lines dropped, in `<dir>/Square Enix/FINAL
