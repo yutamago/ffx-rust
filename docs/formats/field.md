@@ -275,7 +275,8 @@ animation's first byte is set while they run (`rcefObjIsParEnd`,
   `MapPart_LangOverride` `0x0067fb30`): two entries of ten words at
   `+0x2c00` of the field object, a map id and nine parts by language
   slot (game languages 0..5, then 9 and 10).
-- Sphere grid (`g_Abmap`, `0x02305834`): `+4` link count, nodes of
+- Sphere grid (`g_Abmap`, `0x02305834`, holds the grid's address; the
+  offsets are from it, docs/formats/pc-ui.md): `+4` link count, nodes of
   `0x28` bytes from `+0x808` (x, y `i16`, kind at `+6`, panel bits at
   `+0x21`), link flags every `0x14` bytes from `+0xa816`, node kind
   sizes every `0x30` bytes from `+0xf834` (`AbmapGetNodePosRadius`
