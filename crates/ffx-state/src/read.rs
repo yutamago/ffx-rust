@@ -10,9 +10,9 @@
 use ffx_chara::layout as l;
 
 use crate::{
-    Actor, Battler, Bone, Camera, EffectInstance, Effects, Input, ItemStack, Light, Look,
-    MenuOption, MenuWindow, Menus, Message, PartyMember, Save, SceneMesh, SceneObject,
-    ScreenFilter, Snapshot, World,
+    Actor, Battler, Bone, Camera, EffectInstance, Effects, GridLink, GridNode, Input, ItemStack,
+    Light, Look, MenuOption, MenuWindow, Menus, Message, PartyMember, Save, SceneMesh, SceneObject,
+    ScreenFilter, Snapshot, SphereGrid, World,
 };
 
 /// The game's memory, read only.
@@ -301,6 +301,7 @@ pub fn read(mem: &dyn Reader, update: u32, game_time: f64) -> Snapshot {
         look: look(&m),
         save: save(&m),
         objects: scene_objects(&m),
+        sphere_grid: sphere_grid(&m),
     }
 }
 
@@ -629,6 +630,58 @@ fn scene_objects(m: &Mem<'_>) -> Vec<SceneObject> {
         node = m.u32(n.wrapping_add(4));
     }
     out
+}
+
+/// `g_Abmap`: the sphere grid's address (docs/formats/pc-ui.md).
+const G_ABMAP: u32 = 0x0230_5834;
+const ABMAP_NODES: u32 = 0x808;
+const ABMAP_NODE: u32 = 0x28;
+const ABMAP_LINKS: u32 = 0xa808;
+const ABMAP_LINK: u32 = 0x14;
+const ABMAP_CURRENT: u32 = 0x115bc;
+/// At most this many nodes and links (the standard grid has 828 and 834).
+const MAX_GRID: u32 = 2048;
+
+fn sphere_grid(m: &Mem<'_>) -> SphereGrid {
+    let g = m.u32(G_ABMAP);
+    if g == 0 {
+        return SphereGrid::default();
+    }
+    let count = |o: u32| {
+        u32::try_from(m.i16(g.wrapping_add(o)).max(0))
+            .unwrap_or(0)
+            .min(MAX_GRID)
+    };
+    let (n, l) = (count(2), count(4));
+    if n == 0 {
+        return SphereGrid::default();
+    }
+    let nodes = (0..n)
+        .map(|i| {
+            let at = g.wrapping_add(ABMAP_NODES + ABMAP_NODE * i);
+            GridNode {
+                x: m.i16(at),
+                y: m.i16(at.wrapping_add(2)),
+                kind: m.u16(at.wrapping_add(6)),
+                flags: m.u16(at.wrapping_add(0x20)),
+            }
+        })
+        .collect();
+    let links = (0..l)
+        .map(|i| {
+            let at = g.wrapping_add(ABMAP_LINKS + ABMAP_LINK * i);
+            GridLink {
+                a: m.u16(at),
+                b: m.u16(at.wrapping_add(2)),
+            }
+        })
+        .collect();
+    SphereGrid {
+        open: true,
+        current: m.u8(g.wrapping_add(ABMAP_CURRENT)),
+        nodes,
+        links,
+    }
 }
 
 /// `g_TkMenuWindows`: 32 records of `0x98` bytes (docs/formats/menu.md).

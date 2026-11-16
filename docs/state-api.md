@@ -172,6 +172,15 @@ and whether each is drawn (the layer mask). Scripts move objects
 one of several meshes at a time (layers), e.g. Besaid's birds (objects
 18..32, two wing poses each, placed at the origin in the file).
 
+## Sphere grid (API 8)
+
+`sphere_grid` is the sphere grid screen's data while it is loaded
+(`*g_Abmap`, docs/formats/pc-ui.md): the character shown, the nodes (place,
+kind, flags) and the links between them. The standard grid has 828 nodes
+and 834 links. The node's `+0x20` flags (a bit per character from bit 8)
+are read as who activated it; that meaning is observed, not checked in the
+code.
+
 ## Schema
 
 `cargo run -p ffx-state --example schema` prints it; the test
@@ -194,6 +203,7 @@ struct Snapshot
   look: Look
   save: Save
   objects: list<SceneObject>
+  sphere_grid: SphereGrid
 struct World
   map: u16
   previous_map: u16
@@ -328,6 +338,19 @@ struct MenuWindow
   cursor: i16
   kind: u8
   args: bytes
+struct SphereGrid
+  open: bool
+  current: u8
+  nodes: list<GridNode>
+  links: list<GridLink>
+struct GridNode
+  x: i16
+  y: i16
+  kind: u16
+  flags: u16
+struct GridLink
+  a: u16
+  b: u16
 struct SceneObject
   id: u32
   meshes: list<SceneMesh>

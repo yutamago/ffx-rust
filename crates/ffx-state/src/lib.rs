@@ -122,6 +122,8 @@ api_struct! {
         /// (`graphicObjectSetTranslation`/`Rotation`) or show and hide (the
         /// layer mask) can be drawn where the game draws them.
         objects: Vec<SceneObject>,
+        /// The sphere grid while its screen is up (`*g_Abmap`), else empty.
+        sphere_grid: SphereGrid,
     }
 }
 
@@ -402,6 +404,49 @@ api_struct! {
 }
 
 api_struct! {
+    /// The sphere grid screen's data (`g_Abmap` `0x02305834` holds its
+    /// address; docs/formats/pc-ui.md "Sphere grid helpers"; the node
+    /// fields beyond the kind read through gd-ffx, 2026-11-16).
+    SphereGrid {
+        /// The grid is loaded (`g_Abmap` set, nodes counted).
+        open: bool,
+        /// The character the screen shows (`+0x115bc`,
+        /// `TkMenuGetCurrentPlayer`).
+        current: u8,
+        /// The nodes (`+0x808`, 0x28 bytes each, the count `i16` at `+2`).
+        nodes: Vec<GridNode>,
+        /// The links between nodes (`+0xa808`, 0x14 bytes each, the count
+        /// `i16` at `+4`).
+        links: Vec<GridLink>,
+    }
+}
+
+api_struct! {
+    /// One sphere grid node.
+    GridNode {
+        /// Its place on the grid (`+0`, `+2`; y down).
+        x: i16,
+        y: i16,
+        /// What it holds (`+6`; 0xffff an empty node), a record of the
+        /// kernel's node table (`MsGetExcelData`).
+        kind: u16,
+        /// `+0x20`: a bit per character from bit 8 (observed: set on the
+        /// nodes around the characters' starting places early in the
+        /// game; read as the characters who activated it, not checked in
+        /// the code).
+        flags: u16,
+    }
+}
+
+api_struct! {
+    /// One link between two sphere grid nodes (`+0`, `+2`: their indices).
+    GridLink {
+        a: u16,
+        b: u16,
+    }
+}
+
+api_struct! {
     /// One map object (a key of the scene's object tree, `PhyreScene`
     /// `+0x1198`: the number in its meshes' names, `N_kShape`).
     SceneObject {
@@ -670,6 +715,9 @@ pub fn structs() -> Vec<&'static StructSchema> {
         Look::schema(),
         Light::schema(),
         MenuWindow::schema(),
+        SphereGrid::schema(),
+        GridNode::schema(),
+        GridLink::schema(),
         SceneObject::schema(),
         SceneMesh::schema(),
         Save::schema(),
@@ -714,6 +762,8 @@ mod tests {
         let look = 1 + 12 + 12 + 12 + 16 + 12 + 2;
         // the save (default: empty lists): valid, gil, time, five counts
         let save = 1 + 4 + 4 + 2 + 2 + 2 + 2 + 2 + 2;
+        // the sphere grid (closed): open, current, two list counts
+        let grid = 1 + 1 + 2 + 2;
         assert_eq!(
             b.len(),
             8 + 4
@@ -730,11 +780,12 @@ mod tests {
                 + look
                 + save
                 + 2
+                + grid
         );
     }
 
     /// FNV-1a of `schema::text()` at [`API_VERSION`].
-    const PINNED: u64 = 0x490d_a917_3585_fede;
+    const PINNED: u64 = 0x5c04_821a_5f2d_2e16;
 
     /// A field change must raise [`API_VERSION`]: the schema's text is
     /// pinned to the version here.
@@ -770,11 +821,12 @@ mod tests {
                 "battlers",
                 "look",
                 "save",
-                "objects"
+                "objects",
+                "sphere_grid"
             ]
         );
         assert!(matches!(s.fields[5].ty, Ty::List(_)));
-        assert_eq!(structs().len(), 21);
+        assert_eq!(structs().len(), 24);
         assert!(Actor::schema().fields.iter().all(|f| !f.doc.is_empty()));
     }
 }
