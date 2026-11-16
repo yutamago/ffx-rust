@@ -138,12 +138,13 @@ levels", "Lights and fog at run time"):
   `+0x1198`; nothing while `+0x10d4` is 0). The map shaders
   multiply by it just before the tone curve `2.1 min(c, 0.4) + 1.08
   clamp(c, 0.4, 0.58) - 0.47`.
-- `glow_full`, `glow_none`, `glow_gain`, `glow_spread` (API 9): the glow
-  pass's thresholds, gain and spread (context `+0x80..+0x8c`,
-  docs/formats/postfx.md "Glow").
 - `background`: the scene target's clear colour (context `+0x30`, the
   map's `GlobalCamera` `m_bgColor`), not tone-curved; the post passes still
   apply.
+- `glow_full`, `glow_none`, `glow_gain`, `glow_spread` (API 9): the glow
+  pass's thresholds, gain and spread (context `+0x80..+0x8c`,
+  docs/formats/postfx.md "Glow"); 1, 1, 0, 0 without a `GlobalCamera` and
+  on map 0x199 (0x12ea and 0x1733 while `getScenerioFlag` is 0).
 - `ambient`, the fog (`fog_colour`, `fog_near`, `fog_far`, `fog_curve`,
   `fog_limit`): the scene context (`*(scene +0xcc)`) `+0x00`, `+0x10`..
   `+0x2c`.
