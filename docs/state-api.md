@@ -165,15 +165,49 @@ the main pass the position draw events count in), `key` (the instance key
 `(hi << 32) | lo`: for a ppp program `(g_pppCurrentProgram, object)`, for
 the op system `(0, record)`, part `i` at `lo + 10000 i`; effects-draw.md,
 "Instance keys and makers"), `geometry` (an address), `flags` (the VSP
-flags `+0x3c`, which pick the shader and blend: `0x8` modulate, `0xa`
+flags `+0x3c`, which pick the shader family: `0x8` modulate, `0xa`
 additive, `0x18` subtract, `0x9` z-matrix, `0x2` additive untextured;
-effects-draw.md, "Shaders" and "States"), `pooled` (destroyed this frame,
-still drawn), `segment`, `world`, `texture` (segment `+0x20` as the game
+effects-draw.md, "Shaders"), `pooled` (destroyed this frame, still
+drawn), `segment`, `technique` and `blends` (below), `world`, `texture` (segment `+0x20` as the game
 holds it: `../../../FFX_Data/GameData/PS3Data/<folder>/D3D11/<name>.dds.phyre`,
 `NoTexture`, or `FrameBuffer` for draws that sample the frame copy), and
 the arrays: `positions`, `colours` (RGBA floats; 0.5 is the PS2's `0x80`,
 which the VFX vertex shaders double), `uvs` (garbage on untextured draws:
 the game leaves them unset), `indices` (`u16`, a triangle list).
+
+**Blend** (`Draw.technique`, `Draw.blends`; effects-draw.md, "Blend"):
+the flags do not decide the blend. The segment's material picks the
+effect's technique, `vfx::Technique`: `Transparent`, or
+`OptimizedTrans` when the effect code remapped it (the shp and mdl fills
+do so while no vertex colour component is above 0.5), or `Other`. The
+technique's pixel shaders write the colour differently: for the textured
+families `Transparent` writes it premultiplied by the alpha (which can
+reach 2.0, the PS2's `0xff`) and blends with source factor one,
+`OptimizedTrans` writes it straight for source alpha; the table per
+family is in effects-draw.md. `blends` holds one `vfx::Blend` per shader
+pass, in draw order: the game draws the segment once per pass (one pass
+for every VFX shader seen but the DTT one, `0x1000`, with two). A
+`Blend` is the pass's `D3D11_BLEND_DESC` for render target 0 as the
+game made its blend state: `enabled`, `src`, `dest`, `op` (colour),
+`src_alpha`, `dest_alpha`, `op_alpha`, `write_mask` (bit 0 red to bit 3
+alpha); `vfx::BlendFactor` and `vfx::BlendOp` carry D3D11's numbers
+(factors 1 zero, 2 one, 5 src alpha, 6 inv src alpha, …; operations 1
+add, 2 subtract `src - dest`, 3 reverse subtract `dest - src`, 4 min, 5
+max). The blend factor constant is 0, 0, 0, 0 and the scene colour
+target `R8G8B8A8_UNORM`: the shader's output is clamped to 0..1 before
+blending. `technique` is `None` and `blends` empty when the chain could
+not be read (no material yet, a context variant the renderer has not
+picked, a value outside D3D11's); none was in the probe runs.
+
+Seen (Besaid and battles; alpha (one, zero, add) throughout): `0xa`,
+`0xb` `Transparent` (one, one, add), `OptimizedTrans` (src alpha, one,
+add); `0x8`, `0x9` `Transparent` (one, inv src alpha, add),
+`OptimizedTrans` (src alpha, inv src alpha, add); `0x18` either, (one,
+one, reverse subtract); `0x2`, `0x3` `Transparent` (one, one, add); DTT
+(one, inv src alpha, add) then (one, src alpha, subtract). At Besaid's
+save sphere the orb's hemispheres are `Transparent` (one, inv src alpha)
+and of the two sparkle quads (flags `0xa`, `bat_eff`) one is
+`OptimizedTrans` (src alpha, one) and one `Transparent` (one, one).
 
 **Passes** (`vfx::Pass`; `Frame.draws` holds the main pass's draws first,
 then each other pass's in frame order; docs/formats/postfx.md "Order" for
@@ -232,14 +266,15 @@ the same space: undistorted equal to `positions`), `colours` (RGBA, 1.0
 the field's `0x80`; alpha 0 where the ripple is faded out) and `indices`
 (`u16`, a triangle list, 384).
 
-**Encoding** (`Frame::encode`, `Frame::decode`; little-endian, version 3;
-versions 1 and 2 are refused: version 3 added the event's `actor` and the
-draw's `pass`; the distortion part is version 2's):
+**Encoding** (`Frame::encode`, `Frame::decode`; little-endian, version 4;
+versions 1 to 3 are refused: version 4 added the draw's technique and
+blends, version 3 the event's `actor` and the draw's `pass`; the events,
+passes and the distortion part are as in version 3):
 
 | Bytes | Field |
 |---|---|
 | 4 | `FXDR` |
-| 2, 2 | version (3), 0 |
+| 2, 2 | version (4), 0 |
 | 4 | `update` |
 | 4 | `unresolved` (every list) |
 | 4, 4 | event count `e`, draw count `d` |
@@ -251,6 +286,8 @@ draw's `pass`; the distortion part is version 2's):
 | 8 | `key` (`lo` first) |
 | 4, 4 | `geometry`, `flags` |
 | 2, 1, 1 | `segment`, `pooled` (0/1), `pass` (0-4; another value is refused) |
+| 1, 1 | `technique` (0 none, 1 `Transparent`, 2 `OptimizedTrans`, 3 `Other`), shader pass count `p` (0 with no technique) |
+| 8 `p` | each pass's blend: `enabled` (0/1), `src`, `dest`, `op`, `src_alpha`, `dest_alpha`, `op_alpha` (D3D11's numbers), `write_mask`; a value outside the enums is refused |
 | 48 | `world` (12 `f32`) |
 | 2 + `t` | texture name: byte count and UTF-8 |
 | 4, 4 | vertex count `v`, index count `i` |
@@ -276,7 +313,8 @@ elsewhere checks indices before drawing.
 **On Besaid** (developer save 7, map 70, `/map/bsil/bsil00/`; the probe
 below): 30 draws a frame (25 list entries), no events, none unresolved,
 348,080 bytes encoded (version 1; 351,456 in version 2 with the
-distortion: on, blur 1, the grid flat, colours (1, 1, 1, 0)). Textures from `map/bsil/bsil00/fp/tex` (the map's
+distortion: on, blur 1, the grid flat, colours (1, 1, 1, 0); version 4
+adds 10 bytes a draw, one shader pass each). Textures from `map/bsil/bsil00/fp/tex` (the map's
 field effects), `yonishi_data/dat_et/bat_eff/et_tex/tex` (two sparkle
 quads) and `NoTexture` (two untextured discs). Entries 0-18: the sea's
 foam and wave strips at y -1.8 to -11 (flags 8, 0xa, one 0x18). Entries

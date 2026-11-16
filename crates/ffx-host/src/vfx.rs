@@ -10,7 +10,8 @@
 //! entry, the `VFXDynamicGeometry` of `g_VFXRenderDataTable` whose mesh
 //! instance (`+0xc`) it is: the instance key, the VSP flags (`+0x3c`), the
 //! mesh instance's world matrix and each segment with indices, with its
-//! texture name and vertex arrays (`docs/formats/effects-draw.md`). It only
+//! texture name, vertex arrays and the blend of each shader pass its
+//! material's technique draws with (`docs/formats/effects-draw.md`). It only
 //! reads game memory: on or off, the game runs the same.
 //!
 //! `DrawMostVFX` runs on the game's main thread between two updates, after
@@ -55,9 +56,26 @@ pub const LAST_DRAWN_MAGIC: u32 = 0x296;
 pub const LAST_DRAWN_KEY: u64 = (0x5bc << 32) | 0x78;
 /// The encoding's first four bytes ([`Frame::encode`]).
 pub const MAGIC: [u8; 4] = *b"FXDR";
-/// The encoding's version (3: draws carry their [`Pass`], events the
+/// The encoding's version (4: draws carry their [`Technique`] and a
+/// [`Blend`] per shader pass; 3 added the draw's [`Pass`] and the event's
 /// actor slot).
-pub const VERSION: u16 = 3;
+pub const VERSION: u16 = 4;
+/// The render pass every VFX list is drawn with (`renderer +0x48`):
+/// `"Transparent"` (`DrawMostVFX`, `RenderDTTVFX`,
+/// `RenderVFXAfterPostProcess` and `DrawUI2DVFX` all set it).
+pub const PASS_TRANSPARENT: u32 = 0x00c1_69d4;
+/// `"OptimizedTrans"`, the pass `PhyreScene_UseVFXOptimizedTrans`
+/// (`0x00654b20`) remaps a VFX material's [`PASS_TRANSPARENT`] to.
+pub const PASS_OPTIMIZED_TRANS: u32 = 0x00c1_6b84;
+/// A shader pass's `D3D11_BLEND_DESC` (`PShaderPassStateD3D11`: the state
+/// block at `+0x18`, its blend description at block `+0x60`; the blend
+/// state made from it at block `+0x174`).
+const PASS_BLEND_DESC: u32 = 0x78;
+/// A shader's passes are `PShaderPassStateD3D11`s of this size, one after
+/// the other (`queueMeshCommands` `0x005ba380` steps by it).
+const SHADER_PASS_SIZE: u32 = 0x254;
+/// At most this many shader passes are read for a draw.
+const SHADER_PASSES_MAX: u32 = 8;
 /// `Distortion_GetInstance`'s instance pointer (`0x006c2290`).
 pub const DISTORTION: u32 = 0x00cd_eb88;
 /// The distortion grid: 9 x 9 vertices (`0x006c2700`), 8 x 8 quads of two
@@ -152,6 +170,144 @@ impl Pass {
     }
 }
 
+/// A Direct3D 11 blend factor (`D3D11_BLEND`; the numbers are D3D11's and
+/// the encoding's).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub enum BlendFactor {
+    Zero = 1,
+    #[default]
+    One = 2,
+    SrcColour = 3,
+    InvSrcColour = 4,
+    SrcAlpha = 5,
+    InvSrcAlpha = 6,
+    DestAlpha = 7,
+    InvDestAlpha = 8,
+    DestColour = 9,
+    InvDestColour = 10,
+    SrcAlphaSat = 11,
+    /// The blend factor constant: 0, 0, 0, 0 for every VFX draw
+    /// (`PShaderPassStateD3D11_bind` passes zeros).
+    BlendFactor = 14,
+    InvBlendFactor = 15,
+    Src1Colour = 16,
+    InvSrc1Colour = 17,
+    Src1Alpha = 18,
+    InvSrc1Alpha = 19,
+}
+
+impl BlendFactor {
+    /// The factor of D3D11's number.
+    #[must_use]
+    pub fn from_u8(v: u8) -> Option<Self> {
+        Some(match v {
+            1 => Self::Zero,
+            2 => Self::One,
+            3 => Self::SrcColour,
+            4 => Self::InvSrcColour,
+            5 => Self::SrcAlpha,
+            6 => Self::InvSrcAlpha,
+            7 => Self::DestAlpha,
+            8 => Self::InvDestAlpha,
+            9 => Self::DestColour,
+            10 => Self::InvDestColour,
+            11 => Self::SrcAlphaSat,
+            14 => Self::BlendFactor,
+            15 => Self::InvBlendFactor,
+            16 => Self::Src1Colour,
+            17 => Self::InvSrc1Colour,
+            18 => Self::Src1Alpha,
+            19 => Self::InvSrc1Alpha,
+            _ => return None,
+        })
+    }
+}
+
+/// A Direct3D 11 blend operation (`D3D11_BLEND_OP`, the same numbers):
+/// `Add` is `src * src factor + dest * dest factor`, `RevSubtract`
+/// `dest * dest factor - src * src factor`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub enum BlendOp {
+    #[default]
+    Add = 1,
+    Subtract = 2,
+    RevSubtract = 3,
+    Min = 4,
+    Max = 5,
+}
+
+impl BlendOp {
+    /// The operation of D3D11's number.
+    #[must_use]
+    pub fn from_u8(v: u8) -> Option<Self> {
+        Some(match v {
+            1 => Self::Add,
+            2 => Self::Subtract,
+            3 => Self::RevSubtract,
+            4 => Self::Min,
+            5 => Self::Max,
+            _ => return None,
+        })
+    }
+}
+
+/// The effect technique a draw uses: the material's remapping of the
+/// [`PASS_TRANSPARENT`] pass (material `+8` → `+0xc`). The two techniques
+/// of a VFX shader run different pixel shaders, which write the colour
+/// differently (premultiplied by the alpha or not; per shader family in
+/// docs/formats/effects-draw.md, "Blend"): a frontend needs the technique
+/// with the blend.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub enum Technique {
+    /// No remapping: the effect's `Transparent` technique.
+    #[default]
+    Transparent = 1,
+    /// Remapped to `OptimizedTrans` (`graphicUseOptimizedVFXShader` with
+    /// `on`: the shp and mdl fills do it when no vertex colour component
+    /// is above 0.5, and switch it off again otherwise).
+    OptimizedTrans = 2,
+    /// Remapped to another pass (`ForceTransparent`, …; not seen on VFX).
+    Other = 3,
+}
+
+impl Technique {
+    /// The technique of the encoding's number.
+    #[must_use]
+    pub fn from_u8(v: u8) -> Option<Self> {
+        Some(match v {
+            1 => Self::Transparent,
+            2 => Self::OptimizedTrans,
+            3 => Self::Other,
+            _ => return None,
+        })
+    }
+}
+
+/// The blend state one shader pass draws with: the `D3D11_BLEND_DESC`
+/// (render target 0) of the pass, read from its pass state as the game set
+/// it up (the state object `OMSetBlendState` binds is made from it). Blend
+/// factor constant 0, 0, 0, 0; sample mask all ones; the scene colour
+/// target is `R8G8B8A8_UNORM`, so the pixel shader's output is clamped to
+/// 0..1 before blending.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub struct Blend {
+    /// `BlendEnable`: false writes the shader's output as it is.
+    pub enabled: bool,
+    /// Colour: `SrcBlend`, `DestBlend`, `BlendOp`.
+    pub src: BlendFactor,
+    pub dest: BlendFactor,
+    pub op: BlendOp,
+    /// Alpha: `SrcBlendAlpha`, `DestBlendAlpha`, `BlendOpAlpha`.
+    pub src_alpha: BlendFactor,
+    pub dest_alpha: BlendFactor,
+    pub op_alpha: BlendOp,
+    /// `RenderTargetWriteMask` (bit 0 red … bit 3 alpha; 15 all).
+    pub write_mask: u8,
+}
+
 /// One indexed draw: one segment of one list entry's geometry.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Draw {
@@ -177,6 +333,15 @@ pub struct Draw {
     pub pooled: bool,
     /// The segment's place in the geometry's render data.
     pub segment: u16,
+    /// The effect technique the segment's material draws with (which
+    /// pixel shaders of the family); `None` when the blends could not be
+    /// read (no material or technique for the segment, a context variant
+    /// the renderer has not picked, a value outside D3D11's).
+    pub technique: Option<Technique>,
+    /// The technique's shader passes, in draw order: the game draws the
+    /// segment once per pass, each with its blend (one pass for every VFX
+    /// shader but the DTT one, which has two). Empty with no `technique`.
+    pub blends: Vec<Blend>,
     /// The mesh instance's world matrix (`*(mesh instance +4)`), 12 floats
     /// laid out as `ffx_state::Camera::world`:
     /// `[Y.x Y.y Y.z X.x | Z.x Z.y Z.z X.y | P.x P.y P.z X.z]` (axes X, Y,
@@ -668,6 +833,7 @@ fn entry_draws(m: &Reader, pass: Pass, place: u32, mi: u32, found: Found, out: &
     let Some(base) = m.ptr(data.wrapping_add(0x94)) else {
         return;
     };
+    let materials = Materials::of(m, mi);
     for i in 0..n.cast_unsigned() {
         let s = base.wrapping_add(0x6c * i);
         let indices = m.u32(s.wrapping_add(8)).unwrap_or(0);
@@ -675,6 +841,10 @@ fn entry_draws(m: &Reader, pass: Pass, place: u32, mi: u32, found: Found, out: &
             continue;
         }
         let indices = indices.min(INDICES_MAX);
+        let (technique, blends) = materials
+            .as_ref()
+            .and_then(|x| x.blends(m, i))
+            .map_or((None, Vec::new()), |(t, b)| (Some(t), b));
         let vertices = m.u32(s.wrapping_add(4)).unwrap_or(0).min(VERTICES_MAX);
         let positions: Vec<[f32; 3]> = m
             .f32s::<3>(m.u32(s.wrapping_add(0xc)).unwrap_or(0), vertices)
@@ -694,6 +864,8 @@ fn entry_draws(m: &Reader, pass: Pass, place: u32, mi: u32, found: Found, out: &
             flags,
             pooled: found.pooled,
             segment: u16::try_from(i).unwrap_or(u16::MAX),
+            technique,
+            blends,
             world,
             texture: m
                 .ptr(s.wrapping_add(0x20))
@@ -705,6 +877,144 @@ fn entry_draws(m: &Reader, pass: Pass, place: u32, mi: u32, found: Found, out: &
             indices: m.u16s(m.u32(s.wrapping_add(0x1c)).unwrap_or(0), indices),
         });
     }
+}
+
+/// A mesh instance's materials, as `PRendererBase::renderMeshInstance`
+/// (`0x005b9a90`) reaches them: the mesh (`*mi`, segments of 0x6c bytes
+/// at `+4`, count `+0`; segment `+0` its material's index), the
+/// instance's materials (`+0x10`, a `PSharray`: count `+0` with bit 31 a
+/// flag, the one element inline at `+4` or else a pointer there) and its
+/// per-segment draw data (`+0x28`, 0x24 bytes each: `+0x18` the effect,
+/// `+0x14` its context variant once picked).
+struct Materials {
+    mi: u32,
+    segments: u32,
+    count: u32,
+    list: u32,
+}
+
+impl Materials {
+    fn of(m: &Reader, mi: u32) -> Option<Self> {
+        let mesh = m.ptr(mi)?;
+        let contexts = m.ptr(mi.wrapping_add(0x10))?;
+        let n = m.u32(contexts)? & 0x7fff_ffff;
+        let list = match n {
+            0 => return None,
+            1 => contexts.wrapping_add(4),
+            _ => m.ptr(contexts.wrapping_add(4))?,
+        };
+        Some(Self {
+            mi,
+            segments: m.ptr(mesh.wrapping_add(4))?,
+            count: m.u32(mesh)? & 0x7fff_ffff,
+            list,
+        })
+    }
+
+    /// The technique and blends of segment `i`, the way `selectTechniquePass`
+    /// (`0x005ba690`) picks its shader pass for [`PASS_TRANSPARENT`]
+    /// (`ffx_prender::mesh`): the material (a `PMaterial`: `+0` the effect,
+    /// `+8`/`+0xc` a pass remapping), the effect's technique for the pass
+    /// (by the pass's id `+0xc` into the effect's table `+0x18`, `+0x14`
+    /// long, else the technique entries `+0x10` (40 bytes, `+0xc` of them)
+    /// whose first word is the pass), the context variant (the segment's
+    /// cached one; a technique of one variant has only variant 0), the
+    /// shader (the technique's `+8` plus 32 bytes a variant) and its
+    /// shader passes (`+4` count, `+8` the first pass state, the others
+    /// after it), each drawn with a blend state made from its
+    /// `D3D11_BLEND_DESC`.
+    fn blends(&self, m: &Reader, i: u32) -> Option<(Technique, Vec<Blend>)> {
+        if i >= self.count {
+            return None;
+        }
+        let seg = self.segments.wrapping_add(0x6c * i);
+        let index = m.u32(seg)?;
+        if index >= 0x1_0000 {
+            return None;
+        }
+        let material = m.ptr(self.list.wrapping_add(4 * index))?;
+        let effect = m.ptr(material)?;
+        let (pass, technique) = if m.u32(material.wrapping_add(8)) == Some(PASS_TRANSPARENT) {
+            let to = m.u32(material.wrapping_add(0xc))?;
+            let t = match to {
+                PASS_TRANSPARENT => Technique::Transparent,
+                PASS_OPTIMIZED_TRANS => Technique::OptimizedTrans,
+                _ => Technique::Other,
+            };
+            (to, t)
+        } else {
+            (PASS_TRANSPARENT, Technique::Transparent)
+        };
+        if pass == 0 {
+            return None;
+        }
+        let tech = technique_for(m, effect, pass)?;
+        let data = m.u32(self.mi.wrapping_add(0x28))?.wrapping_add(0x24 * i);
+        let variant = if m.u32(data.wrapping_add(0x18)) == Some(effect) {
+            m.u32(data.wrapping_add(0x14))?
+        } else if m.u32(tech.wrapping_add(4))? & 0x7fff_ffff == 1 {
+            0
+        } else {
+            return None;
+        };
+        if variant.cast_signed() < 0 {
+            return None;
+        }
+        let shader = m
+            .ptr(tech.wrapping_add(8))?
+            .wrapping_add(variant.wrapping_shl(5));
+        let n = m.u32(shader.wrapping_add(4))? & 0x7fff_ffff;
+        if n == 0 || n > SHADER_PASSES_MAX {
+            return None;
+        }
+        let first = m.ptr(shader.wrapping_add(8))?;
+        let blends = (0..n)
+            .map(|k| pass_blend(m, first.wrapping_add(SHADER_PASS_SIZE * k)))
+            .collect::<Option<Vec<_>>>()?;
+        Some((technique, blends))
+    }
+}
+
+/// The blend of the shader pass state at `state` (its `D3D11_BLEND_DESC`:
+/// alpha to coverage, independent blend, then render target 0's enable,
+/// source, destination, operation, the alpha's three and the write mask,
+/// a word each).
+fn pass_blend(m: &Reader, state: u32) -> Option<Blend> {
+    let d = m.bytes(state.wrapping_add(PASS_BLEND_DESC), 40)?;
+    let word = |k: usize| u32::from_le_bytes([d[4 * k], d[4 * k + 1], d[4 * k + 2], d[4 * k + 3]]);
+    let factor = |k: usize| BlendFactor::from_u8(u8::try_from(word(k)).ok()?);
+    let op = |k: usize| BlendOp::from_u8(u8::try_from(word(k)).ok()?);
+    Some(Blend {
+        enabled: word(2) != 0,
+        src: factor(3)?,
+        dest: factor(4)?,
+        op: op(5)?,
+        src_alpha: factor(6)?,
+        dest_alpha: factor(7)?,
+        op_alpha: op(8)?,
+        write_mask: d[36],
+    })
+}
+
+/// The effect's technique for `pass` (`selectTechniquePass`): by the pass's
+/// id, else by the pass itself (`0x004e71d0`).
+fn technique_for(m: &Reader, effect: u32, pass: u32) -> Option<u32> {
+    let id = m.u32(pass.wrapping_add(0xc))?;
+    if id != u32::MAX && id < m.u32(effect.wrapping_add(0x14))? & 0x7fff_ffff {
+        let table = m.ptr(effect.wrapping_add(0x18))?;
+        if let Some(t) = m.ptr(table.wrapping_add(id.wrapping_mul(4))) {
+            return Some(t);
+        }
+    }
+    let n = m.u32(effect.wrapping_add(0xc))? & 0x7fff_ffff;
+    let mut e = m.ptr(effect.wrapping_add(0x10))?;
+    for _ in 0..n.min(0x1000) {
+        if m.u32(e)? == pass {
+            return Some(e);
+        }
+        e = e.wrapping_add(40);
+    }
+    None
 }
 
 /// The frame `DrawMostVFX` is about to draw for `scene`, in its order: the
@@ -965,8 +1275,8 @@ impl Frame {
     /// The frame as bytes (docs/state-api.md, "Effect draws"): little
     /// endian; a header (`FXDR`, version, update, unresolved, event and
     /// draw counts), the events (with their actor slot), each draw (with
-    /// its pass) and its arrays, then the distortion (flags, blur, counts,
-    /// arrays; flags 0 and no arrays when off).
+    /// its pass, technique and blends) and its arrays, then the distortion
+    /// (flags, blur, counts, arrays; flags 0 and no arrays when off).
     #[must_use]
     pub fn encode(&self) -> Vec<u8> {
         let mut o = Out(Vec::new());
@@ -993,6 +1303,7 @@ impl Frame {
             o.u16(d.segment);
             o.u8(u8::from(d.pooled));
             o.u8(d.pass as u8);
+            put_blends(&mut o, d.technique, &d.blends);
             for &w in &d.world {
                 o.f32(w);
             }
@@ -1055,7 +1366,8 @@ impl Frame {
     }
 
     /// A frame from [`Frame::encode`]'s bytes; `None` when they are not one
-    /// (another magic or version, an unknown pass, cut short).
+    /// (another magic or version, an unknown pass or blend value, cut
+    /// short).
     #[must_use]
     pub fn decode(bytes: &[u8]) -> Option<Self> {
         let mut i = In(bytes);
@@ -1090,6 +1402,7 @@ impl Frame {
             let segment = i.u16()?;
             let pooled = i.u8()? != 0;
             let pass = Pass::from_u8(i.u8()?)?;
+            let (technique, blends) = take_blends(&mut i)?;
             let mut world = [0.0; 12];
             for w in &mut world {
                 *w = i.f32()?;
@@ -1113,6 +1426,8 @@ impl Frame {
                 flags,
                 pooled,
                 segment,
+                technique,
+                blends,
                 world,
                 texture,
                 positions,
@@ -1158,9 +1473,71 @@ impl Frame {
     }
 }
 
+/// A draw's technique and blends ([`Frame::encode`]): the technique (0
+/// none), the pass count, eight bytes a pass.
+fn put_blends(o: &mut Out, technique: Option<Technique>, blends: &[Blend]) {
+    let Some(t) = technique else {
+        o.0.extend_from_slice(&[0, 0]);
+        return;
+    };
+    let n = blends.len().min(usize::from(u8::MAX));
+    o.0.extend_from_slice(&[t as u8, u8::try_from(n).unwrap_or(u8::MAX)]);
+    for b in &blends[..n] {
+        o.0.extend_from_slice(&[
+            u8::from(b.enabled),
+            b.src as u8,
+            b.dest as u8,
+            b.op as u8,
+            b.src_alpha as u8,
+            b.dest_alpha as u8,
+            b.op_alpha as u8,
+            b.write_mask,
+        ]);
+    }
+}
+
+/// [`put_blends`]'s bytes back; `None` for a value outside the enums or
+/// passes without a technique.
+fn take_blends(i: &mut In) -> Option<(Option<Technique>, Vec<Blend>)> {
+    let t = i.u8()?;
+    let n = i.u8()?;
+    let technique = match t {
+        0 if n == 0 => None,
+        0 => return None,
+        t => Some(Technique::from_u8(t)?),
+    };
+    let mut blends = Vec::with_capacity(usize::from(n));
+    for _ in 0..n {
+        let b = i.take(8)?;
+        blends.push(Blend {
+            enabled: b[0] != 0,
+            src: BlendFactor::from_u8(b[1])?,
+            dest: BlendFactor::from_u8(b[2])?,
+            op: BlendOp::from_u8(b[3])?,
+            src_alpha: BlendFactor::from_u8(b[4])?,
+            dest_alpha: BlendFactor::from_u8(b[5])?,
+            op_alpha: BlendOp::from_u8(b[6])?,
+            write_mask: b[7],
+        });
+    }
+    Some((technique, blends))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// (src alpha, one, add), alpha (one, zero, add), all channels.
+    const ADDITIVE: Blend = Blend {
+        enabled: true,
+        src: BlendFactor::SrcAlpha,
+        dest: BlendFactor::One,
+        op: BlendOp::Add,
+        src_alpha: BlendFactor::One,
+        dest_alpha: BlendFactor::Zero,
+        op_alpha: BlendOp::Add,
+        write_mask: 15,
+    };
 
     fn draw(place: u32) -> Draw {
         Draw {
@@ -1171,6 +1548,8 @@ mod tests {
             flags: 0x8,
             pooled: place == 2,
             segment: 1,
+            technique: Some(Technique::OptimizedTrans),
+            blends: vec![ADDITIVE],
             world: [0.5, 0.0, 0.0, 0.0, 0.0, 0.5, 0.0, 0.5, 309.7, 14.9, -476.9, 0.0],
             texture: "../../../FFX_Data/GameData/PS3Data/map/bsil/bsil00/fp/tex/D3D11/14336_19_0_0_128_128.dds.phyre".into(),
             positions: vec![[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]],
@@ -1195,6 +1574,28 @@ mod tests {
                 Draw {
                     pass: Pass::Undrawn,
                     ..draw(1)
+                },
+                Draw {
+                    technique: None,
+                    blends: Vec::new(),
+                    ..draw(3)
+                },
+                Draw {
+                    technique: Some(Technique::Other),
+                    blends: vec![
+                        Blend {
+                            enabled: false,
+                            src: BlendFactor::InvSrc1Alpha,
+                            dest: BlendFactor::BlendFactor,
+                            op: BlendOp::Max,
+                            src_alpha: BlendFactor::Zero,
+                            dest_alpha: BlendFactor::DestColour,
+                            op_alpha: BlendOp::RevSubtract,
+                            write_mask: 0,
+                        },
+                        ADDITIVE,
+                    ],
+                    ..draw(4)
                 },
             ],
             events: vec![
@@ -1236,12 +1637,15 @@ mod tests {
             ..Frame::default()
         };
         let b = f.encode();
-        // header 24, event 20, draw head 4+8+4+4+2+1+1 = 24, world 48,
-        // name 2 + its bytes, counts 8, arrays 3 * (12 + 16 + 8) + 3 * 2,
-        // no distortion 16
+        // header 24, event 20, draw head 4+8+4+4+2+1+1 = 24, technique and
+        // pass count 2, one pass 8, world 48, name 2 + its bytes, counts 8,
+        // arrays 3 * (12 + 16 + 8) + 3 * 2, no distortion 16
         let name = draw(19).texture.len();
-        assert_eq!(b.len(), 24 + 20 + 24 + 48 + 2 + name + 8 + 3 * 36 + 6 + 16);
-        assert_eq!(&b[4..6], &[3, 0], "version 3");
+        assert_eq!(
+            b.len(),
+            24 + 20 + 24 + 2 + 8 + 48 + 2 + name + 8 + 3 * 36 + 6 + 16
+        );
+        assert_eq!(&b[4..6], &[4, 0], "version 4");
         assert_eq!(&b[b.len() - 16..], &[0; 16]);
         let word = |o: usize| u32::from_le_bytes([b[o], b[o + 1], b[o + 2], b[o + 3]]);
         assert_eq!(word(8), 7);
@@ -1260,6 +1664,22 @@ mod tests {
         assert_eq!(&b[d + 4..d + 12], &[6, 0, 0, 0, 0x18, 0xa3, 0xd2, 0]);
         assert_eq!(word(d + 16), 0x8);
         assert_eq!(&b[d + 20..d + 24], &[1, 0, 0, 2]);
+        // the technique, the pass count, each pass: enabled, src, dest, op,
+        // alpha's three, the write mask (D3D11's numbers); the world after
+        assert_eq!(&b[d + 24..d + 34], &[2, 1, 1, 5, 2, 1, 2, 1, 1, 15]);
+        assert_eq!(&b[d + 34..d + 38], &0.5f32.to_le_bytes());
+        // none read: 0, 0 and no passes
+        let unknown = Frame {
+            draws: vec![Draw {
+                technique: None,
+                blends: Vec::new(),
+                ..draw(19)
+            }],
+            ..Frame::default()
+        }
+        .encode();
+        assert_eq!(&unknown[24 + 24..24 + 26], &[0, 0]);
+        assert_eq!(&unknown[24 + 26..24 + 30], &0.5f32.to_le_bytes());
         // an event without an actor: -1
         let none = Frame {
             events: vec![Event::default()],
@@ -1382,6 +1802,7 @@ mod tests {
                 (UI2D_SKIP_NAME & !0xfff, "ui globals"),
                 (MOVIE_FADING & !0xfff, "movie"),
                 (CHR_ARRAY & !0xfff, "chr globals"),
+                (PASS_TRANSPARENT & !0xfff, "render passes"),
             ] {
                 arena.map(at, 0x1000, name).unwrap();
             }
@@ -1431,6 +1852,114 @@ mod tests {
             self.arena.write_bytes(idx, &[0, 0, 1, 0, 2, 0]);
             self.pool.push(g);
             mi
+        }
+
+        /// An effect with two techniques, by pass id: `Transparent` (id
+        /// 0x86) with one shader of one pass whose blend is (one, one,
+        /// add), and `OptimizedTrans` found by pointer (its id past the
+        /// table) whose shader's pass blends (src alpha, one, add) and
+        /// whose technique has `variants` shaders (each its own pass, the
+        /// source factor 5 + k for variant k > 0).
+        fn effect(&mut self, variants: u32) -> u32 {
+            self.put(PASS_TRANSPARENT + 0xc, 0x86);
+            self.put(PASS_OPTIMIZED_TRANS + 0xc, 0x200);
+            let pass = |f: &mut Self, src: u32, dest: u32| {
+                let state = f.alloc(0x254);
+                let desc = [0, 0, 1, src, dest, 1, 2, 1, 1, 15];
+                for (k, w) in desc.iter().enumerate() {
+                    f.put(state + PASS_BLEND_DESC + 4 * u32::try_from(k).unwrap(), *w);
+                }
+                state
+            };
+            let shaders = |f: &mut Self, blends: &[(u32, u32)]| {
+                let n = u32::try_from(blends.len()).unwrap();
+                let at = f.alloc(32 * n);
+                for (k, &(src, dest)) in blends.iter().enumerate() {
+                    let k = u32::try_from(k).unwrap();
+                    let state = pass(f, src, dest);
+                    f.put(at + 32 * k + 4, 0x8000_0001);
+                    f.put(at + 32 * k + 8, state);
+                }
+                at
+            };
+            let effect = self.alloc(0x40);
+            let transparent = self.alloc(40);
+            let s = shaders(self, &[(2, 2)]);
+            self.put(transparent + 4, 0x8000_0001);
+            self.put(transparent + 8, s);
+            let table = self.alloc(0x88 * 4);
+            self.put(table + 0x86 * 4, transparent);
+            self.put(effect + 0x14, 0x87);
+            self.put(effect + 0x18, table);
+            // the technique entries searched by pointer: one before it
+            let entries = self.alloc(80);
+            self.put(entries, PASS_TRANSPARENT);
+            self.put(entries + 40, PASS_OPTIMIZED_TRANS);
+            let blends: Vec<(u32, u32)> = (0..variants)
+                .map(|k| (if k == 0 { 5 } else { 5 + k }, 2))
+                .collect();
+            let s = shaders(self, &blends);
+            self.put(entries + 40 + 4, 0x8000_0000 | variants);
+            self.put(entries + 40 + 8, s);
+            self.put(effect + 0xc, 2);
+            self.put(effect + 0x10, entries);
+            effect
+        }
+
+        /// Gives `mi` a mesh of `n` segments, each with its own material
+        /// of `effect` (remapped to `remap`, 0 for none) and its draw data.
+        fn materials(&mut self, mi: u32, n: u32, effect: u32, remap: &[u32]) {
+            let mesh = self.alloc(8);
+            let segs = self.alloc(0x6c * n);
+            self.put(mi, mesh);
+            self.put(mesh, n);
+            self.put(mesh + 4, segs);
+            let contexts = self.alloc(8);
+            let list = if n == 1 {
+                contexts + 4
+            } else {
+                let l = self.alloc(4 * n);
+                self.put(contexts + 4, l);
+                l
+            };
+            self.put(contexts, 0x8000_0000 | n);
+            self.put(mi + 0x10, contexts);
+            let data = self.alloc(0x24 * n);
+            self.put(mi + 0x28, data);
+            for i in 0..n {
+                // segment i draws material n - 1 - i
+                let index = n - 1 - i;
+                self.put(segs + 0x6c * i, index);
+                let material = self.alloc(0x18);
+                self.put(material, effect);
+                let to = remap[index as usize];
+                if to != 0 {
+                    self.put(material + 8, PASS_TRANSPARENT);
+                    self.put(material + 0xc, to);
+                }
+                self.put(list + 4 * index, material);
+            }
+            // the data render data the capture reads: n segments
+            let g = self.pool[self.pool.len() - 1];
+            let rd = self.arena_u32(g + 0x24);
+            let seg = self.arena_u32(rd + 0x94);
+            let more = self.alloc(0x6c * n);
+            let bytes = {
+                let mut b = vec![0; 0x6c];
+                self.arena.read_bytes(seg, &mut b);
+                b
+            };
+            for i in 0..n {
+                self.arena.write_bytes(more + 0x6c * i, &bytes);
+            }
+            self.put(rd + 0x90, n);
+            self.put(rd + 0x94, more);
+        }
+
+        fn arena_u32(&self, at: u32) -> u32 {
+            let mut b = [0; 4];
+            self.arena.read_bytes(at, &mut b);
+            u32::from_le_bytes(b)
         }
 
         /// Writes the table (the delete pool only, keys `(i + 1, 0)`).
@@ -1557,6 +2086,113 @@ mod tests {
         assert!(f.frame().draws.iter().all(|d| d.pass != Pass::Ui2d));
         f.arena.write_bytes(a, b"another\0");
         assert!(f.frame().draws.iter().any(|d| d.pass == Pass::Ui2d));
+    }
+
+    #[test]
+    fn the_blend_is_read_from_the_material_s_technique() {
+        let mut f = Fixture::new();
+        let effect = f.effect(1);
+        let mi = f.instance(0xa);
+        // segment 0 draws material 2 (not remapped), 1 material 1
+        // (OptimizedTrans), 2 material 0 (remapped to Transparent itself)
+        f.materials(mi, 3, effect, &[PASS_TRANSPARENT, PASS_OPTIMIZED_TRANS, 0]);
+        f.table();
+        f.put(f.scene + 0x38cc, mi);
+        f.put(f.scene + 0xf8cc, 1);
+        let fr = f.frame();
+        let got: Vec<_> = fr
+            .draws
+            .iter()
+            .map(|d| {
+                let b = d.blends.first()?;
+                Some((d.technique?, b.src, b.dest, b.op, d.blends.len()))
+            })
+            .collect();
+        let (one, alpha, add) = (BlendFactor::One, BlendFactor::SrcAlpha, BlendOp::Add);
+        assert_eq!(
+            got,
+            [
+                Some((Technique::Transparent, one, one, add, 1)),
+                Some((Technique::OptimizedTrans, alpha, one, add, 1)),
+                Some((Technique::Transparent, one, one, add, 1)),
+            ]
+        );
+        let b = fr.draws[1].blends[0];
+        assert_eq!(
+            (
+                b.enabled,
+                b.src_alpha,
+                b.dest_alpha,
+                b.op_alpha,
+                b.write_mask
+            ),
+            (true, BlendFactor::One, BlendFactor::Zero, BlendOp::Add, 15)
+        );
+    }
+
+    #[test]
+    fn a_blend_that_cannot_be_read_is_none() {
+        let mut f = Fixture::new();
+        // two variants, none picked yet: the renderer's choice is unknown
+        let effect = f.effect(2);
+        let mi = f.instance(0x8);
+        f.materials(mi, 1, effect, &[PASS_OPTIMIZED_TRANS]);
+        let bare = f.instance(0x8);
+        f.table();
+        f.put(f.scene + 0x38cc, mi);
+        f.put(f.scene + 0x38d0, bare);
+        f.put(f.scene + 0xf8cc, 2);
+        let got: Vec<_> = f
+            .frame()
+            .draws
+            .iter()
+            .map(|d| (d.technique, d.blends.len()))
+            .collect();
+        assert_eq!(got, [(None, 0), (None, 0)], "no variant; no materials");
+        // the segment's cached variant 1: its pass
+        let data = f.arena_u32(mi + 0x28);
+        f.put(data + 0x18, effect);
+        f.put(data + 0x14, 1);
+        let d = &f.frame().draws[0];
+        assert_eq!(
+            (d.technique, d.blends[0].src),
+            (Some(Technique::OptimizedTrans), BlendFactor::InvSrcAlpha)
+        );
+        // a factor outside D3D11's
+        f.put(data + 0x14, 0);
+        let entries = f.arena_u32(effect + 0x10);
+        let shader = f.arena_u32(entries + 48);
+        let state = f.arena_u32(shader + 8);
+        f.put(state + PASS_BLEND_DESC + 12, 13);
+        assert_eq!(f.frame().draws[0].technique, None);
+        f.put(state + PASS_BLEND_DESC + 12, 5);
+        assert!(f.frame().draws[0].technique.is_some());
+        // two shader passes (as the DTT shader's): both, in order; the
+        // second (one, src alpha, subtract)
+        f.put(shader + 4, 0x8000_0002);
+        let second = state + SHADER_PASS_SIZE + PASS_BLEND_DESC;
+        for (k, w) in [0, 0, 1, 2, 5, 2, 2, 1, 1, 15].iter().enumerate() {
+            f.put(second + 4 * u32::try_from(k).unwrap(), *w);
+        }
+        let d = &f.frame().draws[0];
+        assert_eq!(
+            d.blends
+                .iter()
+                .map(|b| (b.src, b.dest, b.op))
+                .collect::<Vec<_>>(),
+            [
+                (BlendFactor::SrcAlpha, BlendFactor::One, BlendOp::Add),
+                (BlendFactor::One, BlendFactor::SrcAlpha, BlendOp::Subtract),
+            ]
+        );
+        f.put(shader + 4, 0x8000_0001);
+        // remapped to another pass the effect has no technique for
+        let other = f.alloc(16);
+        f.put(other + 0xc, u32::MAX);
+        let contexts = f.arena_u32(mi + 0x10);
+        let material = f.arena_u32(contexts + 4);
+        f.put(material + 0xc, other);
+        assert_eq!(f.frame().draws[0].technique, None);
     }
 
     #[test]
@@ -1741,12 +2377,20 @@ mod tests {
         .encode();
         assert_eq!(Frame::decode(&b[..b.len() - 1]), None);
         let mut other = b.clone();
-        other[4] = 2;
-        assert_eq!(Frame::decode(&other), None, "version 2");
+        other[4] = 3;
+        assert_eq!(Frame::decode(&other), None, "version 3");
         let mut other = b.clone();
         // the draw's pass byte (header 24, draw head byte 23)
         other[24 + 23] = 5;
         assert_eq!(Frame::decode(&other), None, "an unknown pass");
+        // the blend's bytes (draw head byte 24 on: technique, count, the
+        // pass): a technique, factor or operation outside the enums, passes
+        // without a technique
+        for (at, v) in [(24, 4), (24, 0), (27, 12), (29, 6), (31, 0), (32, 9)] {
+            let mut other = b.clone();
+            other[24 + at] = v;
+            assert_eq!(Frame::decode(&other), None, "blend byte {at} = {v}");
+        }
         let mut other = b.clone();
         let n = other.len();
         other[n - 8] = 1;

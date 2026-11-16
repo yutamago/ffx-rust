@@ -213,13 +213,16 @@ pixel shader, over the eight frames:
 | `0x9` `vfxshapeshader` | 5/6/1 | the same | the same |
 | `0x2` `vfxadditiveshadernt` | 2/2/1 | the same | the same |
 
-Write mask 15. One flags value can come with two source factors (open
-question 2).
+Write mask 15. One flags value comes with two source factors: the
+material's technique picks the blend and the pixel shader ("Blend"
+below).
 
-What `vfxadditiveshader` computes (ffx-demaster `docs/effects.md`, from
-its DXBC through `ffx-dxbc`): the vertex shader doubles the vertex colour
-(PS2 `0x80` = 1.0), the pixel shader writes `tex.rgb × colour.rgb` and
-`tex.a × colour.a × fades`, each clamped to 1 by the 8-bit target. The GS
+What `vfxadditiveshader` computes in its `OptimizedTrans` technique
+(ffx-demaster `docs/effects.md`, from its DXBC through `ffx-dxbc`): the
+vertex shader doubles the vertex colour (PS2 `0x80` = 1.0), the pixel
+shader writes `tex.rgb × colour.rgb` and `tex.a × colour.a × fades`, each
+clamped to 1 by the 8-bit target; its `Transparent` technique writes the
+colour premultiplied ("Blend"). The GS
 clamps `Ct × Cv` to 1.0 as well, but `At × Av` only at `0xff`, which is
 2.0, so on the PS2 a vertex alpha above `0x80` can still double a
 texture's colour in the `Cs × As` blend and burn it out to white; on the
@@ -244,6 +247,113 @@ particles' positions in the arrays are camera-facing quads with one z for
 all four corners (the fill requests carry `g_pppFillMatrix`,
 `docs/formats/render.md`); which matrix `WorldViewProjection` then holds
 for them is for round 2 to check against the frame's camera.
+
+## Blend (2026-11-16)
+
+Which blend a draw uses is not in the geometry: it is the material's.
+`PRendererBase::renderMeshInstance` (`0x005b9a90`, `ffx_prender::p6_mesh`)
+draws each segment of a mesh instance with the material of the segment
+(the instance's `+0x10`, a `PSharray` of `PMaterial`s indexed by the mesh
+segment's `+0`) in the render pass the VFX list sets (`renderer +0x48`:
+`"Transparent"`, `0x00c169d4`, for `DrawMostVFX`, `RenderDTTVFX`,
+`RenderVFXAfterPostProcess` and `DrawUI2DVFX` alike).
+`selectTechniquePass` (`0x005ba690`, `ffx_prender::mesh`) first applies
+the material's pass remapping (`PMaterial +8` → `+0xc`), then takes the
+effect's technique for the pass (by the pass's id `+0xc` into the
+effect's table `+0x18`, else the 40-byte technique entries `+0x10` whose
+first word is the pass), the context variant (the segment draw data's
+cached one, else `PEffect_findContextVariant`; every VFX technique seen has
+one variant) and its shader (`technique +8` plus 32 bytes a variant).
+`queueMeshCommands` (`0x005ba380`) queues one draw per shader pass (the
+shader's `+4` count, `+8` the first `PShaderPassStateD3D11`, the others
+`0x254` bytes apart); the render thread binds each pass's states
+(`PShaderPassStateD3D11_bind` `0x0058c6c0`: blend state block `+0x174`,
+blend factor 0, 0, 0, 0, sample mask all ones), made from the
+`D3D11_BLEND_DESC` at block `+0x60` (pass `+0x78`;
+`PShaderPassStateD3D11::apply` `0x0059ad20`).
+
+The remapping is the whole answer to the two factors:
+`PhyreScene_UseVFXOptimizedTrans(material, on)` (`0x00654b20`) remaps
+`Transparent` to `"OptimizedTrans"` (`0x00c16b84`) or clears it, for
+every material of a geometry through `graphicUseOptimizedVFXShader`
+(`0x00644ac0`). The shp and mdl fills
+(`JobSchedule_pppPart_fillBuffer_drawShp_00727110`, `…_drawMdl`
+`0x0071f320`) call it for each instance they fill, with `on` = no vertex
+colour component above 0.5 (`ffx_glue_other::h4y_shp`, `h4z_mdl`); the
+DTT fill (`ffx_field::kedtt`) with 0; others through
+`graphicUseOptimizedVFXShaderByVFXInstance`. The two techniques of a VFX
+effect have their own pixel shaders and blends (the untextured families
+were only seen in `Transparent`).
+
+Read live (`ffx-host`'s `vfx-probe`, headless; the capture reads the
+same chain, below). Both techniques blend alpha (one, zero, add), write
+mask 15 (except `0x40000000`), blend factor unused. D3D11 numbers: 1
+zero, 2 one, 5 src alpha, 6 inv src alpha; operations 1 add, 2 subtract,
+3 reverse subtract.
+
+| Flags | `Transparent` (src, dest, op) | `OptimizedTrans` | Seen |
+|---|---|---|---|
+| `0xa` additive | one, one, add | src alpha, one, add | both, every run |
+| `0xb` | one, one, add | src alpha, one, add | battles |
+| `0x8` modulate | one, inv src alpha, add | src alpha, inv src alpha, add | both |
+| `0x9` z-matrix | one, inv src alpha, add | src alpha, inv src alpha, add | battles |
+| `0x18` subtract | one, one, reverse subtract | one, one, reverse subtract | both |
+| `0x28` | | zero, inv src alpha, add | Lulu's magic |
+| `0x80a` | | src alpha, one, add | Valefor |
+| `0x2` additive untextured | one, one, add | | both |
+| `0x3` | one, one, add | | battles |
+| `0x0` | one, inv src alpha, add | | battles |
+| `0x10` | one, one, reverse subtract | | battles |
+| `0x1000` (DTT, `FrameBuffer`) | two passes: one, inv src alpha, add; then one, src alpha, subtract | | battles |
+| `0x40000000` | zero, one, add, write mask 0 (writes no colour) | | battles |
+
+What each pixel shader writes (DXBC of the shaders bound with those
+blends, through `ffx-dxbc`'s `dump_ops`). `v` is the captured vertex
+colour (`0.5` the PS2's `0x80`), `t` the texture sample, `f` the soft
+particle and camera fade factor (1 when both are off); the target is
+`R8G8B8A8_UNORM`, so the output is clamped to 0..1 before the blend.
+
+| Flags | Vertex colour `c` | `Transparent` writes | `OptimizedTrans` writes |
+|---|---|---|---|
+| `0x8`, `0x9`, `0xa`, `0xb` | `2v` | `a = t.a c.a f`; `(a min(t.rgb c.rgb, 1), a)`: premultiplied | `(t.rgb c.rgb, t.a c.a f)`: straight |
+| `0x18` | `2v` | `a = t.a c.a f`; `(a min(t.rgb c.rgb, 1), a)` | the same |
+| `0x80a` | `2v` | | `t c` (no fade) |
+| `0x2`, `0x3` | `(2 v.a v.rgb, v.a)` | `(c.rgb, c.a f)`: premultiplied by the vertex shader, no fade on the colour | |
+| `0x0`, `0x10` | `(v.rgb, 2 v.a)` | `a = c.a f`; `(a c.rgb, a)` | |
+
+(`0x28`'s and the DTT's pixel shaders were not decoded.)
+
+So the `Transparent` technique premultiplies (with the alpha up to 2.0,
+the PS2's `0xff`: a vertex alpha above `0x80` brightens the colour up to
+twice, clamped at 1) and blends with source factor one; `OptimizedTrans`
+writes straight colour for the hardware's source alpha. The fills choose
+`OptimizedTrans` only when every vertex colour is at most 0.5 (`c` and
+`a` at most 1), where the two give the same result. No colour or alpha
+scale constant differs per draw: the shaders' constants are the
+transforms, the soft particle and camera fade parameters (`f`) and the
+z-matrix correction ("States and constants"); the material's white colour
+parameter is not used by them, and `g_AlphaScale` is in the vertex colours
+already.
+
+At Besaid (developer save 7, 300 frames, each draw the same every frame):
+the sea's strips (keys lo 7 and 9) draw `OptimizedTrans` but one
+modulated strip (key `(7, 0xd2afa8)`, `Transparent`); the other beach
+effects (keys lo 6 and 8) `Transparent` (one, one), but the subtract
+strip (`0x18`, `OptimizedTrans`); the save sphere's orb hemispheres and discs (flags
+`0x8`, map texture `14336`) `Transparent` (one, inv src alpha), its two
+sparkle quads (flags `0xa`, `yonishi_data/dat_et/bat_eff/et_tex` texture
+`15456`) one `OptimizedTrans` (src alpha, one, key `(6, 0xd29c68)`) and
+one `Transparent` (one, one, key `(8, 0xd29da8)`), its untextured glow
+(`0x2`) `Transparent` (one, one). Battles (field 34, saves 51 and 12
+driven: black magic, a summon, Valefor's overdrive, 4,000 and 6,000
+frames): the table above, every draw's blend read.
+
+Checked against the draws the game makes: with a trace of every D3D11
+draw's bound blend state (the graphics layer's `OMSetBlendState` objects,
+headless, null device), the capture's per-segment blend states and index
+counts appear in the same order as the game's draws (runs of up to 21
+consecutive draws on Besaid), and the DTT's second pass is drawn as often
+as the first (26,308 times each in the Valefor run).
 
 ## Instance keys and makers
 
@@ -425,6 +535,9 @@ gd-ffx. What it adds to the census:
   from the neighbours'). The census's "frame k draws the arrays of the
   snapshot taken k + 1 frames on" counts from the capture's held point,
   one frame before the snapshot: the same pairing.
+- **The blend** of each draw: the material's technique and the blend of
+  each of its shader passes ("Blend" above), read from the material
+  chain as `selectTechniquePass` walks it (FXDR version 4).
 - **Field effects.** Besaid at the save sphere (developer save 7): 30
   draws, all from `DrawMostVFX`, no draw events, every entry in the
   table. The save sphere `f001`'s glow is six entries (two hemispheres,
@@ -529,11 +642,12 @@ the census itself on a synthetic frame.
    run later (the OT list, `pppOtFunc_Control` `0x00716ac0`). A coverage
    run of `pppDrawShape0` with the program index and object logged settles
    it.
-2. **The blend factors.** Flags `0xa` draw with source factor one or
-   source alpha, flags `0x8` with source alpha or one; the geometry's words
-   `+0x30..+0x5c` do not tell them apart. Candidates: the alpha function
-   (`calculateVFXSP_AlphaFunction`, `g_AlphaScale`), the material's
-   blend set by `ClassDynamicGeometry_setupMaterial` (`0x006a3b50`).
+2. **The blend factors**: settled ("Blend", 2026-11-16): the material's
+   technique (`Transparent` or `OptimizedTrans`, set each fill by
+   `graphicUseOptimizedVFXShader`) picks the blend and the pixel shader;
+   `ffx_host::vfx` reads both per draw. Left open: the DTT shader's two
+   pixel shaders (not decoded), and what other callers of
+   `graphicUseOptimizedVFXShaderByVFXInstance` decide.
 3. **The VFX material constants** (`softParticle*`, `cameraFadeout*`,
    `zCrct`): who writes them and when.
 4. **The other lists and the events not seen live**: the live capture
