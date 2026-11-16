@@ -236,6 +236,9 @@ levels", "Lights and fog at run time"):
   `+0x1198`; nothing while `+0x10d4` is 0). The map shaders
   multiply by it just before the tone curve `2.1 min(c, 0.4) + 1.08
   clamp(c, 0.4, 0.58) - 0.47`.
+- `background`: the scene target's clear colour (context `+0x30`, the
+  map's `GlobalCamera` `m_bgColor`), not tone-curved; the post passes still
+  apply.
 - `ambient`, the fog (`fog_colour`, `fog_near`, `fog_far`, `fog_curve`,
   `fog_limit`): the scene context (`*(scene +0xcc)`) `+0x00`, `+0x10`..
   `+0x2c`.
@@ -246,6 +249,53 @@ levels", "Lights and fog at run time"):
   CharacterShadeCoeff + sum colour x level x (dot(L, N) x 0.5 + 0.5)^2`;
   the shade term is not in the snapshot.
 
+## Save (API 8)
+
+`save` holds the parts of the game state block (`g_SaveData`
+`0x0112ca90`, docs/formats/save.md) that the menus and the save screens
+show: gil, the play time, the front and back lines, the 18 characters
+(`ply_save`: name, joined, HP/MP, the 8 stats, AP, sphere levels, the
+limit gauge, weapon and armour slots, the commands learnt, the overdrive
+mode and modes), the inventory's used slots, the key-item bits and the
+commands everybody learnt (from `0x3060`). Names are in the game's text
+encoding (a frontend decodes
+them with the game's character set, as the messages). The battle's party
+index is the member's `index`, so a battle HUD names its battlers from
+here.
+
+## The menus' windows and current character (API 8)
+
+`menus.windows`: the PS2 menus' windows in use (`g_TkMenuWindows`, the
+records with `+0x40` set): state, rows, the first row shown, the cursor
+(the row is `cursor >> 1` in two-column lists), an item window's list kind
+(`+0x43`) and the opener's five words (kind, character, index, ...).
+`menus.current_player`: the character the menus show
+(`TkMenuGetCurrentPlayer`): below 8 a party member, 8 and up an aeon, 0xff
+when the position is past the 8-byte list.
+
+## Objects (API 8)
+
+`objects` is the map's object tree as the scene keeps it (`PhyreScene`
+`+0x1198`): per object id (the number in its meshes' names, `N_kShape`)
+its meshes' live world matrices (3x4, the camera's packing, render space)
+and whether each is drawn (the layer mask). Scripts move objects
+(`graphicObjectSetTranslation`/`Rotation` rewrite the matrices) and show
+the meshes of a group (the mask), e.g. Besaid's birds (objects 18..32,
+placed at the origin in the file). The id is each mesh instance's `+0x58`
+(`obj_id`); observed at Besaid, it is the number in the meshes' names
+(`N_kShape`).
+
+## Sphere grid (API 8)
+
+`sphere_grid` is the sphere grid screen's data while the screen runs
+(`g_AbmapRunning`)
+(`*g_Abmap`, docs/formats/pc-ui.md): the character shown, the node under
+the cursor, the nodes (place,
+kind, flags) and the links between them. The standard grid has 828 nodes
+and 834 links. The node's `+0x20` flags (a bit per character from bit 8)
+are read as who activated it; that meaning is observed, not checked in the
+code.
+
 ## Schema
 
 `cargo run -p ffx-state --example schema` prints it; the test
@@ -253,7 +303,7 @@ levels", "Lights and fog at run time"):
 the fields raises `API_VERSION`.
 
 ```text
-ffx-state API 7
+ffx-state API 8
 struct Snapshot
   update: u32
   game_time: f64
@@ -266,6 +316,9 @@ struct Snapshot
   effects: Effects
   battlers: list<Battler>
   look: Look
+  save: Save
+  objects: list<SceneObject>
+  sphere_grid: SphereGrid
 struct World
   map: u16
   previous_map: u16
@@ -328,6 +381,8 @@ struct Menus
   save_rows: i32
   save_files: i32
   esc_menu: bool
+  windows: list<MenuWindow>
+  current_player: u8
 struct MenuOption
   id: u16
   enabled: bool
@@ -378,6 +433,7 @@ struct Look
   valid: bool
   colour_scale: vec3
   ambient: vec3
+  background: vec3
   fog_colour: vec3
   fog_near: f32
   fog_far: f32
@@ -391,6 +447,68 @@ struct Light
   level: f32
   pitch: f32
   yaw: f32
+struct MenuWindow
+  slot: u8
+  state: u32
+  rows: u16
+  first: i16
+  cursor: i16
+  kind: u8
+  args: bytes
+struct SphereGrid
+  open: bool
+  current: u8
+  cursor: u16
+  nodes: list<GridNode>
+  links: list<GridLink>
+struct GridNode
+  x: i16
+  y: i16
+  kind: u16
+  flags: u16
+struct GridLink
+  a: u16
+  b: u16
+struct SceneObject
+  id: u32
+  meshes: list<SceneMesh>
+struct SceneMesh
+  world: mat3x4
+  drawn: bool
+  layer: u32
+struct Save
+  valid: bool
+  gil: u32
+  play_time: u32
+  frontline: bytes
+  backline: bytes
+  members: list<PartyMember>
+  items: list<ItemStack>
+  key_items: bytes
+  shared_commands: bytes
+struct PartyMember
+  index: u8
+  name: bytes
+  joined: bool
+  hp: u32
+  mp: u32
+  max_hp: u32
+  max_mp: u32
+  stats: bytes
+  ap: u32
+  total_ap: u32
+  sphere_levels: u8
+  limit_charge: u8
+  limit_charge_max: u8
+  weapon: u8
+  armour: u8
+  commands: bytes
+  overdrive_mode: u8
+  overdrive_modes: u32
+struct ItemStack
+  slot: u8
+  id: u16
+  count: u8
 ```
 
 ## Sources

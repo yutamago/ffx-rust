@@ -10,8 +10,9 @@
 use ffx_chara::layout as l;
 
 use crate::{
-    Actor, Battler, Bone, Camera, EffectInstance, Effects, Input, Light, Look, MenuOption, Menus,
-    Message, ScreenFilter, Snapshot, World,
+    Actor, Battler, Bone, Camera, EffectInstance, Effects, GridLink, GridNode, Input, ItemStack,
+    Light, Look, MenuOption, MenuWindow, Menus, Message, PartyMember, Save, SceneMesh, SceneObject,
+    ScreenFilter, Snapshot, SphereGrid, World,
 };
 
 /// The game's memory, read only.
@@ -298,6 +299,9 @@ pub fn read(mem: &dyn Reader, update: u32, game_time: f64) -> Snapshot {
         effects: effects(&m),
         battlers: battlers(&m),
         look: look(&m),
+        save: save(&m),
+        objects: scene_objects(&m),
+        sphere_grid: sphere_grid(&m),
     }
 }
 
@@ -454,6 +458,8 @@ fn menus(m: &Mem<'_>) -> Menus {
         save_rows: m.i32(SAVE_ROWS),
         save_files: m.i32(SAVE_FILES),
         esc_menu: esc_up,
+        windows: menu_windows(m),
+        current_player: menu_current_player(m),
     }
 }
 
@@ -543,6 +549,7 @@ fn world(m: &Mem<'_>) -> World {
 const SCENE_COLOUR_SCALE: u32 = 0xfc78;
 const SCENE_CONTEXT: u32 = 0xcc;
 const CONTEXT_FOG_COLOUR: u32 = 0x10;
+const CONTEXT_BACKGROUND: u32 = 0x30;
 const CONTEXT_FOG_NEAR: u32 = 0x20;
 const CONTEXT_FOG_FAR: u32 = 0x24;
 const CONTEXT_FOG_CURVE: u32 = 0x28;
@@ -557,6 +564,246 @@ const LIGHTING_YAW: u32 = 0x1b0;
 const LIGHTING_READY: u32 = 0x1cc;
 const PLIGHT_LEVEL: u32 = 0x24;
 
+/// The scene's object tree (`PhyreScene` `+0x1198`; `DynGeoTree`, as
+/// `ffx_graphic`'s `tree_find_key` walks it): the head, the root at its
+/// `+0xc`, nodes `+0` lower, `+4` higher, `+0xc` the key, `+0x10` the list
+/// (`+0` count, `+8` the meshes); a mesh `+4` its world 3x4, `+0x1c` its
+/// draw record (whose `+0x1c` is the mesh while drawn), `+0x48` its group id (`m_groupID`).
+const SCENE_OBJECTS: u32 = 0x1198;
+const SCENE_MAP_CLUSTER: u32 = 0x10d4;
+/// At most this many objects and meshes an object: a guard against a tree
+/// being rebuilt while read (the stack cap drops the rest of a deeper
+/// descent; a valid tree of 512 nodes is under 20 deep, so it is no real
+/// depth limit).
+const MAX_OBJECTS: usize = 512;
+const MAX_MESHES: u32 = 64;
+
+fn scene_objects(m: &Mem<'_>) -> Vec<SceneObject> {
+    let scene = m.u32(G_PHYRE_SCENE);
+    if scene == 0 || m.u32(scene.wrapping_add(SCENE_MAP_CLUSTER)) == 0 {
+        return Vec::new();
+    }
+    let head = scene.wrapping_add(SCENE_OBJECTS);
+    let mut out = Vec::new();
+    // in order, iteratively (lower subtree, node, higher subtree)
+    let mut stack = Vec::new();
+    let mut node = m.u32(head.wrapping_add(0xc));
+    while (node != head && node != 0) || !stack.is_empty() {
+        while node != head && node != 0 && stack.len() < MAX_OBJECTS {
+            stack.push(node);
+            node = m.u32(node);
+        }
+        let Some(n) = stack.pop() else { break };
+        if out.len() >= MAX_OBJECTS {
+            break;
+        }
+        let list = m.u32(n.wrapping_add(0x10));
+        let count = if list == 0 {
+            0
+        } else {
+            m.u32(list).min(MAX_MESHES)
+        };
+        let data = if list == 0 {
+            0
+        } else {
+            m.u32(list.wrapping_add(8))
+        };
+        let meshes = (0..count)
+            .filter_map(|i| {
+                let mesh = m.u32(data.wrapping_add(4 * i));
+                if mesh == 0 {
+                    return None;
+                }
+                let world = m.u32(mesh.wrapping_add(4));
+                let rec = m.u32(mesh.wrapping_add(0x1c));
+                Some(SceneMesh {
+                    world: if world == 0 {
+                        [0.0; 12]
+                    } else {
+                        m.floats(world)
+                    },
+                    drawn: rec != 0 && m.u32(rec.wrapping_add(0x1c)) == mesh,
+                    layer: m.u32(mesh.wrapping_add(0x48)),
+                })
+            })
+            .collect();
+        out.push(SceneObject {
+            id: m.u32(n.wrapping_add(0xc)),
+            meshes,
+        });
+        node = m.u32(n.wrapping_add(4));
+    }
+    out
+}
+
+/// `g_Abmap`: the sphere grid's address (`g_AbmapData`; docs/formats/pc-ui.md),
+/// set once and never cleared; `g_AbmapRunning` says whether the screen
+/// runs.
+const G_ABMAP: u32 = 0x0230_5834;
+const G_ABMAP_RUNNING: u32 = 0x01a8_5f70;
+const ABMAP_NODES: u32 = 0x808;
+const ABMAP_NODE: u32 = 0x28;
+const ABMAP_LINKS: u32 = 0xa808;
+const ABMAP_LINK: u32 = 0x14;
+const ABMAP_CURRENT: u32 = 0x115bc;
+const ABMAP_CURSOR: u32 = 0x112fc;
+/// At most this many nodes and links: their regions hold 1024 records each
+/// (nodes `+0x808..+0xa808`, links `+0xa808..` up to the kind sizes at
+/// `+0xf834`); the standard grid has 828 and 834.
+const MAX_GRID: u32 = 1024;
+
+fn sphere_grid(m: &Mem<'_>) -> SphereGrid {
+    let g = m.u32(G_ABMAP);
+    if g == 0 || m.u32(G_ABMAP_RUNNING) == 0 {
+        return SphereGrid::default();
+    }
+    let count = |o: u32| {
+        u32::try_from(m.i16(g.wrapping_add(o)).max(0))
+            .unwrap_or(0)
+            .min(MAX_GRID)
+    };
+    let (n, l) = (count(2), count(4));
+    if n == 0 {
+        return SphereGrid::default();
+    }
+    let nodes = (0..n)
+        .map(|i| {
+            let at = g.wrapping_add(ABMAP_NODES + ABMAP_NODE * i);
+            GridNode {
+                x: m.i16(at),
+                y: m.i16(at.wrapping_add(2)),
+                kind: m.u16(at.wrapping_add(6)),
+                flags: m.u16(at.wrapping_add(0x20)),
+            }
+        })
+        .collect();
+    let links = (0..l)
+        .map(|i| {
+            let at = g.wrapping_add(ABMAP_LINKS + ABMAP_LINK * i);
+            GridLink {
+                a: m.u16(at),
+                b: m.u16(at.wrapping_add(2)),
+            }
+        })
+        .collect();
+    SphereGrid {
+        open: true,
+        current: m.u8(g.wrapping_add(ABMAP_CURRENT)),
+        cursor: m.u16(g.wrapping_add(ABMAP_CURSOR)),
+        nodes,
+        links,
+    }
+}
+
+/// `g_TkMenuPlayers` (the u8 ids the menus cycle through) and
+/// `g_TkMenuCurrentPlayerPos` (docs/formats/menu.md "Characters and
+/// aeons"): the list is 8 bytes (`+8` is `g_TkMenuPlayerListMax`; at most
+/// 7 ids are listed, character 7 never).
+const MENU_PLAYERS: u32 = 0x0184_1c14;
+const MENU_PLAYERS_LEN: u32 = 8;
+const MENU_CURRENT_PLAYER_POS: u32 = 0x0184_1c28;
+
+fn menu_current_player(m: &Mem<'_>) -> u8 {
+    let pos = m.u32(MENU_CURRENT_PLAYER_POS);
+    if pos < MENU_PLAYERS_LEN {
+        m.u8(MENU_PLAYERS + pos)
+    } else {
+        0xff
+    }
+}
+
+/// `g_TkMenuWindows`: 32 records of `0x98` bytes (docs/formats/menu.md).
+const MENU_WINDOWS: u32 = 0x0184_0900;
+const MENU_WINDOW_SIZE: u32 = 0x98;
+
+fn menu_windows(m: &Mem<'_>) -> Vec<MenuWindow> {
+    (0..32u32)
+        .filter_map(|i| {
+            let w = MENU_WINDOWS + MENU_WINDOW_SIZE * i;
+            (m.u8(w + 0x40) != 0).then(|| MenuWindow {
+                slot: u8::try_from(i).unwrap_or(0),
+                state: m.u32(w + 0x28),
+                rows: m.u16(w + 0x30),
+                first: m.i16(w + 0x32),
+                cursor: m.i16(w + 0x48),
+                kind: m.u8(w + 0x43),
+                args: m.bytes::<20>(w + 0x58).to_vec(),
+            })
+        })
+        .collect()
+}
+
+/// `g_SaveData`'s parts the menus show (docs/formats/save.md).
+const SAVE_TIME: u32 = 0xbc;
+const SAVE_GIL: u32 = 0x3d48;
+const SAVE_FRONTLINE: u32 = 0x3d58;
+const SAVE_BACKLINE: u32 = 0x3d5b;
+const SAVE_SHARED_COMMANDS: u32 = 0x3d6c;
+const SAVE_ITEM_IDS: u32 = 0x3ecc;
+const SAVE_ITEM_COUNTS: u32 = 0x40cc;
+const SAVE_ITEM_SLOTS: u32 = 256;
+const SAVE_KEY_ITEMS: u32 = 0x448c;
+const SAVE_PLY: u32 = 0x55cc;
+const PLY_SIZE: u32 = 0x94;
+const PLY_COUNT: u32 = 18;
+const SAVE_NAMES: u32 = 0x634c;
+const NAME_SIZE: u32 = 20;
+
+fn save(m: &Mem<'_>) -> Save {
+    let s = |o: u32| SAVE_DATA + o;
+    if !m.mapped::<4>(s(SAVE_NAMES + NAME_SIZE * PLY_COUNT - 4)) {
+        return Save::default();
+    }
+    let members = (0..PLY_COUNT)
+        .map(|i| {
+            let p = |o: u32| s(SAVE_PLY + PLY_SIZE * i + o);
+            let raw: [u8; NAME_SIZE as usize] = m.bytes(s(SAVE_NAMES + NAME_SIZE * i));
+            let end = raw.iter().position(|&b| b == 0).unwrap_or(raw.len());
+            PartyMember {
+                index: u8::try_from(i).unwrap_or(0),
+                name: raw[..end].to_vec(),
+                joined: m.u8(p(0x2c)) & 1 != 0,
+                hp: m.u32(p(0x1c)),
+                mp: m.u32(p(0x20)),
+                max_hp: m.u32(p(0x24)),
+                max_mp: m.u32(p(0x28)),
+                stats: m.bytes::<8>(p(0x2f)).to_vec(),
+                ap: m.u32(p(0x18)),
+                total_ap: m.u32(p(0x14)),
+                sphere_levels: m.u8(p(0x3b)),
+                limit_charge: m.u8(p(0x39)),
+                limit_charge_max: m.u8(p(0x3a)),
+                weapon: m.u8(p(0x2d)),
+                armour: m.u8(p(0x2e)),
+                commands: m.bytes::<12>(p(0x3e)).to_vec(),
+                overdrive_mode: m.u8(p(0x38)),
+                overdrive_modes: m.u32(p(0x88)),
+            }
+        })
+        .collect();
+    let items = (0..SAVE_ITEM_SLOTS)
+        .filter_map(|i| {
+            let count = m.u8(s(SAVE_ITEM_COUNTS + i));
+            (count > 0).then(|| ItemStack {
+                slot: u8::try_from(i).unwrap_or(0),
+                id: m.u16(s(SAVE_ITEM_IDS + 2 * i)),
+                count,
+            })
+        })
+        .collect();
+    Save {
+        valid: true,
+        gil: m.u32(s(SAVE_GIL)),
+        play_time: m.u32(s(SAVE_TIME)),
+        frontline: m.bytes::<3>(s(SAVE_FRONTLINE)).to_vec(),
+        backline: m.bytes::<17>(s(SAVE_BACKLINE)).to_vec(),
+        members,
+        items,
+        key_items: m.bytes::<16>(s(SAVE_KEY_ITEMS)).to_vec(),
+        shared_commands: m.bytes::<56>(s(SAVE_SHARED_COMMANDS)).to_vec(),
+    }
+}
+
 fn look(m: &Mem<'_>) -> Look {
     let scene = m.u32(G_PHYRE_SCENE);
     let context = if scene == 0 {
@@ -565,7 +812,7 @@ fn look(m: &Mem<'_>) -> Look {
         m.u32(scene.wrapping_add(SCENE_CONTEXT))
     };
     if context == 0
-        || !m.mapped::<0x30>(context)
+        || !m.mapped::<0x3c>(context)
         || !m.mapped::<16>(scene.wrapping_add(SCENE_COLOUR_SCALE))
     {
         return Look::default();
@@ -617,6 +864,7 @@ fn look(m: &Mem<'_>) -> Look {
         valid: true,
         colour_scale: m.floats(scene.wrapping_add(SCENE_COLOUR_SCALE)),
         ambient: m.floats(context),
+        background: m.floats(c(CONTEXT_BACKGROUND)),
         fog_colour: m.floats(c(CONTEXT_FOG_COLOUR)),
         fog_near: m.f32(c(CONTEXT_FOG_NEAR)),
         fog_far: m.f32(c(CONTEXT_FOG_FAR)),
@@ -775,14 +1023,19 @@ mod tests {
             scene + SCENE_COLOUR_SCALE,
             &[f(0.5), f(0.6), f(0.7), f(1.0)].concat(),
         );
-        m.put(context, &[0u8; 0x30]);
+        m.put(context, &[0u8; 0x3c]);
         m.put(context + CONTEXT_FOG_NEAR, &f(62.0));
+        m.put(
+            context + CONTEXT_BACKGROUND,
+            &[f(0.3), f(0.35), f(0.5)].concat(),
+        );
         m.put(CHARACTER_LIGHTING, &cl.to_le_bytes());
         m.put(cl + LIGHTING_READY, &[0]);
         let l = read(&m, 0, 0.0).look;
         assert!(l.valid);
         assert_eq!(l.colour_scale, [0.5, 0.6, 0.7]);
         assert!((l.fog_near - 62.0).abs() < f32::EPSILON);
+        assert_eq!(l.background, [0.3, 0.35, 0.5]);
         assert_eq!(l.lights, [] as [Light; 0]);
         assert_eq!(l.character_ambient, [0.0; 3]);
         // initialised, with a light set whose second PLight is null
@@ -819,6 +1072,179 @@ mod tests {
         stale.put(scene + SCENE_CONTEXT, &context.to_le_bytes());
         stale.put(scene + SCENE_COLOUR_SCALE, &[0u8; 16]);
         assert!(!read(&stale, 0, 0.0).look.valid);
+    }
+
+    #[test]
+    fn the_save_through_g_save_data() {
+        let mut m = Sparse(HashMap::new());
+        // nothing mapped: not valid
+        assert!(!read(&m, 0, 0.0).save.valid);
+        // the whole block mapped as zeros, then the fields set
+        m.put(SAVE_DATA, &vec![0u8; 0x68c0]);
+        m.put(SAVE_DATA + SAVE_GIL, &665u32.to_le_bytes());
+        m.put(SAVE_DATA + SAVE_TIME, &4023u32.to_le_bytes());
+        m.put(SAVE_DATA + SAVE_FRONTLINE, &[0, 4, 0xff]);
+        // member 1: a name with a 0 inside its 20 bytes, HP, stats, joined,
+        // a command bit (0x3005) and the overdrive fields
+        m.put(SAVE_DATA + SAVE_NAMES + NAME_SIZE, &[0x63, 0x58, 0, 0x53]);
+        let p = SAVE_DATA + SAVE_PLY + PLY_SIZE;
+        m.put(p + 0x1c, &520u32.to_le_bytes());
+        m.put(p + 0x24, &600u32.to_le_bytes());
+        m.put(p + 0x2c, &[1]);
+        m.put(p + 0x2f, &[15, 10, 5, 5, 10, 18, 10, 10]);
+        m.put(p + 0x38, &[2]);
+        m.put(p + 0x3e, &[0x20]);
+        m.put(p + 0x88, &4u32.to_le_bytes());
+        // item slot 3, and a shared command bit (0x3061)
+        m.put(SAVE_DATA + SAVE_ITEM_IDS + 6, &0x2001u16.to_le_bytes());
+        m.put(SAVE_DATA + SAVE_ITEM_COUNTS + 3, &[3]);
+        m.put(SAVE_DATA + SAVE_SHARED_COMMANDS, &[0x02]);
+        let s = read(&m, 0, 0.0).save;
+        assert!(s.valid);
+        assert_eq!((s.gil, s.play_time), (665, 4023));
+        assert_eq!(s.frontline, [0, 4, 0xff]);
+        assert_eq!(s.members.len(), 18);
+        let b = &s.members[1];
+        assert_eq!(b.name, [0x63, 0x58]);
+        assert!(b.joined && !s.members[0].joined);
+        assert_eq!((b.hp, b.max_hp), (520, 600));
+        assert_eq!(b.stats, [15, 10, 5, 5, 10, 18, 10, 10]);
+        assert_eq!((b.overdrive_mode, b.overdrive_modes), (2, 4));
+        assert_eq!(b.commands[0], 0x20);
+        assert_eq!(s.shared_commands[0], 0x02);
+        assert_eq!(
+            s.items,
+            [ItemStack {
+                slot: 3,
+                id: 0x2001,
+                count: 3
+            }]
+        );
+    }
+
+    #[test]
+    fn the_scene_objects_in_order_with_their_meshes() {
+        let scene = 0x0100_0000_u32;
+        let head = scene + SCENE_OBJECTS;
+        let mut m = Sparse(HashMap::new());
+        m.put(G_PHYRE_SCENE, &scene.to_le_bytes());
+        // no map cluster: nothing
+        m.put(scene + SCENE_MAP_CLUSTER, &0u32.to_le_bytes());
+        assert_eq!(read(&m, 0, 0.0).objects, []);
+        m.put(scene + SCENE_MAP_CLUSTER, &1u32.to_le_bytes());
+        // a tree 5 (root) with 3 lower and 8 higher; leaves point at the head
+        let node = |k: u32| 0x0200_0000 + 0x100 * k;
+        let mut link = |n: u32, lower: u32, higher: u32, key: u32, list: u32| {
+            m.put(n, &lower.to_le_bytes());
+            m.put(n + 4, &higher.to_le_bytes());
+            m.put(n + 0xc, &key.to_le_bytes());
+            m.put(n + 0x10, &list.to_le_bytes());
+        };
+        let list = 0x0300_0000_u32;
+        link(node(5), node(3), node(8), 5, list);
+        link(node(3), head, head, 3, 0);
+        link(node(8), head, head, 8, 0);
+        m.put(head + 0xc, &node(5).to_le_bytes());
+        // object 5: two meshes, one drawn (its record points back), one
+        // without a record
+        let (data, mesh_a, mesh_b, world, rec) = (
+            0x0310_0000_u32,
+            0x0320_0000_u32,
+            0x0330_0000_u32,
+            0x0340_0000_u32,
+            0x0350_0000_u32,
+        );
+        m.put(list, &2u32.to_le_bytes());
+        m.put(list + 8, &data.to_le_bytes());
+        m.put(data, &[mesh_a.to_le_bytes(), mesh_b.to_le_bytes()].concat());
+        for (mesh, r) in [(mesh_a, rec), (mesh_b, 0)] {
+            m.put(mesh + 4, &world.to_le_bytes());
+            m.put(mesh + 0x1c, &r.to_le_bytes());
+            m.put(mesh + 0x48, &0x21u32.to_le_bytes());
+        }
+        m.put(rec + 0x1c, &mesh_a.to_le_bytes());
+        m.put(world, &[0u8; 48]);
+        m.put(world, &[f(10.0), f(0.0), f(0.0), f(0.0)].concat());
+        m.put(world + 32, &[f(1.0), f(2.0), f(3.0)].concat());
+        let o = read(&m, 0, 0.0).objects;
+        assert_eq!(o.iter().map(|o| o.id).collect::<Vec<_>>(), [3, 5, 8]);
+        let five = &o[1].meshes;
+        assert_eq!(five.len(), 2);
+        assert!(five[0].drawn && !five[1].drawn);
+        assert_eq!(five[0].layer, 0x21);
+        assert!((five[0].world[0] - 10.0).abs() < f32::EPSILON);
+        assert!((five[0].world[9] - 2.0).abs() < f32::EPSILON);
+        // a node whose lower link points at itself: bounded, no hang
+        let mut looped = Sparse(HashMap::new());
+        looped.put(G_PHYRE_SCENE, &scene.to_le_bytes());
+        looped.put(scene + SCENE_MAP_CLUSTER, &1u32.to_le_bytes());
+        looped.put(head + 0xc, &node(1).to_le_bytes());
+        looped.put(node(1), &node(1).to_le_bytes());
+        looped.put(node(1) + 4, &head.to_le_bytes());
+        looped.put(node(1) + 0xc, &1u32.to_le_bytes());
+        looped.put(node(1) + 0x10, &0u32.to_le_bytes());
+        assert!(read(&looped, 0, 0.0).objects.len() <= MAX_OBJECTS);
+    }
+
+    #[test]
+    fn the_sphere_grid_only_while_its_screen_runs() {
+        let g = 0x016a_d8b0_u32;
+        let mut m = Sparse(HashMap::new());
+        m.put(G_ABMAP, &g.to_le_bytes());
+        m.put(g, &[0u8; 8]);
+        m.put(g + 2, &2i16.to_le_bytes());
+        m.put(g + 4, &1i16.to_le_bytes());
+        m.put(
+            g + ABMAP_NODES,
+            &[
+                (-5i16).to_le_bytes(),
+                7i16.to_le_bytes(),
+                [0, 0],
+                2u16.to_le_bytes(),
+            ]
+            .concat(),
+        );
+        m.put(g + ABMAP_NODES + 0x20, &0x100u16.to_le_bytes());
+        m.put(
+            g + ABMAP_NODES + ABMAP_NODE,
+            &[0, 0, 0, 0, 0, 0, 0xff, 0xff],
+        );
+        m.put(
+            g + ABMAP_LINKS,
+            &[0u16.to_le_bytes(), 1u16.to_le_bytes()].concat(),
+        );
+        m.put(g + ABMAP_CURRENT, &[4]);
+        m.put(g + ABMAP_CURSOR, &1u16.to_le_bytes());
+        // set up but not running (after the screen closed): nothing
+        m.put(G_ABMAP_RUNNING, &0u32.to_le_bytes());
+        assert_eq!(read(&m, 0, 0.0).sphere_grid, SphereGrid::default());
+        m.put(G_ABMAP_RUNNING, &1u32.to_le_bytes());
+        let s = read(&m, 0, 0.0).sphere_grid;
+        assert!(s.open);
+        assert_eq!((s.current, s.cursor), (4, 1));
+        assert_eq!(
+            (
+                s.nodes[0].x,
+                s.nodes[0].y,
+                s.nodes[0].kind,
+                s.nodes[0].flags
+            ),
+            (-5, 7, 2, 0x100)
+        );
+        assert_eq!(s.nodes[1].kind, 0xffff);
+        assert_eq!(s.links, [GridLink { a: 0, b: 1 }]);
+    }
+
+    #[test]
+    fn the_menus_current_player_within_the_list() {
+        let mut m = Sparse(HashMap::new());
+        m.put(MENU_PLAYERS, &[0, 4, 1, 2, 3, 5, 6, 0]);
+        m.put(MENU_PLAYERS + 8, &[2, 0, 0, 0]);
+        m.put(MENU_CURRENT_PLAYER_POS, &1u32.to_le_bytes());
+        assert_eq!(read(&m, 0, 0.0).menus.current_player, 4);
+        // past the 8-byte list (the count behind it is not an id)
+        m.put(MENU_CURRENT_PLAYER_POS, &8u32.to_le_bytes());
+        assert_eq!(read(&m, 0, 0.0).menus.current_player, 0xff);
     }
 
     #[test]

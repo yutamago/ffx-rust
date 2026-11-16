@@ -849,6 +849,12 @@ mod tests {
             (Format::Argb8, 32, 16, 6)
         );
         assert_eq!(r.to_rgba(), image);
+        assert_eq!(
+            r.face_rgba(0),
+            Some(image.clone()),
+            "face 0 is the 2D image"
+        );
+        assert_eq!(r.face_rgba(1), None, "a 2D texture has one face");
         let r = t.with_rgba(32, 16, &image, Format::Rgba8, 1).unwrap();
         assert_eq!(r.to_rgba(), image);
         assert!(t.with_rgba(32, 16, &image, Format::Dxt5, 1).is_err());

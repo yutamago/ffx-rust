@@ -68,6 +68,7 @@ the first with `+0x40` zero, reset by `MenuMain_ResetWindow`
 | `+0x32` | i16 | first row shown (`MenuSelList_DrawCursor` `0x008d15a0`) |
 | `+0x3e` | u8 | draw layer 0..8 (reset 1); `+0x3f` reset 1 |
 | `+0x40` | u8 | in use |
+| `+0x43` | u8 | an item window's list kind (0 items, 1 key items, 2 commands; `MenuItem_DrawListRow`) |
 | `+0x48` | i16 | cursor (row = `+0x48 >> 1` in two-column lists) |
 | `+0x52` | i16 | fade 0..0x1000 |
 | `+0x54` | i16 | fade step (`0x155` or `0xaa` in the openers) |

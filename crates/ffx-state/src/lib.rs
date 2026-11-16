@@ -23,7 +23,7 @@ pub use read::{LANGUAGE_UNKNOWN, Reader, read};
 pub use schema::{ApiStruct, ApiType, Field, StructSchema, Ty};
 
 /// The API's version: a frontend checks it before it decodes a snapshot.
-pub const API_VERSION: u32 = 7;
+pub const API_VERSION: u32 = 8;
 
 /// The first four bytes of an encoded snapshot (`FFXS`).
 pub const MAGIC: u32 = u32::from_le_bytes(*b"FFXS");
@@ -112,6 +112,18 @@ api_struct! {
         /// How the scene is lit and coloured: the colour scale every
         /// material gets, the fog, the character lights.
         look: Look,
+        /// The game's own record of play (`g_SaveData`): gil, the party,
+        /// the characters' names and stats, the inventory; what the menus
+        /// and the save screens show.
+        save: Save,
+        /// The map's objects as the scene keeps them now (`PhyreScene`
+        /// `+0x1198`): each id's meshes with their live world matrices and
+        /// whether they are drawn, so objects that scripts move
+        /// (`graphicObjectSetTranslation`/`Rotation`) or show and hide (the
+        /// layer mask) can be drawn where the game draws them.
+        objects: Vec<SceneObject>,
+        /// The sphere grid while its screen is up (`*g_Abmap`), else empty.
+        sphere_grid: SphereGrid,
     }
 }
 
@@ -260,6 +272,38 @@ api_struct! {
         save_files: i32,
         /// The PC menu (Esc, Flash) is up (`g_FFEscMenu`).
         esc_menu: bool,
+        /// The PS2 menus' windows in use (`g_TkMenuWindows`, 32 of `0x98`
+        /// bytes, `+0x40` set; docs/formats/menu.md "Windows"): each
+        /// screen's lists and cursors.
+        windows: Vec<MenuWindow>,
+        /// The character the PS2 menus show (`TkMenuGetCurrentPlayer`:
+        /// `g_TkMenuPlayers` `0x01841c14` at `g_TkMenuCurrentPlayerPos`
+        /// `0x01841c28`; below 8 a party member, 8 and up an aeon); 0xff
+        /// when the position is 8 or more (the list is 8 bytes).
+        current_player: u8,
+    }
+}
+
+api_struct! {
+    /// One PS2 menu window in use (docs/formats/menu.md, "Windows").
+    MenuWindow {
+        /// Its record (0..31).
+        slot: u8,
+        /// Its state (`+0x28`, 0 idle).
+        state: u32,
+        /// Its row count (`+0x30`).
+        rows: u16,
+        /// The first row shown (`+0x32`).
+        first: i16,
+        /// The cursor (`+0x48`; the row is `cursor >> 1` in two-column
+        /// lists).
+        cursor: i16,
+        /// The list kind of an item window (`+0x43`: 0 items, 1 key items,
+        /// 2 commands).
+        kind: u8,
+        /// The opener's five words (`+0x58`..`+0x6b`: kind, character,
+        /// index, ...), `u32` little-endian each.
+        args: Vec<u8>,
     }
 }
 
@@ -366,6 +410,175 @@ api_struct! {
 }
 
 api_struct! {
+    /// The sphere grid screen's data: `g_Abmap` (`0x02305834`) holds the
+    /// address of `g_AbmapData` (set by `InitLpamng`); docs/formats/pc-ui.md
+    /// "Sphere grid helpers" and docs/formats/field.md (x, y, the panel bits
+    /// at `+0x21`).
+    SphereGrid {
+        /// The grid screen runs (`g_AbmapRunning` `0x01a85f70`, which
+        /// `TOMenuTermAbilityMap2` clears; `g_Abmap` itself stays set).
+        open: bool,
+        /// The character the screen shows (`+0x115bc`,
+        /// `TkMenuGetCurrentPlayer`).
+        current: u8,
+        /// The node under the cursor (`+0x112fc`, an index into `nodes`; its
+        /// kind names the help line, `AbmapSetHelpMessage`).
+        cursor: u16,
+        /// The nodes (`+0x808`, 0x28 bytes each, the count `i16` at `+2`).
+        nodes: Vec<GridNode>,
+        /// The links between nodes (`+0xa808`, 0x14 bytes each, the count
+        /// `i16` at `+4`).
+        links: Vec<GridLink>,
+    }
+}
+
+api_struct! {
+    /// One sphere grid node.
+    GridNode {
+        /// Its place on the grid (`+0`, `+2`; observed: y grows down).
+        x: i16,
+        y: i16,
+        /// What it holds (`+6`; 0xffff an empty node), a record of the
+        /// kernel's node table (`MsGetExcelData`).
+        kind: u16,
+        /// `+0x20`: a bit per character from bit 8 (observed: set on the
+        /// nodes around the characters' starting places early in the
+        /// game; read as the characters who activated it, not checked in
+        /// the code).
+        flags: u16,
+    }
+}
+
+api_struct! {
+    /// One link between two sphere grid nodes (`+0`, `+2`: their indices).
+    GridLink {
+        a: u16,
+        b: u16,
+    }
+}
+
+api_struct! {
+    /// One map object: a key of the scene's object tree (`PhyreScene`
+    /// `+0x1198`), each mesh instance's `+0x58` (`obj_id`;
+    /// `PhyreScene_rebuildMapObjects` `0x00658ae0`). Observed at Besaid:
+    /// the number in its meshes' names, `N_kShape`.
+    SceneObject {
+        /// The object id (the tree node's key, `+0xc`).
+        id: u32,
+        /// Its meshes in the scene's order (the node's list, `+0x10`).
+        meshes: Vec<SceneMesh>,
+    }
+}
+
+api_struct! {
+    /// One mesh instance of a map object.
+    SceneMesh {
+        /// Its world matrix (`*(mesh +4)`), 3x4 in the camera's packing
+        /// (`PMatrix4_toWorldMatrix3x4`; render space, the map's x 10
+        /// included).
+        world: [f32; 12],
+        /// It is drawn: its draw record (`+0x1c`) points back at it (what
+        /// `setMeshInstanceGroupIdVisible` sets from the mask `+0xfb14`);
+        /// false without a record.
+        drawn: bool,
+        /// Its group id (`+0x48`, `m_groupID`): the bit `1 << (group id & 31)` of
+        /// the scene's mask `+0xfb14`.
+        layer: u32,
+    }
+}
+
+api_struct! {
+    /// The game state block's parts the menus show (`g_SaveData`
+    /// `0x0112ca90`, docs/formats/save.md; the names Fahrenheit's).
+    Save {
+        /// `g_SaveData` is readable (the values below were read).
+        valid: bool,
+        /// Gil (`+0x3d48`, `g_SaveGil`).
+        gil: u32,
+        /// Play time in seconds (`+0xbc`; the game stops it at 3,599,999,
+        /// 999:59:59).
+        play_time: u32,
+        /// The front line: 3 character indices (`+0x3d58`,
+        /// `g_SaveInParty`; observed: 0xff in an empty place).
+        frontline: Vec<u8>,
+        /// The back line: 17 (`+0x3d5b`, `g_SaveOutParty`; observed: 0xff
+        /// in an empty place).
+        backline: Vec<u8>,
+        /// The 18 characters (`ply_save`, `+0x55cc`, 0x94 bytes each; and
+        /// their names, `+0x634c`).
+        members: Vec<PartyMember>,
+        /// The inventory's used slots (`+0x3ecc` the ids, `+0x40cc` the
+        /// counts; 256 slots): a slot with a count.
+        items: Vec<ItemStack>,
+        /// The key items, a bit each (`+0x448c`, 8 `u16`, as bytes).
+        key_items: Vec<u8>,
+        /// The commands from `0x3060` learnt by everybody
+        /// (`g_SaveSharedCommands`, `+0x3d6c`, 56 bytes): command `0x3060 +
+        /// i` is bit `i % 16` of `u16` `i / 16` (`MsSetSaveCommand`).
+        shared_commands: Vec<u8>,
+    }
+}
+
+api_struct! {
+    /// One character's `ply_save` (docs/formats/save.md).
+    PartyMember {
+        /// Its index (0 Tidus .. 17; the battle's party index too).
+        index: u8,
+        /// Its name as the player set it, in the game's text encoding (20
+        /// bytes at `+0x634c + 20 i`, up to the first 0; decode with the
+        /// game's character set).
+        name: Vec<u8>,
+        /// Joined (`+0x2c` bit 0, `MsGetSavePlyJoin`).
+        joined: bool,
+        /// HP, MP and their maxima (`+0x1c`..`+0x28`).
+        hp: u32,
+        mp: u32,
+        max_hp: u32,
+        max_mp: u32,
+        /// The 8 stats (`+0x2f`..`+0x36`): strength, defence, magic, magic
+        /// defence, agility, luck, evasion, accuracy.
+        stats: Vec<u8>,
+        /// AP and all AP gained (`+0x18`, `+0x14`).
+        ap: u32,
+        total_ap: u32,
+        /// Sphere levels available (`+0x3b`).
+        sphere_levels: u8,
+        /// The limit gauge and its full value (`+0x39`, `+0x3a`; copied to
+        /// and from the battle actor's `+0x5bc`/`+0x5bd` by `MsSetChrParam`
+        /// and `MsSetSaveData`).
+        limit_charge: u8,
+        limit_charge_max: u8,
+        /// Weapon and armour: their slots in `g_Equipment` (`+0x2d`, `+0x2e`;
+        /// 0xff none, docs/formats/battle.md "Saved parameters").
+        weapon: u8,
+        armour: u8,
+        /// The commands `0x3000`..`0x305f` learnt (`+0x3e`, 6 `u16` as
+        /// bytes): command `0x3000 + i` is bit `i % 16` of `u16` `i / 16`
+        /// (`MsSetSaveCommand`); later ones are `Save.shared_commands`.
+        commands: Vec<u8>,
+        /// The overdrive mode in use (`+0x38`, copied to the battle actor's
+        /// `+0x5bb` by `MsSetChrParam`/`MsSetSaveData`) and the modes had,
+        /// bit `k` for mode `k` (`+0x88`, `MsLimitTypeExpGet`,
+        /// `MsLimitTypeProcess`).
+        overdrive_mode: u8,
+        overdrive_modes: u32,
+    }
+}
+
+api_struct! {
+    /// One inventory slot in use.
+    ItemStack {
+        /// The slot (0..255): the menu's order.
+        slot: u8,
+        /// The item id (observed: `0x2000` + the kernel's item index, as the
+        /// battle menu's ids, `id >> 12` 2).
+        id: u16,
+        /// How many.
+        count: u8,
+    }
+}
+
+api_struct! {
     /// How the renderer colours the scene (docs/formats/render.md, "Lights
     /// and fog at run time" and "Scenery light levels"): what a frontend
     /// needs to draw the game's own shaders' result. `scene` is
@@ -383,6 +596,11 @@ api_struct! {
         /// `GlobalAmbientColor` (context `+0x00`; the map's
         /// `GlobalCamera` `m_ambientColor`, 0 without character lighting).
         ambient: [f32; 3],
+        /// The background (clear) colour (context `+0x30`: the map's
+        /// `GlobalCamera` `m_bgColor`, docs/formats/postfx.md; e.g. 0.235,
+        /// 0.235, 0.275 on cdsp00): the scene target's clear colour, not
+        /// tone-curved; the post passes still apply.
+        background: [f32; 3],
         /// The fog's colour (context `+0x10`).
         fog_colour: [f32; 3],
         /// The fog's near and far distances (`+0x20`, `+0x24`), its curve
@@ -528,6 +746,15 @@ pub fn structs() -> Vec<&'static StructSchema> {
         Battler::schema(),
         Look::schema(),
         Light::schema(),
+        MenuWindow::schema(),
+        SphereGrid::schema(),
+        GridNode::schema(),
+        GridLink::schema(),
+        SceneObject::schema(),
+        SceneMesh::schema(),
+        Save::schema(),
+        PartyMember::schema(),
+        ItemStack::schema(),
     ]
 }
 
@@ -558,21 +785,39 @@ mod tests {
         let camera = 1 + 48 + 4 + 4 + 4 + 12 + 12;
         let input = 4 + 2 + 1 + 1;
         let actor = 2 + 2 + 1 + (2 + 4) + 12 + 4 + 12 + 1 + 4 + 4 + 4 + 4 + 2 + 2 + 1 + 64 + 2;
-        let menus = 4 + 4 + 4 + 2 + 4 + 2 + 2 + 2 + 2 + 4 + 4 + 4 + 4 + 4 + 1;
+        let menus = 4 + 4 + 4 + 2 + 4 + 2 + 2 + 2 + 2 + 4 + 4 + 4 + 4 + 4 + 1 + 2 + 1;
         // the effects (default: no running ones, no filters): magic, the
         // two list counts, shake, music
         let effects = 4 + 2 + 2 + 4 + 4 + 4;
-        // the look (no lights): valid, the scale, ambient, fog, character
-        // ambient, the lights' count
-        let look = 1 + 12 + 12 + 12 + 16 + 12 + 2;
+        // the look (no lights): valid, the scale, ambient, background, fog,
+        // character ambient, the lights' count
+        let look = 1 + 12 + 12 + 12 + 12 + 16 + 12 + 2;
+        // the save (default: empty lists): valid, gil, time, five counts
+        let save = 1 + 4 + 4 + 2 + 2 + 2 + 2 + 2 + 2;
+        // the sphere grid (closed): open, current, cursor, two list counts
+        let grid = 1 + 1 + 2 + 2 + 2;
         assert_eq!(
             b.len(),
-            8 + 4 + 8 + world + camera + input + 2 + actor + menus + 2 + effects + 2 + look
+            8 + 4
+                + 8
+                + world
+                + camera
+                + input
+                + 2
+                + actor
+                + menus
+                + 2
+                + effects
+                + 2
+                + look
+                + save
+                + 2
+                + grid
         );
     }
 
     /// FNV-1a of `schema::text()` at [`API_VERSION`].
-    const PINNED: u64 = 0xab45_d0d4_7b2e_d792;
+    const PINNED: u64 = 0x6a7c_7533_6cec_d286;
 
     /// A field change must raise [`API_VERSION`]: the schema's text is
     /// pinned to the version here.
@@ -584,7 +829,7 @@ mod tests {
         });
         assert_eq!(
             (API_VERSION, hash),
-            (7, PINNED),
+            (8, PINNED),
             "the schema changed: raise API_VERSION and pin the new hash"
         );
     }
@@ -606,11 +851,14 @@ mod tests {
                 "messages",
                 "effects",
                 "battlers",
-                "look"
+                "look",
+                "save",
+                "objects",
+                "sphere_grid"
             ]
         );
         assert!(matches!(s.fields[5].ty, Ty::List(_)));
-        assert_eq!(structs().len(), 15);
+        assert_eq!(structs().len(), 24);
         assert!(Actor::schema().fields.iter().all(|f| !f.doc.is_empty()));
     }
 }

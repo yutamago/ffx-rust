@@ -250,14 +250,14 @@ save variables).
 | `0x2d`, `0x2e` | `u8` | `wpn_inv_idx`, `arm_inv_idx` | weapon and armour slots |
 | `0x2f`-`0x36` | 8 × `u8` | stats | `MsSetSaveParam` |
 | `0x37` | `u8` | `poison_dmg` | Fahrenheit, not checked |
-| `0x38`-`0x3a` | `u8` | `limit_mode_index`, `limit_charge`, `limit_charge_max` | Fahrenheit, not checked |
+| `0x38`-`0x3a` | `u8` | `limit_mode_index`, `limit_charge`, `limit_charge_max` | copied to the battle actor's `+0x5bb`..`+0x5bd` by `MsSetChrParam` and back by `MsSetSaveData` (`+0x5bb` the mode in use, `MsGetChrLimitType`) |
 | `0x3b`, `0x3c` | `u8` | `slv_available`, `slv_spent` | `+0x3b` the S-level `MsSaveAddAP_00784610` raises (to 99) |
 | `0x3d` | `u8` | `battles_until_recovery` | Fahrenheit, not checked |
 | `0x3e` | 6 × `u16` | `abi_map` | commands learnt (`MsSetSaveParam`) |
 | `0x4a` | 3 × `u16` | `auto_ability_effects` | the equipment's auto-ability bits (`MsSetSaveParam`) |
 | `0x50`-`0x5c` | 4 × `u32` | `battle_count`, `enemies_defeated`, `deaths`, `limits_charged` | `MsSaveAddInfoData` (`0x00785a00`, kinds 0-3; nothing in `g_BtlBattleType` 2) |
 | `0x60` | 20 × `u16` | `limit_mode_counters` | Fahrenheit, not checked |
-| `0x88` | `u32` | `obtained_limit_modes` | Fahrenheit, not checked |
+| `0x88` | `u32` | `obtained_limit_modes` | bit `k` for overdrive mode `k` had (`MsLimitTypeExpGet`, `MsLimitTypeProcess`) |
 
 ### Fields the event scripts explain
 
