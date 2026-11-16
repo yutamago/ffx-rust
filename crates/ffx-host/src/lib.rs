@@ -73,6 +73,7 @@ pub mod sync;
 pub mod table;
 #[cfg(all(windows, feature = "dev-unicorn"))]
 pub mod tcg_commit;
+pub mod vfx;
 pub mod win32;
 pub mod window;
 

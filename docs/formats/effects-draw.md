@@ -398,6 +398,37 @@ mesh instance's box) is not that place: in live2 it lay 31.8 units from it
 for the Larva, 51.4 for the Gold Element and 55.4 for Lulu, and an effect
 placed by it stood on the ground beside the Larva.
 
+## Live: the capture in ffx-host (2026-11-16)
+
+`ffx_host::vfx` (docs/state-api.md, "Effect draws") reads the
+`DrawMostVFX` list of every frame as the census reads a snapshot, for
+gd-ffx. What it adds to the census:
+
+- **The world matrix.** A list entry is a mesh instance whose `+4` points
+  at its world matrix: 12 floats in the layout of the camera's
+  (`PMatrix4_toWorldMatrix3x4`: `[Y.x Y.y Y.z X.x | Z.x Z.y Z.z X.y | P.x P.y
+  P.z X.z]`, render space). The vertex arrays are the effect's local
+  coordinates: for Besaid's field effects the matrix flips the field's x
+  and y (the sea's strips: P = (0, -1.8, 0)), for the save sphere's orb it
+  holds the sphere's place, a rotation and a scale of about `3e-4` on
+  positions up to 9,448. (The census compared array bytes, which the
+  matrix leaves alone.)
+- **The texture name** at segment `+0x20` is a pointer to the path as the
+  game opened it: `../../../FFX_Data/GameData/PS3Data/map/bsil/bsil00/fp/tex/D3D11/13824_19_0_0_128_128.dds.phyre`;
+  `NoTexture` for untextured segments (flags 2), whose UV arrays hold
+  `0xcdcdcdcd` (unset).
+- **The timing** in `ffx-host`: `DrawMostVFX` runs on the game's main
+  thread after update `n` and before the boundary of update `n + 1`, and
+  draws the arrays the boundary of update `n` reads (60 frames on Besaid:
+  every draw equal to the same update's boundary read, 29 of 30 different
+  from the neighbours'). The census's "frame k draws the arrays of the
+  snapshot taken k + 1 frames on" counts from the capture's held point,
+  one frame before the snapshot: the same pairing.
+- **Field effects.** Besaid at the save sphere (developer save 7): 30
+  draws, all from `DrawMostVFX`, no draw events, every entry in the
+  table. The save sphere `f001`'s glow is six entries (two hemispheres,
+  two sparkle quads with `bat_eff` textures, two discs), on the sphere.
+
 ## Gate
 
 The M4 census: every effect draw of the eight captured frames is traced:

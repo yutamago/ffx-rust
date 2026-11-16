@@ -120,6 +120,104 @@ A monster that dies with a death pattern (`+0x3f5`) usually leaves the list
 (its `+0xdc8` cleared) rather than showing `dead`
 (docs/formats/battle.md, "The battle actor").
 
+## Effect draws (`ffx_host::vfx`, not in the snapshot)
+
+The geometry the game itself builds for its effects, frame by frame, so a
+frontend can draw the game's own effects (docs/formats/effects-draw.md).
+Not part of `Snapshot` (an effect-heavy frame is hundreds of kilobytes):
+a capture in `ffx-host` with a blob of its own, off unless a frontend
+switches it on (`shared.vfx.set_enabled(true)`; off again drops what it
+kept).
+
+- **What.** A wrapper on `PhyreScene_DrawMostVFX` (`0x00650670`, the
+  `DrawMostVFX` pass: every effect draw of the census, transparent pass,
+  scene colour target). Off, it only checks the switch and calls the
+  port; on, it first reads the scene's list `+0x38cc`, its draw events
+  and, for each entry, the `VFXDynamicGeometry` of `g_VFXRenderDataTable`
+  whose mesh instance it is (the map, then the delete pool), and every
+  segment with indices: one `vfx::Draw` per indexed draw, in the game's
+  draw order (the entry of instance `(0x78, 0x5bc)` last while magic
+  0x296 plays, as the pass draws it). It only reads memory: replays,
+  saves and timing are the same with it on or off. Not captured: the
+  other VFX lists (DTT, UI 2D, after post-processing, `+0x3880`; no draws
+  in the census's frames) and entries whose mesh instance is in no
+  geometry (`Frame.unresolved`).
+- **When.** `DrawMostVFX` runs on the game's main thread between update
+  `n` and the boundary of update `n + 1`; `Frame.update` is `n`, the
+  `Snapshot.update` of the state it draws. A frontend pairs them with
+  `shared.vfx.frame(snapshot.update)` (the newest four frames are kept;
+  `latest()` the newest): the frame of update `n` is there before the
+  snapshot of update `n` reaches the observers. Measured on Besaid
+  (developer save 7, 60 frames): each frame's arrays equal those read at
+  the boundary of the same update on every draw (30 of 30; one run of 60 frames, measured with the probe's boundary reads, not a test), and differ
+  from the neighbouring boundaries' on 29 of 30 (the sea's strips move
+  every update).
+- **Space.** `positions` are in render space (Godot's: the field's x and y
+  negated, "Spaces" above): the arrays hold the effect's local
+  coordinates and the mesh instance's world matrix (`*(mesh instance
+  +4)`, 12 floats in `Camera.world`'s layout, kept as `Draw.world`)
+  places them (`vfx::to_render`). The field effects' matrices carry the
+  field-to-render flip (the sea's: X = (-1, 0, 0), Y = (0, -1, 0),
+  Z = (0, 0, 1), P = (0, -1.8, 0)).
+
+`vfx::Draw`: `place` (the list entry, the position draw events count
+in), `key` (the instance key `(hi << 32) | lo`: for a ppp program
+`(g_pppCurrentProgram, object)`, for the op system `(0, record)`, part
+`i` at `lo + 10000 i`; effects-draw.md, "Instance keys and makers"),
+`geometry` (an address), `flags` (the VSP flags `+0x3c`, which pick the
+shader and blend: `0x8` modulate, `0xa` additive, `0x18` subtract, `0x9`
+z-matrix, `0x2` additive untextured; effects-draw.md, "Shaders" and
+"States"), `pooled` (destroyed this frame, still drawn), `segment`,
+`world`, `texture` (segment `+0x20` as the game holds it:
+`../../../FFX_Data/GameData/PS3Data/<folder>/D3D11/<name>.dds.phyre`, or
+`NoTexture`), and the arrays: `positions`, `colours` (RGBA floats; 0.5 is
+the PS2's `0x80`, which the VFX vertex shaders double), `uvs` (garbage on
+untextured draws: the game leaves them unset), `indices` (`u16`, a
+triangle list). `vfx::Event`: kind, place, two words
+(`PhyreScene_processVFXDrawEvent`).
+
+**Encoding** (`Frame::encode`, `Frame::decode`; little-endian, version 1):
+
+| Bytes | Field |
+|---|---|
+| 4 | `FXDR` |
+| 2, 2 | version (1), 0 |
+| 4 | `update` |
+| 4 | `unresolved` |
+| 4, 4 | event count `e`, draw count `d` |
+| 16 `e` | events: kind, place, word 0, word 1 (`u32` each) |
+| `d` draws | each: |
+| 4 | `place` |
+| 8 | `key` (`lo` first) |
+| 4, 4 | `geometry`, `flags` |
+| 2, 1, 1 | `segment`, `pooled` (0/1), 0 |
+| 48 | `world` (12 `f32`) |
+| 2 + `t` | texture name: byte count and UTF-8 |
+| 4, 4 | vertex count `v`, index count `i` |
+| 12 `v` | positions (`f32` x, y, z) |
+| 16 `v` | colours (`f32` r, g, b, a) |
+| 8 `v` | uvs (`f32` u, v) |
+| 2 `i` | indices (`u16`) |
+
+**On Besaid** (developer save 7, map 70, `/map/bsil/bsil00/`; the probe
+below): 30 draws a frame (25 list entries), no events, none unresolved,
+348,080 bytes encoded. Textures from `map/bsil/bsil00/fp/tex` (the map's
+field effects), `yonishi_data/dat_et/bat_eff/et_tex/tex` (two sparkle
+quads) and `NoTexture` (two untextured discs). Entries 0-18: the sea's
+foam and wave strips at y -1.8 to -11 (flags 8, 0xa, one 0x18). Entries
+19-24 sit on the save sphere `f001` (render (309.7, 8.7, -476.9)): two
+hemispheres of 128 vertices (flags 8, centred 6.2 above it, radius about
+2.5), two sparkle quads (0xa), a textured disc (8, two segments) and an
+untextured disc (2, two segments) at 2.4 and 2.5 above it. Their keys'
+low words are 6, 8 and 9 and their high words addresses in `0x00d29c68`
+.. `0x00d2c118` (field effect objects; which field program each is was
+not resolved).
+
+```text
+FFX_GAME_DIR=~/steam-games/FFX-X2-HD cargo run --release -p ffx-host \
+  --example vfx-probe -- 7 20      # developer save, frames
+```
+
 ## Encoding
 
 `Snapshot::encode`: `FFXS`, the API version (`u32`), then the fields in
@@ -439,6 +537,13 @@ null device) an observer gets one snapshot an update; in the opening at
 the fire it sees the event `lo/loopdemo`, the level `/map/znkd/znkd06/`,
 the renderer's camera, and the
 party shown, posed by their skeletons and animating.
+
+`crates/ffx-host/tests/boot.rs` `the_effect_draws_are_captured_at_the_save_sphere`:
+with the capture on at Besaid (developer save 7), the frame of a
+snapshot's update is there when the snapshot comes; its draws use the
+map's effect textures, its orb lies on the save sphere `f001`'s render
+point, and its blob decodes to the same frame. `ffx_host::vfx`'s unit
+tests: the encoding and its layout, the matrix, the kept frames.
 
 `crates/ffx-host/tests/boot.rs` `a_developer_save_loads_on_request`: in
 the opening a frontend's `DevSave(7)` loads Besaid without the harness;
