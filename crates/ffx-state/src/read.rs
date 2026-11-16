@@ -10,7 +10,8 @@
 use ffx_chara::layout as l;
 
 use crate::{
-    Actor, Battler, Bone, Camera, EffectInstance, Effects, GridLink, GridNode, Input, ItemStack,
+    Actor, ActorModel, BattleEnd, BattleEndRow, Battler, Bone, Camera, ConfigMenu, ConfigOption,
+    ConfigRow, EffectInstance, Effects, GridLink, GridNode, Input, ItemStack, LayerEntry, Layers,
     Light, Look, MenuOption, MenuWindow, Menus, Message, PartyMember, Save, SceneMesh, SceneObject,
     ScreenFilter, Snapshot, SphereGrid, World,
 };
@@ -166,6 +167,20 @@ const HEADER_ELEMENTS: u32 = 0xa;
 const ELEM_GLOBAL: u32 = 0x88;
 /// At most this many bones a character.
 const MAX_BONES: u32 = 512;
+/// The model header's model count (`u16` `+6`), skin entries (`u16` `+8`)
+/// and skin list (`+0x14`, 12-byte entries, `u16 +2` the model).
+const HEADER_MODELS: u32 = 6;
+const HEADER_SKINS: u32 = 8;
+const HEADER_SKIN_LIST: u32 = 0x14;
+const SKIN_ENTRY: u32 = 12;
+/// At most this many models and skin entries a character.
+const MAX_MODELS: u32 = 64;
+const MAX_SKINS: u32 = 256;
+/// `+0x198` bit `0x20`: the model purged (`Ch_DrawMain` skips it).
+const PURGED: u32 = 0x20;
+/// A render instance's byte `+0x14`: visible
+/// (`graphicCharacterInstanceSetVisible`).
+const INSTANCE_VISIBLE: u32 = 0x14;
 
 struct Mem<'a>(&'a dyn Reader);
 
@@ -302,6 +317,7 @@ pub fn read(mem: &dyn Reader, update: u32, game_time: f64) -> Snapshot {
         save: save(&m),
         objects: scene_objects(&m),
         sphere_grid: sphere_grid(&m),
+        layers: layers(&m),
     }
 }
 
@@ -460,6 +476,8 @@ fn menus(m: &Mem<'_>) -> Menus {
         esc_menu: esc_up,
         windows: menu_windows(m),
         current_player: menu_current_player(m),
+        config: config_menu(m),
+        battle_end: battle_end(m),
     }
 }
 
@@ -555,6 +573,8 @@ const CONTEXT_FOG_NEAR: u32 = 0x20;
 const CONTEXT_FOG_FAR: u32 = 0x24;
 const CONTEXT_FOG_CURVE: u32 = 0x28;
 const CONTEXT_FOG_LIMIT: u32 = 0x2c;
+/// The shaders' `GlobalTime` (`app +0x120`, the context being `app +0x50`).
+const CONTEXT_GLOBAL_TIME: u32 = 0xd0;
 const CHARACTER_LIGHTING: u32 = 0x00cc_ca84;
 const LIGHTING_SET: u32 = 0xf0;
 const LIGHTING_DIRECTION: u32 = 0xf4;
@@ -578,6 +598,81 @@ const SCENE_MAP_CLUSTER: u32 = 0x10d4;
 /// depth limit).
 const MAX_OBJECTS: usize = 512;
 const MAX_MESHES: u32 = 64;
+/// The display objects (`g_YiDObjs`, `0xb4` bytes each; the count
+/// `g_YiDObjCount`); `+0x88` the morph value (and the UV offset's u),
+/// `+0x8c` the UV offset's v.
+const DOBJS: u32 = 0x018d_f59c;
+const DOBJ_COUNT: u32 = 0x018d_f588;
+const DOBJ_SIZE: u32 = 0xb4;
+const DOBJ_MORPH: u32 = 0x88;
+/// At most this many display objects (the map file's objects; the render
+/// state saves 128).
+const MAX_DOBJS: u32 = 512;
+
+/// The 2D layers (docs/formats/render.md, scene-maps.md).
+const SCENE_ALPHA_FAST: u32 = 0xd4;
+const SCENE_2D_LOADED: u32 = 0x93c;
+const SCENE_2D_OFF: u32 = 0x93d;
+const SCENE_2D_LAYERS: u32 = 0x1128;
+const SCENE_2D_COUNT: u32 = 0x1138;
+const SCENE_2D_TABLE: u32 = 0x1140;
+const SCENE_2D_CURRENT: u32 = 0x11d8;
+const SCENE_2D_PAN: u32 = 0xf9bc;
+const SCENE_2D_NO_SQUEEZE: u32 = 0xf9c7;
+const SCENE_SHIFT: u32 = 0xfa34;
+/// `g_PhyreScene3D` (a byte): no squeeze while set.
+const PHYRE_SCENE_3D: u32 = 0x00cc_b9c0;
+/// At most this many show-table entries.
+const MAX_LAYERS: u32 = 256;
+
+fn layers(m: &Mem<'_>) -> Layers {
+    let scene = m.u32(G_PHYRE_SCENE);
+    let s = |o: u32| scene.wrapping_add(o);
+    // the scene mapped from its show table to the current scene, and over
+    // the pan to the shift
+    if scene == 0
+        || !m.mapped::<4>(s(SCENE_2D_CURRENT))
+        || !m.mapped::<4>(s(SCENE_2D_PAN))
+        || !m.mapped::<8>(s(SCENE_SHIFT))
+    {
+        return Layers::default();
+    }
+    let loaded = m.u8(s(SCENE_2D_LOADED)) != 0;
+    let off = m.u8(s(SCENE_2D_OFF)) != 0;
+    let count = m.u32(s(SCENE_2D_COUNT));
+    let table = m.u32(s(SCENE_2D_TABLE));
+    let entries = if m.u32(s(SCENE_2D_LAYERS)) == 0 || table == 0 || count > MAX_LAYERS {
+        Vec::new()
+    } else {
+        let mut b = vec![0u8; 8 * count as usize];
+        if m.0.read_bytes(table, &mut b) {
+            b.as_chunks::<8>()
+                .0
+                .iter()
+                .map(|e| LayerEntry {
+                    shown: e[0] != 0,
+                    scene: i16::from(e[1].cast_signed()),
+                    id: i16::from_le_bytes([e[2], e[3]]),
+                })
+                .collect()
+        } else {
+            Vec::new()
+        }
+    };
+    Layers {
+        valid: true,
+        loaded,
+        off,
+        drawn: loaded && !off,
+        before_world: m.u8(s(SCENE_ALPHA_FAST)) != 0,
+        scene: m.i32(s(SCENE_2D_CURRENT)),
+        pan: m.f32(s(SCENE_2D_PAN)),
+        shift_x: m.f32(s(SCENE_SHIFT)),
+        shift_y: m.f32(s(SCENE_SHIFT + 4)),
+        squeezed: m.u8(s(SCENE_2D_NO_SQUEEZE)) == 0 && m.u8(PHYRE_SCENE_3D) == 0,
+        entries,
+    }
+}
 
 fn scene_objects(m: &Mem<'_>) -> Vec<SceneObject> {
     let scene = m.u32(G_PHYRE_SCENE);
@@ -585,6 +680,7 @@ fn scene_objects(m: &Mem<'_>) -> Vec<SceneObject> {
         return Vec::new();
     }
     let head = scene.wrapping_add(SCENE_OBJECTS);
+    let dobjs = m.u32(DOBJ_COUNT).min(MAX_DOBJS);
     let mut out = Vec::new();
     // in order, iteratively (lower subtree, node, higher subtree)
     let mut stack = Vec::new();
@@ -628,9 +724,19 @@ fn scene_objects(m: &Mem<'_>) -> Vec<SceneObject> {
                 })
             })
             .collect();
+        let id = m.u32(n.wrapping_add(0xc));
+        let dobj = id < dobjs;
+        let at = DOBJS.wrapping_add(id.wrapping_mul(DOBJ_SIZE));
         out.push(SceneObject {
-            id: m.u32(n.wrapping_add(0xc)),
+            id,
             meshes,
+            dobj,
+            morph: if dobj { m.f32(at + DOBJ_MORPH) } else { 0.0 },
+            morph_v: if dobj {
+                m.f32(at + DOBJ_MORPH + 4)
+            } else {
+                0.0
+            },
         });
         node = m.u32(n.wrapping_add(4));
     }
@@ -732,6 +838,158 @@ fn menu_windows(m: &Mem<'_>) -> Vec<MenuWindow> {
             })
         })
         .collect()
+}
+
+/// The config menu (docs/formats/menu.md "Config menu").
+const MENU_CONFIG_MASK: u32 = 0x400;
+const MENU_CONFIG_PC_ROW: u32 = 0x0186_a438;
+const MENU_CONFIG_CURSOR: u32 = 0x0186_a444;
+const MENU_CONFIG_ROWS: u32 = 0x0186_a448;
+const MENU_CONFIG_ROW_LIST: u32 = 0x0186_a44c;
+/// `TkMenuConfigMes`: the config texts are menu text 7.
+const MENU_TEXT_CONFIG: u32 = 7;
+/// The PC row's localisation ids (title; option `k`: `0x1d0 - 2 k`).
+const CONFIG_PC_TITLE: u16 = 0x1cd;
+const CONFIG_PC_OPTION: u16 = 0x1d0;
+/// At most this many rows and options a row.
+const MAX_CONFIG_ROWS: u32 = 32;
+const MAX_CONFIG_OPTIONS: u32 = 16;
+
+fn config_menu(m: &Mem<'_>) -> ConfigMenu {
+    if m.u32(MENU_MAIN_MASK) & MENU_CONFIG_MASK == 0 {
+        return ConfigMenu::default();
+    }
+    let pc_row = m.i32(MENU_CONFIG_PC_ROW);
+    let list = m.u32(MENU_CONFIG_ROW_LIST);
+    let count = u32::try_from(m.i32(MENU_CONFIG_ROWS))
+        .unwrap_or(0)
+        .min(MAX_CONFIG_ROWS);
+    let text = |id: u16| {
+        let at = menu_text(m, MENU_TEXT_CONFIG, u32::from(id));
+        if at == 0 { Vec::new() } else { m.text(at) }
+    };
+    let rows = if list == 0 {
+        Vec::new()
+    } else {
+        (0..count)
+            .filter_map(|r| {
+                let rec = m.u32(list.wrapping_add(4 * r));
+                if rec == 0 {
+                    return None;
+                }
+                let at = |o: u32| rec.wrapping_add(o);
+                let pc = i64::from(r) == i64::from(pc_row);
+                let n = u32::try_from(m.i32(at(4)))
+                    .unwrap_or(0)
+                    .min(MAX_CONFIG_OPTIONS);
+                let options = (0..n)
+                    .map(|k| {
+                        if pc {
+                            #[allow(clippy::cast_possible_truncation)] // k < 16
+                            let id = CONFIG_PC_OPTION.wrapping_sub(2 * k as u16);
+                            ConfigOption {
+                                id,
+                                text: Vec::new(),
+                            }
+                        } else {
+                            let id = m.u16(at(0x1c + 4 * k));
+                            ConfigOption { id, text: text(id) }
+                        }
+                    })
+                    .collect();
+                let title_id = if pc { CONFIG_PC_TITLE } else { m.u16(at(0x18)) };
+                Some(ConfigRow {
+                    title_id,
+                    title: if pc { Vec::new() } else { text(title_id) },
+                    value: m.u32(at(8)),
+                    enabled: m.u32(at(0xc)) != 0,
+                    options,
+                })
+            })
+            .collect()
+    };
+    ConfigMenu {
+        open: true,
+        cursor: i16::from(m.u8(MENU_CONFIG_CURSOR).cast_signed()),
+        pc_row,
+        rows,
+    }
+}
+
+/// The battle results screen (docs/formats/menu.md "Battle end").
+const MENU_BATTLE_END_MASK: u32 = 0x2_0000;
+const BTL_END_STATE: u32 = 0x0186_9f08;
+const BTL_END_DONE: u32 = 0x00c5_a068;
+const BTL_END_GIL: u32 = 0x0186_9f10;
+const BTL_END_LIST: u32 = 0x0186_9f18;
+const BTL_END_ENTRY: u32 = 14;
+/// At most this many rows (the entries end before `0x01869f90`).
+const BTL_END_MAX_ROWS: u32 = 8;
+const BTL_END_RESULTS: u32 = 0x0231_0f20;
+const BTL_END_GIL_WON: u32 = 0x0231_0f6c;
+const BTL_END_ITEM_COUNT: u32 = 0x0231_0f70;
+const BTL_END_GEAR_COUNT: u32 = 0x0231_0f72;
+const BTL_END_ITEM_IDS: u32 = 0x0231_0f74;
+const BTL_END_ITEM_COUNTS: u32 = 0x0231_0f84;
+const BTL_END_GEAR: u32 = 0x0231_0f8e;
+/// 8 items (ids `0x02310f74..0x84`) and 6 gear.
+const BTL_END_MAX_ITEMS: u8 = 8;
+const BTL_END_MAX_GEAR: u8 = 6;
+const BTL_END_GEAR_LIST: u32 = 0x0186_a188;
+const BTL_END_GEAR_FULL: u32 = 0x0186_a184;
+const BTL_END_TOP: u32 = 0x0186_a190;
+const BTL_END_SIDE: u32 = 0x0186_a19c;
+const BTL_END_CURSOR: u32 = 0x0186_a1a0;
+const BTL_END_PICKED: u32 = 0x0186_a1a8;
+
+fn battle_end(m: &Mem<'_>) -> BattleEnd {
+    if m.u32(MENU_MAIN_MASK) & MENU_BATTLE_END_MASK == 0 {
+        return BattleEnd::default();
+    }
+    let n = u32::from(m.u8(BTL_END_LIST)).min(BTL_END_MAX_ROWS);
+    let rows = (0..n)
+        .map(|i| {
+            let e = BTL_END_LIST + 8 + BTL_END_ENTRY * i;
+            BattleEndRow {
+                character: m.i16(e + 6),
+                kind: m.u16(e + 4),
+                timer: m.i16(e + 2),
+                in_party: m.u8(e + 9) != 0,
+                colour: m.u8(e + 8),
+                flash: i16::from(m.u8(e + 0xa).cast_signed()),
+            }
+        })
+        .collect();
+    // signed bytes: a negative count is none
+    let count = |at: u32, max: u8| m.u8(at).cast_signed().max(0).cast_unsigned().min(max);
+    let items = (0..count(BTL_END_ITEM_COUNT, BTL_END_MAX_ITEMS))
+        .map(|i| ItemStack {
+            slot: i,
+            id: m.u16(BTL_END_ITEM_IDS + 2 * u32::from(i)),
+            count: m.u8(BTL_END_ITEM_COUNTS + u32::from(i)),
+        })
+        .collect();
+    let gear_n = count(BTL_END_GEAR_COUNT, BTL_END_MAX_GEAR);
+    BattleEnd {
+        open: true,
+        state: m.u32(BTL_END_STATE),
+        done: m.u8(BTL_END_DONE) != 0,
+        gil_won: m.u32(BTL_END_GIL_WON),
+        gil_left: m.u32(BTL_END_GIL + 4),
+        gil_step: m.u32(BTL_END_GIL),
+        ap: m.bytes::<{ 4 * 18 }>(BTL_END_RESULTS).to_vec(),
+        rows,
+        items,
+        gear: m.bytes::<{ 2 * BTL_END_MAX_GEAR as usize }>(BTL_END_GEAR)[..2 * usize::from(gear_n)]
+            .to_vec(),
+        gear_full: m.u32(BTL_END_GEAR_FULL) != 0,
+        side: m.u32(BTL_END_SIDE),
+        cursor: m.i32(BTL_END_CURSOR),
+        cursor_won: m.i32(BTL_END_CURSOR + 4),
+        picked: m.u32(BTL_END_PICKED) != 0,
+        top: m.i32(BTL_END_TOP),
+        gear_list: m.i32(BTL_END_GEAR_LIST),
+    }
 }
 
 /// `g_SaveData`'s parts the menus show (docs/formats/save.md).
@@ -882,6 +1140,7 @@ fn look(m: &Mem<'_>) -> Look {
             m.floats(record.wrapping_add(RECORD_AMBIENT))
         },
         lights,
+        global_time: m.f32(c(CONTEXT_GLOBAL_TIME)),
     }
 }
 
@@ -941,6 +1200,7 @@ fn actors(m: &Mem<'_>) -> Vec<Actor> {
                 return None;
             }
             let id = m.u16(f(l::ID));
+            let flags2 = m.u32(f(l::FLAGS2));
             let frame = m.u32(f(l::MOTION_FRAME));
             #[allow(clippy::cast_precision_loss)] // 8.8 fixed frames
             let motion_frame = frame as f32 / 256.0;
@@ -962,7 +1222,49 @@ fn actors(m: &Mem<'_>) -> Vec<Actor> {
                 player: at == player,
                 world: m.floats(f(WORLD_MATRIX)),
                 bones: bones(m, at),
+                drawn: {
+                    let inst = m.u32(f(l::RENDER_INSTANCE));
+                    flags2 & PURGED == 0
+                        && inst != 0
+                        && m.u8(inst.wrapping_add(INSTANCE_VISIBLE)) == 1
+                },
+                flags: m.u32(f(l::FLAGS)),
+                flags2,
+                models: models(m, at),
             })
+        })
+        .collect()
+}
+
+/// The record at `at`'s models: each one's base element and whether the
+/// header's skin list names it (`Ch_DrawMain`'s walk 1).
+fn models(m: &Mem<'_>, at: u32) -> Vec<ActorModel> {
+    let header = m.u32(at.wrapping_add(l::MODEL_HEADER));
+    let list = m.u32(at.wrapping_add(l::MODELS));
+    if header == 0 || list == 0 {
+        return Vec::new();
+    }
+    let n = u32::from(m.u16(header.wrapping_add(HEADER_MODELS))).min(MAX_MODELS);
+    let skins = u32::from(m.u16(header.wrapping_add(HEADER_SKINS))).min(MAX_SKINS);
+    let skin_list = m.u32(header.wrapping_add(HEADER_SKIN_LIST));
+    let mut skinned = vec![false; n as usize];
+    if skin_list != 0 && skins > 0 {
+        let mut b = vec![0u8; (SKIN_ENTRY * skins) as usize];
+        if m.0.read_bytes(skin_list, &mut b) {
+            for e in b.as_chunks::<{ SKIN_ENTRY as usize }>().0 {
+                if let Some(s) = skinned.get_mut(usize::from(u16::from_le_bytes([e[2], e[3]]))) {
+                    *s = true;
+                }
+            }
+        }
+    }
+    (0..n)
+        .map(|i| {
+            let model = m.u32(list.wrapping_add(i * l::MODEL_SIZE));
+            ActorModel {
+                base: if model == 0 { 0 } else { m.u16(model) },
+                skinned: skinned[i as usize],
+            }
         })
         .collect()
 }
