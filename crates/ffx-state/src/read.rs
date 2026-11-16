@@ -568,7 +568,7 @@ const PLIGHT_LEVEL: u32 = 0x24;
 /// `ffx_graphic`'s `tree_find_key` walks it): the head, the root at its
 /// `+0xc`, nodes `+0` lower, `+4` higher, `+0xc` the key, `+0x10` the list
 /// (`+0` count, `+8` the meshes); a mesh `+4` its world 3x4, `+0x1c` its
-/// draw record (whose `+0x1c` is the mesh while drawn), `+0x48` its layer.
+/// draw record (whose `+0x1c` is the mesh while drawn), `+0x48` its group id (`m_groupID`).
 const SCENE_OBJECTS: u32 = 0x1198;
 const SCENE_MAP_CLUSTER: u32 = 0x10d4;
 /// At most this many objects and meshes an object: a guard against a tree

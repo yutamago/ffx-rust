@@ -481,7 +481,7 @@ api_struct! {
         /// `setMeshInstanceGroupIdVisible` sets from the mask `+0xfb14`);
         /// false without a record.
         drawn: bool,
-        /// Its group id (`+0x48`, `m_groupID`): the bit `1 << (id & 31)` of
+        /// Its group id (`+0x48`, `m_groupID`): the bit `1 << (group id & 31)` of
         /// the scene's mask `+0xfb14`.
         layer: u32,
     }
