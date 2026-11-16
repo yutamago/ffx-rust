@@ -369,14 +369,16 @@ api_struct! {
     /// How the renderer colours the scene (docs/formats/render.md, "Lights
     /// and fog at run time" and "Scenery light levels"): what a frontend
     /// needs to draw the game's own shaders' result. `scene` is
-    /// `g_PhyreScene`, the context its `+0xcc` (`g_PhyreApplication` +
-    /// 0x50), the lighting `g_CharacterLighting`.
+    /// `*g_PhyreScene`, the context its `+0xcc` (`*g_PhyreApplication +
+    /// 0x50`), the lighting `*g_CharacterLighting`.
     Look {
         /// A scene and its context exist (the values below were read).
         valid: bool,
-        /// The colour scale (`scene +0xfc78`, `PhyreScene_setColorScale`):
-        /// every map material's `clrScaleFactor`, the last multiplier
-        /// before the map shaders' tone curve.
+        /// The colour scale (`scene +0xfc78`): the scale
+        /// `PhyreScene_setColorScale` last gave the map's materials as their
+        /// `clrScaleFactor` (the tree `+0x1198`; nothing while `+0x10d4` is
+        /// 0, and materials loaded after the last call keep their file's
+        /// value), the last multiplier before the map shaders' tone curve.
         colour_scale: [f32; 3],
         /// `GlobalAmbientColor` (context `+0x00`; the map's
         /// `GlobalCamera` `m_ambientColor`, 0 without character lighting).
@@ -385,13 +387,14 @@ api_struct! {
         fog_colour: [f32; 3],
         /// The fog's near and far distances (`+0x20`, `+0x24`), its curve
         /// (`+0x28`) and limit (`+0x2c`, the map's limit / 255). Without a
-        /// `GlobalCamera`: near 65536, far 65537, curve 1, limit 1.
+        /// `GlobalCamera`: colour (0.28, 0.35, 0.6), near 65536, far 65537,
+        /// curve 1, limit 1.
         fog_near: f32,
         fog_far: f32,
         fog_curve: f32,
         fog_limit: f32,
-        /// `CharacterAmbientLight` (the lighting's scene record `+0xac`:
-        /// the ambient colour times its level).
+        /// `CharacterAmbientLight` (the scene context `+0xac`, reached as
+        /// the lighting's `+0x18c`: the ambient colour times its level).
         character_ambient: [f32; 3],
         /// The character lights 0-2 (`PhyreChrLitShader`'s `Light0`..
         /// `Light2`), empty before the lighting is initialised.
@@ -413,7 +416,9 @@ api_struct! {
         /// balance and the PC's factors; docs/formats/render.md).
         level: f32,
         /// The map's turn of this light, degrees (lighting `+0x1ac` pitch,
-        /// `+0x1b0` yaw, `+ 0xc i`): `Rx(pitch) * Ry(yaw) * direction`.
+        /// `+0x1b0` yaw, `+ 0xc i`): `Rx(pitch) * Ry(yaw) * normalize(d)`,
+        /// the degrees as `/ 180 * 3.14`, skipped while both are within
+        /// 0.001 of 0.
         pitch: f32,
         yaw: f32,
     }

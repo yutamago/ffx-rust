@@ -564,7 +564,10 @@ fn look(m: &Mem<'_>) -> Look {
     } else {
         m.u32(scene.wrapping_add(SCENE_CONTEXT))
     };
-    if context == 0 || !m.mapped::<16>(scene.wrapping_add(SCENE_COLOUR_SCALE)) {
+    if context == 0
+        || !m.mapped::<0x30>(context)
+        || !m.mapped::<16>(scene.wrapping_add(SCENE_COLOUR_SCALE))
+    {
         return Look::default();
     }
     let c = |o: u32| context.wrapping_add(o);
@@ -753,6 +756,69 @@ mod tests {
             out.copy_from_slice(&tmp);
             true
         }
+    }
+
+    fn f(v: f32) -> [u8; 4] {
+        v.to_le_bytes()
+    }
+
+    #[test]
+    fn the_look_through_the_scene_and_the_lighting() {
+        // no scene: the default
+        assert_eq!(read(&Sparse(HashMap::new()), 0, 0.0).look, Look::default());
+        // a scene and its context, the lighting not initialised
+        let (scene, context, cl) = (0x0100_0000_u32, 0x0110_0000_u32, 0x0120_0000_u32);
+        let mut m = Sparse(HashMap::new());
+        m.put(G_PHYRE_SCENE, &scene.to_le_bytes());
+        m.put(scene + SCENE_CONTEXT, &context.to_le_bytes());
+        m.put(
+            scene + SCENE_COLOUR_SCALE,
+            &[f(0.5), f(0.6), f(0.7), f(1.0)].concat(),
+        );
+        m.put(context, &[0u8; 0x30]);
+        m.put(context + CONTEXT_FOG_NEAR, &f(62.0));
+        m.put(CHARACTER_LIGHTING, &cl.to_le_bytes());
+        m.put(cl + LIGHTING_READY, &[0]);
+        let l = read(&m, 0, 0.0).look;
+        assert!(l.valid);
+        assert_eq!(l.colour_scale, [0.5, 0.6, 0.7]);
+        assert!((l.fog_near - 62.0).abs() < f32::EPSILON);
+        assert!(l.lights.is_empty());
+        assert_eq!(l.character_ambient, [0.0; 3]);
+        // initialised, with a light set whose second PLight is null
+        let (set, table, light, record) = (
+            0x0130_0000_u32,
+            0x0131_0000_u32,
+            0x0132_0000_u32,
+            0x0133_0000_u32,
+        );
+        m.put(cl + LIGHTING_READY, &[1]);
+        m.put(cl + LIGHTING_SET, &set.to_le_bytes());
+        m.put(set + 4, &table.to_le_bytes());
+        m.put(
+            table,
+            &[light.to_le_bytes(), [0; 4], light.to_le_bytes()].concat(),
+        );
+        m.put(light, &[f(0.2), f(0.3), f(0.4)].concat());
+        m.put(light + PLIGHT_LEVEL, &f(2.1));
+        m.put(cl + LIGHTING_RECORD, &record.to_le_bytes());
+        m.put(
+            record + RECORD_AMBIENT,
+            &[f(0.34), f(0.34), f(0.45)].concat(),
+        );
+        let l = read(&m, 0, 0.0).look;
+        assert_eq!(l.lights.len(), 3);
+        assert_eq!(l.lights[0].colour, [0.2, 0.3, 0.4]);
+        assert!((l.lights[0].level - 2.1).abs() < f32::EPSILON);
+        assert_eq!(l.lights[1].colour, [0.0; 3]);
+        assert!(l.lights[1].level.abs() < f32::EPSILON);
+        assert_eq!(l.character_ambient, [0.34, 0.34, 0.45]);
+        // a context pointer that is not mapped reads as nothing
+        let mut stale = Sparse(HashMap::new());
+        stale.put(G_PHYRE_SCENE, &scene.to_le_bytes());
+        stale.put(scene + SCENE_CONTEXT, &context.to_le_bytes());
+        stale.put(scene + SCENE_COLOUR_SCALE, &[0u8; 16]);
+        assert!(!read(&stale, 0, 0.0).look.valid);
     }
 
     #[test]
