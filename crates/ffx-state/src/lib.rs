@@ -23,7 +23,7 @@ pub use read::{LANGUAGE_UNKNOWN, Reader, read};
 pub use schema::{ApiStruct, ApiType, Field, StructSchema, Ty};
 
 /// The API's version: a frontend checks it before it decodes a snapshot.
-pub const API_VERSION: u32 = 6;
+pub const API_VERSION: u32 = 7;
 
 /// The first four bytes of an encoded snapshot (`FFXS`).
 pub const MAGIC: u32 = u32::from_le_bytes(*b"FFXS");
@@ -109,6 +109,9 @@ api_struct! {
         /// The battle's actors taking part (party and monsters), empty out
         /// of battle.
         battlers: Vec<Battler>,
+        /// How the scene is lit and coloured: the colour scale every
+        /// material gets, the fog, the character lights.
+        look: Look,
     }
 }
 
@@ -363,6 +366,60 @@ api_struct! {
 }
 
 api_struct! {
+    /// How the renderer colours the scene (docs/formats/render.md, "Lights
+    /// and fog at run time" and "Scenery light levels"): what a frontend
+    /// needs to draw the game's own shaders' result. `scene` is
+    /// `g_PhyreScene`, the context its `+0xcc` (`g_PhyreApplication` +
+    /// 0x50), the lighting `g_CharacterLighting`.
+    Look {
+        /// A scene and its context exist (the values below were read).
+        valid: bool,
+        /// The colour scale (`scene +0xfc78`, `PhyreScene_setColorScale`):
+        /// every map material's `clrScaleFactor`, the last multiplier
+        /// before the map shaders' tone curve.
+        colour_scale: [f32; 3],
+        /// `GlobalAmbientColor` (context `+0x00`; the map's
+        /// `GlobalCamera` `m_ambientColor`, 0 without character lighting).
+        ambient: [f32; 3],
+        /// The fog's colour (context `+0x10`).
+        fog_colour: [f32; 3],
+        /// The fog's near and far distances (`+0x20`, `+0x24`), its curve
+        /// (`+0x28`) and limit (`+0x2c`, the map's limit / 255). Without a
+        /// `GlobalCamera`: near 65536, far 65537, curve 1, limit 1.
+        fog_near: f32,
+        fog_far: f32,
+        fog_curve: f32,
+        fog_limit: f32,
+        /// `CharacterAmbientLight` (the lighting's scene record `+0xac`:
+        /// the ambient colour times its level).
+        character_ambient: [f32; 3],
+        /// The character lights 0-2 (`PhyreChrLitShader`'s `Light0`..
+        /// `Light2`), empty before the lighting is initialised.
+        lights: Vec<Light>,
+    }
+}
+
+api_struct! {
+    /// One character light (`g_CharacterLighting`'s `PLight` i). The
+    /// shader adds `colour x level x (dot(direction, N) x 0.5 + 0.5)^2`.
+    Light {
+        /// The direction as `Phyre_CharacterLighting_setLightDir` stored it
+        /// (lighting `+0xf4 + 0x10 i`, render space: the field's x and y
+        /// negated), before the map's yaw and pitch below turn it.
+        direction: [f32; 3],
+        /// The colour (`PLight +0`).
+        colour: [f32; 3],
+        /// The level (`PLight +0x24`: the map's intensity, the glow
+        /// balance and the PC's factors; docs/formats/render.md).
+        level: f32,
+        /// The map's turn of this light, degrees (lighting `+0x1ac` pitch,
+        /// `+0x1b0` yaw, `+ 0xc i`): `Rx(pitch) * Ry(yaw) * direction`.
+        pitch: f32,
+        yaw: f32,
+    }
+}
+
+api_struct! {
     /// The pad as the game logic reads it (PS2 bits: `0x10` triangle,
     /// `0x20` circle, `0x40` cross, `0x80` square, `0x800` start,
     /// `0x1000`.. up, right, down, left; ffx-rust docs/harness.md "Input
@@ -464,6 +521,8 @@ pub fn structs() -> Vec<&'static StructSchema> {
         EffectInstance::schema(),
         ScreenFilter::schema(),
         Battler::schema(),
+        Look::schema(),
+        Light::schema(),
     ]
 }
 
@@ -498,14 +557,17 @@ mod tests {
         // the effects (default: no running ones, no filters): magic, the
         // two list counts, shake, music
         let effects = 4 + 2 + 2 + 4 + 4 + 4;
+        // the look (no lights): valid, the scale, ambient, fog, character
+        // ambient, the lights' count
+        let look = 1 + 12 + 12 + 12 + 16 + 12 + 2;
         assert_eq!(
             b.len(),
-            8 + 4 + 8 + world + camera + input + 2 + actor + menus + 2 + effects + 2
+            8 + 4 + 8 + world + camera + input + 2 + actor + menus + 2 + effects + 2 + look
         );
     }
 
     /// FNV-1a of `schema::text()` at [`API_VERSION`].
-    const PINNED: u64 = 0x5730_bd6c_ed24_bf4d;
+    const PINNED: u64 = 0xab45_d0d4_7b2e_d792;
 
     /// A field change must raise [`API_VERSION`]: the schema's text is
     /// pinned to the version here.
@@ -517,7 +579,7 @@ mod tests {
         });
         assert_eq!(
             (API_VERSION, hash),
-            (6, PINNED),
+            (7, PINNED),
             "the schema changed: raise API_VERSION and pin the new hash"
         );
     }
@@ -538,11 +600,12 @@ mod tests {
                 "menus",
                 "messages",
                 "effects",
-                "battlers"
+                "battlers",
+                "look"
             ]
         );
         assert!(matches!(s.fields[5].ty, Ty::List(_)));
-        assert_eq!(structs().len(), 13);
+        assert_eq!(structs().len(), 15);
         assert!(Actor::schema().fields.iter().all(|f| !f.doc.is_empty()));
     }
 }

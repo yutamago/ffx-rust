@@ -127,6 +127,25 @@ their declared order. Little-endian; `bool` one byte; `string` a `u16`
 byte count and UTF-8; `bytes` a `u16` count and the bytes; `rgb` 3 bytes; `list<T>` a `u16` count and the items; `vec3` 3
 floats, `mat3x4` 12, `mat4` 16 (row-major as the game keeps them).
 
+## Look (API 7)
+
+`look` holds what the renderer colours the scene with, so a frontend can
+draw the game's own shader result (docs/formats/render.md, "Scenery light
+levels", "Lights and fog at run time"):
+
+- `colour_scale`: `PhyreScene +0xfc78`, the `clrScaleFactor` that
+  `PhyreScene_setColorScale` gives every map material. The map shaders
+  multiply by it just before the tone curve `2.1 min(c, 0.4) + 1.08
+  clamp(c, 0.4, 0.58) - 0.47`.
+- `ambient`, the fog (`fog_colour`, `fog_near`, `fog_far`, `fog_curve`,
+  `fog_limit`): the scene context (`*(scene +0xcc)`) `+0x00`, `+0x10`..
+  `+0x2c`.
+- `character_ambient` and `lights`: `g_CharacterLighting`'s
+  `CharacterAmbientLight` and its three `PLight`s (direction, colour,
+  level, the map's pitch and yaw). `PhyreChrLitShader` lights with
+  `ambient + character_ambient + sum colour x level x (dot(L, N) x 0.5 +
+  0.5)^2`.
+
 ## Schema
 
 `cargo run -p ffx-state --example schema` prints it; the test
@@ -134,7 +153,7 @@ floats, `mat3x4` 12, `mat4` 16 (row-major as the game keeps them).
 the fields raises `API_VERSION`.
 
 ```text
-ffx-state API 6
+ffx-state API 7
 struct Snapshot
   update: u32
   game_time: f64
@@ -146,6 +165,7 @@ struct Snapshot
   messages: list<Message>
   effects: Effects
   battlers: list<Battler>
+  look: Look
 struct World
   map: u16
   previous_map: u16
@@ -254,6 +274,23 @@ struct Battler
   dead: bool
   exists: bool
   ctb: i32
+struct Look
+  valid: bool
+  colour_scale: vec3
+  ambient: vec3
+  fog_colour: vec3
+  fog_near: f32
+  fog_far: f32
+  fog_curve: f32
+  fog_limit: f32
+  character_ambient: vec3
+  lights: list<Light>
+struct Light
+  direction: vec3
+  colour: vec3
+  level: f32
+  pitch: f32
+  yaw: f32
 ```
 
 ## Sources
