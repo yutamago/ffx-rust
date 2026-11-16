@@ -307,6 +307,8 @@ fn count(f: &ffx_host::vfx::Frame) {
         let mut passes = std::collections::BTreeSet::new();
         for d in &f.draws {
             *c.entry(format!("draws {:?}", d.pass)).or_default() += 1;
+            *c.entry(format!("draws flags {:#x} {}", d.flags, blend_text(d)))
+                .or_default() += 1;
             passes.insert(d.pass);
         }
         for p in passes {
@@ -322,6 +324,35 @@ fn count(f: &ffx_host::vfx::Frame) {
         }
         *c.entry("unresolved".into()).or_default() += u64::from(f.unresolved);
     });
+}
+
+/// A draw's technique and each shader pass's blend: colour `(src, dest,
+/// op)`, alpha when it differs (D3D11's names), the write mask when not
+/// all.
+fn blend_text(d: &ffx_host::vfx::Draw) -> String {
+    use std::fmt::Write as _;
+    let Some(t) = d.technique else {
+        return "blend ?".into();
+    };
+    let mut s = format!("{t:?}");
+    for b in &d.blends {
+        if b.enabled {
+            let _ = write!(s, " ({:?}, {:?}, {:?})", b.src, b.dest, b.op);
+            if (b.src_alpha, b.dest_alpha, b.op_alpha) != (b.src, b.dest, b.op) {
+                let _ = write!(
+                    s,
+                    " alpha ({:?}, {:?}, {:?})",
+                    b.src_alpha, b.dest_alpha, b.op_alpha
+                );
+            }
+        } else {
+            s += " (blend off)";
+        }
+        if b.write_mask != 15 {
+            let _ = write!(s, " mask {}", b.write_mask);
+        }
+    }
+    s
 }
 
 fn print_counts() {
@@ -393,7 +424,7 @@ fn print_frame(
         }
         let tex = d.texture.rsplit('/').next().unwrap_or("");
         println!(
-            "  {:?} [{:4}] key ({:#x}, {:#x}){} flags {:#x} seg {} v {} i {} tex {} min {:.1?} max {:.1?}",
+            "  {:?} [{:4}] key ({:#x}, {:#x}){} flags {:#x} seg {} {} v {} i {} tex {} min {:.1?} max {:.1?}",
             d.pass,
             d.place,
             d.key & 0xffff_ffff,
@@ -401,6 +432,7 @@ fn print_frame(
             if d.pooled { " pooled" } else { "" },
             d.flags,
             d.segment,
+            blend_text(d),
             d.positions.len(),
             d.indices.len(),
             tex,

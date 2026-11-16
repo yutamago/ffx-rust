@@ -704,8 +704,55 @@ fn the_effect_draws_are_captured_at_the_save_sphere() {
         .collect();
     eprintln!("save sphere at {at:?}: {} orb draws", orb.len());
     assert!(orb.len() >= 2, "{at:?}");
+    check_save_sphere_blends(&f.draws, &orb);
     let decoded = ffx_host::vfx::Frame::decode(&f.encode()).unwrap();
     assert_eq!(&decoded, &*f);
+}
+
+/// The save sphere's blends (docs/formats/effects-draw.md, "Blend"): every
+/// draw's is read, one shader pass each; the orb's modulated draws use the
+/// Transparent technique (one, inverse source alpha), the sparkle quads
+/// (flags 0xa, a `bat_eff` texture) one of each technique.
+fn check_save_sphere_blends(draws: &[ffx_host::vfx::Draw], orb: &[&ffx_host::vfx::Draw]) {
+    use ffx_host::vfx::{BlendFactor as F, BlendOp, Technique};
+    assert!(
+        draws
+            .iter()
+            .all(|d| d.technique.is_some() && d.blends.len() == 1),
+        "{draws:?}"
+    );
+    for d in orb.iter().filter(|d| d.flags == 8) {
+        let b = d.blends[0];
+        assert_eq!(
+            (d.technique, b.src, b.dest, b.op),
+            (
+                Some(Technique::Transparent),
+                F::One,
+                F::InvSrcAlpha,
+                BlendOp::Add
+            ),
+            "{d:?}"
+        );
+    }
+    let mut sparkles: Vec<_> = draws
+        .iter()
+        .filter(|d| d.texture.contains("/bat_eff/") && d.flags == 0xa)
+        .map(|d| {
+            (
+                d.technique.map(|t| t as u8),
+                d.blends[0].src,
+                d.blends[0].dest,
+            )
+        })
+        .collect();
+    sparkles.sort_by_key(|b| b.0);
+    assert_eq!(
+        sparkles,
+        [
+            (Some(Technique::Transparent as u8), F::One, F::One),
+            (Some(Technique::OptimizedTrans as u8), F::SrcAlpha, F::One),
+        ]
+    );
 }
 
 /// The game-state API's message windows (API 3): developer save 6 (the
