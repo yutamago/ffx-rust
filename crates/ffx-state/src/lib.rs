@@ -596,6 +596,10 @@ api_struct! {
         /// `GlobalAmbientColor` (context `+0x00`; the map's
         /// `GlobalCamera` `m_ambientColor`, 0 without character lighting).
         ambient: [f32; 3],
+        /// The background (clear) colour (context `+0x30`: the map's
+        /// `GlobalCamera` `m_bgColor`, docs/formats/postfx.md; default 0.235,
+        /// 0.235, 0.275), drawn as it is wherever nothing covers the screen.
+        background: [f32; 3],
         /// The fog's colour (context `+0x10`).
         fog_colour: [f32; 3],
         /// The fog's near and far distances (`+0x20`, `+0x24`), its curve
@@ -784,9 +788,9 @@ mod tests {
         // the effects (default: no running ones, no filters): magic, the
         // two list counts, shake, music
         let effects = 4 + 2 + 2 + 4 + 4 + 4;
-        // the look (no lights): valid, the scale, ambient, fog, character
-        // ambient, the lights' count
-        let look = 1 + 12 + 12 + 12 + 16 + 12 + 2;
+        // the look (no lights): valid, the scale, ambient, background, fog,
+        // character ambient, the lights' count
+        let look = 1 + 12 + 12 + 12 + 12 + 16 + 12 + 2;
         // the save (default: empty lists): valid, gil, time, five counts
         let save = 1 + 4 + 4 + 2 + 2 + 2 + 2 + 2 + 2;
         // the sphere grid (closed): open, current, cursor, two list counts
@@ -812,7 +816,7 @@ mod tests {
     }
 
     /// FNV-1a of `schema::text()` at [`API_VERSION`].
-    const PINNED: u64 = 0x431d_023c_5ab7_2cc7;
+    const PINNED: u64 = 0x6a7c_7533_6cec_d286;
 
     /// A field change must raise [`API_VERSION`]: the schema's text is
     /// pinned to the version here.

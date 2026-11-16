@@ -549,6 +549,7 @@ fn world(m: &Mem<'_>) -> World {
 const SCENE_COLOUR_SCALE: u32 = 0xfc78;
 const SCENE_CONTEXT: u32 = 0xcc;
 const CONTEXT_FOG_COLOUR: u32 = 0x10;
+const CONTEXT_BACKGROUND: u32 = 0x30;
 const CONTEXT_FOG_NEAR: u32 = 0x20;
 const CONTEXT_FOG_FAR: u32 = 0x24;
 const CONTEXT_FOG_CURVE: u32 = 0x28;
@@ -863,6 +864,7 @@ fn look(m: &Mem<'_>) -> Look {
         valid: true,
         colour_scale: m.floats(scene.wrapping_add(SCENE_COLOUR_SCALE)),
         ambient: m.floats(context),
+        background: m.floats(c(CONTEXT_BACKGROUND)),
         fog_colour: m.floats(c(CONTEXT_FOG_COLOUR)),
         fog_near: m.f32(c(CONTEXT_FOG_NEAR)),
         fog_far: m.f32(c(CONTEXT_FOG_FAR)),
@@ -1023,12 +1025,17 @@ mod tests {
         );
         m.put(context, &[0u8; 0x30]);
         m.put(context + CONTEXT_FOG_NEAR, &f(62.0));
+        m.put(
+            context + CONTEXT_BACKGROUND,
+            &[f(0.3), f(0.35), f(0.5)].concat(),
+        );
         m.put(CHARACTER_LIGHTING, &cl.to_le_bytes());
         m.put(cl + LIGHTING_READY, &[0]);
         let l = read(&m, 0, 0.0).look;
         assert!(l.valid);
         assert_eq!(l.colour_scale, [0.5, 0.6, 0.7]);
         assert!((l.fog_near - 62.0).abs() < f32::EPSILON);
+        assert_eq!(l.background, [0.3, 0.35, 0.5]);
         assert_eq!(l.lights, [] as [Light; 0]);
         assert_eq!(l.character_ambient, [0.0; 3]);
         // initialised, with a light set whose second PLight is null
