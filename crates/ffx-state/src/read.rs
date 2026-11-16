@@ -459,6 +459,7 @@ fn menus(m: &Mem<'_>) -> Menus {
         save_files: m.i32(SAVE_FILES),
         esc_menu: esc_up,
         windows: menu_windows(m),
+        current_player: menu_current_player(m),
     }
 }
 
@@ -681,6 +682,21 @@ fn sphere_grid(m: &Mem<'_>) -> SphereGrid {
         current: m.u8(g.wrapping_add(ABMAP_CURRENT)),
         nodes,
         links,
+    }
+}
+
+/// `g_TkMenuPlayers` (the u8 ids the menus cycle through) and
+/// `g_TkMenuCurrentPlayerPos` (docs/formats/menu.md "Characters and
+/// aeons"); the list holds at most 20.
+const MENU_PLAYERS: u32 = 0x0184_1c14;
+const MENU_CURRENT_PLAYER_POS: u32 = 0x0184_1c28;
+
+fn menu_current_player(m: &Mem<'_>) -> u8 {
+    let pos = m.u32(MENU_CURRENT_PLAYER_POS);
+    if pos < MENU_CURRENT_PLAYER_POS - MENU_PLAYERS {
+        m.u8(MENU_PLAYERS + pos)
+    } else {
+        0xff
     }
 }
 

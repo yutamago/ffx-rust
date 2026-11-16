@@ -276,6 +276,11 @@ api_struct! {
         /// bytes, `+0x40` set; docs/formats/menu.md "Windows"): each
         /// screen's lists and cursors.
         windows: Vec<MenuWindow>,
+        /// The character the PS2 menus show (`TkMenuGetCurrentPlayer`:
+        /// `g_TkMenuPlayers` `0x01841c14` at `g_TkMenuCurrentPlayerPos`
+        /// `0x01841c28`; below 8 a party member, 8 and up an aeon); 0xff
+        /// when the position is out of the list.
+        current_player: u8,
     }
 }
 
@@ -753,7 +758,7 @@ mod tests {
         let camera = 1 + 48 + 4 + 4 + 4 + 12 + 12;
         let input = 4 + 2 + 1 + 1;
         let actor = 2 + 2 + 1 + (2 + 4) + 12 + 4 + 12 + 1 + 4 + 4 + 4 + 4 + 2 + 2 + 1 + 64 + 2;
-        let menus = 4 + 4 + 4 + 2 + 4 + 2 + 2 + 2 + 2 + 4 + 4 + 4 + 4 + 4 + 1 + 2;
+        let menus = 4 + 4 + 4 + 2 + 4 + 2 + 2 + 2 + 2 + 4 + 4 + 4 + 4 + 4 + 1 + 2 + 1;
         // the effects (default: no running ones, no filters): magic, the
         // two list counts, shake, music
         let effects = 4 + 2 + 2 + 4 + 4 + 4;
@@ -785,7 +790,7 @@ mod tests {
     }
 
     /// FNV-1a of `schema::text()` at [`API_VERSION`].
-    const PINNED: u64 = 0x5c04_821a_5f2d_2e16;
+    const PINNED: u64 = 0xa779_3317_f2f2_4d06;
 
     /// A field change must raise [`API_VERSION`]: the schema's text is
     /// pinned to the version here.

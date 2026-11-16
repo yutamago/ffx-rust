@@ -267,6 +267,7 @@ struct Menus
   save_files: i32
   esc_menu: bool
   windows: list<MenuWindow>
+  current_player: u8
 struct MenuOption
   id: u16
   enabled: bool
