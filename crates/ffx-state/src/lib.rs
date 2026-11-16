@@ -264,6 +264,32 @@ api_struct! {
         save_files: i32,
         /// The PC menu (Esc, Flash) is up (`g_FFEscMenu`).
         esc_menu: bool,
+        /// The PS2 menus' windows in use (`g_TkMenuWindows`, 32 of `0x98`
+        /// bytes, `+0x40` set; docs/formats/menu.md "Windows"): each
+        /// screen's lists and cursors.
+        windows: Vec<MenuWindow>,
+    }
+}
+
+api_struct! {
+    /// One PS2 menu window in use (docs/formats/menu.md, "Windows").
+    MenuWindow {
+        /// Its record (0..31).
+        slot: u8,
+        /// Its state (`+0x28`, 0 idle).
+        state: u32,
+        /// Its row count (`+0x30`) and the first row shown (`+0x32`).
+        rows: u16,
+        first: i16,
+        /// The cursor (`+0x48`; the row is `cursor >> 1` in two-column
+        /// lists).
+        cursor: i16,
+        /// The list kind of an item window (`+0x43`: 0 items, 1 key items,
+        /// 2 commands).
+        kind: u8,
+        /// The opener's five words (`+0x58`..`+0x6b`: kind, character,
+        /// index, ...), `u32` little-endian each.
+        args: Vec<u8>,
     }
 }
 
@@ -611,6 +637,7 @@ pub fn structs() -> Vec<&'static StructSchema> {
         Battler::schema(),
         Look::schema(),
         Light::schema(),
+        MenuWindow::schema(),
         Save::schema(),
         PartyMember::schema(),
         ItemStack::schema(),
@@ -644,7 +671,7 @@ mod tests {
         let camera = 1 + 48 + 4 + 4 + 4 + 12 + 12;
         let input = 4 + 2 + 1 + 1;
         let actor = 2 + 2 + 1 + (2 + 4) + 12 + 4 + 12 + 1 + 4 + 4 + 4 + 4 + 2 + 2 + 1 + 64 + 2;
-        let menus = 4 + 4 + 4 + 2 + 4 + 2 + 2 + 2 + 2 + 4 + 4 + 4 + 4 + 4 + 1;
+        let menus = 4 + 4 + 4 + 2 + 4 + 2 + 2 + 2 + 2 + 4 + 4 + 4 + 4 + 4 + 1 + 2;
         // the effects (default: no running ones, no filters): magic, the
         // two list counts, shake, music
         let effects = 4 + 2 + 2 + 4 + 4 + 4;
@@ -660,7 +687,7 @@ mod tests {
     }
 
     /// FNV-1a of `schema::text()` at [`API_VERSION`].
-    const PINNED: u64 = 0xb9ee_3695_8683_61ed;
+    const PINNED: u64 = 0x764d_ba32_6ee5_a54b;
 
     /// A field change must raise [`API_VERSION`]: the schema's text is
     /// pinned to the version here.
@@ -699,7 +726,7 @@ mod tests {
             ]
         );
         assert!(matches!(s.fields[5].ty, Ty::List(_)));
-        assert_eq!(structs().len(), 18);
+        assert_eq!(structs().len(), 19);
         assert!(Actor::schema().fields.iter().all(|f| !f.doc.is_empty()));
     }
 }

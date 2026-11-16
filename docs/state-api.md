@@ -157,7 +157,10 @@ mode and modes), the inventory's used slots, the key-item bits and the
 commands everybody learnt (from `0x3060`). Names are in the game's text encoding (a frontend decodes
 them with the game's character set, as the messages). The battle's party
 index is the member's `index`, so a battle HUD names its battlers from
-here.
+here. `menus.windows` lists the PS2 menus' windows in use
+(`g_TkMenuWindows`): their rows, first row shown, cursor, list kind and
+the opener's words (kind, character, index), so each screen's cursor and
+the character it shows can be drawn.
 
 ## Schema
 
@@ -242,6 +245,7 @@ struct Menus
   save_rows: i32
   save_files: i32
   esc_menu: bool
+  windows: list<MenuWindow>
 struct MenuOption
   id: u16
   enabled: bool
@@ -305,6 +309,14 @@ struct Light
   level: f32
   pitch: f32
   yaw: f32
+struct MenuWindow
+  slot: u8
+  state: u32
+  rows: u16
+  first: i16
+  cursor: i16
+  kind: u8
+  args: bytes
 struct Save
   valid: bool
   gil: u32

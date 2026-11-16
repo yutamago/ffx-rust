@@ -11,7 +11,7 @@ use ffx_chara::layout as l;
 
 use crate::{
     Actor, Battler, Bone, Camera, EffectInstance, Effects, Input, ItemStack, Light, Look,
-    MenuOption, Menus, Message, PartyMember, Save, ScreenFilter, Snapshot, World,
+    MenuOption, MenuWindow, Menus, Message, PartyMember, Save, ScreenFilter, Snapshot, World,
 };
 
 /// The game's memory, read only.
@@ -455,6 +455,7 @@ fn menus(m: &Mem<'_>) -> Menus {
         save_rows: m.i32(SAVE_ROWS),
         save_files: m.i32(SAVE_FILES),
         esc_menu: esc_up,
+        windows: menu_windows(m),
     }
 }
 
@@ -557,6 +558,27 @@ const LIGHTING_PITCH: u32 = 0x1ac;
 const LIGHTING_YAW: u32 = 0x1b0;
 const LIGHTING_READY: u32 = 0x1cc;
 const PLIGHT_LEVEL: u32 = 0x24;
+
+/// `g_TkMenuWindows`: 32 records of `0x98` bytes (docs/formats/menu.md).
+const MENU_WINDOWS: u32 = 0x0184_0900;
+const MENU_WINDOW_SIZE: u32 = 0x98;
+
+fn menu_windows(m: &Mem<'_>) -> Vec<MenuWindow> {
+    (0..32u32)
+        .filter_map(|i| {
+            let w = MENU_WINDOWS + MENU_WINDOW_SIZE * i;
+            (m.u8(w + 0x40) != 0).then(|| MenuWindow {
+                slot: u8::try_from(i).unwrap_or(0),
+                state: m.u32(w + 0x28),
+                rows: m.u16(w + 0x30),
+                first: m.i16(w + 0x32),
+                cursor: m.i16(w + 0x48),
+                kind: m.u8(w + 0x43),
+                args: m.bytes::<20>(w + 0x58).to_vec(),
+            })
+        })
+        .collect()
+}
 
 /// `g_SaveData`'s parts the menus show (docs/formats/save.md).
 const SAVE_TIME: u32 = 0xbc;
