@@ -1912,7 +1912,10 @@ the other.
   (`docs/state-api.md`): `shared.observers.add` registers an observer
   that gets a `ffx_state::Snapshot` at every frame boundary (the world, the
   renderer's camera, the pad, the characters with their bones), read on
-  the game's main thread between two updates; it only reads.
+  the game's main thread between two updates; it only reads. The effects'
+  own geometry comes apart from it: `shared.vfx` (`ffx_host::vfx`), off
+  unless switched on, keeps the `DrawMostVFX` draws of the newest frames
+  by update (`docs/state-api.md`, "Effect draws").
 - **The rest.** `steam` loads the platform's Steam library and implements
   `steam::Backend` over it (on Linux `libsteam_api.so`: the M6 survey
   lists the two ABI differences); `documents_folder` is the folder the

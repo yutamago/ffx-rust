@@ -108,7 +108,7 @@ targets and a depth buffer, as `gfx/live.rs` defines scene draws).
 | # | Pass (by state) | Family (pixel shader cluster) | Draws |
 |---|---|---|---|
 | 0-99 | Opaque, map | `phyredefaultlitshader.fx` | 100 |
-| 100-114 | Opaque, characters | `phyrechrlitshader.fx` (Tidus `c001`, his `f001` object) | 15 |
+| 100-114 | Opaque, characters | `phyrechrlitshader.fx` (Tidus `c001` and the save sphere `f001`) | 15 |
 | 115 | Transparent, characters world | `abmapshadercone.fx` / `chry0shadow.fx` (blob shadow) | 1 |
 | 116 | Transparent, characters | `phyrechrlitshader.fx` (Tidus segment 12) | 1 |
 | 117-127 | Transparent, map | `phyredefaultlitshader.fx` 4, `phyrewatershader.fx` 7 | 11 |
