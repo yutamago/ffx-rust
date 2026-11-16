@@ -1124,3 +1124,43 @@ fn a_new_part_joins_an_unskinned_instance() {
     assert_eq!(back.segments.len(), model.segments.len() + 1);
     assert_eq!(imported.new_textures, Vec::<String>::new());
 }
+
+#[test]
+fn every_cube_map_has_six_faces() {
+    let Some(dir) = std::env::var_os("FFX_GAME_DIR") else {
+        eprintln!("FFX_GAME_DIR is not set; skipping");
+        return;
+    };
+    let archive = Archive::open(PathBuf::from(dir).join("data/FFX_Data.vbf")).unwrap();
+    let (mut cubes, mut distinct) = (0, 0);
+    for entry in archive
+        .entries()
+        .iter()
+        .filter(|e| e.path.ends_with(".dds.phyre") && e.size > 0)
+    {
+        let Ok(t) = Texture::parse(archive.read(entry).unwrap()) else {
+            continue;
+        };
+        if t.kind.faces() != 6 {
+            continue;
+        }
+        cubes += 1;
+        let size = (t.width * t.height * 4) as usize;
+        for f in 0..6 {
+            let len = t.face_rgba(f).map(|p| p.len());
+            assert_eq!(len, Some(size), "{} face {f}", entry.path);
+        }
+        assert!(t.face_rgba(6).is_none(), "{}", entry.path);
+        // a wrong offset would repeat face 0 on every face (some shipped
+        // cubes do have equal faces, e.g. a uniform sky, so count them)
+        if (1..6).any(|f| t.face_rgba(f) != t.face_rgba(0)) {
+            distinct += 1;
+        }
+    }
+    assert!(cubes > 0, "no cube map found");
+    assert!(
+        distinct * 2 > cubes,
+        "{distinct} of {cubes} cube maps with faces unlike face 0"
+    );
+    eprintln!("{cubes} cube maps, six faces each; {distinct} with faces unlike face 0");
+}

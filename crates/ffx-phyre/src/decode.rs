@@ -83,8 +83,14 @@ impl Texture {
 
     /// Face `face`'s top mip level as RGBA8 rows, top row first: 0 for a 2D
     /// texture, 0..6 for a cube map (the faces follow each other, each a
-    /// full mip chain, in D3D's order +x, -x, +y, -y, +z, -z); `None` past
-    /// the texture's faces.
+    /// full mip chain; the game uploads them in file order as the six
+    /// slices of a D3D11 cube, docs/formats/scene.md, so D3D's slice order
+    /// +x, -x, +y, -y, +z, -z); `None` past the texture's faces.
+    ///
+    /// Each face is turned upright like a 2D texture. The game uploads a
+    /// cube's rows as stored (bottom first, no flip; docs/formats/scene.md),
+    /// and D3D samples the first row in memory as v = 0, so to match D3D's
+    /// cube-face orientation flip each face back vertically.
     #[must_use]
     pub fn face_rgba(&self, face: usize) -> Option<Vec<u8>> {
         if face >= self.kind.faces() {
