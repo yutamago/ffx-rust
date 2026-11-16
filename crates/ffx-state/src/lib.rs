@@ -393,6 +393,10 @@ api_struct! {
         items: Vec<ItemStack>,
         /// The key items, a bit each (`+0x448c`, 8 `u16`, as bytes).
         key_items: Vec<u8>,
+        /// The commands from `0x3060` learnt by everybody
+        /// (`g_SaveSharedCommands`, `+0x3d6c`, 56 bytes): command `0x3060 +
+        /// i` is bit `i % 16` of `u16` `i / 16` (`MsSetSaveCommand`).
+        shared_commands: Vec<u8>,
     }
 }
 
@@ -426,6 +430,14 @@ api_struct! {
         /// Weapon and armour: their slots in `g_Equipment` (`+0x2d`, `+0x2e`).
         weapon: u8,
         armour: u8,
+        /// The commands `0x3000`..`0x305f` learnt (`+0x3e`, 6 `u16` as
+        /// bytes): command `0x3000 + i` is bit `i % 16` of `u16` `i / 16`
+        /// (`MsSetSaveCommand`); later ones are `Save.shared_commands`.
+        commands: Vec<u8>,
+        /// The overdrive mode in use (`+0x38`) and the modes obtained, a bit
+        /// each (`+0x88`); Fahrenheit's names, not checked in the code.
+        overdrive_mode: u8,
+        overdrive_modes: u32,
     }
 }
 
@@ -639,8 +651,8 @@ mod tests {
         // the look (no lights): valid, the scale, ambient, fog, character
         // ambient, the lights' count
         let look = 1 + 12 + 12 + 12 + 16 + 12 + 2;
-        // the save (default: empty lists): valid, gil, time, four counts
-        let save = 1 + 4 + 4 + 2 + 2 + 2 + 2 + 2;
+        // the save (default: empty lists): valid, gil, time, five counts
+        let save = 1 + 4 + 4 + 2 + 2 + 2 + 2 + 2 + 2;
         assert_eq!(
             b.len(),
             8 + 4 + 8 + world + camera + input + 2 + actor + menus + 2 + effects + 2 + look + save
@@ -648,7 +660,7 @@ mod tests {
     }
 
     /// FNV-1a of `schema::text()` at [`API_VERSION`].
-    const PINNED: u64 = 0xf4f2_6dc1_85de_b59f;
+    const PINNED: u64 = 0xb9ee_3695_8683_61ed;
 
     /// A field change must raise [`API_VERSION`]: the schema's text is
     /// pinned to the version here.

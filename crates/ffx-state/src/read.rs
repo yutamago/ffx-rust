@@ -567,6 +567,7 @@ const SAVE_ITEM_IDS: u32 = 0x3ecc;
 const SAVE_ITEM_COUNTS: u32 = 0x40cc;
 const SAVE_ITEM_SLOTS: u32 = 256;
 const SAVE_KEY_ITEMS: u32 = 0x448c;
+const SAVE_SHARED_COMMANDS: u32 = 0x3d6c;
 const SAVE_PLY: u32 = 0x55cc;
 const PLY_SIZE: u32 = 0x94;
 const PLY_COUNT: u32 = 18;
@@ -599,6 +600,9 @@ fn save(m: &Mem<'_>) -> Save {
                 limit_charge_max: m.u8(p(0x3a)),
                 weapon: m.u8(p(0x2d)),
                 armour: m.u8(p(0x2e)),
+                commands: m.bytes::<12>(p(0x3e)).to_vec(),
+                overdrive_mode: m.u8(p(0x38)),
+                overdrive_modes: m.u32(p(0x88)),
             }
         })
         .collect();
@@ -621,6 +625,7 @@ fn save(m: &Mem<'_>) -> Save {
         members,
         items,
         key_items: m.bytes::<16>(s(SAVE_KEY_ITEMS)).to_vec(),
+        shared_commands: m.bytes::<56>(s(SAVE_SHARED_COMMANDS)).to_vec(),
     }
 }
 

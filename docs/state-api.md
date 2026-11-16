@@ -152,8 +152,9 @@ levels", "Lights and fog at run time"):
 `0x0112ca90`, docs/formats/save.md) that the menus and the save screens
 show: gil, the play time, the front and back lines, the 18 characters
 (`ply_save`: name, joined, HP/MP, the 8 stats, AP, sphere levels, the
-limit gauge, weapon and armour slots), the inventory's used slots and the
-key-item bits. Names are in the game's text encoding (a frontend decodes
+limit gauge, weapon and armour slots, the commands learnt, the overdrive
+mode and modes), the inventory's used slots, the key-item bits and the
+commands everybody learnt (from `0x3060`). Names are in the game's text encoding (a frontend decodes
 them with the game's character set, as the messages). The battle's party
 index is the member's `index`, so a battle HUD names its battlers from
 here.
@@ -313,6 +314,7 @@ struct Save
   members: list<PartyMember>
   items: list<ItemStack>
   key_items: bytes
+  shared_commands: bytes
 struct PartyMember
   index: u8
   name: bytes
@@ -329,6 +331,9 @@ struct PartyMember
   limit_charge_max: u8
   weapon: u8
   armour: u8
+  commands: bytes
+  overdrive_mode: u8
+  overdrive_modes: u32
 struct ItemStack
   slot: u8
   id: u16
