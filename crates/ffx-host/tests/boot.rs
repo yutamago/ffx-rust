@@ -1134,3 +1134,325 @@ fn the_state_api_sees_a_battles_effects() {
     assert_eq!(e.filters.len(), 5);
     assert_ne!(e.music, -1, "{e:?}");
 }
+
+/// API 10 at Besaid (developer save 7): the shaders' global time advances
+/// with the updates; the save sphere `f001` is drawn, its parts unskinned
+/// with their base elements; every drawn character has a loaded model; the
+/// map's display objects carry their morph values; bsil00's 2D level is
+/// loaded but switched off. Then Triangle opens the main menu, the pad
+/// moves to the config option (menu 8, slot 10) and Circle opens it: the config
+/// rows with their titles and options in the game's encoding.
+#[test]
+#[allow(clippy::too_many_lines)] // one walk through the game, step by step
+fn the_state_api_sees_the_beach_and_the_config_menu() {
+    use std::sync::atomic::{AtomicU32, Ordering::Relaxed};
+    use std::sync::{Arc, Mutex};
+    type Seen = Vec<Arc<ffx_state::Snapshot>>;
+    let Some(exe) = exe() else { return };
+    let opts = ffx_host::Options {
+        documents: Some(documents("beach-config")),
+        gfx: ffx_host::gfx::Config {
+            backend: ffx_host::gfx::Choice::Null,
+            no_record: true,
+            ..ffx_host::gfx::Config::default()
+        },
+        ..ffx_host::Options::default()
+    };
+    let mut exec = ffx_host::boot_opts(&exe, ffx_host::ports::table(), &opts).unwrap();
+    exec.set_budget(Duration::from_secs(300));
+    // the beach at the control, 60 updates on, and the config menu open
+    let seen: Arc<Mutex<Seen>> = Arc::default();
+    let last: Arc<Mutex<Option<Arc<ffx_state::Snapshot>>>> = Arc::default();
+    let id = {
+        let (seen, last) = (Arc::clone(&seen), Arc::clone(&last));
+        let shared = Arc::downgrade(exec.shared());
+        let step = AtomicU32::new(0);
+        let at = AtomicU32::new(0);
+        exec.shared().observers.add(Arc::new(move |s| {
+            let Some(shared) = shared.upgrade() else {
+                return;
+            };
+            if let Ok(mut l) = last.lock() {
+                *l = Some(Arc::clone(s));
+            }
+            let since = s.update.saturating_sub(at.load(Relaxed));
+            let press = |b: u32, next: u32| {
+                shared.clock.buttons.store(b, Relaxed);
+                at.store(s.update, Relaxed);
+                step.store(next, Relaxed);
+            };
+            let keep = || {
+                if let Ok(mut v) = seen.lock() {
+                    v.push(Arc::clone(s));
+                }
+            };
+            let player = s.actors.iter().any(|a| a.player && a.hidden == 0);
+            match step.load(Relaxed) {
+                0 if s.world.map == 0x15d && s.world.event_frame > 30 => {
+                    shared
+                        .requests
+                        .push(ffx_host::requests::Request::DevSave(7), Box::new(|_| {}));
+                    step.store(1, Relaxed);
+                }
+                1 if s.world.map == 0x46 && s.world.player_control && player => {
+                    keep();
+                    press(0, 2);
+                }
+                // 60 updates on: the second beach snapshot, then Triangle
+                2 if since >= 60 => {
+                    keep();
+                    press(0x10, 3);
+                }
+                3 if since > 4 => press(0, 4),
+                // the main menu's options: down to menu 8 (`TkMenuMainOpenOption`: slot 10), then Circle
+                4 if s.menus.main_mask & 0x2 != 0 && s.menus.main_option_list.len() >= 4 => {
+                    let target = s.menus.main_option_list.iter().position(|o| o.id == 8);
+                    match target {
+                        Some(t) if usize::try_from(s.menus.main_cursor) == Ok(t) => {
+                            press(0x20, 7);
+                        }
+                        Some(_) => press(0x4000, 5),
+                        None => {}
+                    }
+                }
+                5 if since > 3 => press(0, 6),
+                6 if since > 8 => step.store(4, Relaxed),
+                7 if since > 3 => press(0, 8),
+                8 if s.menus.config.open && !s.menus.config.rows.is_empty() && since > 30 => {
+                    keep();
+                    shared.stop_all(Stop::Milestone("the config menu".into()));
+                }
+                _ => {}
+            }
+        }))
+    };
+    let stop = exec.run_entry().unwrap();
+    exec.join_threads(Duration::from_secs(5));
+    exec.shared().observers.remove(id);
+    let seen = seen.lock().unwrap().clone();
+    if stop != Stop::Milestone("the config menu".into())
+        && let Some(l) = last.lock().unwrap().as_ref()
+    {
+        eprintln!("stopped: {stop:?}; menus {:?}", l.menus);
+    }
+    assert_eq!(stop, Stop::Milestone("the config menu".into()));
+    let (first, beach, config) = (&seen[0], &seen[1], &seen[2]);
+    // the global time: about 60 updates of 1/30 s apart
+    eprintln!(
+        "global time {} -> {} over {} updates",
+        first.look.global_time,
+        beach.look.global_time,
+        beach.update - first.update
+    );
+    let dt = beach.look.global_time - first.look.global_time;
+    assert!((1.5..2.5).contains(&dt), "{dt}");
+    // GlobalTime restarts at the map load, the game time does not (64 s or
+    // more by now): the read is the scene clock, not the game time
+    assert!(
+        beach.look.global_time < 30.0 && f64::from(beach.look.global_time) < beach.game_time,
+        "global time {} game time {}",
+        beach.look.global_time,
+        beach.game_time
+    );
+    for a in &beach.actors {
+        eprintln!(
+            "slot {} {:#06x} {} hidden {:#x} alpha {} drawn {} flags {:#x} flags2 {:#x} models {:?}",
+            a.slot, a.id, a.model, a.hidden, a.alpha, a.drawn, a.flags, a.flags2, a.models
+        );
+    }
+    let sphere = beach
+        .actors
+        .iter()
+        .find(|a| a.model == "f001")
+        .expect("the save sphere");
+    assert!(sphere.drawn);
+    assert!(sphere.models.len() >= 2, "{:?}", sphere.models);
+    assert!(
+        sphere
+            .models
+            .iter()
+            .all(|m| !m.skinned && usize::from(m.base) < sphere.bones.len())
+    );
+    // the player's character is drawn; nothing hidden or purged is
+    assert!(beach.actors.iter().any(|a| a.player && a.drawn));
+    assert!(
+        beach
+            .actors
+            .iter()
+            .filter(|a| a.drawn)
+            .all(|a| a.hidden == 0 && a.flags2 & 0x20 == 0)
+    );
+    // the display objects
+    let dobjs: Vec<_> = beach.objects.iter().filter(|o| o.dobj).collect();
+    for o in &beach.objects {
+        let before = first.objects.iter().find(|p| p.id == o.id);
+        eprintln!(
+            "object {} dobj {} morph {} {} (before {:?})",
+            o.id,
+            o.dobj,
+            o.morph,
+            o.morph_v,
+            before.map(|p| (p.morph, p.morph_v))
+        );
+    }
+    assert!(!dobjs.is_empty(), "{:?}", beach.objects);
+    // bsil00: the 2D level loaded, its pass off (its one layer at depth
+    // 0.01)
+    eprintln!("layers {:?}", beach.layers);
+    assert!(beach.layers.valid);
+    assert!(beach.layers.loaded && beach.layers.off && !beach.layers.drawn);
+    // the config menu
+    let c = &config.menus.config;
+    eprintln!(
+        "config: cursor {} pc row {} rows {}",
+        c.cursor,
+        c.pc_row,
+        c.rows.len()
+    );
+    let game = exe.parent().unwrap();
+    let archive = ffx_vbf::Archive::open(game.join("data/FFX_Data.vbf")).unwrap();
+    let lang = ffx_text::Language::Japanese;
+    let table = archive
+        .read(archive.find(&lang.charset_path()).unwrap())
+        .unwrap();
+    let cs = ffx_text::Charset::from_table(&table, lang).unwrap();
+    for (i, r) in c.rows.iter().enumerate() {
+        let options: Vec<String> = r.options.iter().map(|o| cs.decode(&o.text)).collect();
+        eprintln!(
+            "  row {i}: {:#x} {:?} value {} enabled {} options {:?} ids {:?}",
+            r.title_id,
+            cs.decode(&r.title),
+            r.value,
+            r.enabled,
+            options,
+            r.options.iter().map(|o| o.id).collect::<Vec<_>>()
+        );
+    }
+    assert_eq!(config.menus.main_mask & 0x400, 0x400);
+    assert!(c.rows.len() >= 4);
+    for (i, r) in c.rows.iter().enumerate() {
+        assert!(!r.options.is_empty(), "{r:?}");
+        assert!(r.value < u32::try_from(r.options.len()).unwrap());
+        if i64::from(c.pc_row) != i64::try_from(i).unwrap() {
+            assert!(!r.title.is_empty() && r.options.iter().all(|o| !o.text.is_empty()));
+        }
+    }
+    assert!(!beach.menus.config.open && !beach.menus.battle_end.open);
+}
+
+/// API 10's battle results: the deck's battle (Besaid, then `Battle { 3,
+/// 0, 0 }`) won by pressing Circle (Attack on the first target), the
+/// results screen runs (`main_mask` bit `0x20000`): its state, the gil
+/// won, the rows of the party with the AP still to count.
+#[test]
+#[allow(clippy::too_many_lines)] // one walk through the game, step by step
+fn the_state_api_sees_the_battle_results() {
+    use std::sync::atomic::{AtomicU32, Ordering::Relaxed};
+    use std::sync::{Arc, Mutex};
+    type Seen = Vec<Arc<ffx_state::Snapshot>>;
+    let Some(exe) = exe() else { return };
+    let opts = ffx_host::Options {
+        documents: Some(documents("battle-results")),
+        gfx: ffx_host::gfx::Config {
+            backend: ffx_host::gfx::Choice::Null,
+            no_record: true,
+            ..ffx_host::gfx::Config::default()
+        },
+        ..ffx_host::Options::default()
+    };
+    let mut exec = ffx_host::boot_opts(&exe, ffx_host::ports::table(), &opts).unwrap();
+    exec.set_budget(Duration::from_secs(400));
+    // the results screen's snapshots
+    let seen: Arc<Mutex<Seen>> = Arc::default();
+    let id = {
+        let seen = Arc::clone(&seen);
+        let shared = Arc::downgrade(exec.shared());
+        let step = AtomicU32::new(0);
+        exec.shared().observers.add(Arc::new(move |s| {
+            let Some(shared) = shared.upgrade() else {
+                return;
+            };
+            match step.load(Relaxed) {
+                0 if s.world.map == 0x15d && s.world.event_frame > 30 => {
+                    shared
+                        .requests
+                        .push(ffx_host::requests::Request::DevSave(7), Box::new(|_| {}));
+                    step.store(1, Relaxed);
+                }
+                1 if s.world.map == 0x46 && s.world.player_control => {
+                    shared.requests.push(
+                        ffx_host::requests::Request::Battle {
+                            field: 3,
+                            group: 0,
+                            formation: 0,
+                        },
+                        Box::new(|_| {}),
+                    );
+                    step.store(2, Relaxed);
+                }
+                // in battle until the results: Circle 3 updates of 10
+                2 if s.menus.battle_end.open => {
+                    shared.clock.buttons.store(0, Relaxed);
+                    step.store(3, Relaxed);
+                }
+                2 if s.world.battle => {
+                    let b = if s.update % 10 < 3 { 0x20 } else { 0 };
+                    shared.clock.buttons.store(b, Relaxed);
+                }
+                // the results, every update for 4 seconds
+                3 => {
+                    if let Ok(mut v) = seen.lock() {
+                        v.push(Arc::clone(s));
+                        if v.len() >= 120 {
+                            shared.stop_all(Stop::Milestone("the results".into()));
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }))
+    };
+    let stop = exec.run_entry().unwrap();
+    exec.join_threads(Duration::from_secs(5));
+    exec.shared().observers.remove(id);
+    assert_eq!(stop, Stop::Milestone("the results".into()));
+    let seen = seen.lock().unwrap().clone();
+    let ap = |e: &ffx_state::BattleEnd, chr: usize| {
+        u32::from_le_bytes(e.ap[4 * chr..4 * chr + 4].try_into().unwrap())
+    };
+    for s in seen.iter().step_by(10) {
+        let e = &s.menus.battle_end;
+        eprintln!(
+            "update {} state {:#x} gil won {} left {} step {} party gil {} rows {:?} ap {:?} items {:?} gear {:?} side {} cursors {} {} top {} list {} full {} done {}",
+            s.update,
+            e.state,
+            e.gil_won,
+            e.gil_left,
+            e.gil_step,
+            s.save.gil,
+            e.rows,
+            (0..18).map(|c| ap(e, c)).collect::<Vec<_>>(),
+            e.items,
+            e.gear,
+            e.side,
+            e.cursor,
+            e.cursor_won,
+            e.top,
+            e.gear_list,
+            e.gear_full,
+            e.done
+        );
+    }
+    let first = &seen[0].menus.battle_end;
+    assert!(first.open);
+    assert_eq!(first.ap.len(), 72);
+    assert!(first.gil_won > 0, "{first:?}");
+    assert!(!first.rows.is_empty(), "{first:?}");
+    assert!(first.rows.iter().all(|r| (0..18).contains(&r.character)));
+    // the counts run down: AP and gil left at the end no more than at the
+    // start
+    let last = &seen[seen.len() - 1].menus.battle_end;
+    assert!(last.gil_left <= first.gil_left);
+    assert!((0..18).all(|c| ap(last, c) <= ap(first, c)));
+    assert!(seen.iter().any(|s| s.menus.battle_end.state != first.state));
+}

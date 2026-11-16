@@ -482,6 +482,61 @@ and 834 links. The node's `+0x20` flags (a bit per character from bit 8)
 are read as who activated it; that meaning is observed, not checked in the
 code.
 
+## Drawn characters, model parts, display objects, 2D layers, config, battle results (API 10)
+
+- `look.global_time`: the shaders' `GlobalTime` (the scene context
+  `+0xd0`, `*g_PhyreApplication +0x120`), the clock of the scrolling
+  UVs (`phyreuvanimationshader`: UV + `fract(ScrollSpeed x GlobalTime)`,
+  e.g. Besaid's clouds) and the water. Not the game time: it runs while
+  the game runs (not loading, not paused), wraps to 0 at 2400 s and is 0
+  again after every map change (docs/harness.md, "GlobalTime and the
+  title band").
+- `Actor.drawn`: the game draws the character, as the last `Ch_DrawMain`
+  left it (read at the next frame boundary). `Ch_DrawMain`
+  decides it after the hide byte (`hidden`), `flags2` bit `0x20`
+  (`F2_NO_OEF2`), the distance cull (`Ch_CullByDistance`, with `flags` bit
+  `0x800`), the alpha and a few per-id and per-spell cases, and hands it
+  to `graphicCharacterInstanceSetVisible`, which sets the render
+  instance's (`+0x830`) byte `+0x14`; that byte is read here. `hidden ==
+  0 && alpha > 0` is not enough: a character can be culled or skipped
+  (`flags2` bit `0x20`) while both hold. `flags` bit `0x2000`
+  (`F_DRAW_EFFECT`) is not a hide bit: it hides the character only under
+  magic `0x280`/`0x245`. `flags` and
+  `flags2` are the raw words `+0x194` and `+0x198`.
+- `Actor.models`: per model (part) its base element and whether the
+  header's skin list names it. `Ch_DrawMain`'s walk 1 gives a skinned
+  model the root's world matrix (`+0x1d0` x 1000, the `world` here) and an
+  unskinned one that times its base element's matrix (`bones[base]`),
+  `graphicCharacterInstanceSetWorldMatrixByMdlID`; the save sphere
+  `f001`'s three parts are unskinned.
+- `SceneObject.dobj`, `morph`, `morph_v`: an object id below
+  `g_YiDObjCount` is a display object's (`g_YiDObjs`, `0xb4` bytes each;
+  `yiRender_draw` moves object `i` with `graphicObjectSetTranslation(i,
+  ..)`). Its `+0x88` is the morph value a script sets
+  (`yiSetMIMeParamDObj`, then `graphicSetMeshVertexColorMorphValue`;
+  the morph weights are `1 - w`, `w`) or, with `+0x8c`, the UV offset a
+  keyframe track of kind 2 sets (`graphicSetMaterialUV_006436e0`).
+- `layers`: the 2D layers as the scene draws them
+  (docs/formats/scene-maps.md, "How the game draws the 2D layers";
+  render.md): the 2D level loaded (`+0x93c`) and the pass switched off
+  (`+0x93d`), whether the pass runs, whether it runs before the 3D world
+  (`+0xd4`), the 2D scene shown (`+0x11d8`), the window's pan `b`
+  (`+0xf9bc`) and shift (`+0xfa34`, `+0xfa38`), whether the window is
+  squeezed to 16:9 (not while `+0xf9c7` or `g_PhyreScene3D` is set), and
+  `PhyreScene_show2DLayer`'s table (shown, scene, layer id; a layer not
+  listed is shown).
+- `menus.config`: while the config menu runs (`main_mask` bit `0x400`),
+  its cursor, the PC's own row and the rows: title, value, enabled and
+  options, the texts as `MsMenuGetText(7, id, kana)` (`TkMenuConfigMes`)
+  gives them in the game's encoding. The PC row's texts come from the
+  localisation manager (`SaveDataGetLoc`): its ids are given (title
+  `0x1cd`, option `k` `0x1d0 - 2 k`), its texts are empty.
+- `menus.battle_end`: while the battle results run (`main_mask` bit
+  `0x20000`, slot 0x11), the screen's state, the gil won and still to
+  count, the AP each character still has to count (18 words), the rows
+  (character, kind, slide timer, front line, colour, level-up flash), the
+  items and gear won, and the spoils pages' cursors.
+
 ## Schema
 
 `cargo run -p ffx-state --example schema` prints it; the test
@@ -489,7 +544,7 @@ code.
 the fields raises `API_VERSION`.
 
 ```text
-ffx-state API 9
+ffx-state API 10
 struct Snapshot
   update: u32
   game_time: f64
@@ -505,6 +560,7 @@ struct Snapshot
   save: Save
   objects: list<SceneObject>
   sphere_grid: SphereGrid
+  layers: Layers
 struct World
   map: u16
   previous_map: u16
@@ -549,8 +605,15 @@ struct Actor
   player: bool
   world: mat4
   bones: list<Bone>
+  drawn: bool
+  flags: u32
+  flags2: u32
+  models: list<ActorModel>
 struct Bone
   matrix: mat4
+struct ActorModel
+  base: u16
+  skinned: bool
 struct Menus
   main_mask: u32
   main_cursor: i32
@@ -569,6 +632,8 @@ struct Menus
   esc_menu: bool
   windows: list<MenuWindow>
   current_player: u8
+  config: ConfigMenu
+  battle_end: BattleEnd
 struct MenuOption
   id: u16
   enabled: bool
@@ -631,6 +696,7 @@ struct Look
   fog_limit: f32
   character_ambient: vec3
   lights: list<Light>
+  global_time: f32
 struct Light
   direction: vec3
   colour: vec3
@@ -662,6 +728,9 @@ struct GridLink
 struct SceneObject
   id: u32
   meshes: list<SceneMesh>
+  dobj: bool
+  morph: f32
+  morph_v: f32
 struct SceneMesh
   world: mat3x4
   drawn: bool
@@ -699,6 +768,61 @@ struct ItemStack
   slot: u8
   id: u16
   count: u8
+struct ConfigMenu
+  open: bool
+  cursor: i16
+  pc_row: i32
+  rows: list<ConfigRow>
+struct ConfigRow
+  title_id: u16
+  title: bytes
+  value: u32
+  enabled: bool
+  options: list<ConfigOption>
+struct ConfigOption
+  id: u16
+  text: bytes
+struct BattleEnd
+  open: bool
+  state: u32
+  done: bool
+  gil_won: u32
+  gil_left: u32
+  gil_step: u32
+  ap: bytes
+  rows: list<BattleEndRow>
+  items: list<ItemStack>
+  gear: bytes
+  gear_full: bool
+  side: u32
+  cursor: i32
+  cursor_won: i32
+  picked: bool
+  top: i32
+  gear_list: i32
+struct BattleEndRow
+  character: i16
+  kind: u16
+  timer: i16
+  in_party: bool
+  colour: u8
+  flash: i16
+struct Layers
+  valid: bool
+  loaded: bool
+  off: bool
+  drawn: bool
+  before_world: bool
+  scene: i32
+  pan: f32
+  shift_x: f32
+  shift_y: f32
+  squeezed: bool
+  entries: list<LayerEntry>
+struct LayerEntry
+  shown: bool
+  scene: i16
+  id: i16
 ```
 
 ## Sources
@@ -746,3 +870,18 @@ control, and the player character posed. `a_battle_starts_on_request`: from ther
 `Battle { 3, 0, 0 }` starts the deck's battle; the snapshots show
 `World.battle`, the party, their weapons and the two monsters as actors,
 and Tidus's command window (level 0, its command ids).
+
+`crates/ffx-host/tests/boot.rs` `the_state_api_sees_the_beach_and_the_config_menu`
+(API 10): at Besaid (developer save 7) the global time advances 2.0 s
+over 60 updates (6.27 to 8.27); the save sphere `f001` is drawn, its three
+parts unskinned on elements 2, 3, 4; a second `f002` out of the distance
+cull (`hidden` 8) reads not drawn; the display objects 0..35 are listed,
+objects 18..32 with morph values that change from update to update;
+bsil00's 2D level is loaded with its pass off. Triangle, the pad to menu
+8 (`TkMenuMainOpenOption` opens slot 10) and Circle open the config menu:
+8 rows, the PC row first (ids `0x1cd`, `0x1d0`, `0x1ce`), then subtitles,
+their names, the cursor, help, summons, the guide map and vibration with
+their options. `the_state_api_sees_the_battle_results`: the deck's
+battle won with Circle; the results screen shows the rows of characters
+0 and 4, 3 AP each counted down to 0 (state 0xa, then 0xe), 5 gil won and
+an item `0x2049`.

@@ -23,7 +23,7 @@ pub use read::{LANGUAGE_UNKNOWN, Reader, read};
 pub use schema::{ApiStruct, ApiType, Field, StructSchema, Ty};
 
 /// The API's version: a frontend checks it before it decodes a snapshot.
-pub const API_VERSION: u32 = 9;
+pub const API_VERSION: u32 = 10;
 
 /// The first four bytes of an encoded snapshot (`FFXS`).
 pub const MAGIC: u32 = u32::from_le_bytes(*b"FFXS");
@@ -124,6 +124,65 @@ api_struct! {
         objects: Vec<SceneObject>,
         /// The sphere grid while its screen is up (`*g_Abmap`), else empty.
         sphere_grid: SphereGrid,
+        /// The map's 2D layers (the remaster's painted backgrounds) as the
+        /// scene draws them now (docs/formats/scene-maps.md, "How the game
+        /// draws the 2D layers"; render.md).
+        layers: Layers,
+    }
+}
+
+api_struct! {
+    /// The 2D layers' run-time state (`scene` is `*g_PhyreScene`): which 2D
+    /// scene and layers show, and the 16:9 window the layer pass puts over
+    /// the 512 x 448 picture.
+    Layers {
+        /// A scene exists (the values below were read).
+        valid: bool,
+        /// The 2D level is loaded (byte `scene +0x93c`).
+        loaded: bool,
+        /// The pass is switched off (byte `+0x93d`: set by
+        /// `PhyreScene_fieldMapInitialize` when a layer object's `+0x5c` lies
+        /// in (0, 1), e.g. bsil00's one layer).
+        off: bool,
+        /// The layer pass runs (`PhyreScene_render`: `loaded` and not `off`).
+        drawn: bool,
+        /// The layers are drawn before the 3D world (byte `+0xd4`, "map
+        /// alpha fast"; clear: after it, then the world's `Transparent`
+        /// pass).
+        before_world: bool,
+        /// The 2D scene shown (`+0x11d8`; a map starts on 0, scripts change
+        /// it with `PhyreScene_change2DSceneNum`): the layers whose mesh
+        /// name holds `scene<n>`.
+        scene: i32,
+        /// The window's pan `b` (`f32` `+0xf9bc`): after the squeeze the
+        /// layer camera moves by `1/3 - 2 b`, so the top PS2 row shown is
+        /// `112 - 336 b`.
+        pan: f32,
+        /// The window's shift (`+0xfa34`, `+0xfa38`), added to the layer
+        /// camera's matrix before the squeeze.
+        shift_x: f32,
+        /// See `shift_x`.
+        shift_y: f32,
+        /// The window is squeezed to 16:9 (y x 4/3, then the pan): unless
+        /// byte `+0xf9c7` or `g_PhyreScene3D` (`0x00ccb9c0`) is set.
+        squeezed: bool,
+        /// `PhyreScene_show2DLayer`'s table (`+0x1140`, `+0x1138` entries of
+        /// 8 bytes) while `+0x1128` is set: the layers scripts show and
+        /// hide one by one; a layer not listed is shown.
+        entries: Vec<LayerEntry>,
+    }
+}
+
+api_struct! {
+    /// One entry of the 2D layers' show table.
+    LayerEntry {
+        /// Shown (`+0`).
+        shown: bool,
+        /// Its 2D scene (`+1`, a signed byte).
+        scene: i16,
+        /// The layer's id (`i16` `+2`): `scene<scene>layer<id>` in the 2D
+        /// model.
+        id: i16,
     }
 }
 
@@ -281,6 +340,128 @@ api_struct! {
         /// `0x01841c28`; below 8 a party member, 8 and up an aeon); 0xff
         /// when the position is 8 or more (the list is 8 bytes).
         current_player: u8,
+        /// The config menu (menu slot 10, `main_mask` bit `0x400`).
+        config: ConfigMenu,
+        /// The battle results screen (menu slot 0x11, `main_mask` bit
+        /// `0x20000`).
+        battle_end: BattleEnd,
+    }
+}
+
+api_struct! {
+    /// The config menu (`TkMenuCtrlConfig`, docs/formats/menu.md "Config
+    /// menu"), read while it is open.
+    ConfigMenu {
+        /// It is open (`main_mask` bit `0x400`; the values below were
+        /// read).
+        open: bool,
+        /// The cursor's row (`i8` `0x0186a444`).
+        cursor: i16,
+        /// The PC's own row (the remaster's settings, `0x0186a438`): its
+        /// texts come from the localisation manager, not the menu text.
+        pc_row: i32,
+        /// The rows (`0x0186a44c` a list of record pointers, the count
+        /// `0x0186a448`).
+        rows: Vec<ConfigRow>,
+    }
+}
+
+api_struct! {
+    /// One config menu row (its record: `MenuConfig_DrawOptionRow`).
+    ConfigRow {
+        /// The title's text id (`u16 +0x18`; on the PC row the
+        /// localisation id `0x1cd`).
+        title_id: u16,
+        /// The title in the game's encoding (`MsMenuGetText(7, id, kana)`,
+        /// `TkMenuConfigMes`); empty on the PC row.
+        title: Vec<u8>,
+        /// The value chosen (`+8`): an index into `options`.
+        value: u32,
+        /// It can be changed (`+0xc`; 0 dims the options).
+        enabled: bool,
+        /// The options (`+4` the count; text ids `u16` every 4 bytes from
+        /// `+0x1c`).
+        options: Vec<ConfigOption>,
+    }
+}
+
+api_struct! {
+    /// One option of a config row.
+    ConfigOption {
+        /// Its text id (on the PC row the localisation id `0x1d0 - 2 k`,
+        /// its help `0x1d1 - 2 k`).
+        id: u16,
+        /// Its text in the game's encoding (`TkMenuConfigMes`); empty on
+        /// the PC row.
+        text: Vec<u8>,
+    }
+}
+
+api_struct! {
+    /// The battle results screen (`TkBtlEndCtrl`, docs/formats/menu.md
+    /// "Battle end"): AP, gil, items and gear won. FFX has no EXP.
+    BattleEnd {
+        /// It runs (`main_mask` bit `0x20000`; the values below were read).
+        open: bool,
+        /// The screen's state (`g_BtlEnd_State` `0x01869f08`, 0..0x2b):
+        /// level-ups, the AP count, the gil count, the spoils, the end.
+        state: u32,
+        /// The control is done (`g_BtlEndCtrlDone`, byte `0x00c5a068`).
+        done: bool,
+        /// The gil won (`g_TkBtlEndGilWon` `0x02310f6c`).
+        gil_won: u32,
+        /// The gil still to count into the party's (`g_TkBtlEndGil` `+4`;
+        /// each step pays `gil_step` with `MsPayGIL`).
+        gil_left: u32,
+        /// See `gil_left` (`+0`).
+        gil_step: u32,
+        /// The AP each character still has to count (`g_TkBtlEndResults`
+        /// `0x02310f20`, 18 `u32` little-endian, counted down to 0).
+        ap: Vec<u8>,
+        /// The results rows (`g_TkBtlEndList`, 14-byte entries from
+        /// `0x01869f20`, the count byte `0x01869f18`).
+        rows: Vec<BattleEndRow>,
+        /// The items won (`i8` count `0x02310f70`, `u16` ids `0x02310f74`,
+        /// `u8` counts `0x02310f84`); `slot` is the row.
+        items: Vec<ItemStack>,
+        /// The gear won (`i8` count `0x02310f72`, up to 6 `u16` ids at
+        /// `0x02310f8e`, `MsGetSaveWeapon`'s), `u16` little-endian each.
+        gear: Vec<u8>,
+        /// The gear doesn't fit (`0x0186a184`): the exchange pages.
+        gear_full: bool,
+        /// The spoils page's side (`0x0186a19c`).
+        side: u32,
+        /// The cursors of the two sides (`0x0186a1a0 + 4 side`; side 0's
+        /// relative to `top`).
+        cursor: i32,
+        /// See `cursor`.
+        cursor_won: i32,
+        /// A pick is held (`0x0186a1a8`).
+        picked: bool,
+        /// The gear list's first row shown (`0x0186a190`) and its length
+        /// (`0x0186a188`).
+        top: i32,
+        /// See `top`.
+        gear_list: i32,
+    }
+}
+
+api_struct! {
+    /// One battle results row (a character's AP).
+    BattleEndRow {
+        /// The character (`i16 +6`).
+        character: i16,
+        /// Its kind (`u16 +4`: 0 and 5 not drawn, 1 sliding in, 4 out).
+        kind: u16,
+        /// Its slide timer (`i16 +2`, 0..0x1000).
+        timer: i16,
+        /// In the front line (`+9`).
+        in_party: bool,
+        /// The name's colour class (`+8`, `TkMenuGetPlayerDamegedColor`).
+        colour: u8,
+        /// The level-up flash counter (`i8 +0xa`: 0xf when the AP reach a
+        /// sphere level, down by one each draw).
+        flash: i16,
     }
 }
 
@@ -467,6 +648,19 @@ api_struct! {
         id: u32,
         /// Its meshes in the scene's order (the node's list, `+0x10`).
         meshes: Vec<SceneMesh>,
+        /// The id is a display object's (`g_YiDObjs` `0x018df59c`, `0xb4`
+        /// bytes each, the count `0x018df588`; `yiRender_draw` hands object
+        /// `i` to `graphicObjectSetTranslation(i, ..)`): the two values
+        /// below were read.
+        dobj: bool,
+        /// The display object's `+0x88`: the morph value
+        /// (`yiSetMIMeParamDObj`, handed to
+        /// `graphicSetMeshVertexColorMorphValue`; weights `1 - w`, `w`), or
+        /// the UV offset's u that a keyframe track of kind 2 sets
+        /// (`graphicSetMaterialUV_006436e0`).
+        morph: f32,
+        /// `+0x8c`: that UV offset's v.
+        morph_v: f32,
     }
 }
 
@@ -627,6 +821,14 @@ api_struct! {
         /// The character lights 0-2 (`PhyreChrLitShader`'s `Light0`..
         /// `Light2`), empty before the lighting is initialised.
         lights: Vec<Light>,
+        /// The shaders' `GlobalTime`, seconds (context `+0xd0`, that is
+        /// `*g_PhyreApplication +0x120`: `FFXApplication +0x3b0`'s copy):
+        /// the clock of scrolling UVs (`phyreuvanimationshader`'s
+        /// `ScrollSpeed x GlobalTime`) and the water; it advances while the
+        /// game runs (not loading, not paused), wraps to 0 at 2400 and is 0
+        /// again after every map change (docs/harness.md, the section on
+        /// `GlobalTime` and the title band).
+        global_time: f32,
     }
 }
 
@@ -713,6 +915,41 @@ api_struct! {
         /// The skeleton's elements (bones) as posed this update, in the
         /// model's order (an HD model's `SkeletonNode_i` takes bone `i`).
         bones: Vec<Bone>,
+        /// The game draws it, as the last character draw (`Ch_DrawMain`,
+        /// read at the next frame boundary) left it: its render instance
+        /// (`+0x830`) is visible
+        /// (byte `+0x14`, which `graphicCharacterInstanceSetVisible` sets
+        /// in `Ch_DrawMain` after the hide byte, the distance cull, the
+        /// alpha and the special cases) and the model is loaded (`flags2`
+        /// bit `0x20` clear).
+        drawn: bool,
+        /// The flag words `+0x194` (bit `0x2000`, `F_DRAW_EFFECT`: skips
+        /// walk 2's `|= 0x50` and hides the character only under magic
+        /// `0x280`/`0x245`, not a "not drawn" bit; bit `0x800`: the distance
+        /// cull applies) and `+0x198` (bit `0x20`, `F2_NO_OEF2`: skipped by
+        /// the OEF2 lookup and by `Ch_DrawMain`; `0x50` set by walk 2 before
+        /// the cull and the hide byte, so culled characters carry it too).
+        flags: u32,
+        /// See `flags`.
+        flags2: u32,
+        /// The models (`+0x1bc`, `0x38` bytes each; the count `u16` at the
+        /// header's `+6`): how `Ch_DrawMain` places each (walk 1).
+        models: Vec<ActorModel>,
+    }
+}
+
+api_struct! {
+    /// One model (part) of a character.
+    ActorModel {
+        /// Its base element (`u16` at `*(model +0)`): an unskinned model's
+        /// world matrix is the root's `world` (x 1000 scale, as `bones`)
+        /// times this element's `matrix`
+        /// (`graphicCharacterInstanceSetWorldMatrixByMdlID`).
+        base: u16,
+        /// It is skinned (named by an entry of the header's skin list,
+        /// `+0x14`, 12-byte entries, `u16 +2` the model; the count `u16`
+        /// `+8`): it takes the root's `world` whole.
+        skinned: bool,
     }
 }
 
@@ -747,6 +984,7 @@ pub fn structs() -> Vec<&'static StructSchema> {
         Input::schema(),
         Actor::schema(),
         Bone::schema(),
+        ActorModel::schema(),
         Menus::schema(),
         MenuOption::schema(),
         Message::schema(),
@@ -765,6 +1003,13 @@ pub fn structs() -> Vec<&'static StructSchema> {
         Save::schema(),
         PartyMember::schema(),
         ItemStack::schema(),
+        ConfigMenu::schema(),
+        ConfigRow::schema(),
+        ConfigOption::schema(),
+        BattleEnd::schema(),
+        BattleEndRow::schema(),
+        Layers::schema(),
+        LayerEntry::schema(),
     ]
 }
 
@@ -794,18 +1039,47 @@ mod tests {
         let world = 2 + 2 + 1 + 2 + 2 + 2 + 4 + 4 + 1;
         let camera = 1 + 48 + 4 + 4 + 4 + 12 + 12;
         let input = 4 + 2 + 1 + 1;
-        let actor = 2 + 2 + 1 + (2 + 4) + 12 + 4 + 12 + 1 + 4 + 4 + 4 + 4 + 2 + 2 + 1 + 64 + 2;
-        let menus = 4 + 4 + 4 + 2 + 4 + 2 + 2 + 2 + 2 + 4 + 4 + 4 + 4 + 4 + 1 + 2 + 1;
+        // (no bones; drawn, the two flag words, no models)
+        let actor = 2
+            + 2
+            + 1
+            + (2 + 4)
+            + 12
+            + 4
+            + 12
+            + 1
+            + 4
+            + 4
+            + 4
+            + 4
+            + 2
+            + 2
+            + 1
+            + 64
+            + 2
+            + 1
+            + 4
+            + 4
+            + 2;
+        // the config menu (closed: open, cursor, the PC row, no rows) and
+        // the battle end (closed: its scalars and four empty lists)
+        let config = 1 + 2 + 4 + 2;
+        let battle_end = 1 + 4 + 1 + 4 + 4 + 4 + 2 + 2 + 2 + 2 + 1 + 4 + 4 + 4 + 1 + 4 + 4;
+        let menus =
+            4 + 4 + 4 + 2 + 4 + 2 + 2 + 2 + 2 + 4 + 4 + 4 + 4 + 4 + 1 + 2 + 1 + config + battle_end;
         // the effects (default: no running ones, no filters): magic, the
         // two list counts, shake, music
         let effects = 4 + 2 + 2 + 4 + 4 + 4;
         // the look (no lights): valid, the scale, ambient, background, glow,
-        // fog, character ambient, the lights' count
-        let look = 1 + 12 + 12 + 12 + 16 + 12 + 16 + 12 + 2;
+        // fog, character ambient, the lights' count, the global time
+        let look = 1 + 12 + 12 + 12 + 16 + 12 + 16 + 12 + 2 + 4;
         // the save (default: empty lists): valid, gil, time, five counts
         let save = 1 + 4 + 4 + 2 + 2 + 2 + 2 + 2 + 2;
         // the sphere grid (closed): open, current, cursor, two list counts
         let grid = 1 + 1 + 2 + 2 + 2;
+        // the 2D layers (no scene): the flags, scene, pan, shift, squeezed,
+        // no entries
+        let layers = 1 + 1 + 1 + 1 + 1 + 4 + 4 + 8 + 1 + 2;
         assert_eq!(
             b.len(),
             8 + 4
@@ -823,11 +1097,12 @@ mod tests {
                 + save
                 + 2
                 + grid
+                + layers
         );
     }
 
     /// FNV-1a of `schema::text()` at [`API_VERSION`].
-    const PINNED: u64 = 0xf493_18ba_2217_a2c0;
+    const PINNED: u64 = 0xd87b_0520_1515_563f;
 
     /// A field change must raise [`API_VERSION`]: the schema's text is
     /// pinned to the version here.
@@ -839,7 +1114,7 @@ mod tests {
         });
         assert_eq!(
             (API_VERSION, hash),
-            (9, PINNED),
+            (10, PINNED),
             "the schema changed: raise API_VERSION and pin the new hash"
         );
     }
@@ -864,11 +1139,12 @@ mod tests {
                 "look",
                 "save",
                 "objects",
-                "sphere_grid"
+                "sphere_grid",
+                "layers"
             ]
         );
         assert!(matches!(s.fields[5].ty, Ty::List(_)));
-        assert_eq!(structs().len(), 24);
+        assert_eq!(structs().len(), 32);
         assert!(Actor::schema().fields.iter().all(|f| !f.doc.is_empty()));
     }
 }
