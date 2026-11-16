@@ -74,9 +74,13 @@ const OTHER_MAX: u32 = 0x1000;
 /// `g_MovieFading` (`DrawUI2DVFX` draws while it or the scene's `+0x10dcc`
 /// is set).
 const MOVIE_FADING: u32 = 0x0134_0824;
-/// Non-zero on maps 0x163 and 0x164, where the UI pass leaves the 2D VFX
-/// out (`PhyreScene_render`'s UI step).
+/// Non-zero on maps 0x163 and 0x164, where `PhyreScene_render` draws the
+/// 2D VFX in its late step (after the post-processing, before the screen
+/// fade and the after-post VFX) instead of the UI step.
 const MAP_163_OR_164: u32 = 0x00cc_b9c4;
+/// `PhyreScene_render`'s menu capture state: at 2 the scene step skips its
+/// post chain, the DTT VFX with it (`h3e_scene`).
+const MENU_CAPTURE_STATE: u32 = 0x0134_0844;
 /// The name `DrawUI2DVFX` skips (`[0x00ccb9e4] & !1` against the mesh
 /// instance's `+0x2c`, `Phyre_PRendering_NameIs`).
 const UI2D_SKIP_NAME: u32 = 0x00cc_b9e4;
@@ -119,8 +123,11 @@ pub enum Pass {
     /// `PhyreScene_DrawUI2DVFX` (`0x00650ea0`, `+0x3868`, count `+0x3860`):
     /// in the UI step, before the normal UI, with the scene's second camera
     /// (`+0x500`) and the transparent pass; only while the scene fades
-    /// (`+0x10dcc` or `g_MovieFading`) and not on maps 0x163/0x164; the
-    /// capture applies the same tests and the pass's name skip.
+    /// (`+0x10dcc` or `g_MovieFading`); the capture applies the same test
+    /// and the pass's name skip. On maps 0x163/0x164 the late step draws it
+    /// instead, after the post-processing and before [`Pass::AfterPost`]:
+    /// there the frame holds these draws before the after-post ones (the
+    /// numbers order the passes everywhere else).
     Ui2d = 3,
     /// `+0x3880` (count `+0x3878`, `PhyreScene_AddVFXToList3880`, geometry
     /// byte `+0x50`): no pass in `PhyreScene_render` draws it (as far as
@@ -265,7 +272,9 @@ pub enum EventInfo {
     /// copies through `copyDepthBuffer` with the pass `0x00ccc8ec` and a
     /// colour scale of 1, otherwise `copyBuffer`; `clear` (the `…WithClear`
     /// makers) clears the colour to 0 when the scene begins again. Skipped
-    /// while the motion blur is on and `to` is [`Buffer::Copy`].
+    /// while the motion blur is on and the destination byte is 1 (decoded
+    /// as [`Buffer::Copy`], as are values of 3 and more, which are not
+    /// skipped).
     CopyBuffer {
         from: Buffer,
         to: Buffer,
@@ -780,11 +789,9 @@ fn actor_of(m: &Reader, instance: u32) -> i16 {
 }
 
 /// Whether `DrawUI2DVFX` draws this frame: the scene fades (`+0x10dcc`) or
-/// a movie does, and not on maps 0x163/0x164.
+/// a movie does (in the UI step, or on maps 0x163/0x164 the late step).
 fn ui2d_on(m: &Reader, scene: u32) -> bool {
-    let fading = m.u8(scene.wrapping_add(0x1_0dcc)).unwrap_or(0) != 0
-        || m.u32(MOVIE_FADING).unwrap_or(0) != 0;
-    fading && m.u32(MAP_163_OR_164).unwrap_or(0) == 0
+    m.u8(scene.wrapping_add(0x1_0dcc)).unwrap_or(0) != 0 || m.u32(MOVIE_FADING).unwrap_or(0) != 0
 }
 
 /// `Phyre_PRendering_NameIs(mesh +0x2c, name)`: the same pointer (bit 0
@@ -799,17 +806,24 @@ fn name_is(m: &Reader, mi: u32, name: u32) -> bool {
 
 /// The other lists' draws, appended in frame order: each list's non-zero
 /// entries `0..count` (a `PArray`: count, data pointer), each entry's
-/// segments as the main list's. The UI 2D list only when its pass draws
-/// ([`ui2d_on`]) and without the entries of the skipped name.
+/// segments as the main list's. The DTT list only when the scene step runs
+/// its post chain (menu capture state not 2); the UI 2D list only when its
+/// pass draws ([`ui2d_on`]), without the entries of the skipped name, and
+/// on maps 0x163/0x164 before the after-post list (the late step).
 fn other_lists(m: &Reader, scene: u32, table: &HashMap<u32, Found>, frame: &mut Frame) {
     let skip = m.u32(UI2D_SKIP_NAME).unwrap_or(0) & !1;
-    for (pass, count, data) in [
-        (Pass::Dtt, 0x3854, 0x385c),
-        (Pass::AfterPost, 0x388c, 0x3888),
-        (Pass::Ui2d, 0x3860, 0x3868),
-        (Pass::Undrawn, 0x3878, 0x3880),
-    ] {
-        if pass == Pass::Ui2d && !ui2d_on(m, scene) {
+    let dtt = (Pass::Dtt, 0x3854, 0x385c);
+    let after = (Pass::AfterPost, 0x388c, 0x3888);
+    let ui2d = (Pass::Ui2d, 0x3860, 0x3868);
+    let undrawn = (Pass::Undrawn, 0x3878, 0x3880);
+    let order = if m.u32(MAP_163_OR_164).unwrap_or(0) == 0 {
+        [dtt, after, ui2d, undrawn]
+    } else {
+        [dtt, ui2d, after, undrawn]
+    };
+    let post_chain = m.u32(MENU_CAPTURE_STATE).unwrap_or(0) != 2;
+    for (pass, count, data) in order {
+        if pass == Pass::Ui2d && !ui2d_on(m, scene) || pass == Pass::Dtt && !post_chain {
             continue;
         }
         let n = m
@@ -1512,10 +1526,24 @@ mod tests {
                 Pass::Undrawn
             ]
         );
-        // ... but not on maps 0x163/0x164
+        // on maps 0x163/0x164 too, in the late step before the after-post VFX
         f.put(MAP_163_OR_164, 1);
-        assert!(f.frame().draws.iter().all(|d| d.pass != Pass::Ui2d));
+        let passes: Vec<Pass> = f.frame().draws.iter().map(|d| d.pass).collect();
+        assert_eq!(
+            passes,
+            [
+                Pass::Main,
+                Pass::Dtt,
+                Pass::Ui2d,
+                Pass::AfterPost,
+                Pass::Undrawn
+            ]
+        );
         f.put(MAP_163_OR_164, 0);
+        // the menu capture (state 2) skips the post chain and the DTT VFX
+        f.put(MENU_CAPTURE_STATE, 2);
+        assert!(f.frame().draws.iter().all(|d| d.pass != Pass::Dtt));
+        f.put(MENU_CAPTURE_STATE, 0);
         // a movie's fade alone is enough
         f.arena.write_bytes(f.scene + 0x1_0dcc, &[0]);
         f.put(MOVIE_FADING, 1);

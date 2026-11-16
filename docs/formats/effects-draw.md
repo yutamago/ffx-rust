@@ -470,10 +470,12 @@ slot (`vfx::Event::actor`; docs/state-api.md, "Effect draws").
 (`DrawMostVFX`'s entry; the same updates fill them and
 `PhyreScene_render` draws them later in the same frame) and tags each
 draw with its pass (`vfx::Pass`): `RenderDTTVFX` right after the main
-pass and the DTT copy, `RenderVFXAfterPostProcess` after the
+pass and the DTT copy (not while the menu capture state is 2, which
+skips the post chain), `RenderVFXAfterPostProcess` after the
 post-processing, `DrawUI2DVFX` in the UI step (only while the scene or a
-movie fades, not on maps 0x163/0x164, without the mesh instances named
-`[0x00ccb9e4]`), and `+0x3880`, which no pass draws.
+movie fades, without the mesh instances named `[0x00ccb9e4]`; on maps
+0x163/0x164 in the late step instead, after the post-processing and
+before the screen fade and the after-post VFX), and `+0x3880`, which no pass draws.
 
 Probe runs (ffx-host's `vfx-probe`, headless, null device, virtual clock;
 battle field 34 formation 0, `kami00_00`: Larva and Gold Element; the

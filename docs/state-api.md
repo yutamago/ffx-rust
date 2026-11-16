@@ -181,10 +181,10 @@ the frame):
 
 | Pass | Number | List (count) | Drawn |
 |---|---|---|---|
-| `Main` | 0 | `+0x38cc` (`+0xf8cc`) | `PhyreScene_DrawMostVFX`: into the scene colour against the scene depth, after the glow, the draw events between its draws |
-| `Dtt` | 1 | `+0x385c` (`+0x3854`) | `PhyreScene_RenderDTTVFX`, right after the main pass and the DTT copy of the colour (pp `+0xa8`), before the specular pass, the screen fade and the distortion; its `FrameBuffer` draws sample that copy |
+| `Main` | 0 | `+0x38cc` (`+0xf8cc`) | `PhyreScene_DrawMostVFX`: into the scene colour against the scene depth, after the glow (before it with `isGlowAfterVFX`), the draw events between its draws |
+| `Dtt` | 1 | `+0x385c` (`+0x3854`) | `PhyreScene_RenderDTTVFX` (not while the menu capture state `0x01340844` is 2, which skips the post chain; nor captured then), right after the main pass and the DTT copy of the colour (pp `+0xa8`), before the specular pass, the screen fade and the distortion; its `FrameBuffer` draws sample that copy |
 | `AfterPost` | 2 | `+0x3888` (`+0x388c`) | `PhyreScene_RenderVFXAfterPostProcess`, after the post-processing (distortion, blurs, AA, brightness), before the UI, with the scene camera |
-| `Ui2d` | 3 | `+0x3868` (`+0x3860`) | `PhyreScene_DrawUI2DVFX`, in the UI step before the normal UI, with the scene's second camera (`+0x500`); only while the scene or a movie fades and not on maps 0x163/0x164 (the capture applies those tests and the pass's name skip, so a frame holds them only when drawn) |
+| `Ui2d` | 3 | `+0x3868` (`+0x3860`) | `PhyreScene_DrawUI2DVFX`, in the UI step before the normal UI, with the scene's second camera (`+0x500`); only while the scene or a movie fades (the capture applies that test and the pass's name skip, so a frame holds them only when drawn); on maps 0x163/0x164 the late step draws it instead, after the post-processing and before the screen fade and `AfterPost`, and the frame holds these draws before the `AfterPost` ones |
 | `Undrawn` | 4 | `+0x3880` (`+0x3878`) | no pass found: captured for diagnosis, not to be drawn |
 
 **Draw events** (`vfx::Event`: `kind`, `at`, `words`, `actor`; main pass
@@ -196,7 +196,7 @@ run after the last draw). `Event::info()` decodes the words
 | Kind | `EventInfo` | What a frontend does there |
 |---|---|---|
 | 0 | `Characters { layer }` | draw the characters of that layer (instance byte `+0x15`) with the scene camera |
-| 1 | `CopyBuffer { from, to, rgb, clear }` | copy one buffer into another (`Colour` pp `+0x8c`, `Copy` pp `+0xa8`, `CrossFade` pp `+0x1232c`); with `clear` clear the colour to 0 afterwards; skipped while the motion blur is on and `to` is `Copy` |
+| 1 | `CopyBuffer { from, to, rgb, clear }` | copy one buffer into another (`Colour` pp `+0x8c`, `Copy` pp `+0xa8`, `CrossFade` pp `+0x1232c`); with `clear` clear the colour to 0 afterwards; skipped while the motion blur is on and the destination byte is 1 (decoded `Copy`; 3 and more also decode `Copy` and are not skipped) |
 | 2 | `ScreenFade { colour, blend }` | draw a full-screen quad of `colour` (RGBA, 1.0 the PS2's `0x80`) over the colour with `blend` (`Alpha`, `Additive`, `Subtract`) |
 | 3 | `Ps2Lighting { instance }` | nothing drawn: the PS2 point light of character `actor` is applied |
 | 4 | `Specular { instance }` | the specular pass of character `actor` |
