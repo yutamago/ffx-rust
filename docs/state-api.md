@@ -138,6 +138,9 @@ levels", "Lights and fog at run time"):
   `+0x1198`; nothing while `+0x10d4` is 0). The map shaders
   multiply by it just before the tone curve `2.1 min(c, 0.4) + 1.08
   clamp(c, 0.4, 0.58) - 0.47`.
+- `glow_full`, `glow_none`, `glow_gain`, `glow_spread` (API 9): the glow
+  pass's thresholds, gain and spread (context `+0x80..+0x8c`,
+  docs/formats/postfx.md "Glow").
 - `background`: the scene target's clear colour (context `+0x30`, the
   map's `GlobalCamera` `m_bgColor`), not tone-curved; the post passes still
   apply.
@@ -205,7 +208,7 @@ code.
 the fields raises `API_VERSION`.
 
 ```text
-ffx-state API 8
+ffx-state API 9
 struct Snapshot
   update: u32
   game_time: f64
@@ -336,6 +339,10 @@ struct Look
   colour_scale: vec3
   ambient: vec3
   background: vec3
+  glow_full: f32
+  glow_none: f32
+  glow_gain: f32
+  glow_spread: f32
   fog_colour: vec3
   fog_near: f32
   fog_far: f32

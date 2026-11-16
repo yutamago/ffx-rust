@@ -550,6 +550,7 @@ const SCENE_COLOUR_SCALE: u32 = 0xfc78;
 const SCENE_CONTEXT: u32 = 0xcc;
 const CONTEXT_FOG_COLOUR: u32 = 0x10;
 const CONTEXT_BACKGROUND: u32 = 0x30;
+const CONTEXT_GLOW: u32 = 0x80;
 const CONTEXT_FOG_NEAR: u32 = 0x20;
 const CONTEXT_FOG_FAR: u32 = 0x24;
 const CONTEXT_FOG_CURVE: u32 = 0x28;
@@ -813,6 +814,7 @@ fn look(m: &Mem<'_>) -> Look {
     };
     if context == 0
         || !m.mapped::<0x3c>(context)
+        || !m.mapped::<16>(context.wrapping_add(CONTEXT_GLOW))
         || !m.mapped::<16>(scene.wrapping_add(SCENE_COLOUR_SCALE))
     {
         return Look::default();
@@ -865,6 +867,10 @@ fn look(m: &Mem<'_>) -> Look {
         colour_scale: m.floats(scene.wrapping_add(SCENE_COLOUR_SCALE)),
         ambient: m.floats(context),
         background: m.floats(c(CONTEXT_BACKGROUND)),
+        glow_full: m.f32(c(CONTEXT_GLOW)),
+        glow_none: m.f32(c(CONTEXT_GLOW + 4)),
+        glow_gain: m.f32(c(CONTEXT_GLOW + 8)),
+        glow_spread: m.f32(c(CONTEXT_GLOW + 12)),
         fog_colour: m.floats(c(CONTEXT_FOG_COLOUR)),
         fog_near: m.f32(c(CONTEXT_FOG_NEAR)),
         fog_far: m.f32(c(CONTEXT_FOG_FAR)),
@@ -1023,7 +1029,7 @@ mod tests {
             scene + SCENE_COLOUR_SCALE,
             &[f(0.5), f(0.6), f(0.7), f(1.0)].concat(),
         );
-        m.put(context, &[0u8; 0x3c]);
+        m.put(context, &[0u8; 0x90]);
         m.put(context + CONTEXT_FOG_NEAR, &f(62.0));
         m.put(
             context + CONTEXT_BACKGROUND,
@@ -1036,6 +1042,7 @@ mod tests {
         assert_eq!(l.colour_scale, [0.5, 0.6, 0.7]);
         assert!((l.fog_near - 62.0).abs() < f32::EPSILON);
         assert_eq!(l.background, [0.3, 0.35, 0.5]);
+        assert!(l.glow_gain.abs() < f32::EPSILON);
         assert_eq!(l.lights, [] as [Light; 0]);
         assert_eq!(l.character_ambient, [0.0; 3]);
         // initialised, with a light set whose second PLight is null
