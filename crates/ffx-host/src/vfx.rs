@@ -260,8 +260,10 @@ impl Reader<'_> {
     fn u16s(&self, at: u32, n: u32) -> Vec<u16> {
         self.bytes(at, 2 * n as usize)
             .map(|b| {
-                b.chunks_exact(2)
-                    .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                b.as_chunks::<2>()
+                    .0
+                    .iter()
+                    .map(|c| u16::from_le_bytes(*c))
                     .collect()
             })
             .unwrap_or_default()
@@ -331,11 +333,13 @@ fn geometries(m: &Reader) -> HashMap<u32, Found> {
 
 /// `p` placed by a world matrix laid out as [`Draw::world`].
 #[must_use]
-pub fn to_render(w: &[f32; 12], p: [f32; 3]) -> [f32; 3] {
-    let x = [w[3], w[7], w[11]];
-    let y = [w[0], w[1], w[2]];
-    let z = [w[4], w[5], w[6]];
-    std::array::from_fn(|k| x[k] * p[0] + y[k] * p[1] + z[k] * p[2] + w[8 + k])
+pub fn to_render(world: &[f32; 12], local: [f32; 3]) -> [f32; 3] {
+    let axis_x = [world[3], world[7], world[11]];
+    let axis_y = [world[0], world[1], world[2]];
+    let axis_z = [world[4], world[5], world[6]];
+    std::array::from_fn(|k| {
+        axis_x[k] * local[0] + axis_y[k] * local[1] + axis_z[k] * local[2] + world[8 + k]
+    })
 }
 
 /// The draws of one list entry: each segment with indices (`+8` > 0) of
@@ -545,22 +549,18 @@ impl Frame {
             let n = d.positions.len();
             o.u32(u32::try_from(n).unwrap_or(u32::MAX));
             o.u32(u32::try_from(d.indices.len()).unwrap_or(u32::MAX));
-            for p in &d.positions {
-                p.iter().for_each(|&v| o.f32(v));
+            for &v in d.positions.iter().flatten() {
+                o.f32(v);
             }
             for k in 0..n {
-                d.colours
-                    .get(k)
-                    .unwrap_or(&[0.0; 4])
-                    .iter()
-                    .for_each(|&v| o.f32(v));
+                for &v in d.colours.get(k).unwrap_or(&[0.0; 4]) {
+                    o.f32(v);
+                }
             }
             for k in 0..n {
-                d.uvs
-                    .get(k)
-                    .unwrap_or(&[0.0; 2])
-                    .iter()
-                    .for_each(|&v| o.f32(v));
+                for &v in d.uvs.get(k).unwrap_or(&[0.0; 2]) {
+                    o.f32(v);
+                }
             }
             for &i in &d.indices {
                 o.u16(i);
@@ -684,9 +684,10 @@ mod tests {
             ..Frame::default()
         };
         let b = f.encode();
-        // header 24, draw head 4+8+4+4+2+1+1 = 24, world 48, name 2 + 96,
-        // counts 8, arrays 3 * (12 + 16 + 8) + 3 * 2
-        assert_eq!(b.len(), 24 + 24 + 48 + 2 + 96 + 8 + 3 * 36 + 6);
+        // header 24, draw head 4+8+4+4+2+1+1 = 24, world 48, name 2 + its
+        // bytes, counts 8, arrays 3 * (12 + 16 + 8) + 3 * 2
+        let name = draw(19).texture.len();
+        assert_eq!(b.len(), 24 + 24 + 48 + 2 + name + 8 + 3 * 36 + 6);
         assert_eq!(u32::from_le_bytes([b[8], b[9], b[10], b[11]]), 7);
         assert_eq!(u32::from_le_bytes([b[20], b[21], b[22], b[23]]), 1);
         // the key, low word first

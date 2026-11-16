@@ -607,6 +607,7 @@ fn a_developer_save_loads_on_request() {
 #[test]
 fn the_effect_draws_are_captured_at_the_save_sphere() {
     use std::sync::{Arc, Mutex};
+    type Got = Option<(Arc<ffx_state::Snapshot>, Arc<ffx_host::vfx::Frame>)>;
     let Some(exe) = exe() else { return };
     let opts = ffx_host::Options {
         documents: Some(documents("vfx-capture")),
@@ -620,7 +621,6 @@ fn the_effect_draws_are_captured_at_the_save_sphere() {
     let mut exec = ffx_host::boot_opts(&exe, ffx_host::ports::table(), &opts).unwrap();
     exec.set_budget(Duration::from_secs(300));
     assert!(!exec.shared().vfx.enabled(), "off unless switched on");
-    type Got = Option<(Arc<ffx_state::Snapshot>, Arc<ffx_host::vfx::Frame>)>;
     let got: Arc<Mutex<Got>> = Arc::default();
     let id = {
         let got = Arc::clone(&got);

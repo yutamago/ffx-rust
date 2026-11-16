@@ -92,7 +92,7 @@ fn probe(shared: &Shared, snaps: &Snaps, save: i32, frames: u32) {
             }),
         );
     }
-    let got_reply = || reply.lock().map(|r| r.is_some()).unwrap_or(true);
+    let got_reply = || !matches!(reply.lock().as_deref(), Ok(None));
     wait("the save", &got_reply, Duration::from_secs(600));
     eprintln!(
         "devsave {save}: {}",
