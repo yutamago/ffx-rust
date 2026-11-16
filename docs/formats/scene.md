@@ -373,10 +373,11 @@ builder that runs only `OpaqueNoMSAA` and `TransparentNoMSAA` misses it.
 - **No water part is a morphing mesh.** All 3,336 morphing parts (80 maps)
   use `phyredefaultlitshader.fx`. On `bsil00`, `FBXASC0498..0512_0Shape`
   (objects 18..32) are the birds, not wave strips: each `_0` mesh's two
-  position inputs are the wings down and up (the morph weight, the
-  display object's `+0x88`, flaps them; gd-ffx drew both poses from the
-  export and saw them flap in its renders). Besaid's shore strips are
-  objects 0..5 and 13.
+  position inputs are the wings down and up. The morph weight (the
+  display object's `+0x88`, `SceneObject.morph` in docs/state-api.md)
+  flaps them; gd-ffx drew both poses from the export and saw them flap in
+  its renders. Besaid's morphing shore strips are map objects 0..5 and 13
+  (not the effect draws' foam and wave strips, docs/state-api.md).
 
 ### The water level
 

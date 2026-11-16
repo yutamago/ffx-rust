@@ -81,7 +81,8 @@ results on every map.
    instances pass the box test and do not draw: `FBXASC0498..0512` `_0`
    and `_1`, and `_FBXASC0498Shape`. In the file every one has
    `m_dObjFlag` (`PMeshInstance +0x54`) `0x101` and an `m_objID` of its
-   own (`0x12..0x20`): Besaid's birds (docs/formats/scene.md, "Water").
+   own (`0x12..0x20`); the `FBXASC0498..0512` ones are Besaid's birds
+   (docs/formats/scene.md, "Water").
    The flag looks like the event-controlled map
    parts' hidden-at-start bit. On `cdsp0000`, `FBXASC056_0Shape` is the
    only instance with `m_groupID` `0xc`, a lead for Q3. On `kami0100`, the
