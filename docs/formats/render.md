@@ -309,8 +309,12 @@ declare it unread, 91 have none. With `MaterialColour` and `clrScaleFactor`
 at 1, both `MySMSampler` terms 0 and no fog, a colour byte of 128 gives
 about the painted texture `t` (1.05 t - 0.04 up to t = 0.8, 0.91 at t = 1),
 as 0x80 does in the PS2 GS's MODULATE texture function (`Rv = Rt x Rf >> 7`,
-GS User's Manual, "Texture Function"). Where FFX.exe sets `MaterialColour`
-and `clrScaleFactor` for scenery is not known.
+GS User's Manual, "Texture Function"). `clrScaleFactor` for scenery is set by
+`PhyreScene_setColorScale` (`0x0066d3b0`, ported in `ffx-prender`'s
+`m5r_n.rs`): the scene's scale vector `+0xfc78` times the call's (r, g,
+b), given to every material of the object tree `+0x1198` (nothing while
+`+0x10d4` is 0). Where FFX.exe sets `MaterialColour` for scenery is not
+known.
 
 The colours hold light **and** tint. Over the 20.8 million scenery vertices:
 all but 9 of 36,171 parts have a `Color` stream; the mean light (Rec. 709

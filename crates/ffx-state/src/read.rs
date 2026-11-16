@@ -10,8 +10,8 @@
 use ffx_chara::layout as l;
 
 use crate::{
-    Actor, Battler, Bone, Camera, EffectInstance, Effects, Input, MenuOption, Menus, Message,
-    ScreenFilter, Snapshot, World,
+    Actor, Battler, Bone, Camera, EffectInstance, Effects, Input, Light, Look, MenuOption, Menus,
+    Message, ScreenFilter, Snapshot, World,
 };
 
 /// The game's memory, read only.
@@ -297,6 +297,7 @@ pub fn read(mem: &dyn Reader, update: u32, game_time: f64) -> Snapshot {
         messages: messages(&m),
         effects: effects(&m),
         battlers: battlers(&m),
+        look: look(&m),
     }
 }
 
@@ -532,6 +533,104 @@ fn world(m: &Mem<'_>) -> World {
     }
 }
 
+/// The scene's colour scale (`PhyreScene_setColorScale`), its context
+/// (`+0xcc`: `GlobalAmbientColor` `+0`, the fog `+0x10`..`+0x2c`) and
+/// `g_CharacterLighting` (docs/formats/render.md, "Lights and fog at run
+/// time": `+0xf0` the light set, its `+4` the `PLight` pointers (`+0` the
+/// colour, `+0x24` the level), `+0xf4 + 0x10 i` the directions, `+0x18c`
+/// the scene record (`+0xac` `CharacterAmbientLight`), `+0x1a8 + 0xc i`
+/// intensity, pitch, yaw, `+0x1cc` initialised).
+const SCENE_COLOUR_SCALE: u32 = 0xfc78;
+const SCENE_CONTEXT: u32 = 0xcc;
+const CONTEXT_FOG_COLOUR: u32 = 0x10;
+const CONTEXT_FOG_NEAR: u32 = 0x20;
+const CONTEXT_FOG_FAR: u32 = 0x24;
+const CONTEXT_FOG_CURVE: u32 = 0x28;
+const CONTEXT_FOG_LIMIT: u32 = 0x2c;
+const CHARACTER_LIGHTING: u32 = 0x00cc_ca84;
+const LIGHTING_SET: u32 = 0xf0;
+const LIGHTING_DIRECTION: u32 = 0xf4;
+const LIGHTING_RECORD: u32 = 0x18c;
+const RECORD_AMBIENT: u32 = 0xac;
+const LIGHTING_PITCH: u32 = 0x1ac;
+const LIGHTING_YAW: u32 = 0x1b0;
+const LIGHTING_READY: u32 = 0x1cc;
+const PLIGHT_LEVEL: u32 = 0x24;
+
+fn look(m: &Mem<'_>) -> Look {
+    let scene = m.u32(G_PHYRE_SCENE);
+    let context = if scene == 0 {
+        0
+    } else {
+        m.u32(scene.wrapping_add(SCENE_CONTEXT))
+    };
+    if context == 0
+        || !m.mapped::<0x30>(context)
+        || !m.mapped::<16>(scene.wrapping_add(SCENE_COLOUR_SCALE))
+    {
+        return Look::default();
+    }
+    let c = |o: u32| context.wrapping_add(o);
+    let cl = m.u32(CHARACTER_LIGHTING);
+    let ready = cl != 0 && m.u8(cl.wrapping_add(LIGHTING_READY)) != 0;
+    let record = if ready {
+        m.u32(cl.wrapping_add(LIGHTING_RECORD))
+    } else {
+        0
+    };
+    let set = if ready {
+        m.u32(cl.wrapping_add(LIGHTING_SET))
+    } else {
+        0
+    };
+    let table = if set == 0 {
+        0
+    } else {
+        m.u32(set.wrapping_add(4))
+    };
+    let lights = if table == 0 {
+        Vec::new()
+    } else {
+        (0..3u32)
+            .map(|i| {
+                let light = m.u32(table.wrapping_add(4 * i));
+                let at = |o: u32| cl.wrapping_add(o).wrapping_add(i * 0xc);
+                Light {
+                    direction: m.floats(cl.wrapping_add(LIGHTING_DIRECTION + 0x10 * i)),
+                    colour: if light == 0 {
+                        [0.0; 3]
+                    } else {
+                        m.floats(light)
+                    },
+                    level: if light == 0 {
+                        0.0
+                    } else {
+                        m.f32(light.wrapping_add(PLIGHT_LEVEL))
+                    },
+                    pitch: m.f32(at(LIGHTING_PITCH)),
+                    yaw: m.f32(at(LIGHTING_YAW)),
+                }
+            })
+            .collect()
+    };
+    Look {
+        valid: true,
+        colour_scale: m.floats(scene.wrapping_add(SCENE_COLOUR_SCALE)),
+        ambient: m.floats(context),
+        fog_colour: m.floats(c(CONTEXT_FOG_COLOUR)),
+        fog_near: m.f32(c(CONTEXT_FOG_NEAR)),
+        fog_far: m.f32(c(CONTEXT_FOG_FAR)),
+        fog_curve: m.f32(c(CONTEXT_FOG_CURVE)),
+        fog_limit: m.f32(c(CONTEXT_FOG_LIMIT)),
+        character_ambient: if record == 0 {
+            [0.0; 3]
+        } else {
+            m.floats(record.wrapping_add(RECORD_AMBIENT))
+        },
+        lights,
+    }
+}
+
 fn camera(m: &Mem<'_>) -> Camera {
     let scene = m.u32(G_PHYRE_SCENE);
     let pcamera = if scene == 0 {
@@ -657,6 +756,69 @@ mod tests {
             out.copy_from_slice(&tmp);
             true
         }
+    }
+
+    fn f(v: f32) -> [u8; 4] {
+        v.to_le_bytes()
+    }
+
+    #[test]
+    fn the_look_through_the_scene_and_the_lighting() {
+        // no scene: the default
+        assert_eq!(read(&Sparse(HashMap::new()), 0, 0.0).look, Look::default());
+        // a scene and its context, the lighting not initialised
+        let (scene, context, cl) = (0x0100_0000_u32, 0x0110_0000_u32, 0x0120_0000_u32);
+        let mut m = Sparse(HashMap::new());
+        m.put(G_PHYRE_SCENE, &scene.to_le_bytes());
+        m.put(scene + SCENE_CONTEXT, &context.to_le_bytes());
+        m.put(
+            scene + SCENE_COLOUR_SCALE,
+            &[f(0.5), f(0.6), f(0.7), f(1.0)].concat(),
+        );
+        m.put(context, &[0u8; 0x30]);
+        m.put(context + CONTEXT_FOG_NEAR, &f(62.0));
+        m.put(CHARACTER_LIGHTING, &cl.to_le_bytes());
+        m.put(cl + LIGHTING_READY, &[0]);
+        let l = read(&m, 0, 0.0).look;
+        assert!(l.valid);
+        assert_eq!(l.colour_scale, [0.5, 0.6, 0.7]);
+        assert!((l.fog_near - 62.0).abs() < f32::EPSILON);
+        assert_eq!(l.lights, [] as [Light; 0]);
+        assert_eq!(l.character_ambient, [0.0; 3]);
+        // initialised, with a light set whose second PLight is null
+        let (set, table, light, record) = (
+            0x0130_0000_u32,
+            0x0131_0000_u32,
+            0x0132_0000_u32,
+            0x0133_0000_u32,
+        );
+        m.put(cl + LIGHTING_READY, &[1]);
+        m.put(cl + LIGHTING_SET, &set.to_le_bytes());
+        m.put(set + 4, &table.to_le_bytes());
+        m.put(
+            table,
+            &[light.to_le_bytes(), [0; 4], light.to_le_bytes()].concat(),
+        );
+        m.put(light, &[f(0.2), f(0.3), f(0.4)].concat());
+        m.put(light + PLIGHT_LEVEL, &f(2.1));
+        m.put(cl + LIGHTING_RECORD, &record.to_le_bytes());
+        m.put(
+            record + RECORD_AMBIENT,
+            &[f(0.34), f(0.34), f(0.45)].concat(),
+        );
+        let l = read(&m, 0, 0.0).look;
+        assert_eq!(l.lights.len(), 3);
+        assert_eq!(l.lights[0].colour, [0.2, 0.3, 0.4]);
+        assert!((l.lights[0].level - 2.1).abs() < f32::EPSILON);
+        assert_eq!(l.lights[1].colour, [0.0; 3]);
+        assert!(l.lights[1].level.abs() < f32::EPSILON);
+        assert_eq!(l.character_ambient, [0.34, 0.34, 0.45]);
+        // a context pointer that is not mapped reads as nothing
+        let mut stale = Sparse(HashMap::new());
+        stale.put(G_PHYRE_SCENE, &scene.to_le_bytes());
+        stale.put(scene + SCENE_CONTEXT, &context.to_le_bytes());
+        stale.put(scene + SCENE_COLOUR_SCALE, &[0u8; 16]);
+        assert!(!read(&stale, 0, 0.0).look.valid);
     }
 
     #[test]
