@@ -233,6 +233,12 @@ version 1 had no distortion part and is refused):
 | 16 `n` | `colours` (`f32` r, g, b, a) |
 | 2 `m` | `indices` (`u16`) |
 
+`Frame::decode` checks the layout (magic, version, lengths), not the
+contents: an index past its vertex count, a draw's or the distortion's,
+decodes as it is. The capture never writes one (it refuses the
+distortion's indices of 81 or more); a frontend that reads blobs from
+elsewhere checks indices before drawing.
+
 **On Besaid** (developer save 7, map 70, `/map/bsil/bsil00/`; the probe
 below): 30 draws a frame (25 list entries), no events, none unresolved,
 348,080 bytes encoded (version 1; 351,456 in version 2 with the
