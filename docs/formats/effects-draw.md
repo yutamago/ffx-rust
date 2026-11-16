@@ -113,8 +113,9 @@ list count at the time of the event) is reached
 (`PhyreScene_processVFXDrawEvent` `0x00666e40`: 0 characters with the
 event camera, 1 copy the colour or depth buffer, 2 screen fade, 3
 PS2-lighting set-up `0x006e5a40`, 4 specular, 5 draw a character, 6 a
-z pre-pass). For magic 0x296 the geometry of instance (0x78, 0x5bc) is
-held back and drawn last. No frame here had an event.
+z pre-pass; their words: "Draw events" below). For magic 0x296 the
+geometry of instance (0x78, 0x5bc) is held back and drawn last, after the
+last event. No frame here had an event.
 
 A mesh instance draws one indexed draw per segment of its render data
 with indices (segment `+8` > 0), in segment order.
@@ -429,6 +430,83 @@ gd-ffx. What it adds to the census:
   table. The save sphere `f001`'s glow is six entries (two hemispheres,
   two sparkle quads with `bat_eff` textures, two discs), on the sphere.
 
+## Draw events (2026-11-16)
+
+A draw event is a 16-byte record in the scene's `PArray` `+0xfb54` (count
+`+0xfb54`, capacity `+0xfb58`, data `+0xfb5c`), with a count per kind at
+`+0xfb60 + 4 kind` (cleared by `PhyreScene_clearArrays_00659000` with
+the scene's other arrays). `+0` the kind, `+4` the place: the main list's
+count `+0xf8cc` when the event is added, plus the current sync path's offset
+(`+0xf910 + 4 [+0xf954]`) when one is open. `DrawMostVFX` draws the
+entries before the place, runs the event, and goes on: an event of place
+`p` runs after the draws of places `< p` and before those of place `p`.
+`+8` and `+0xc` (words 0 and 1) depend on the kind. Three functions add
+them: `PhyreScene_addVFXDrawEvent` (`0x00656940`, a record built by the
+caller), `PhyreScene_addChrDrawSituation` (`0x006564a0`, kind 0) and
+`PhyreScene_addCopyBufferEvent_006568a0` (kind 1). From the makers and
+`PhyreScene_processVFXDrawEvent` (`0x00666e40`, ported as
+`ffx_prender::h3_glue51`):
+
+| Kind | Makers | Word 0 | Word 1 | What the pass does |
+|---|---|---|---|---|
+| 0 | `graphicCharacterInsertDrawSituation` (`0x00639ff0`) → `addChrDrawSituation(scene, on)` | the layer, `(i8) on` | the maker's junk | with the scene camera (`+0xdc`) set, every character instance of `+0xfb50` (count `+0xfb48`) that is shown (`+0x14`) and of that layer (`(i8) +0x15`) drawn by `PhyreScene_vfxEventMeshPass_006673b0` (the camera's matrix `+0x34` put back after each), then `endScene` and the targets, viewport and scene back. The same call opens a sync path of the main list (`+0xf954` up). |
+| 1 | `graphicVFXAddCopyBufferEvent(a, b)` (`0x00644be0`), `…WithClear` (`0x00644c10`), `…WithClearRGB` (`0x00644c40`), `…WithRGB` (`0x00644c70`), all → `0x006568a0(a, b, clear, rgb)`; none while `g_GraphicSkipFrame` | `a \| b << 8 \| rgb << 16` | `clear` | skipped while the motion blur is on and `b` is 1. `endScene`; source by `a`: 1 pp `+0xa8`, 2 pp `+0x1232c`, else pp `+0x8c` (the colour); destination by `b`: 0 pp `+0x8c`, 2 pp `+0x1232c`, else pp `+0xa8`. With `rgb` (`+0xa`) `PostProcessManager_copyDepthBuffer` (pass `0x00ccc8ec`, `ColorScale` 1, 1, 1, 1), else `PostProcessManager_copyBuffer`. Then the targets back; with `clear` the scene begins cleared to 0 (`setClearColor(0)`, `beginScene(0xb)`). |
+| 2 | `graphicVFXAddScreenFadeEvent(r, g, b, a, alpha)` (`0x00644d40`; `op_flash_path3` among its callers) | the bytes R, G, B, A | `calculateVFXSP_AlphaFunction(alpha)` | `endScene`; the colour `bytes / 128` to the post-process's fade colour (`setColor4`), word 1 to its alpha mode `+0x1239c` unless the fade is locked (`+0x123a0`); `PostProcessManager_renderScreenFade` (`0x00697490`: mode 2 pass `0x00ccc96c`, 0x10 `0x00ccc97c`, else `0x00ccc95c`; VSP bits: 2 additive, 0x10 subtract, else the alpha blend); the targets back |
+| 3 | `Phyre_PS2LightingSetup_registerWithPointLightEffect` (`0x006e5c90`) | a character instance | junk | `PS2LightingSetup_apply(instance)` (`0x006e5a40`); nothing drawn |
+| 4 | `SpecularMapParamsManager_AddSpecularEvent` (`0x006c56f0`; not for magic 0x245, 0x295, 0x289, 0x242), from the specular set-ups `0x006c5b80`, `0x006c5c90`, `0x006c5e30`, `0x006c7090` | a character instance (the key of the manager's slot) | junk | `SpecularMapParamsManager_renderCorrespondSpecular(instance, renderer)` |
+| 5 | `graphicVFXAddDrawCharacterEvent(chr, flag)` (`0x00644ca0`) | a character instance | `flag` (a byte; the rest junk) | the instance shown (`graphicCharacterInstanceSetVisible`), drawn by `0x006673b0` (`flag`: the `TransparentClipY` pass twice; else `Opaque`, `Transparent`, `postTransparent`), `endScene`, hidden again unless it was shown, the targets back |
+| 6 | `graphicVFXAddDrawZPrePassEvent(chr)` (`0x00644cf0`) | a character instance | junk | each mesh instance of the character instance drawn with the `ZPrePass` pass (`0x00c16a74`) |
+
+A character instance (what kinds 3-6 name, `+0xfb50`'s entries,
+`graphicCharacterInstanceAddToPipeline`): `+0` its mesh instances' count
+(bit 31 a flag), `+4` their array, `+0x14` shown, `+0x15` the layer
+(signed), `+0x18` its `g_ChrArray` record (`Ch_GetId` reads its `+0`),
+`+0x1c` a callback `0x006673b0` calls first. The capture gives the record's
+slot (`vfx::Event::actor`; docs/state-api.md, "Effect draws").
+
+## The other lists live (2026-11-16)
+
+`ffx_host::vfx` reads the other lists at the same point as the main list
+(`DrawMostVFX`'s entry; the same updates fill them and
+`PhyreScene_render` draws them later in the same frame) and tags each
+draw with its pass (`vfx::Pass`): `RenderDTTVFX` right after the main
+pass and the DTT copy (not while the menu capture state is 2, which
+skips the post chain), `RenderVFXAfterPostProcess` after the
+post-processing, `DrawUI2DVFX` in the UI step (only while the scene or a
+movie fades, without the mesh instances named `[0x00ccb9e4]`; on maps
+0x163/0x164 in the late step instead, after the post-processing and
+before the screen fade and the after-post VFX), and `+0x3880`, which no pass draws.
+
+Probe runs (ffx-host's `vfx-probe`, headless, null device, virtual clock;
+battle field 34 formation 0, `kami00_00`: Larva and Gold Element; the
+`--drive` runs hold the monsters' HP at 99999 and press each command:
+Yuna summons, Lulu casts, Valefor uses his overdrive, the others attack):
+
+| Run | Frames | Events | Other lists |
+|---|---|---|---|
+| save 7 at the save sphere, 600 frames from the load (the map's fade-in) | 600 | none | none |
+| save 7, battle, auto-battle on | 3000 | kind 2: 46 frames | DTT: 710 frames, 6,640 draws |
+| save 7 (Tidus, Wakka attack), battle, driven | 4000 | kind 2: 46 frames | DTT: 1,047 frames, 9,994 draws |
+| save 51 (Lulu casts, Kimahri and Auron attack), battle, driven | 4000 | kind 2: 46 frames | DTT: 3,418 frames, 34,517 draws |
+| save 12 with the party Yuna, Tidus, Wakka (`g_SaveInParty` written), battle, driven: Valefor summoned, his overdrive | 6000 | kind 2: 46 frames; kinds 3 and 4: 176 frames (updates 1347-1522: two kind 3 and one kind 4 a frame) | DTT: 2,660 frames, 26,308 draws |
+
+No run had an after-post, UI 2D or `+0x3880` draw, none an unresolved
+entry.
+
+- **Kind 2, the battle's fade-in**: from the battle's first drawn frame,
+  46 frames of black (`words[0]` `0x80000000`: R, G, B 0, A 0x80, 1.0;
+  `words[1]` 0x200, the alpha blend), alpha 1.0 for 30 frames, then down
+  by 1/16 a frame to 0. Its place moves with the list (0 to 27).
+- **Kinds 3 and 4, Valefor's overdrive**: at place 5, all three name the
+  same character instance, actor slot 10, character id `0x3001` (kind 3,
+  an aeon: Valefor; the same in a second run of 1600 frames), in that
+  order: the PS2 point light applied twice, then the
+  specular pass of the same character.
+- **DTT**: every draw flags `0x1000`, texture `FrameBuffer` (the DTT
+  copy pp `+0xa8` sampled), 9 vertices and 24 indices a segment, keys in
+  several parts (`lo + 10000 i`). Which effect makes them and which
+  `vfxShader_fx.txt` line flag `0x1000` picks were not looked up.
+
 ## Gate
 
 The M4 census: every effect draw of the eight captured frames is traced:
@@ -458,11 +536,18 @@ the census itself on a synthetic frame.
    blend set by `ClassDynamicGeometry_setupMaterial` (`0x006a3b50`).
 3. **The VFX material constants** (`softParticle*`, `cameraFadeout*`,
    `zCrct`): who writes them and when.
-4. **The other lists**: no frame used `+0x3880` (no draw pass found for
-   it), the DTT, UI 2D or after-post lists; the field capture's
-   `vfxnzadditiveshadernt` draw after the UI comes from one of them. Field
-   and event effects and the spells with draw events (copy buffer, screen
-   fade, character draws) need captures of their own.
+4. **The other lists and the events not seen live**: the live capture
+   ("The other lists live") reached the DTT list and events of kinds 2, 3
+   and 4; no run reached `+0x3880` (no draw pass found for it), the UI 2D
+   or the after-post list, or events of kinds 0, 1, 5 and 6 (their words
+   are decoded from the code only). The field capture's
+   `vfxnzadditiveshadernt` draw after the UI comes from one of those
+   lists. Candidates: field fades and movies for UI 2D (its pass draws
+   only then), effects whose geometry has VSP bit 8 or a set
+   `0x00ccca58` for after-post, other summons and overdrives, the
+   aeons' entries and event scenes for kinds 0, 1, 5 and 6. The UI 2D
+   pass draws with the scene's second camera (`+0x500`), which the
+   capture does not read.
 5. **The op records**: name the op system's record layout (0x50 bytes,
    `FFX.exe` area after `g_Op3dListener`) and which `opp_*` function each
    record belongs to; the census stops at the record.
