@@ -670,6 +670,8 @@ fn texel(img: &Image, uv: [f32; 2], s: Option<&ffx_host::vfx::Sampler>) -> [u8; 
             let f = t.rem_euclid(2.0);
             if f > 1.0 { 2.0 - f } else { f }
         }
+        // after the flip: exact for wrap, mirror and clamp (symmetric), not
+        // for mirror-once, which the game's samplers never use
         Some(Address::MirrorOnce) => t.abs().min(1.0),
         _ => t.clamp(0.0, 1.0),
     };

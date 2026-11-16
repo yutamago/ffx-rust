@@ -181,8 +181,11 @@ they are, with no transform, frame offset or per-draw constant (an
 effect's animation frames are in the uvs the fills write). What a
 frontend does:
 
-1. **Orientation.** `v = 0` is the texture's first row *as the file
-   stores it*, which is the image's bottom row: the game uploads the
+1. **Orientation** (file textures, `.dds.phyre`; not the DTT's
+   `FrameBuffer`, a render target whose first row is the screen's top,
+   nor the `0x28` family, whose shaders were not decoded: their
+   convention is unverified). `v = 0` is the texture's first row *as the
+   file stores it*, which is the image's bottom row: the game uploads the
    stored rows without a flip and D3D samples the first row in memory at
    `v = 0`. On an upright image (top row first: `ffx_phyre`'s decoders,
    its DDS export, `ffx-import`'s PNGs) sample `(u, 1 - v)`
@@ -198,7 +201,9 @@ frontend does:
    border, 5 mirror once; outside 0..1 the uvs need it: Besaid's field
    effects run u 1.0..2.98, v -1.98..0.5 with wrap), `mip_lod_bias`,
    `max_anisotropy`, `border` (bytes, `/255`, for border). The
-   comparison and LOD range are D3D11's defaults. Mip levels: the
+   comparison function (`LESS_EQUAL` when `filter` has the comparison bit
+   `0x80`, else `NEVER`) and the LOD range (`-FLT_MAX .. FLT_MAX`) are
+   not encoded: the game sets them so. Mip levels: the
    texture's own chain (as the game uploads it, by texture quality;
    docs/scene-builder.md, "Per draw", the textures). `None` when it could
    not be read (no material or no `TextureSamplerState`): in the probe
@@ -307,7 +312,7 @@ the field's `0x80`; alpha 0 where the ripple is faded out) and `indices`
 
 **Encoding** (`Frame::encode`, `Frame::decode`; little-endian, version 5;
 versions 1 to 4 are refused: version 5 added the draw's sampler (20
-bytes a draw, after the blends; the rest as in version 4), version 4 the
+bytes a draw with one, 1 without, after the blends; the rest as in version 4), version 4 the
 draw's technique and blends, version 3 the event's `actor` and the
 draw's `pass`; the events, passes and the distortion part are as in
 version 3):

@@ -365,8 +365,10 @@ impl Address {
 /// The sampler a draw's texture is read with (`TextureSamplerState`, the
 /// pixel shader's `s0`): the material's `PSamplerState` described as
 /// `PSamplerStateD3D11::create` (`0x00595bf0`) makes its
-/// `D3D11_SAMPLER_DESC`. The comparison function, LOD range and the
-/// rest are D3D11's defaults (`NEVER`, 0 .. `FLOAT_MAX`).
+/// `D3D11_SAMPLER_DESC`. Not carried: the comparison function
+/// (`LESS_EQUAL` with the comparison bit `0x80` in [`Sampler::filter`],
+/// else `NEVER`) and the LOD range (`-FLT_MAX .. FLT_MAX`), which the game
+/// always sets so.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct Sampler {
     /// `Filter` (`D3D11_FILTER`): `0x15` trilinear (min, mag and mip
@@ -443,7 +445,9 @@ pub struct Draw {
     /// texture: the arrays are left uninitialised). The shaders sample them
     /// as they are with D3D's convention, `v = 0` the texture's first row
     /// as the file stores it, which is its bottom row: on an upright image
-    /// of the texture they sample [`upright_uv`]. Read with [`Draw::sampler`]
+    /// of a file texture they sample [`upright_uv`] (not for the DTT's
+    /// `FrameBuffer`, a render target, nor the undecoded `0x28` family:
+    /// unverified there). Read with [`Draw::sampler`]
     /// (wrapped or clamped outside 0..1).
     pub uvs: Vec<[f32; 2]>,
     /// Triangle-list indices into the vertices.
@@ -905,7 +909,8 @@ pub fn to_render(world: &[f32; 12], local: [f32; 3]) -> [f32; 3] {
 /// no constant, no second stream; docs/formats/effects-draw.md, "Texture
 /// coordinates"), with D3D's convention (`v = 0` the first row in memory),
 /// and the game uploads a texture's rows as the file stores them, bottom
-/// row first. So `v` counts up from the image's bottom. A frontend that
+/// row first. So `v` counts up from the image's bottom (file textures
+/// only: not the DTT's `FrameBuffer` render target). A frontend that
 /// uploads the stored rows instead (`Texture::pixels`, unflipped) uses the
 /// uv as it is.
 #[must_use]

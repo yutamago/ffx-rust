@@ -372,7 +372,10 @@ frame's uvs (the field's strips and the save sphere's orb scroll theirs
 every update; the sphere's sparkle quads keep one block, the same over
 updates 60-210).
 
-**`v` counts from the texture's bottom row.** The game uploads a
+**`v` counts from the texture's bottom row** (file textures; the DTT
+draws sample `FrameBuffer`, the frame copy at pp `+0xa8`, a render target
+whose first row is the screen's top, and the `0x28` family's shaders were
+not decoded: for those the convention is unverified). The game uploads a
 texture's rows as the file stores them, bottom row first, with no flip
 (docs/formats/scene.md, "Asset parity": `0x0058fc20`), and D3D11 samples
 the first row in memory at `v = 0`. `ffx_phyre`'s decoders, its DDS export
