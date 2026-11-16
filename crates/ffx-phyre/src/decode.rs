@@ -78,8 +78,22 @@ impl Texture {
     /// row first.
     #[must_use]
     pub fn to_rgba(&self) -> Vec<u8> {
+        self.face_rgba(0).unwrap_or_default()
+    }
+
+    /// Face `face`'s top mip level as RGBA8 rows, top row first: 0 for a 2D
+    /// texture, 0..6 for a cube map (the faces follow each other, each a
+    /// full mip chain, in D3D's order +x, -x, +y, -y, +z, -z); `None` past
+    /// the texture's faces.
+    #[must_use]
+    pub fn face_rgba(&self, face: usize) -> Option<Vec<u8>> {
+        if face >= self.kind.faces() {
+            return None;
+        }
         let (w, h) = (self.width as usize, self.height as usize);
-        let src = self.pixels();
+        let chain =
+            crate::texture::chain_size(self.format, self.width, self.height, self.mip_levels);
+        let src = self.pixels().get(face * chain..)?;
         let mut out = vec![0u8; w * h * 4];
         // Stored rows are bottom first; `y` counts from the bottom.
         let mut put = |x: usize, y: usize, px: [u8; 4]| {
@@ -142,7 +156,15 @@ impl Texture {
                 }
             }
         }
-        out
+        Some(out)
+    }
+
+    /// Face `face`'s top mip level as an upright RGBA PNG (see
+    /// [`Texture::face_rgba`]).
+    #[must_use]
+    pub fn face_png(&self, face: usize) -> Option<Vec<u8>> {
+        self.face_rgba(face)
+            .map(|px| png(self.width, self.height, &px))
     }
 
     /// The top mip level as an upright RGBA PNG.
