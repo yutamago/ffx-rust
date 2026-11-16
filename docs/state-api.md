@@ -134,7 +134,8 @@ draw the game's own shader result (docs/formats/render.md, "Scenery light
 levels", "Lights and fog at run time"):
 
 - `colour_scale`: `PhyreScene +0xfc78`, the `clrScaleFactor` that
-  `PhyreScene_setColorScale` gives every map material. The map shaders
+  `PhyreScene_setColorScale` last gave the map's materials (the tree
+  `+0x1198`; nothing while `+0x10d4` is 0). The map shaders
   multiply by it just before the tone curve `2.1 min(c, 0.4) + 1.08
   clamp(c, 0.4, 0.58) - 0.47`.
 - `ambient`, the fog (`fog_colour`, `fog_near`, `fog_far`, `fog_curve`,
@@ -143,8 +144,9 @@ levels", "Lights and fog at run time"):
 - `character_ambient` and `lights`: `g_CharacterLighting`'s
   `CharacterAmbientLight` and its three `PLight`s (direction, colour,
   level, the map's pitch and yaw). `PhyreChrLitShader` lights with
-  `ambient + character_ambient + sum colour x level x (dot(L, N) x 0.5 +
-  0.5)^2`.
+  `ambient + character_ambient + CharacterShadeColor x
+  CharacterShadeCoeff + sum colour x level x (dot(L, N) x 0.5 + 0.5)^2`;
+  the shade term is not in the snapshot.
 
 ## Save (API 8)
 
