@@ -1043,15 +1043,15 @@ mod tests {
         assert!((l.fog_near - 62.0).abs() < f32::EPSILON);
         assert_eq!(l.background, [0.3, 0.35, 0.5]);
         assert!(l.glow_gain.abs() < f32::EPSILON);
-        // the glow's four values (cdsp00's), each in its field
+        // four distinct glow values, each in its field
         m.put(
             context + CONTEXT_GLOW,
-            &[f(1.0), f(0.35), f(0.318), f(0.65)].concat(),
+            &[f(1.0), f(0.35), f(0.32), f(0.65)].concat(),
         );
         let l = read(&m, 0, 0.0).look;
         assert_eq!(
             [l.glow_full, l.glow_none, l.glow_gain, l.glow_spread],
-            [1.0, 0.35, 0.318, 0.65]
+            [1.0, 0.35, 0.32, 0.65]
         );
         assert_eq!(l.lights, [] as [Light; 0]);
         assert_eq!(l.character_ambient, [0.0; 3]);
