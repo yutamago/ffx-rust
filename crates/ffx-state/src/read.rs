@@ -640,6 +640,7 @@ const ABMAP_NODE: u32 = 0x28;
 const ABMAP_LINKS: u32 = 0xa808;
 const ABMAP_LINK: u32 = 0x14;
 const ABMAP_CURRENT: u32 = 0x115bc;
+const ABMAP_CURSOR: u32 = 0x112fc;
 /// At most this many nodes and links (the standard grid has 828 and 834).
 const MAX_GRID: u32 = 2048;
 
@@ -680,6 +681,7 @@ fn sphere_grid(m: &Mem<'_>) -> SphereGrid {
     SphereGrid {
         open: true,
         current: m.u8(g.wrapping_add(ABMAP_CURRENT)),
+        cursor: m.u16(g.wrapping_add(ABMAP_CURSOR)),
         nodes,
         links,
     }

@@ -418,6 +418,9 @@ api_struct! {
         /// The character the screen shows (`+0x115bc`,
         /// `TkMenuGetCurrentPlayer`).
         current: u8,
+        /// The node under the cursor (`+0x112fc`, a node index; its kind
+        /// names the help line, `AbmapSetHelpMessage`).
+        cursor: u16,
         /// The nodes (`+0x808`, 0x28 bytes each, the count `i16` at `+2`).
         nodes: Vec<GridNode>,
         /// The links between nodes (`+0xa808`, 0x14 bytes each, the count
@@ -767,8 +770,8 @@ mod tests {
         let look = 1 + 12 + 12 + 12 + 16 + 12 + 2;
         // the save (default: empty lists): valid, gil, time, five counts
         let save = 1 + 4 + 4 + 2 + 2 + 2 + 2 + 2 + 2;
-        // the sphere grid (closed): open, current, two list counts
-        let grid = 1 + 1 + 2 + 2;
+        // the sphere grid (closed): open, current, cursor, two list counts
+        let grid = 1 + 1 + 2 + 2 + 2;
         assert_eq!(
             b.len(),
             8 + 4
@@ -790,7 +793,7 @@ mod tests {
     }
 
     /// FNV-1a of `schema::text()` at [`API_VERSION`].
-    const PINNED: u64 = 0xa779_3317_f2f2_4d06;
+    const PINNED: u64 = 0x0dda_be76_5817_2f8c;
 
     /// A field change must raise [`API_VERSION`]: the schema's text is
     /// pinned to the version here.

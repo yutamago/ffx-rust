@@ -175,7 +175,8 @@ one of several meshes at a time (layers), e.g. Besaid's birds (objects
 ## Sphere grid (API 8)
 
 `sphere_grid` is the sphere grid screen's data while it is loaded
-(`*g_Abmap`, docs/formats/pc-ui.md): the character shown, the nodes (place,
+(`*g_Abmap`, docs/formats/pc-ui.md): the character shown, the node under
+the cursor, the nodes (place,
 kind, flags) and the links between them. The standard grid has 828 nodes
 and 834 links. The node's `+0x20` flags (a bit per character from bit 8)
 are read as who activated it; that meaning is observed, not checked in the
@@ -342,6 +343,7 @@ struct MenuWindow
 struct SphereGrid
   open: bool
   current: u8
+  cursor: u16
   nodes: list<GridNode>
   links: list<GridLink>
 struct GridNode
