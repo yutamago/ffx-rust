@@ -1043,6 +1043,16 @@ mod tests {
         assert!((l.fog_near - 62.0).abs() < f32::EPSILON);
         assert_eq!(l.background, [0.3, 0.35, 0.5]);
         assert!(l.glow_gain.abs() < f32::EPSILON);
+        // the glow's four values (cdsp00's), each in its field
+        m.put(
+            context + CONTEXT_GLOW,
+            &[f(1.0), f(0.35), f(0.318), f(0.65)].concat(),
+        );
+        let l = read(&m, 0, 0.0).look;
+        assert_eq!(
+            [l.glow_full, l.glow_none, l.glow_gain, l.glow_spread],
+            [1.0, 0.35, 0.318, 0.65]
+        );
         assert_eq!(l.lights, [] as [Light; 0]);
         assert_eq!(l.character_ambient, [0.0; 3]);
         // initialised, with a light set whose second PLight is null
@@ -1073,6 +1083,13 @@ mod tests {
         assert_eq!(l.lights[1].colour, [0.0; 3]);
         assert!(l.lights[1].level.abs() < f32::EPSILON);
         assert_eq!(l.character_ambient, [0.34, 0.34, 0.45]);
+        // the context mapped only to +0x3c (no glow range): nothing
+        let mut short = Sparse(HashMap::new());
+        short.put(G_PHYRE_SCENE, &scene.to_le_bytes());
+        short.put(scene + SCENE_CONTEXT, &context.to_le_bytes());
+        short.put(scene + SCENE_COLOUR_SCALE, &[0u8; 16]);
+        short.put(context, &[0u8; 0x3c]);
+        assert_eq!(read(&short, 0, 0.0).look, Look::default());
         // a context pointer that is not mapped reads as nothing
         let mut stale = Sparse(HashMap::new());
         stale.put(G_PHYRE_SCENE, &scene.to_le_bytes());

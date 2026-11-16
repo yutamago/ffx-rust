@@ -604,7 +604,9 @@ api_struct! {
         /// The glow pass (docs/formats/postfx.md, "Glow map", "Glow"), from
         /// the map's `GlobalCamera`: `FullGlowThreshold` (context `+0x80`),
         /// `NoGlowThreshold` (`+0x84`, at least 0.35), `GlowGain` (`+0x88`)
-        /// and the spread (`+0x8c`).
+        /// and the spread (`+0x8c`). Without a `GlobalCamera`, and on map
+        /// 0x199 (0x12ea and 0x1733 while `getScenerioFlag` is 0): 1, 1, 0,
+        /// 0 (docs/formats/postfx.md, "Where the constants come from").
         glow_full: f32,
         glow_none: f32,
         glow_gain: f32,
