@@ -56,10 +56,10 @@ pub const LAST_DRAWN_MAGIC: u32 = 0x296;
 pub const LAST_DRAWN_KEY: u64 = (0x5bc << 32) | 0x78;
 /// The encoding's first four bytes ([`Frame::encode`]).
 pub const MAGIC: [u8; 4] = *b"FXDR";
-/// The encoding's version (4: draws carry their [`Technique`] and a
-/// [`Blend`] per shader pass; 3 added the draw's [`Pass`] and the event's
-/// actor slot).
-pub const VERSION: u16 = 4;
+/// The encoding's version (5: draws carry their texture's [`Sampler`]; 4
+/// added the draw's [`Technique`] and a [`Blend`] per shader pass, 3 the
+/// draw's [`Pass`] and the event's actor slot).
+pub const VERSION: u16 = 5;
 /// The render pass every VFX list is drawn with (`renderer +0x48`):
 /// `"Transparent"` (`DrawMostVFX`, `RenderDTTVFX`,
 /// `RenderVFXAfterPostProcess` and `DrawUI2DVFX` all set it).
@@ -76,6 +76,16 @@ const PASS_BLEND_DESC: u32 = 0x78;
 const SHADER_PASS_SIZE: u32 = 0x254;
 /// At most this many shader passes are read for a draw.
 const SHADER_PASSES_MAX: u32 = 8;
+/// A shader parameter's type for a sampler state (`PShaderParameterDefinition`
+/// `+2`; docs/formats/phyre.md, "Materials").
+const PARAM_SAMPLER_STATE: u8 = 0x47;
+/// The parameter the VFX pixel shaders sample the texture with (`s0`).
+const TEXTURE_SAMPLER_STATE: &str = "TextureSamplerState";
+/// Bounds on the effect's tweakable parameter definitions read.
+const PARAMETERS_MAX: u32 = 256;
+/// `PRenderer`'s global maximum anisotropy (`f32`), which
+/// `PSamplerStateD3D11::create` (`0x00595bf0`) applies over 1.
+const MAX_ANISOTROPY: u32 = 0x00c2_5370;
 /// `Distortion_GetInstance`'s instance pointer (`0x006c2290`).
 pub const DISTORTION: u32 = 0x00cd_eb88;
 /// The distortion grid: 9 x 9 vertices (`0x006c2700`), 8 x 8 quads of two
@@ -308,6 +318,76 @@ pub struct Blend {
     pub write_mask: u8,
 }
 
+/// A texture address mode: D3D11's `D3D11_TEXTURE_ADDRESS_MODE` numbers.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub enum Address {
+    /// Repeats the texture (`u` and `u + 1` sample the same texel).
+    #[default]
+    Wrap = 1,
+    /// Repeats it mirrored every other time.
+    Mirror = 2,
+    /// Clamps to the edge texels (0..1).
+    Clamp = 3,
+    /// Outside 0..1 the border colour ([`Sampler::border`]).
+    Border = 4,
+    /// Mirrored once about 0, then clamped.
+    MirrorOnce = 5,
+}
+
+impl Address {
+    /// The mode of D3D11's number.
+    #[must_use]
+    pub fn from_u8(v: u8) -> Option<Self> {
+        Some(match v {
+            1 => Self::Wrap,
+            2 => Self::Mirror,
+            3 => Self::Clamp,
+            4 => Self::Border,
+            5 => Self::MirrorOnce,
+            _ => return None,
+        })
+    }
+
+    /// The mode of a `PSamplerState` wrap byte, as `0x0058ab10` maps it: 1
+    /// wrap, 3 border, 4 mirror, anything else clamp.
+    #[must_use]
+    pub fn from_phyre(v: u8) -> Self {
+        match v {
+            1 => Self::Wrap,
+            3 => Self::Border,
+            4 => Self::Mirror,
+            _ => Self::Clamp,
+        }
+    }
+}
+
+/// The sampler a draw's texture is read with (`TextureSamplerState`, the
+/// pixel shader's `s0`): the material's `PSamplerState` described as
+/// `PSamplerStateD3D11::create` (`0x00595bf0`) makes its
+/// `D3D11_SAMPLER_DESC`. Not carried: the comparison function
+/// (`LESS_EQUAL` with the comparison bit `0x80` in [`Sampler::filter`],
+/// else `NEVER`) and the LOD range (`-FLT_MAX .. FLT_MAX`), which the game
+/// always sets so.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct Sampler {
+    /// `Filter` (`D3D11_FILTER`): `0x15` trilinear (min, mag and mip
+    /// linear), `0x55` anisotropic (the renderer's maximum anisotropy over
+    /// 1), …; from the min filter byte `+0`, the mag filter byte `+1` and
+    /// the comparison bit 6 of `+0x1c` (`0x0058aa10`).
+    pub filter: u32,
+    /// `AddressU`, `AddressV`, `AddressW` (the wrap bytes `+2..+4`).
+    pub address: [Address; 3],
+    /// `MipLODBias` (`+8`).
+    pub mip_lod_bias: f32,
+    /// `MaxAnisotropy`: `+0xc` truncated, or the renderer's maximum's
+    /// integer part when that is over 1.
+    pub max_anisotropy: u32,
+    /// `BorderColor` as bytes (R, G, B, A; the description divides each by
+    /// 255), used by [`Address::Border`].
+    pub border: [u8; 4],
+}
+
 /// One indexed draw: one segment of one list entry's geometry.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Draw {
@@ -342,6 +422,10 @@ pub struct Draw {
     /// segment once per pass, each with its blend (one pass for every VFX
     /// shader but the DTT one, which has two). Empty with no `technique`.
     pub blends: Vec<Blend>,
+    /// The sampler the pixel shader reads the texture with (the material's
+    /// `TextureSamplerState`); `None` when unreadable (no material, no
+    /// sampler state parameter, as on the untextured families).
+    pub sampler: Option<Sampler>,
     /// The mesh instance's world matrix (`*(mesh instance +4)`), 12 floats
     /// laid out as `ffx_state::Camera::world`:
     /// `[Y.x Y.y Y.z X.x | Z.x Z.y Z.z X.y | P.x P.y P.z X.z]` (axes X, Y,
@@ -358,7 +442,13 @@ pub struct Draw {
     /// `0x80`, which the VFX shaders double). As many as positions.
     pub colours: Vec<[f32; 4]>,
     /// Texture coordinates; as many as positions (not meaningful without a
-    /// texture: the arrays are left uninitialised).
+    /// texture: the arrays are left uninitialised). The shaders sample them
+    /// as they are with D3D's convention, `v = 0` the texture's first row
+    /// as the file stores it, which is its bottom row: on an upright image
+    /// of a file texture they sample [`upright_uv`] (not for the DTT's
+    /// `FrameBuffer`, a render target, nor the undecoded `0x28` family:
+    /// unverified there). Read with [`Draw::sampler`]
+    /// (wrapped or clamped outside 0..1).
     pub uvs: Vec<[f32; 2]>,
     /// Triangle-list indices into the vertices.
     pub indices: Vec<u16>,
@@ -811,6 +901,23 @@ pub fn to_render(world: &[f32; 12], local: [f32; 3]) -> [f32; 3] {
     })
 }
 
+/// Where a captured uv ([`Draw::uvs`]) samples an upright image of the
+/// draw's texture (top row first: what `ffx_phyre`'s decoders, its DDS
+/// export and `ffx-import`'s PNGs hold): `(u, 1 - v)`.
+///
+/// The VFX shaders sample `TEXCOORD0` as the arrays hold it (no transform,
+/// no constant, no second stream; docs/formats/effects-draw.md, "Texture
+/// coordinates"), with D3D's convention (`v = 0` the first row in memory),
+/// and the game uploads a texture's rows as the file stores them, bottom
+/// row first. So `v` counts up from the image's bottom (file textures
+/// only: not the DTT's `FrameBuffer` render target). A frontend that
+/// uploads the stored rows instead (`Texture::pixels`, unflipped) uses the
+/// uv as it is.
+#[must_use]
+pub fn upright_uv(uv: [f32; 2]) -> [f32; 2] {
+    [uv[0], 1.0 - uv[1]]
+}
+
 /// The draws of one list entry: each segment with indices (`+8` > 0) of
 /// its geometry's render data (`+0x24`: `+0x90` count, `+0x94` segments of
 /// `0x6c` bytes), with the segment's own arrays (`+4` vertices, `+8`
@@ -845,6 +952,7 @@ fn entry_draws(m: &Reader, pass: Pass, place: u32, mi: u32, found: Found, out: &
             .as_ref()
             .and_then(|x| x.blends(m, i))
             .map_or((None, Vec::new()), |(t, b)| (Some(t), b));
+        let sampler = materials.as_ref().and_then(|x| x.sampler(m, i));
         let vertices = m.u32(s.wrapping_add(4)).unwrap_or(0).min(VERTICES_MAX);
         let positions: Vec<[f32; 3]> = m
             .f32s::<3>(m.u32(s.wrapping_add(0xc)).unwrap_or(0), vertices)
@@ -866,6 +974,7 @@ fn entry_draws(m: &Reader, pass: Pass, place: u32, mi: u32, found: Found, out: &
             segment: u16::try_from(i).unwrap_or(u16::MAX),
             technique,
             blends,
+            sampler,
             world,
             texture: m
                 .ptr(s.wrapping_add(0x20))
@@ -924,15 +1033,7 @@ impl Materials {
     /// after it), each drawn with a blend state made from its
     /// `D3D11_BLEND_DESC`.
     fn blends(&self, m: &Reader, i: u32) -> Option<(Technique, Vec<Blend>)> {
-        if i >= self.count {
-            return None;
-        }
-        let seg = self.segments.wrapping_add(0x6c * i);
-        let index = m.u32(seg)?;
-        if index >= 0x1_0000 {
-            return None;
-        }
-        let material = m.ptr(self.list.wrapping_add(4 * index))?;
+        let material = self.material(m, i)?;
         let effect = m.ptr(material)?;
         let (pass, technique) = if m.u32(material.wrapping_add(8)) == Some(PASS_TRANSPARENT) {
             let to = m.u32(material.wrapping_add(0xc))?;
@@ -977,6 +1078,94 @@ impl Materials {
             .collect::<Option<Vec<_>>>()?;
         Some((technique, blends))
     }
+}
+
+impl Materials {
+    /// Segment `i`'s material (`list[segment +0]`).
+    fn material(&self, m: &Reader, i: u32) -> Option<u32> {
+        if i >= self.count {
+            return None;
+        }
+        let index = m.u32(self.segments.wrapping_add(0x6c * i))?;
+        if index >= 0x1_0000 {
+            return None;
+        }
+        m.ptr(self.list.wrapping_add(4 * index))
+    }
+
+    /// The sampler of segment `i`'s texture: the tweakable definition
+    /// [`TEXTURE_SAMPLER_STATE`] of the material's effect (`+0x20` count,
+    /// `+0x24` 16-byte definitions: `+2` the type, 0x47 for a sampler state,
+    /// `+4` the name with bit 0 a flag, `+8` the `u16` offset in the
+    /// parameter buffer), whose slot in the material's parameter buffer
+    /// (`+4`; `{0x47, 0, state, 0}`) holds the `PSamplerState` (`+8`);
+    /// `PShaderProgramBindingD3D11::setTextureParameters` (`0x0059b3d0`)
+    /// binds the state's D3D11 object (`+0x20`) to the pixel shader's `s0`.
+    /// The VFX effects also declare `GlobalSamplerState`,
+    /// `NormalMapSamplerState` and `ZBufferSamplerState`, which their pixel
+    /// shaders do not sample the texture with. Then its description
+    /// ([`sampler_desc`]).
+    fn sampler(&self, m: &Reader, i: u32) -> Option<Sampler> {
+        let material = self.material(m, i)?;
+        let effect = m.ptr(material)?;
+        let buffer = m.ptr(material.wrapping_add(4))?;
+        let n = m.u32(effect.wrapping_add(0x20))? & 0x7fff_ffff;
+        let defs = m.ptr(effect.wrapping_add(0x24))?;
+        for k in 0..n.min(PARAMETERS_MAX) {
+            let def = m.bytes(defs.wrapping_add(16 * k), 16)?;
+            if def[2] != PARAM_SAMPLER_STATE {
+                continue;
+            }
+            let name = u32::from_le_bytes([def[4], def[5], def[6], def[7]]);
+            if m.c_str(name & !1).as_deref() != Some(TEXTURE_SAMPLER_STATE) {
+                continue;
+            }
+            let slot = buffer.wrapping_add(u32::from(u16::from_le_bytes([def[8], def[9]])));
+            return sampler_desc(m, m.ptr(slot.wrapping_add(8))?);
+        }
+        None
+    }
+}
+
+/// A `PSamplerState`'s description as `PSamplerStateD3D11::create`
+/// (`0x00595bf0`, `ffx_prender::h2_more9`) makes it: the filter by
+/// `0x0058aa10` (min filter `+0`: 0 and 2 point, 1 and 3 linear, 4 point
+/// with linear mips, 5 linear with linear mips; mag filter `+1` non-zero
+/// linear; [`MAX_ANISOTROPY`] over 1 anisotropic; the comparison bit 6 of
+/// `+0x1c` adds `0x80`), the wrap bytes `+2..+4` ([`Address::from_phyre`]),
+/// the bias `+8`, the anisotropy `+0xc`, the border bytes `+0x10..+0x13`.
+fn sampler_desc(m: &Reader, state: u32) -> Option<Sampler> {
+    let b = m.bytes(state, 0x20)?;
+    let word = |k: usize| u32::from_le_bytes([b[k], b[k + 1], b[k + 2], b[k + 3]]);
+    let mag = 4 * u32::from(b[1] != 0);
+    let mut filter = match b[0] {
+        0 | 2 => mag,
+        1 | 3 => 0x10 + mag,
+        4 => 1 + mag,
+        5 => 0x11 + mag,
+        _ => 0,
+    };
+    let max = f32::from_bits(m.u32(MAX_ANISOTROPY).unwrap_or(0));
+    if max > 1.0 {
+        filter = 0x55;
+    }
+    if (word(0x1c) >> 6) & 1 != 0 {
+        filter |= 0x80;
+    }
+    let aniso = if max > 1.0 {
+        max
+    } else {
+        f32::from_bits(word(0xc))
+    };
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // truncation, as `_ftol2`
+    let max_anisotropy = aniso as u32;
+    Some(Sampler {
+        filter,
+        address: [2, 3, 4].map(|k| Address::from_phyre(b[k])),
+        mip_lod_bias: f32::from_bits(word(8)),
+        max_anisotropy,
+        border: [b[0x10], b[0x11], b[0x12], b[0x13]],
+    })
 }
 
 /// The blend of the shader pass state at `state` (its `D3D11_BLEND_DESC`:
@@ -1308,6 +1497,7 @@ impl Frame {
             o.u8(u8::from(d.pooled));
             o.u8(d.pass as u8);
             put_blends(&mut o, d.technique, &d.blends);
+            put_sampler(&mut o, d.sampler.as_ref());
             for &w in &d.world {
                 o.f32(w);
             }
@@ -1399,46 +1589,7 @@ impl Frame {
         }
         let mut draws = Vec::with_capacity(n_draws.min(LIST_MAX as usize));
         for _ in 0..n_draws {
-            let place = i.u32()?;
-            let key = i.u64()?;
-            let geometry = i.u32()?;
-            let flags = i.u32()?;
-            let segment = i.u16()?;
-            let pooled = i.u8()? != 0;
-            let pass = Pass::from_u8(i.u8()?)?;
-            let (technique, blends) = take_blends(&mut i)?;
-            let mut world = [0.0; 12];
-            for w in &mut world {
-                *w = i.f32()?;
-            }
-            let len = usize::from(i.u16()?);
-            let texture = String::from_utf8_lossy(i.take(len)?).into_owned();
-            let n = i.u32()? as usize;
-            let m = i.u32()? as usize;
-            let positions = i.f32s::<3>(n)?;
-            let colours = i.f32s::<4>(n)?;
-            let uvs = i.f32s::<2>(n)?;
-            let mut indices = Vec::with_capacity(m.min(i.0.len() / 2));
-            for _ in 0..m {
-                indices.push(i.u16()?);
-            }
-            draws.push(Draw {
-                pass,
-                place,
-                key,
-                geometry,
-                flags,
-                pooled,
-                segment,
-                technique,
-                blends,
-                world,
-                texture,
-                positions,
-                colours,
-                uvs,
-                indices,
-            });
+            draws.push(take_draw(&mut i)?);
         }
         let flags = i.u32()?;
         let blur = i.f32()?;
@@ -1475,6 +1626,98 @@ impl Frame {
             distortion,
         })
     }
+}
+
+/// One draw of [`Frame::encode`]'s bytes back.
+fn take_draw(i: &mut In) -> Option<Draw> {
+    let place = i.u32()?;
+    let key = i.u64()?;
+    let geometry = i.u32()?;
+    let flags = i.u32()?;
+    let segment = i.u16()?;
+    let pooled = i.u8()? != 0;
+    let pass = Pass::from_u8(i.u8()?)?;
+    let (technique, blends) = take_blends(i)?;
+    let sampler = take_sampler(i)?;
+    let mut world = [0.0; 12];
+    for w in &mut world {
+        *w = i.f32()?;
+    }
+    let len = usize::from(i.u16()?);
+    let texture = String::from_utf8_lossy(i.take(len)?).into_owned();
+    let n = i.u32()? as usize;
+    let m = i.u32()? as usize;
+    let positions = i.f32s::<3>(n)?;
+    let colours = i.f32s::<4>(n)?;
+    let uvs = i.f32s::<2>(n)?;
+    let mut indices = Vec::with_capacity(m.min(i.0.len() / 2));
+    for _ in 0..m {
+        indices.push(i.u16()?);
+    }
+    Some(Draw {
+        pass,
+        place,
+        key,
+        geometry,
+        flags,
+        pooled,
+        segment,
+        technique,
+        blends,
+        sampler,
+        world,
+        texture,
+        positions,
+        colours,
+        uvs,
+        indices,
+    })
+}
+
+/// A draw's sampler ([`Frame::encode`]): 0, or 1 and the address modes U,
+/// V, W (a byte each), the filter, the bias (`f32`), the maximum
+/// anisotropy and the border bytes.
+fn put_sampler(o: &mut Out, s: Option<&Sampler>) {
+    let Some(s) = s else {
+        o.u8(0);
+        return;
+    };
+    o.u8(1);
+    for a in s.address {
+        o.u8(a as u8);
+    }
+    o.u32(s.filter);
+    o.f32(s.mip_lod_bias);
+    o.u32(s.max_anisotropy);
+    o.0.extend_from_slice(&s.border);
+}
+
+/// [`put_sampler`]'s bytes back (the outer `None` when malformed: another
+/// flag, an address mode outside D3D11's).
+#[allow(clippy::option_option)] // cut short or bad vs. no sampler
+fn take_sampler(i: &mut In) -> Option<Option<Sampler>> {
+    match i.u8()? {
+        0 => return Some(None),
+        1 => {}
+        _ => return None,
+    }
+    let a = i.take(3)?;
+    let address = [
+        Address::from_u8(a[0])?,
+        Address::from_u8(a[1])?,
+        Address::from_u8(a[2])?,
+    ];
+    let filter = i.u32()?;
+    let mip_lod_bias = i.f32()?;
+    let max_anisotropy = i.u32()?;
+    let b = i.take(4)?;
+    Some(Some(Sampler {
+        filter,
+        address,
+        mip_lod_bias,
+        max_anisotropy,
+        border: [b[0], b[1], b[2], b[3]],
+    }))
 }
 
 /// A draw's technique and blends ([`Frame::encode`]): the technique (0
@@ -1554,6 +1797,13 @@ mod tests {
             segment: 1,
             technique: Some(Technique::OptimizedTrans),
             blends: vec![ADDITIVE],
+            sampler: Some(Sampler {
+                filter: 0x15,
+                address: [Address::Wrap, Address::Clamp, Address::MirrorOnce],
+                mip_lod_bias: -0.25,
+                max_anisotropy: 1,
+                border: [0, 0x80, 0xff, 7],
+            }),
             world: [0.5, 0.0, 0.0, 0.0, 0.0, 0.5, 0.0, 0.5, 309.7, 14.9, -476.9, 0.0],
             texture: "../../../FFX_Data/GameData/PS3Data/map/bsil/bsil00/fp/tex/D3D11/14336_19_0_0_128_128.dds.phyre".into(),
             positions: vec![[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [7.0, 8.0, 9.0]],
@@ -1561,6 +1811,17 @@ mod tests {
             uvs: vec![[0.0, 1.0], [1.0, 1.0], [0.5, 0.0]],
             indices: vec![0, 1, 2],
         }
+    }
+
+    /// The save sphere's sparkle block at Besaid: `v` 0.4385..0.499 counts
+    /// up from the upright image's bottom (the game data side of this is
+    /// `tests/vfx_uv.rs`).
+    #[test]
+    fn upright_uv_counts_v_from_the_bottom() {
+        assert_eq!(upright_uv([0.25, 0.0]), [0.25, 1.0]);
+        assert_eq!(upright_uv([0.25, 1.0]), [0.25, 0.0]);
+        assert_eq!(upright_uv([0.0039, 0.4385]), [0.0039, 1.0 - 0.4385]);
+        assert_eq!(upright_uv(upright_uv([0.375, 0.625])), [0.375, 0.625]);
     }
 
     #[test]
@@ -1582,7 +1843,18 @@ mod tests {
                 Draw {
                     technique: None,
                     blends: Vec::new(),
+                    sampler: None,
                     ..draw(3)
+                },
+                Draw {
+                    sampler: Some(Sampler {
+                        filter: 0xd5,
+                        address: [Address::Border, Address::Mirror, Address::Clamp],
+                        mip_lod_bias: 0.0,
+                        max_anisotropy: 16,
+                        border: [1, 2, 3, 4],
+                    }),
+                    ..draw(5)
                 },
                 Draw {
                     technique: Some(Technique::Other),
@@ -1642,14 +1914,14 @@ mod tests {
         };
         let b = f.encode();
         // header 24, event 20, draw head 4+8+4+4+2+1+1 = 24, technique and
-        // pass count 2, one pass 8, world 48, name 2 + its bytes, counts 8,
-        // arrays 3 * (12 + 16 + 8) + 3 * 2, no distortion 16
+        // pass count 2, one pass 8, sampler 20, world 48, name 2 + its
+        // bytes, counts 8, arrays 3 * (12 + 16 + 8) + 3 * 2, no distortion 16
         let name = draw(19).texture.len();
         assert_eq!(
             b.len(),
-            24 + 20 + 24 + 2 + 8 + 48 + 2 + name + 8 + 3 * 36 + 6 + 16
+            24 + 20 + 24 + 2 + 8 + 20 + 48 + 2 + name + 8 + 3 * 36 + 6 + 16
         );
-        assert_eq!(&b[4..6], &[4, 0], "version 4");
+        assert_eq!(&b[4..6], &[5, 0], "version 5");
         assert_eq!(&b[b.len() - 16..], &[0; 16]);
         let word = |o: usize| u32::from_le_bytes([b[o], b[o + 1], b[o + 2], b[o + 3]]);
         assert_eq!(word(8), 7);
@@ -1671,19 +1943,27 @@ mod tests {
         // the technique, the pass count, each pass: enabled, src, dest, op,
         // alpha's three, the write mask (D3D11's numbers); the world after
         assert_eq!(&b[d + 24..d + 34], &[2, 1, 1, 5, 2, 1, 2, 1, 1, 15]);
-        assert_eq!(&b[d + 34..d + 38], &0.5f32.to_le_bytes());
+        // the sampler: 1, the address modes U, V, W, the filter, the bias,
+        // the maximum anisotropy, the border bytes; the world after
+        assert_eq!(&b[d + 34..d + 38], &[1, 1, 3, 5]);
+        assert_eq!(word(d + 38), 0x15);
+        assert_eq!(&b[d + 42..d + 46], &(-0.25f32).to_le_bytes());
+        assert_eq!(word(d + 46), 1);
+        assert_eq!(&b[d + 50..d + 54], &[0, 0x80, 0xff, 7]);
+        assert_eq!(&b[d + 54..d + 58], &0.5f32.to_le_bytes());
         // none read: 0, 0 and no passes
         let unknown = Frame {
             draws: vec![Draw {
                 technique: None,
                 blends: Vec::new(),
+                sampler: None,
                 ..draw(19)
             }],
             ..Frame::default()
         }
         .encode();
-        assert_eq!(&unknown[24 + 24..24 + 26], &[0, 0]);
-        assert_eq!(&unknown[24 + 26..24 + 30], &0.5f32.to_le_bytes());
+        assert_eq!(&unknown[24 + 24..24 + 27], &[0, 0, 0]);
+        assert_eq!(&unknown[24 + 27..24 + 31], &0.5f32.to_le_bytes());
         // an event without an actor: -1
         let none = Frame {
             events: vec![Event::default()],
@@ -2093,6 +2373,82 @@ mod tests {
     }
 
     #[test]
+    fn the_sampler_is_the_material_s_texture_sampler_state() {
+        let mut f = Fixture::new();
+        let effect = f.effect(1);
+        let mi = f.instance(0xa);
+        f.materials(mi, 2, effect, &[0, 0]);
+        // the effect's definitions: GlobalSamplerState (slot 0x60, empty)
+        // first, then TextureSamplerState (slot 0x10), a texture between
+        let names = f.alloc(64);
+        f.arena.write_bytes(names, b"GlobalSamplerState\0");
+        f.arena.write_bytes(names + 32, b"TextureSamplerState\0");
+        let defs = f.alloc(48);
+        for (k, (kind, name, offset)) in [
+            (0x47u32, names, 0x60u32),
+            (0x42, 0, 0x20),
+            (0x47, names + 32, 0x10),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let d = defs + 16 * u32::try_from(k).unwrap();
+            f.put(d, 0x3400_0000 | kind << 16);
+            f.put(d + 4, name | 1); // bit 0: a flag
+            f.put(d + 8, 0x0010_0000 | offset);
+        }
+        f.put(effect + 0x20, 0x8000_0003);
+        f.put(effect + 0x24, defs);
+        // segment 0 draws material 1, segment 1 material 0
+        let contexts = f.arena_u32(mi + 0x10);
+        let list = f.arena_u32(contexts + 4);
+        for (index, wrap, min) in [(0u32, 1u8, 5u8), (1, 2, 1)] {
+            let state = f.alloc(0x24);
+            f.arena.write_bytes(state, &[min, 1, wrap, wrap, 4]);
+            f.put(state + 8, (-0.5f32).to_bits());
+            f.put(state + 0xc, 1.0f32.to_bits());
+            f.arena.write_bytes(state + 0x10, &[1, 2, 3, 4]);
+            let buffer = f.alloc(0xb0);
+            f.put(buffer, 0xb0);
+            f.put(buffer + 0x10, 0x47);
+            f.put(buffer + 0x18, state);
+            f.put(f.arena_u32(list + 4 * index) + 4, buffer);
+        }
+        f.table();
+        f.put(f.scene + 0x38cc, mi);
+        f.put(f.scene + 0xf8cc, 1);
+        let fr = f.frame();
+        let want = |address: [Address; 3], filter: u32| {
+            Some(Sampler {
+                filter,
+                address,
+                mip_lod_bias: -0.5,
+                max_anisotropy: 1,
+                border: [1, 2, 3, 4],
+            })
+        };
+        let (clamp, wrap, mirror) = (Address::Clamp, Address::Wrap, Address::Mirror);
+        let got: Vec<_> = fr.draws.iter().map(|d| d.sampler).collect();
+        // the wrap bytes 1, 2 (clamp), 4 (mirror); the filters (min 1
+        // linear, mag linear) 0x14, (min 5 linear with linear mips) 0x15
+        assert_eq!(
+            got,
+            [
+                want([clamp, clamp, mirror], 0x14),
+                want([wrap, wrap, mirror], 0x15)
+            ]
+        );
+        // the renderer's anisotropy over 1: anisotropic, its integer part
+        f.arena
+            .map(MAX_ANISOTROPY & !0xfff, 0x1000, "renderer globals")
+            .unwrap();
+        f.put(MAX_ANISOTROPY, 4.5f32.to_bits());
+        let fr = f.frame();
+        let s = fr.draws[0].sampler.unwrap();
+        assert_eq!((s.filter, s.max_anisotropy), (0x55, 4));
+    }
+
+    #[test]
     fn the_blend_is_read_from_the_material_s_technique() {
         let mut f = Fixture::new();
         let effect = f.effect(1);
@@ -2380,9 +2736,11 @@ mod tests {
         }
         .encode();
         assert_eq!(Frame::decode(&b[..b.len() - 1]), None);
-        let mut other = b.clone();
-        other[4] = 3;
-        assert_eq!(Frame::decode(&other), None, "version 3");
+        for v in [3, 4] {
+            let mut other = b.clone();
+            other[4] = v;
+            assert_eq!(Frame::decode(&other), None, "version {v}");
+        }
         let mut other = b.clone();
         // the draw's pass byte (header 24, draw head byte 23)
         other[24 + 23] = 5;
@@ -2394,6 +2752,13 @@ mod tests {
             let mut other = b.clone();
             other[24 + at] = v;
             assert_eq!(Frame::decode(&other), None, "blend byte {at} = {v}");
+        }
+        // the sampler's (draw head byte 34 on, after one pass): the flag,
+        // an address mode outside D3D11's
+        for (at, v) in [(34, 2), (35, 0), (36, 6), (37, 0)] {
+            let mut other = b.clone();
+            other[24 + at] = v;
+            assert_eq!(Frame::decode(&other), None, "sampler byte {at} = {v}");
         }
         let mut other = b.clone();
         let n = other.len();

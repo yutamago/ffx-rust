@@ -1,7 +1,7 @@
 //! The effect draws' capture (`ffx_host::vfx`), frame by frame: boots the
 //! player's `FFX.exe` headless (null device, virtual clock), loads a
 //! developer save, switches the capture on and prints each captured frame
-//! (every draw's list place, instance key, flags, texture, counts and
+//! (every draw's list place, instance key, flags, blend, sampler, texture, counts and
 //! render-space bounds and pass, the draw events decoded, the encoded
 //! size, the screen distortion and the field ripple's parameters) with the
 //! actors of the snapshot of the same update (field position and render
@@ -11,7 +11,7 @@
 //! FFX_GAME_DIR=~/steam-games/FFX-X2-HD cargo run --release -p ffx-host \
 //!   --example vfx-probe -- [devsave 7] [frames 20] [documents dir] \
 //!   [--battle field,group,formation] [--auto] [--skip n] [--summary] \
-//!   [--from-save] [--fields] [--drive] [--party hex]
+//!   [--from-save] [--fields] [--drive] [--party hex] [--texels]
 //! ```
 //!
 //! `--battle` asks for a battle once the map runs and captures from its
@@ -26,7 +26,13 @@
 //! Lulu casts her first black magic, the others attack (button presses
 //! through a replay script, `ffx_host::replay`); Valefor (actor 8) gets a
 //! full overdrive gauge and uses it; `--party` writes the battle party
-//! (`g_SaveInParty`, 8 bytes in hex) before the battle.
+//! (`g_SaveInParty`, 8 bytes in hex) before the battle; `--texels` also
+//! prints, per textured draw, where its uvs sample the texture (decoded
+//! from the archive): for each vertex of a draw of at most 8 vertices the
+//! texel as D3D addresses it (`u w`, `v h` from the first stored row) and
+//! the upright image's colour there (`vfx::upright_uv`) and top-down
+//! (`(u, v)` on the upright image, the wrong reading); for every draw the
+//! mean alpha at its vertices both ways.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -98,6 +104,7 @@ struct Config {
     fields: bool,
     drive: bool,
     party: Option<Vec<u8>>,
+    texels: bool,
 }
 
 impl Config {
@@ -127,6 +134,7 @@ impl Config {
                 "--from-save" => c.from_save = true,
                 "--fields" => c.fields = true,
                 "--drive" => c.drive = true,
+                "--texels" => c.texels = true,
                 "--party" => {
                     let h = args.next().unwrap_or_default();
                     c.party = (0..h.len() / 2)
@@ -290,6 +298,9 @@ fn probe(shared: &Shared, snaps: &Snaps, save: i32, frames: u32, cfg: &Config) {
     for f in &got {
         let snap = snaps.lock().ok().and_then(|m| m.get(&f.update).cloned());
         print_frame(shared.arena(), f, snap.as_deref());
+        if cfg.texels {
+            print_texels(f);
+        }
     }
     shared.stop_all(Stop::Milestone("probe done".into()));
 }
@@ -298,8 +309,9 @@ thread_local! {
     static COUNTS: std::cell::RefCell<BTreeMap<String, u64>> = std::cell::RefCell::default();
 }
 
-/// Counts a frame into the summary: frames, draws per pass, events per
-/// kind, frames with each.
+/// Counts a frame into the summary: frames, draws per pass, per flags and
+/// blend, per flags, texture folder and sampler, events per kind, frames
+/// with each.
 fn count(f: &ffx_host::vfx::Frame) {
     COUNTS.with(|c| {
         let mut c = c.borrow_mut();
@@ -309,6 +321,19 @@ fn count(f: &ffx_host::vfx::Frame) {
             *c.entry(format!("draws {:?}", d.pass)).or_default() += 1;
             *c.entry(format!("draws flags {:#x} {}", d.flags, blend_text(d)))
                 .or_default() += 1;
+            // the archive folder under PS3Data (`btlmap`, `map`, `yonishi_data`, …)
+            let folder = d
+                .texture
+                .split_once("PS3Data/")
+                .map_or(d.texture.as_str(), |(_, p)| {
+                    p.split('/').next().unwrap_or("")
+                });
+            *c.entry(format!(
+                "draws flags {:#x} texture folder {folder} {}",
+                d.flags,
+                sampler_text(d)
+            ))
+            .or_default() += 1;
             passes.insert(d.pass);
         }
         for p in passes {
@@ -353,6 +378,26 @@ fn blend_text(d: &ffx_host::vfx::Draw) -> String {
         }
     }
     s
+}
+
+/// The draw's sampler: filter, address modes, and the rest when not the
+/// defaults.
+fn sampler_text(d: &ffx_host::vfx::Draw) -> String {
+    use std::fmt::Write as _;
+    let Some(s) = d.sampler else {
+        return "sampler ?".into();
+    };
+    let mut t = format!(
+        "sampler {:#x} {:?}/{:?}/{:?}",
+        s.filter, s.address[0], s.address[1], s.address[2]
+    );
+    if s.mip_lod_bias != 0.0 || s.max_anisotropy > 1 {
+        let _ = write!(t, " bias {} aniso {}", s.mip_lod_bias, s.max_anisotropy);
+    }
+    if s.address.contains(&ffx_host::vfx::Address::Border) {
+        let _ = write!(t, " border {:?}", s.border);
+    }
+    t
 }
 
 fn print_counts() {
@@ -424,7 +469,7 @@ fn print_frame(
         }
         let tex = d.texture.rsplit('/').next().unwrap_or("");
         println!(
-            "  {:?} [{:4}] key ({:#x}, {:#x}){} flags {:#x} seg {} {} v {} i {} tex {} min {:.1?} max {:.1?}",
+            "  {:?} [{:4}] key ({:#x}, {:#x}){} flags {:#x} seg {} {} {} v {} i {} tex {} min {:.1?} max {:.1?}",
             d.pass,
             d.place,
             d.key & 0xffff_ffff,
@@ -433,6 +478,7 @@ fn print_frame(
             d.flags,
             d.segment,
             blend_text(d),
+            sampler_text(d),
             d.positions.len(),
             d.indices.len(),
             tex,
@@ -579,6 +625,122 @@ fn print_fields(shared: &Shared) {
             g[0],
             g[1]
         );
+    }
+}
+
+/// An upright RGBA image of a texture: width, height, rows top first.
+type Image = (u32, u32, Vec<u8>);
+
+thread_local! {
+    static TEXTURES: std::cell::RefCell<BTreeMap<String, Option<Arc<Image>>>> =
+        std::cell::RefCell::default();
+    static ARCHIVE: Option<ffx_vbf::Archive> = std::env::var_os("FFX_GAME_DIR")
+        .and_then(|d| ffx_vbf::Archive::open(PathBuf::from(d).join("data/FFX_Data.vbf")).ok());
+}
+
+/// The texture a draw names (`../../../FFX_Data/…`), decoded upright from
+/// the archive; `None` for `NoTexture`, `FrameBuffer` or a missing file.
+fn texture(name: &str) -> Option<Arc<Image>> {
+    let path = name.trim_start_matches("../");
+    if !path.ends_with(".phyre") {
+        return None;
+    }
+    TEXTURES.with_borrow_mut(|m| {
+        m.entry(path.to_owned())
+            .or_insert_with(|| {
+                ARCHIVE.with(|a| {
+                    let a = a.as_ref()?;
+                    let t = ffx_phyre::Texture::parse(a.read(a.find(path)?).ok()?).ok()?;
+                    Some(Arc::new((t.width, t.height, t.to_rgba())))
+                })
+            })
+            .clone()
+    })
+}
+
+/// The upright image's texel at `uv` (`(0, 0)` its top left), addressed
+/// as the sampler does outside 0..1 (wrap, mirror, else clamped; the
+/// nearest texel, no filtering).
+fn texel(img: &Image, uv: [f32; 2], s: Option<&ffx_host::vfx::Sampler>) -> [u8; 4] {
+    use ffx_host::vfx::Address;
+    let (w, h, px) = img;
+    let fold = |t: f32, k: usize| match s.map(|s| s.address[k]) {
+        Some(Address::Wrap) => t.rem_euclid(1.0),
+        Some(Address::Mirror) => {
+            let f = t.rem_euclid(2.0);
+            if f > 1.0 { 2.0 - f } else { f }
+        }
+        // after the flip: exact for wrap, mirror and clamp (symmetric), not
+        // for mirror-once, which the game's samplers never use
+        Some(Address::MirrorOnce) => t.abs().min(1.0),
+        _ => t.clamp(0.0, 1.0),
+    };
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::cast_precision_loss
+    )]
+    let at = |t: f32, n: u32| ((t * n as f32) as u32).min(n - 1) as usize;
+    let o = (at(fold(uv[1], 1), *h) * *w as usize + at(fold(uv[0], 0), *w)) * 4;
+    [px[o], px[o + 1], px[o + 2], px[o + 3]]
+}
+
+/// `--texels`: where each textured draw's uvs sample its texture.
+fn print_texels(f: &ffx_host::vfx::Frame) {
+    use ffx_host::vfx::upright_uv;
+    println!("  texels (update {}):", f.update);
+    for d in &f.draws {
+        let Some(img) = texture(&d.texture) else {
+            continue;
+        };
+        let (width, height) = (img.0, img.1);
+        #[allow(clippy::cast_precision_loss)]
+        let (wf, hf) = (width as f32, height as f32);
+        let (mut lo, mut hi) = ([f32::MAX; 2], [f32::MIN; 2]);
+        let (mut up, mut down) = (0u64, 0u64);
+        for uv in &d.uvs {
+            for k in 0..2 {
+                lo[k] = lo[k].min(uv[k]);
+                hi[k] = hi[k].max(uv[k]);
+            }
+            up += u64::from(texel(&img, upright_uv(*uv), d.sampler.as_ref())[3]);
+            down += u64::from(texel(&img, *uv, d.sampler.as_ref())[3]);
+        }
+        let count = d.uvs.len().max(1) as u64;
+        println!(
+            "    [{:4}] key ({:#x}, {:#x}) flags {:#x} seg {} {:?} tex {} {width}x{height} uv {lo:.4?}..{hi:.4?} mean alpha: upright_uv {} top-down {}",
+            d.place,
+            d.key & 0xffff_ffff,
+            d.key >> 32,
+            d.flags,
+            d.segment,
+            d.sampler,
+            d.texture.rsplit('/').next().unwrap_or(""),
+            up / count,
+            down / count,
+        );
+        if d.uvs.len() <= 8 {
+            for uv in &d.uvs {
+                println!(
+                    "      uv ({:.4}, {:.4}) texel ({:.1}, {:.1}) from the first stored row, upright row {:.1}: upright_uv {:?} top-down {:?}",
+                    uv[0],
+                    uv[1],
+                    uv[0] * wf,
+                    uv[1] * hf,
+                    (1.0 - uv[1]) * hf,
+                    texel(&img, upright_uv(*uv), d.sampler.as_ref()),
+                    texel(&img, *uv, d.sampler.as_ref()),
+                );
+            }
+            let c = [lo[0].midpoint(hi[0]), lo[1].midpoint(hi[1])];
+            println!(
+                "      centre ({:.4}, {:.4}): upright_uv {:?} top-down {:?}",
+                c[0],
+                c[1],
+                texel(&img, upright_uv(c), d.sampler.as_ref()),
+                texel(&img, c, d.sampler.as_ref()),
+            );
+        }
     }
 }
 

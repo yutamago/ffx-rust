@@ -168,12 +168,54 @@ the op system `(0, record)`, part `i` at `lo + 10000 i`; effects-draw.md,
 flags `+0x3c`, which pick the shader family: `0x8` modulate, `0xa`
 additive, `0x18` subtract, `0x9` z-matrix, `0x2` additive untextured;
 effects-draw.md, "Shaders"), `pooled` (destroyed this frame, still
-drawn), `segment`, `technique` and `blends` (below), `world`, `texture` (segment `+0x20` as the game
+drawn), `segment`, `technique` and `blends` (below), `sampler` (below), `world`, `texture` (segment `+0x20` as the game
 holds it: `../../../FFX_Data/GameData/PS3Data/<folder>/D3D11/<name>.dds.phyre`,
 `NoTexture`, or `FrameBuffer` for draws that sample the frame copy), and
 the arrays: `positions`, `colours` (RGBA floats; 0.5 is the PS2's `0x80`,
 which the VFX vertex shaders double), `uvs` (garbage on untextured draws:
-the game leaves them unset), `indices` (`u16`, a triangle list).
+the game leaves them unset; below), `indices` (`u16`, a triangle list).
+
+**Texture coordinates** (`Draw.uvs`, `Draw.sampler`; effects-draw.md,
+"Texture coordinates"): the shaders sample the texture at the uvs as
+they are, with no transform, frame offset or per-draw constant (an
+effect's animation frames are in the uvs the fills write). What a
+frontend does:
+
+1. **Orientation** (file textures, `.dds.phyre`; not the DTT's
+   `FrameBuffer`, a render target whose first row is the screen's top,
+   nor the `0x28` family, whose shaders were not decoded: their
+   convention is unverified). `v = 0` is the texture's first row *as the
+   file stores it*, which is the image's bottom row: the game uploads the
+   stored rows without a flip and D3D samples the first row in memory at
+   `v = 0`. On an upright image (top row first: `ffx_phyre`'s decoders,
+   its DDS export, `ffx-import`'s PNGs) sample `(u, 1 - v)`
+   (`vfx::upright_uv`); with the stored rows uploaded as they are
+   (`Texture::pixels`), `(u, v)`. Godot's `Image` from such a PNG has
+   `(0, 0)` at its top left, so a Godot frontend sets `UV = (u, 1 - v)`.
+2. **Addressing and filtering.** `sampler` (`vfx::Sampler`) is the
+   `D3D11_SAMPLER_DESC` of the material's `TextureSamplerState` as the
+   game makes it: `filter` (`D3D11_FILTER`: `0x15` min, mag and mip
+   linear; `0x55` anisotropic, which the game uses for every sampler
+   while its anisotropy setting is over 1), `address` U, V, W
+   (`vfx::Address`, D3D11's numbers: 1 wrap, 2 mirror, 3 clamp, 4
+   border, 5 mirror once; outside 0..1 the uvs need it: Besaid's field
+   effects run u 1.0..2.98, v -1.98..0.5 with wrap), `mip_lod_bias`,
+   `max_anisotropy`, `border` (bytes, `/255`, for border). The
+   comparison function (`LESS_EQUAL` when `filter` has the comparison bit
+   `0x80`, else `NEVER`) and the LOD range (`-FLT_MAX .. FLT_MAX`) are
+   not encoded: the game sets them so. Mip levels: the
+   texture's own chain (as the game uploads it, by texture quality;
+   docs/scene-builder.md, "Per draw", the textures). `None` when it could
+   not be read (no material or no `TextureSamplerState`): in the probe
+   runs exactly the untextured families (`0x0`, `0x2`, `0x3`, `0x10`,
+   `0x40000000`), whose shaders sample no texture.
+
+At Besaid (developer save 7) the field effects (`map/bsil/bsil00/fp/tex`:
+the sea's strips, the save sphere's orb hemispheres and disc) are `0x15`,
+wrap; the sphere's two sparkle quads (`bat_eff`, texture `15456`, uv
+block u 0.0039..0.2461, v 0.4385..0.4990, the same every frame) `0x15`,
+clamp; read with `1 - v` the block is the one soft glow ball of that
+atlas, top-down it shows four other animation frames.
 
 **Blend** (`Draw.technique`, `Draw.blends`; effects-draw.md, "Blend"):
 the flags do not decide the blend. The segment's material picks the
@@ -268,15 +310,17 @@ the same space: undistorted equal to `positions`), `colours` (RGBA, 1.0
 the field's `0x80`; alpha 0 where the ripple is faded out) and `indices`
 (`u16`, a triangle list, 384).
 
-**Encoding** (`Frame::encode`, `Frame::decode`; little-endian, version 4;
-versions 1 to 3 are refused: version 4 added the draw's technique and
-blends, version 3 the event's `actor` and the draw's `pass`; the events,
-passes and the distortion part are as in version 3):
+**Encoding** (`Frame::encode`, `Frame::decode`; little-endian, version 5;
+versions 1 to 4 are refused: version 5 added the draw's sampler (20
+bytes a draw with one, 1 without, after the blends; the rest as in version 4), version 4 the
+draw's technique and blends, version 3 the event's `actor` and the
+draw's `pass`; the events, passes and the distortion part are as in
+version 3):
 
 | Bytes | Field |
 |---|---|
 | 4 | `FXDR` |
-| 2, 2 | version (4), 0 |
+| 2, 2 | version (5), 0 |
 | 4 | `update` |
 | 4 | `unresolved` (every list) |
 | 4, 4 | event count `e`, draw count `d` |
@@ -290,6 +334,12 @@ passes and the distortion part are as in version 3):
 | 2, 1, 1 | `segment`, `pooled` (0/1), `pass` (0-4; another value is refused) |
 | 1, 1 | `technique` (0 none, 1 `Transparent`, 2 `OptimizedTrans`, 3 `Other`), shader pass count `p` (0 with no technique) |
 | 8 `p` | each pass's blend: `enabled` (0/1), `src`, `dest`, `op`, `src_alpha`, `dest_alpha`, `op_alpha` (D3D11's numbers), `write_mask`; a value outside the enums is refused |
+| 1 | sampler: 0 none (the rest of the sampler absent), 1 present; another value is refused |
+| 1, 1, 1 | `address` U, V, W (D3D11's numbers, 1-5; another is refused) |
+| 4 | `filter` (`u32`, `D3D11_FILTER`) |
+| 4 | `mip_lod_bias` (`f32`) |
+| 4 | `max_anisotropy` (`u32`) |
+| 4 | `border` (R, G, B, A bytes) |
 | 48 | `world` (12 `f32`) |
 | 2 + `t` | texture name: byte count and UTF-8 |
 | 4, 4 | vertex count `v`, index count `i` |
@@ -316,7 +366,8 @@ elsewhere checks indices before drawing.
 below): 30 draws a frame (25 list entries), no events, none unresolved,
 348,080 bytes encoded (version 1; 351,456 in version 2 with the
 distortion: on, blur 1, the grid flat, colours (1, 1, 1, 0); version 4
-adds 10 bytes a draw, one shader pass each). Textures from `map/bsil/bsil00/fp/tex` (the map's
+adds 10 bytes a draw, one shader pass each, version 5 20 bytes a draw
+with a sampler, 1 without). Textures from `map/bsil/bsil00/fp/tex` (the map's
 field effects), `yonishi_data/dat_et/bat_eff/et_tex/tex` (two sparkle
 quads) and `NoTexture` (two untextured discs). Entries 0-18: the sea's
 foam and wave strips at y -1.8 to -11 (flags 8, 0xa, one 0x18). Entries
@@ -682,7 +733,11 @@ with the capture on at Besaid (developer save 7), the frame of a
 snapshot's update is there when the snapshot comes; its draws use the
 map's effect textures, its orb lies on the save sphere `f001`'s render
 point, and its blob decodes to the same frame. `ffx_host::vfx`'s unit
-tests: the encoding and its layout, the matrix, the kept frames.
+tests: the encoding and its layout, the matrix, the kept frames, the
+sampler read from a material, `upright_uv`.
+`crates/ffx-host/tests/vfx_uv.rs` (needs `FFX_GAME_DIR`): the save
+sphere's sparkle uv block, read with `upright_uv`, is the one glow ball
+of its atlas texture.
 
 `crates/ffx-host/tests/boot.rs` `a_developer_save_loads_on_request`: in
 the opening a frontend's `DevSave(7)` loads Besaid without the harness;
