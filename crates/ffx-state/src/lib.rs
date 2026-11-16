@@ -279,7 +279,7 @@ api_struct! {
         /// The character the PS2 menus show (`TkMenuGetCurrentPlayer`:
         /// `g_TkMenuPlayers` `0x01841c14` at `g_TkMenuCurrentPlayerPos`
         /// `0x01841c28`; below 8 a party member, 8 and up an aeon); 0xff
-        /// when the position is out of the list.
+        /// when the position is 8 or more (the list is 8 bytes).
         current_player: u8,
     }
 }
@@ -291,8 +291,9 @@ api_struct! {
         slot: u8,
         /// Its state (`+0x28`, 0 idle).
         state: u32,
-        /// Its row count (`+0x30`) and the first row shown (`+0x32`).
+        /// Its row count (`+0x30`).
         rows: u16,
+        /// The first row shown (`+0x32`).
         first: i16,
         /// The cursor (`+0x48`; the row is `cursor >> 1` in two-column
         /// lists).
@@ -409,17 +410,19 @@ api_struct! {
 }
 
 api_struct! {
-    /// The sphere grid screen's data (`g_Abmap` `0x02305834` holds its
-    /// address; docs/formats/pc-ui.md "Sphere grid helpers"; the node
-    /// fields beyond the kind read through gd-ffx, 2026-11-16).
+    /// The sphere grid screen's data: `g_Abmap` (`0x02305834`) holds the
+    /// address of `g_AbmapData` (set by `InitLpamng`); docs/formats/pc-ui.md
+    /// "Sphere grid helpers" and docs/formats/field.md (x, y, the panel bits
+    /// at `+0x21`).
     SphereGrid {
-        /// The grid is loaded (`g_Abmap` set, nodes counted).
+        /// The grid screen runs (`g_AbmapRunning` `0x01a85f70`, which
+        /// `TOMenuTermAbilityMap2` clears; `g_Abmap` itself stays set).
         open: bool,
         /// The character the screen shows (`+0x115bc`,
         /// `TkMenuGetCurrentPlayer`).
         current: u8,
-        /// The node under the cursor (`+0x112fc`, a node index; its kind
-        /// names the help line, `AbmapSetHelpMessage`).
+        /// The node under the cursor (`+0x112fc`, an index into `nodes`; its
+        /// kind names the help line, `AbmapSetHelpMessage`).
         cursor: u16,
         /// The nodes (`+0x808`, 0x28 bytes each, the count `i16` at `+2`).
         nodes: Vec<GridNode>,
@@ -432,7 +435,7 @@ api_struct! {
 api_struct! {
     /// One sphere grid node.
     GridNode {
-        /// Its place on the grid (`+0`, `+2`; y down).
+        /// Its place on the grid (`+0`, `+2`; observed: y grows down).
         x: i16,
         y: i16,
         /// What it holds (`+6`; 0xffff an empty node), a record of the
@@ -455,8 +458,10 @@ api_struct! {
 }
 
 api_struct! {
-    /// One map object (a key of the scene's object tree, `PhyreScene`
-    /// `+0x1198`: the number in its meshes' names, `N_kShape`).
+    /// One map object: a key of the scene's object tree (`PhyreScene`
+    /// `+0x1198`), each mesh instance's `+0x58` (`obj_id`;
+    /// `PhyreScene_rebuildMapObjects` `0x00658ae0`). Observed at Besaid:
+    /// the number in its meshes' names, `N_kShape`.
     SceneObject {
         /// The object id (the tree node's key, `+0xc`).
         id: u32,
@@ -472,11 +477,13 @@ api_struct! {
         /// (`PMatrix4_toWorldMatrix3x4`; render space, the map's x 10
         /// included).
         world: [f32; 12],
-        /// It is drawn: its draw record (`+0x1c`) points back at it (the
-        /// layer mask `+0xfb14` has its layer, `+0x48`).
+        /// It is drawn: its draw record (`+0x1c`) points back at it (what
+        /// `setMeshInstanceGroupIdVisible` sets from the mask `+0xfb14`);
+        /// false without a record.
         drawn: bool,
-        /// Its layer (`+0x48`).
-        layer: u8,
+        /// Its group id (`+0x48`, `m_groupID`): the bit `1 << (id & 31)` of
+        /// the scene's mask `+0xfb14`.
+        layer: u32,
     }
 }
 
@@ -492,9 +499,10 @@ api_struct! {
         /// 999:59:59).
         play_time: u32,
         /// The front line: 3 character indices (`+0x3d58`,
-        /// `g_SaveInParty`; 0xff empty).
+        /// `g_SaveInParty`; observed: 0xff in an empty place).
         frontline: Vec<u8>,
-        /// The back line: 17 (`+0x3d5b`, `g_SaveOutParty`; 0xff empty).
+        /// The back line: 17 (`+0x3d5b`, `g_SaveOutParty`; observed: 0xff
+        /// in an empty place).
         backline: Vec<u8>,
         /// The 18 characters (`ply_save`, `+0x55cc`, 0x94 bytes each; and
         /// their names, `+0x634c`).
@@ -535,18 +543,23 @@ api_struct! {
         total_ap: u32,
         /// Sphere levels available (`+0x3b`).
         sphere_levels: u8,
-        /// The limit gauge and its full value (`+0x39`, `+0x3a`).
+        /// The limit gauge and its full value (`+0x39`, `+0x3a`; copied to
+        /// and from the battle actor's `+0x5bc`/`+0x5bd` by `MsSetChrParam`
+        /// and `MsSetSaveData`).
         limit_charge: u8,
         limit_charge_max: u8,
-        /// Weapon and armour: their slots in `g_Equipment` (`+0x2d`, `+0x2e`).
+        /// Weapon and armour: their slots in `g_Equipment` (`+0x2d`, `+0x2e`;
+        /// 0xff none, docs/formats/battle.md "Saved parameters").
         weapon: u8,
         armour: u8,
         /// The commands `0x3000`..`0x305f` learnt (`+0x3e`, 6 `u16` as
         /// bytes): command `0x3000 + i` is bit `i % 16` of `u16` `i / 16`
         /// (`MsSetSaveCommand`); later ones are `Save.shared_commands`.
         commands: Vec<u8>,
-        /// The overdrive mode in use (`+0x38`) and the modes obtained, a bit
-        /// each (`+0x88`); Fahrenheit's names, not checked in the code.
+        /// The overdrive mode in use (`+0x38`, copied to the battle actor's
+        /// `+0x5bb` by `MsSetChrParam`/`MsSetSaveData`) and the modes had,
+        /// bit `k` for mode `k` (`+0x88`, `MsLimitTypeExpGet`,
+        /// `MsLimitTypeProcess`).
         overdrive_mode: u8,
         overdrive_modes: u32,
     }
@@ -557,7 +570,8 @@ api_struct! {
     ItemStack {
         /// The slot (0..255): the menu's order.
         slot: u8,
-        /// The item id (`0x2000` + the kernel's item index).
+        /// The item id (observed: `0x2000` + the kernel's item index, as the
+        /// battle menu's ids, `id >> 12` 2).
         id: u16,
         /// How many.
         count: u8,
@@ -798,7 +812,7 @@ mod tests {
     }
 
     /// FNV-1a of `schema::text()` at [`API_VERSION`].
-    const PINNED: u64 = 0x0dda_be76_5817_2f8c;
+    const PINNED: u64 = 0x431d_023c_5ab7_2cc7;
 
     /// A field change must raise [`API_VERSION`]: the schema's text is
     /// pinned to the version here.

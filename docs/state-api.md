@@ -156,13 +156,21 @@ show: gil, the play time, the front and back lines, the 18 characters
 (`ply_save`: name, joined, HP/MP, the 8 stats, AP, sphere levels, the
 limit gauge, weapon and armour slots, the commands learnt, the overdrive
 mode and modes), the inventory's used slots, the key-item bits and the
-commands everybody learnt (from `0x3060`). Names are in the game's text encoding (a frontend decodes
+commands everybody learnt (from `0x3060`). Names are in the game's text
+encoding (a frontend decodes
 them with the game's character set, as the messages). The battle's party
 index is the member's `index`, so a battle HUD names its battlers from
-here. `menus.windows` lists the PS2 menus' windows in use
-(`g_TkMenuWindows`): their rows, first row shown, cursor, list kind and
-the opener's words (kind, character, index), so each screen's cursor and
-the character it shows can be drawn.
+here.
+
+## The menus' windows and current character (API 8)
+
+`menus.windows`: the PS2 menus' windows in use (`g_TkMenuWindows`, the
+records with `+0x40` set): state, rows, the first row shown, the cursor
+(the row is `cursor >> 1` in two-column lists), an item window's list kind
+(`+0x43`) and the opener's five words (kind, character, index, ...).
+`menus.current_player`: the character the menus show
+(`TkMenuGetCurrentPlayer`): below 8 a party member, 8 and up an aeon, 0xff
+when the position is past the 8-byte list.
 
 ## Objects (API 8)
 
@@ -171,12 +179,15 @@ the character it shows can be drawn.
 its meshes' live world matrices (3x4, the camera's packing, render space)
 and whether each is drawn (the layer mask). Scripts move objects
 (`graphicObjectSetTranslation`/`Rotation` rewrite the matrices) and show
-one of several meshes at a time (layers), e.g. Besaid's birds (objects
-18..32, two wing poses each, placed at the origin in the file).
+the meshes of a group (the mask), e.g. Besaid's birds (objects 18..32,
+placed at the origin in the file). The id is each mesh instance's `+0x58`
+(`obj_id`); observed at Besaid, it is the number in the meshes' names
+(`N_kShape`).
 
 ## Sphere grid (API 8)
 
-`sphere_grid` is the sphere grid screen's data while it is loaded
+`sphere_grid` is the sphere grid screen's data while the screen runs
+(`g_AbmapRunning`)
 (`*g_Abmap`, docs/formats/pc-ui.md): the character shown, the node under
 the cursor, the nodes (place,
 kind, flags) and the links between them. The standard grid has 828 nodes
@@ -362,7 +373,7 @@ struct SceneObject
 struct SceneMesh
   world: mat3x4
   drawn: bool
-  layer: u8
+  layer: u32
 struct Save
   valid: bool
   gil: u32

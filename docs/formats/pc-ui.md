@@ -46,9 +46,16 @@ slots are used.
 
 ## Sphere grid helpers
 
-`g_Abmap` (`0x02305834`): nodes of 0x28 bytes at `+0x808` (kind `u16` at
-node `+6`), kind sizes `i16` at `+0xf834` (0x30 each), zoom level byte at
-`+0x115cc`.
+`g_Abmap` (`0x02305834`) holds the address of the sphere grid's data
+(`g_AbmapData`, `0x016ad8b0`, 0x12fc0 bytes, set once by `InitLpamng` and
+never cleared; `g_AbmapRunning` `0x01a85f70` says whether the screen
+runs); offsets here, and `g_Abmap + n` below, are from that address.
+Nodes of 0x28 bytes at `+0x808` (x, y `i16` at `+0`, `+2`, kind `u16` at
+`+6`, count `i16` at `+2`), links of 0x14 bytes at `+0xa808` (the two node
+indices at `+0`, `+2`; count `i16` at `+4`), kind sizes `i16` at `+0xf834`
+(0x30 each), the node under the cursor `u16` at `+0x112fc`
+(`AbmapSetHelpMessage`), the current character byte at `+0x115bc`, zoom
+level byte at `+0x115cc`.
 
 - `AbmapZoomScale()` (`0x00a56820`): 1, 0.5, 0.25, 0.125 for zoom levels
   0..3 (jump table), 1 otherwise; in `ST0`.
