@@ -915,15 +915,20 @@ api_struct! {
         /// The skeleton's elements (bones) as posed this update, in the
         /// model's order (an HD model's `SkeletonNode_i` takes bone `i`).
         bones: Vec<Bone>,
-        /// The game draws it: its render instance (`+0x830`) is visible
+        /// The game draws it, as the last character draw (`Ch_DrawMain`,
+        /// read at the next frame boundary) left it: its render instance
+        /// (`+0x830`) is visible
         /// (byte `+0x14`, which `graphicCharacterInstanceSetVisible` sets
         /// in `Ch_DrawMain` after the hide byte, the distance cull, the
         /// alpha and the special cases) and the model is loaded (`flags2`
         /// bit `0x20` clear).
         drawn: bool,
-        /// The flag words `+0x194` (bit `0x2000`: not drawn; bit `0x800`:
-        /// the distance cull applies) and `+0x198` (bit `0x20`: the model
-        /// purged; `0x10` set by `Ch_DrawMain` on the characters it draws).
+        /// The flag words `+0x194` (bit `0x2000`, `F_DRAW_EFFECT`: skips
+        /// walk 2's `|= 0x50` and hides the character only under magic
+        /// `0x280`/`0x245`, not a "not drawn" bit; bit `0x800`: the distance
+        /// cull applies) and `+0x198` (bit `0x20`, `F2_NO_OEF2`: skipped by
+        /// the OEF2 lookup and by `Ch_DrawMain`; `0x50` set by walk 2 before
+        /// the cull and the hide byte, so culled characters carry it too).
         flags: u32,
         /// See `flags`.
         flags2: u32,

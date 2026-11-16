@@ -491,14 +491,17 @@ code.
   the game runs (not loading, not paused), wraps to 0 at 2400 s and is 0
   again after every map change (docs/harness.md, "GlobalTime and the
   title band").
-- `Actor.drawn`: the game draws the character this frame. `Ch_DrawMain`
-  decides it after the hide byte (`hidden`), the purged model (`flags2`
-  bit `0x20`), the distance cull (`Ch_CullByDistance`, with `flags` bit
+- `Actor.drawn`: the game draws the character, as the last `Ch_DrawMain`
+  left it (read at the next frame boundary). `Ch_DrawMain`
+  decides it after the hide byte (`hidden`), `flags2` bit `0x20`
+  (`F2_NO_OEF2`), the distance cull (`Ch_CullByDistance`, with `flags` bit
   `0x800`), the alpha and a few per-id and per-spell cases, and hands it
   to `graphicCharacterInstanceSetVisible`, which sets the render
   instance's (`+0x830`) byte `+0x14`; that byte is read here. `hidden ==
-  0 && alpha > 0` is not enough: a character can be culled, purged, or
-  flagged out (`flags` bit `0x2000`) while both hold. `flags` and
+  0 && alpha > 0` is not enough: a character can be culled or skipped
+  (`flags2` bit `0x20`) while both hold. `flags` bit `0x2000`
+  (`F_DRAW_EFFECT`) is not a hide bit: it hides the character only under
+  magic `0x280`/`0x245`. `flags` and
   `flags2` are the raw words `+0x194` and `+0x198`.
 - `Actor.models`: per model (part) its base element and whether the
   header's skin list names it. `Ch_DrawMain`'s walk 1 gives a skinned

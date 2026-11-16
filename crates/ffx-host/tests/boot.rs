@@ -1246,6 +1246,14 @@ fn the_state_api_sees_the_beach_and_the_config_menu() {
     );
     let dt = beach.look.global_time - first.look.global_time;
     assert!((1.5..2.5).contains(&dt), "{dt}");
+    // GlobalTime restarts at the map load, the game time does not (64 s or
+    // more by now): the read is the scene clock, not the game time
+    assert!(
+        beach.look.global_time < 30.0 && f64::from(beach.look.global_time) < beach.game_time,
+        "global time {} game time {}",
+        beach.look.global_time,
+        beach.game_time
+    );
     for a in &beach.actors {
         eprintln!(
             "slot {} {:#06x} {} hidden {:#x} alpha {} drawn {} flags {:#x} flags2 {:#x} models {:?}",

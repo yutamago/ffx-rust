@@ -176,7 +176,7 @@ const SKIN_ENTRY: u32 = 12;
 /// At most this many models and skin entries a character.
 const MAX_MODELS: u32 = 64;
 const MAX_SKINS: u32 = 256;
-/// `+0x198` bit `0x20`: the model purged (`Ch_DrawMain` skips it).
+/// `+0x198` bit `0x20` (`F2_NO_OEF2`): `Ch_DrawMain` skips the character.
 const PURGED: u32 = 0x20;
 /// A render instance's byte `+0x14`: visible
 /// (`graphicCharacterInstanceSetVisible`).
