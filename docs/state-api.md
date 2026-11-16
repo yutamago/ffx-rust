@@ -137,11 +137,11 @@ kept).
   whose mesh instance it is (the map, then the delete pool), and every
   segment with indices: one `vfx::Draw` per indexed draw, in the game's
   draw order (the entry of instance `(0x78, 0x5bc)` last while magic
-  0x296 plays, as the pass draws it). It only reads memory: replays,
-  saves and timing are the same with it on or off. Not captured: the
-  other VFX lists (DTT, UI 2D, after post-processing, `+0x3880`; no draws
-  in the census's frames) and entries whose mesh instance is in no
-  geometry (`Frame.unresolved`).
+  0x296 plays, as the pass draws it). The same read takes the scene's
+  other VFX lists, which the same updates fill and later passes of the
+  same render draw (`vfx::Pass`, below). It only reads memory: replays,
+  saves and timing are the same with it on or off. Not captured: entries
+  whose mesh instance is in no geometry (`Frame.unresolved`).
 - **When.** `DrawMostVFX` runs on the game's main thread between update
   `n` and the boundary of update `n + 1`; `Frame.update` is `n`, the
   `Snapshot.update` of the state it draws. A frontend pairs them with
@@ -160,21 +160,52 @@ kept).
   field-to-render flip (the sea's: X = (-1, 0, 0), Y = (0, -1, 0),
   Z = (0, 0, 1), P = (0, -1.8, 0)).
 
-`vfx::Draw`: `place` (the list entry, the position draw events count
-in), `key` (the instance key `(hi << 32) | lo`: for a ppp program
-`(g_pppCurrentProgram, object)`, for the op system `(0, record)`, part
-`i` at `lo + 10000 i`; effects-draw.md, "Instance keys and makers"),
-`geometry` (an address), `flags` (the VSP flags `+0x3c`, which pick the
-shader and blend: `0x8` modulate, `0xa` additive, `0x18` subtract, `0x9`
-z-matrix, `0x2` additive untextured; effects-draw.md, "Shaders" and
-"States"), `pooled` (destroyed this frame, still drawn), `segment`,
-`world`, `texture` (segment `+0x20` as the game holds it:
-`../../../FFX_Data/GameData/PS3Data/<folder>/D3D11/<name>.dds.phyre`, or
-`NoTexture`), and the arrays: `positions`, `colours` (RGBA floats; 0.5 is
-the PS2's `0x80`, which the VFX vertex shaders double), `uvs` (garbage on
-untextured draws: the game leaves them unset), `indices` (`u16`, a
-triangle list). `vfx::Event`: kind, place, two words
-(`PhyreScene_processVFXDrawEvent`).
+`vfx::Draw`: `pass` (below), `place` (the entry in its pass's list; for
+the main pass the position draw events count in), `key` (the instance key
+`(hi << 32) | lo`: for a ppp program `(g_pppCurrentProgram, object)`, for
+the op system `(0, record)`, part `i` at `lo + 10000 i`; effects-draw.md,
+"Instance keys and makers"), `geometry` (an address), `flags` (the VSP
+flags `+0x3c`, which pick the shader and blend: `0x8` modulate, `0xa`
+additive, `0x18` subtract, `0x9` z-matrix, `0x2` additive untextured;
+effects-draw.md, "Shaders" and "States"), `pooled` (destroyed this frame,
+still drawn), `segment`, `world`, `texture` (segment `+0x20` as the game
+holds it: `../../../FFX_Data/GameData/PS3Data/<folder>/D3D11/<name>.dds.phyre`,
+`NoTexture`, or `FrameBuffer` for draws that sample the frame copy), and
+the arrays: `positions`, `colours` (RGBA floats; 0.5 is the PS2's `0x80`,
+which the VFX vertex shaders double), `uvs` (garbage on untextured draws:
+the game leaves them unset), `indices` (`u16`, a triangle list).
+
+**Passes** (`vfx::Pass`; `Frame.draws` holds the main pass's draws first,
+then each other pass's in frame order; docs/formats/postfx.md "Order" for
+the frame):
+
+| Pass | Number | List (count) | Drawn |
+|---|---|---|---|
+| `Main` | 0 | `+0x38cc` (`+0xf8cc`) | `PhyreScene_DrawMostVFX`: into the scene colour against the scene depth, after the glow, the draw events between its draws |
+| `Dtt` | 1 | `+0x385c` (`+0x3854`) | `PhyreScene_RenderDTTVFX`, right after the main pass and the DTT copy of the colour (pp `+0xa8`), before the specular pass, the screen fade and the distortion; its `FrameBuffer` draws sample that copy |
+| `AfterPost` | 2 | `+0x3888` (`+0x388c`) | `PhyreScene_RenderVFXAfterPostProcess`, after the post-processing (distortion, blurs, AA, brightness), before the UI, with the scene camera |
+| `Ui2d` | 3 | `+0x3868` (`+0x3860`) | `PhyreScene_DrawUI2DVFX`, in the UI step before the normal UI, with the scene's second camera (`+0x500`); only while the scene or a movie fades and not on maps 0x163/0x164 (the capture applies those tests and the pass's name skip, so a frame holds them only when drawn) |
+| `Undrawn` | 4 | `+0x3880` (`+0x3878`) | no pass found: captured for diagnosis, not to be drawn |
+
+**Draw events** (`vfx::Event`: `kind`, `at`, `words`, `actor`; main pass
+only): each runs once the main pass has drawn the entries before place
+`at` (before the draws of place `at`; events at or past the last place
+run after the last draw). `Event::info()` decodes the words
+(effects-draw.md, "Draw events"):
+
+| Kind | `EventInfo` | What a frontend does there |
+|---|---|---|
+| 0 | `Characters { layer }` | draw the characters of that layer (instance byte `+0x15`) with the scene camera |
+| 1 | `CopyBuffer { from, to, rgb, clear }` | copy one buffer into another (`Colour` pp `+0x8c`, `Copy` pp `+0xa8`, `CrossFade` pp `+0x1232c`); with `clear` clear the colour to 0 afterwards; skipped while the motion blur is on and `to` is `Copy` |
+| 2 | `ScreenFade { colour, blend }` | draw a full-screen quad of `colour` (RGBA, 1.0 the PS2's `0x80`) over the colour with `blend` (`Alpha`, `Additive`, `Subtract`) |
+| 3 | `Ps2Lighting { instance }` | nothing drawn: the PS2 point light of character `actor` is applied |
+| 4 | `Specular { instance }` | the specular pass of character `actor` |
+| 5 | `DrawCharacter { instance, clip }` | draw character `actor` now, between the effects (shown for the draw); `clip`: the `TransparentClipY` pass |
+| 6 | `ZPrePass { instance }` | draw character `actor` into the depth only |
+
+`actor` is the `Snapshot.actors` `slot` of the character whose instance
+the event names (kinds 3 to 6; -1 otherwise or when it is no
+`g_ChrArray` record).
 
 `Frame.distortion` (`vfx::Distortion`, `None` while it is off): the
 screen distortion `Distortion_renderDistortion` draws later in the same
@@ -201,22 +232,25 @@ the same space: undistorted equal to `positions`), `colours` (RGBA, 1.0
 the field's `0x80`; alpha 0 where the ripple is faded out) and `indices`
 (`u16`, a triangle list, 384).
 
-**Encoding** (`Frame::encode`, `Frame::decode`; little-endian, version 2;
-version 1 had no distortion part and is refused):
+**Encoding** (`Frame::encode`, `Frame::decode`; little-endian, version 3;
+versions 1 and 2 are refused: version 3 added the event's `actor` and the
+draw's `pass`; the distortion part is version 2's):
 
 | Bytes | Field |
 |---|---|
 | 4 | `FXDR` |
-| 2, 2 | version (2), 0 |
+| 2, 2 | version (3), 0 |
 | 4 | `update` |
-| 4 | `unresolved` |
+| 4 | `unresolved` (every list) |
 | 4, 4 | event count `e`, draw count `d` |
-| 16 `e` | events: kind, place, word 0, word 1 (`u32` each) |
+| 20 `e` | events: |
+| 4, 4, 4, 4 | kind, place `at`, word 0, word 1 (`u32` each) |
+| 2, 2 | `actor` (`i16`, -1 none), 0 |
 | `d` draws | each: |
 | 4 | `place` |
 | 8 | `key` (`lo` first) |
 | 4, 4 | `geometry`, `flags` |
-| 2, 1, 1 | `segment`, `pooled` (0/1), 0 |
+| 2, 1, 1 | `segment`, `pooled` (0/1), `pass` (0-4; another value is refused) |
 | 48 | `world` (12 `f32`) |
 | 2 + `t` | texture name: byte count and UTF-8 |
 | 4, 4 | vertex count `v`, index count `i` |
@@ -259,9 +293,20 @@ The distortion moves on developer saves 4 (`cdsp07`), 29 (`lchb08`) and
 (postfx.md, "Where it is on"); the probe prints it per frame, with the
 ripple's parameters.
 
+**In battle** (battle field 34, `kami00_00`; effects-draw.md, "The other
+lists live"): the battle's fade-in is a kind 2 event on its first 46
+frames (black, alpha 1.0, then down by 1/16 a frame); DTT draws
+(`FrameBuffer`, flags `0x1000`) on most frames; Valefor's overdrive adds
+kinds 3 and 4 naming his character. No after-post, UI 2D or `+0x3880`
+draw and no event of kinds 0, 1, 5 or 6 was reached (effects-draw.md,
+open question 4).
+
 ```text
 FFX_GAME_DIR=~/steam-games/FFX-X2-HD cargo run --release -p ffx-host \
   --example vfx-probe -- 7 20      # developer save, frames
+FFX_GAME_DIR=~/steam-games/FFX-X2-HD cargo run --release -p ffx-host \
+  --example vfx-probe -- 12 6000 /tmp/vfx-probe --party 01000405ff020306 \
+  --battle 34,0,0 --drive --summary   # a battle played: the summon, the overdrive
 ```
 
 ## Encoding
