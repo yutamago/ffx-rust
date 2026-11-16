@@ -239,6 +239,91 @@ The grid's vertices (`Distortion_setupDistortionGrid`,
 `Distortion_updateDistortionVertex`) are the effects census's
 (`pc-effects`): the census checks them only as ring contents.
 
+#### The instance
+
+`Distortion_GetInstance` (`0x006c2290`) returns `*0x00cdeb88`
+(`Distortion_CreateInstance_006c2190`, 0x80 bytes, `graphicInitialize`).
+
+| Offset | What | Written by |
+|---|---|---|
+| `+0` | the renderer | `Distortion_initialize_006c2710` |
+| `+8` | the colour target the grid draws into | same |
+| `+0x28` | the distortion buffer (kept across frames, `Distortion_colorTarget`) | `Distortion_createRenderTarget` |
+| `+0x34` | the grid mesh (a `DistortionGridDynamicMesh`: one segment, 0x180 indices, `+0xf` = 8) | `Distortion_setupDistortionGrid` |
+| `+0x38` | its instance (`DistortionGridDynamicMeshInstance`), drawn by pass `0x00cdeb90` | |
+| `+0x68` | 81 positions, `f32` x, y, z (0x3cc bytes) | `0x006c2ca0` at set-up only |
+| `+0x6c` | 81 colours, `f32` r, g, b, a (0x510 bytes) | `0x006c28e0` (all 1.0), `updateDistortionVertex` |
+| `+0x70` | 81 texture coordinates, `f32` u, v (0x288 bytes) | `0x006c2bb0`, `updateDistortionVertex` |
+| `+0x74` | 0x180 indices, `u32` (0x600 bytes) | `0x006c2990` at set-up only |
+| `+0x78` | the blur, `f32`: the copy's alpha before the 0.8 cap | `graphicSetDistortionBlur` (`0x00642f30` -> `updateDistortionBlur`); 0.25 when switched on |
+| `+0x7c` | on | `graphicSetDistortionEnable` (`0x00642f50`): switching on also sets `+0x7e` and `+0x78` = 0.25 |
+| `+0x7d` | skip this frame | `graphicSetDistortionSkipped` (`0x00642f80`, from `Sg_MainLoop` and `yiDrawScrEffect`); `renderDistortion` then writes the `u16` 0x100 at `+0x7d`: `+0x7d` cleared, `+0x7e` set |
+| `+0x7e` | reset: the next copy is a plain `copyBuffer` (no blend), then cleared | the two above |
+| `+0x7f` | the buffer exists (else `renderDistortion` creates it first) | `Distortion_createRenderTarget` |
+
+The grid mesh reads the four arrays through the instance's getters at
+its draw (`DistortionGridDynamicMesh_getParams_00675120`: `+0x68`,
+`+0x6c`, `+0x70`, `+0x74`, 0x51 vertices, 0x180 indices;
+`DistortionGridDynamicMesh_copyBuffers_00674570` copies them into the
+mesh's streams).
+
+**The grid.** Vertex `k = 9 i + j` (`i`, `j` in 0..9) is at clip
+`(-1 + i/4, -1 + j/4, 1)` and starts with texture coordinates `(i/8,
+j/8)`. Quad `t = 9 r + c` (`r`, `c` in 0..8) is the triangles `(t, t+10,
+t+1)` and `(t, t+9, t+10)`. `Distortion_updateDistortionVertex(row, col,
+r, g, b, a, u, v)` (`0x006c3240`, through `graphicUpdateDistortionVertex`
+`0x00644940`) writes vertex `k = 9 row + 8 - col`: colour `(r, g, b,
+a)`, coordinates `(u, 1 - v)`. With the shader's flip (below) the field's
+`(row, col)` is the screen point `(row / 8, col / 8)` (x right, y down),
+and it samples the buffer at `(u, v)` in the same space: undistorted,
+`u = row / 8`, `v = col / 8`.
+
+**The shaders.** `phyredistortionshader.fx` (ffx-dxbc,
+`examples/translate.rs`): the vertex shader passes the position through
+as `(x, y, 0, 1)` (no matrix), the colour unchanged, and the texture
+coordinates as `uv * UvScaleBias.xy + UvScaleBias.zw * 0.99999`; the
+pixel shader samples the buffer at `(u, 1 - v)` and returns the sample
+times the vertex colour. The copy's pixel shader (`copybuffer.fx`, ps
+`e928905e31636cf1`) returns `(sample.rgb, 1) * ColorScale`, so with the
+blend the buffer becomes `colour * a + buffer * (1 - a)`, `a = min(+0x78,
+0.8)`, an exponential average of the frames. The grid draws with the
+blend off over the cleared colour: the screen becomes `buffer(uv) *
+vertex colour`, alpha included.
+
+**Who drives it.** The field's screen ripple only: `yiEnableHamonEff`
+(`0x009085a0`, script native 0x01e2) sets `g_YiRenderStatus` bit 24 and
+switches it on, `yiDisableHamonEff` (`0x00908450`, native 0x01e3) off;
+each frame `yiDrawScrEffect` (`0x00908550`) runs `yiScreff_draw`
+(`0x00913200`, docs/formats/field.md, "The screen distortion") with the
+bit, else skips the pass. `yiScreff_draw` is the only caller of
+`graphicUpdateDistortionVertex` and `graphicSetDistortionBlur` in the
+dump. Its parameters come from script: `yiSetFieldPair` (native 0x01e6:
+`g_YiRender +0xbe078` flags, `+0xbe07c` depth, `+0xbe09c`),
+`yiSetFieldVec3Int` (native 0x01e4: `+0xbe090` phase step, `+0xbe094`
+speed, `+0xbe098` amplitude, `+0xbe0a0` blur level), `yiSetColor3`
+(native 0x01e5: tint `+0xbe0a4..a6`). Spells' screen ripples are not this
+pass: they are effect draws textured with the `FrameBuffer` copy
+(`KeDttSpr_MkGifPk`, `KeDttMdl_MkGifPk`; docs/formats/effects-draw.md).
+
+**Where it is on** (`ffx-host`'s effect capture, `vfx-probe`, the
+developer saves whose sweep reached `yiScreff_draw`; 2026-11-16): on in
+all twelve, blur level 128 (`+0x78` = 1, the copy at 0.8), step 0.03,
+speed 0.02. On most the fade (flags bit 0) keeps it flat: the ripple is
+an under-water effect drawn below the line the depth puts on screen,
+and with the camera above it every vertex gets `t` = 0 (colour (1, 1, 1,
+0), no offset). It moves on these:
+
+| Save | Level | Depth | Amplitude | Tint | Largest sample offset (screen) |
+|---|---|---|---|---|---|
+| 4 | `cdsp07` | -64.7 | 0.005 | 80 80 80 | 0.0054-0.0064, mean 0.0007 |
+| 29 | `lchb08` | -650 | 0.005 | 70 80 90 | 0.0074-0.0076, mean 0.004 |
+| 76, 77 | `stbv00` | -200 | 0.005 | 70 9e c8 | 0.0074-0.0076, mean 0.004 |
+
+Flat (fade 0): saves 1 and 104 (map 49, depth -126), 3 and 5 (map 71,
+depth 55), 6 and 7 (Besaid, map 70, depth 9, tint 70 8e 90), 11 (map 19,
+depth 3.5), 93 and 94 (map 272, depth 109). Even flat, the pass runs:
+the screen is the 0.8 average of the frames (a light trail on motion).
+
 ### Brightness (draws 179-180)
 
 `PostProcessManager_renderBright(renderer, colour)` (`0x00695440`), when
@@ -382,8 +467,8 @@ difference falls outside the scene.
    post-processing class) and the glow constructor `0x009fc540`: names.
 5. `PostProcessManager_copyDepthBuffer` (`0x00692e90`, a cg-match lead)
    copies with a `ColorScale` for the distortion: the name may be wrong.
-6. The distortion's `+0x78` alpha, `+0x7c..+0x7f` flags and its grid's
-   writers on this map (what turns it on in `cdsp0000`).
+6. What turns the distortion on in `cdsp0000`: the field ripple (see
+   "Distortion"), but which script line on this map was not traced.
 7. Whether anything reads `Quality` (`g_Settings +0xc`) through the key
    table rather than by offset.
 8. The glow-off byte `+0x1260` next to the HDAO settings: who sets it.

@@ -19,6 +19,11 @@
 //! `update` is `n` ([`Frame::update`]; checked against reads at the
 //! boundary on Besaid, docs/state-api.md).
 //!
+//! The same read takes the screen distortion's state ([`Distortion`],
+//! `Distortion_GetInstance`): `Distortion_renderDistortion` (`0x006c2dc0`)
+//! draws it later in the same `PhyreScene_render` (`0x00668930`), after the
+//! effects, with nothing between that writes it.
+//!
 //! The newest frames are kept ([`Capture::latest`], [`Capture::frame`]) and
 //! encode to a blob of their own ([`Frame::encode`]), apart from the
 //! snapshot.
@@ -44,7 +49,15 @@ pub const LAST_DRAWN_KEY: u64 = (0x5bc << 32) | 0x78;
 /// The encoding's first four bytes ([`Frame::encode`]).
 pub const MAGIC: [u8; 4] = *b"FXDR";
 /// The encoding's version.
-pub const VERSION: u16 = 1;
+pub const VERSION: u16 = 2;
+/// `Distortion_GetInstance`'s instance pointer (`0x006c2290`).
+pub const DISTORTION: u32 = 0x00cd_eb88;
+/// The distortion grid: 9 x 9 vertices (`0x006c2700`), 8 x 8 quads of two
+/// triangles (`0x006c26d0`: 0x180 indices).
+pub const GRID_VERTICES: usize = 81;
+pub const GRID_INDICES: usize = 0x180;
+/// The copy's alpha cap in `Distortion_renderDistortion`.
+pub const COPY_ALPHA_MAX: f32 = 0.8;
 /// The list's capacity (`+0x38cc`, 0xc00 entries).
 const LIST_MAX: u32 = 0xc00;
 /// Bounds on what one frame reads (guards against a torn list).
@@ -114,6 +127,52 @@ pub struct Event {
     pub words: [u32; 2],
 }
 
+/// The screen distortion as `Distortion_renderDistortion` (`0x006c2dc0`)
+/// will draw it this frame (docs/formats/postfx.md, "Distortion"): each
+/// frame the colour is blended into a buffer kept across frames
+/// (`buffer = colour * a + buffer * (1 - a)`, `a` = [`Distortion::copy_alpha`];
+/// with [`Distortion::reset`] a plain copy, `buffer = colour`), then the
+/// grid, sampling that buffer, replaces the colour: per pixel
+/// `buffer(uv) * colour` (no blend; the grid covers the screen).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Distortion {
+    /// `+0x7d`: the pass is skipped this frame (the game's update said so,
+    /// `graphicSetDistortionSkipped`); the next frame then resets.
+    pub skipped: bool,
+    /// `+0x7e`: this frame's copy is a plain one (just switched on, or after
+    /// a skipped frame): the buffer starts again from the colour.
+    pub reset: bool,
+    /// `+0x78`, as `graphicSetDistortionBlur` stores it (0.25 when switched
+    /// on; the field's ripple sets `+0xbe0a0 / 128`).
+    pub blur: f32,
+    /// The grid's 81 vertices in normalised screen space: (0, 0) top left,
+    /// (1, 1) bottom right (from `+0x68`, clip space `(x, y)`:
+    /// `((x + 1) / 2, (1 - y) / 2)`).
+    pub positions: Vec<[f32; 2]>,
+    /// Where each vertex samples the buffer, in the same space (from
+    /// `+0x70` `(u, v)`: `(u, 1 - v)`, what `phyredistortionshader.fx`
+    /// samples with `UvScaleBias` (1, 1, 0, 0)). Undistorted, the same as
+    /// the position.
+    pub uvs: Vec<[f32; 2]>,
+    /// Vertex colours (R, G, B, A) from `+0x6c`, multiplying the sample (1.0
+    /// is the PS2's `0x80`: the field's tint bytes / 128).
+    pub colours: Vec<[f32; 4]>,
+    /// Triangle-list indices (from `+0x74`, `u32`s in the game).
+    pub indices: Vec<u16>,
+}
+
+impl Distortion {
+    /// The copy's alpha, `min(blur, 0.8)` (`ColorScale.a`).
+    #[must_use]
+    pub fn copy_alpha(&self) -> f32 {
+        if self.blur >= COPY_ALPHA_MAX {
+            COPY_ALPHA_MAX
+        } else {
+            self.blur
+        }
+    }
+}
+
 /// One `DrawMostVFX` call.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Frame {
@@ -126,6 +185,10 @@ pub struct Frame {
     /// List entries whose mesh instance is in no geometry of the table (the
     /// game draws them; not captured).
     pub unresolved: u32,
+    /// The screen distortion while it is on (`+0x7c`); `None` when it is
+    /// off or not set up. The game also leaves it out while the broken
+    /// screen effect draws (not read here).
+    pub distortion: Option<Distortion>,
 }
 
 /// The capture's switch and its newest frames (`Shared::vfx`).
@@ -471,7 +534,52 @@ pub fn read_frame(m: &Reader, scene: u32, update: u32) -> Frame {
         }
     }
     frame.draws.append(&mut last);
+    frame.distortion = read_distortion(m);
     frame
+}
+
+/// The distortion's state (`Distortion_GetInstance`, [`DISTORTION`]) when
+/// it is on (`+0x7c`) and its grid arrays are there (`+0x68` positions
+/// `x, y, z`, `+0x6c` colours, `+0x70` uvs, `+0x74` `u32` indices;
+/// `Distortion_setupDistortionGrid`).
+#[must_use]
+pub fn read_distortion(m: &Reader) -> Option<Distortion> {
+    let d = m.ptr(DISTORTION)?;
+    if m.u8(d.wrapping_add(0x7c))? == 0 {
+        return None;
+    }
+    let n = u32::try_from(GRID_VERTICES).ok()?;
+    let positions = m.f32s::<3>(m.ptr(d.wrapping_add(0x68))?, n);
+    let colours = m.f32s::<4>(m.ptr(d.wrapping_add(0x6c))?, n);
+    let uvs = m.f32s::<2>(m.ptr(d.wrapping_add(0x70))?, n);
+    let at = m.ptr(d.wrapping_add(0x74))?;
+    let indices = m
+        .bytes(at, 4 * GRID_INDICES)?
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|c| u16::try_from(u32::from_le_bytes(*c)).unwrap_or(u16::MAX))
+        .collect::<Vec<_>>();
+    if positions.len() != GRID_VERTICES
+        || colours.len() != GRID_VERTICES
+        || uvs.len() != GRID_VERTICES
+        || indices.iter().any(|&i| usize::from(i) >= GRID_VERTICES)
+    {
+        return None;
+    }
+    let blur = m.bytes(d.wrapping_add(0x78), 4)?;
+    Some(Distortion {
+        skipped: m.u8(d.wrapping_add(0x7d))? != 0,
+        reset: m.u8(d.wrapping_add(0x7e))? != 0,
+        blur: f32::from_le_bytes([blur[0], blur[1], blur[2], blur[3]]),
+        positions: positions
+            .iter()
+            .map(|p| [f32::midpoint(p[0], 1.0), (1.0 - p[1]) * 0.5])
+            .collect(),
+        uvs: uvs.iter().map(|t| [t[0], 1.0 - t[1]]).collect(),
+        colours,
+        indices,
+    })
 }
 
 // ---- the encoding ----------------------------------------------------------
@@ -543,7 +651,9 @@ impl In<'_> {
 impl Frame {
     /// The frame as bytes (docs/state-api.md, "Effect draws"): little
     /// endian; a header (`FXDR`, version, update, unresolved, event and
-    /// draw counts), the events, then each draw with its arrays.
+    /// draw counts), the events, each draw with its arrays, then the
+    /// distortion (flags, blur, counts, arrays; flags 0 and no arrays when
+    /// off).
     #[must_use]
     pub fn encode(&self) -> Vec<u8> {
         let mut o = Out(Vec::new());
@@ -593,6 +703,37 @@ impl Frame {
             }
             for &i in &d.indices {
                 o.u16(i);
+            }
+        }
+        match &self.distortion {
+            None => {
+                o.u32(0);
+                o.f32(0.0);
+                o.u32(0);
+                o.u32(0);
+            }
+            Some(d) => {
+                o.u32(1 | u32::from(d.skipped) << 1 | u32::from(d.reset) << 2);
+                o.f32(d.blur);
+                let n = d.positions.len();
+                o.u32(u32::try_from(n).unwrap_or(u32::MAX));
+                o.u32(u32::try_from(d.indices.len()).unwrap_or(u32::MAX));
+                for &v in d.positions.iter().flatten() {
+                    o.f32(v);
+                }
+                for k in 0..n {
+                    for &v in d.uvs.get(k).unwrap_or(&[0.0; 2]) {
+                        o.f32(v);
+                    }
+                }
+                for k in 0..n {
+                    for &v in d.colours.get(k).unwrap_or(&[0.0; 4]) {
+                        o.f32(v);
+                    }
+                }
+                for &i in &d.indices {
+                    o.u16(i);
+                }
             }
         }
         o.0
@@ -658,11 +799,39 @@ impl Frame {
                 indices,
             });
         }
+        let flags = i.u32()?;
+        let blur = i.f32()?;
+        let n = i.u32()? as usize;
+        let m = i.u32()? as usize;
+        let distortion = if flags & 1 == 0 {
+            if n != 0 || m != 0 {
+                return None;
+            }
+            None
+        } else {
+            let positions = i.f32s::<2>(n)?;
+            let uvs = i.f32s::<2>(n)?;
+            let colours = i.f32s::<4>(n)?;
+            let mut indices = Vec::with_capacity(m.min(i.0.len() / 2));
+            for _ in 0..m {
+                indices.push(i.u16()?);
+            }
+            Some(Distortion {
+                skipped: flags & 2 != 0,
+                reset: flags & 4 != 0,
+                blur,
+                positions,
+                uvs,
+                colours,
+                indices,
+            })
+        };
         Some(Self {
             update,
             draws,
             events,
             unresolved,
+            distortion,
         })
     }
 }
@@ -699,6 +868,7 @@ mod tests {
                 words: [3, 4],
             }],
             unresolved: 1,
+            distortion: None,
         };
         let bytes = f.encode();
         assert_eq!(&bytes[..4], b"FXDR");
@@ -714,14 +884,156 @@ mod tests {
         };
         let b = f.encode();
         // header 24, draw head 4+8+4+4+2+1+1 = 24, world 48, name 2 + its
-        // bytes, counts 8, arrays 3 * (12 + 16 + 8) + 3 * 2
+        // bytes, counts 8, arrays 3 * (12 + 16 + 8) + 3 * 2, no distortion
+        // 16
         let name = draw(19).texture.len();
-        assert_eq!(b.len(), 24 + 24 + 48 + 2 + name + 8 + 3 * 36 + 6);
+        assert_eq!(b.len(), 24 + 24 + 48 + 2 + name + 8 + 3 * 36 + 6 + 16);
+        assert_eq!(&b[b.len() - 16..], &[0; 16]);
         assert_eq!(u32::from_le_bytes([b[8], b[9], b[10], b[11]]), 7);
         assert_eq!(u32::from_le_bytes([b[20], b[21], b[22], b[23]]), 1);
         // the key, low word first
         assert_eq!(&b[28..36], &[6, 0, 0, 0, 0x18, 0xa3, 0xd2, 0]);
         assert_eq!(u32::from_le_bytes([b[40], b[41], b[42], b[43]]), 0x8);
+    }
+
+    /// The game's grid (`Distortion_setupDistortionGrid`) at `base` in a
+    /// fresh arena: `+0x68` positions, `+0x6c` colours, `+0x70` uvs,
+    /// `+0x74` indices, then `updateDistortionVertex(row, col, ..., u, v)`
+    /// for each vertex with `f(row, col)`'s `(u, v)` and colour.
+    fn game_grid(
+        on: u8,
+        flags: [u8; 2],
+        blur: f32,
+        vertex: &dyn Fn(u32, u32) -> ([f32; 2], [f32; 4]),
+    ) -> Arena {
+        let arena = Arena::new().unwrap();
+        let base = 0x0100_0000;
+        arena.map(base, 0x1_0000, "distortion").unwrap();
+        arena.map(DISTORTION & !0xfff, 0x1000, "global").unwrap();
+        let (pos, col, uv, idx) = (base + 0x1000, base + 0x2000, base + 0x3000, base + 0x4000);
+        arena.write_bytes(DISTORTION, &base.to_le_bytes());
+        for (off, p) in [(0x68, pos), (0x6c, col), (0x70, uv), (0x74, idx)] {
+            arena.write_bytes(base + off, &p.to_le_bytes());
+        }
+        arena.write_bytes(base + 0x78, &blur.to_le_bytes());
+        arena.write_bytes(base + 0x7c, &[on, flags[0], flags[1], 1]);
+        let put = |at: u32, v: &[f32]| {
+            for (k, x) in v.iter().enumerate() {
+                arena.write_bytes(at + 4 * u32::try_from(k).unwrap(), &x.to_le_bytes());
+            }
+        };
+        // 0x006c2ca0, 0x006c2bb0: vertex 9 i + j at (-1 + i/4, -1 + j/4, 1),
+        // uv (i/8, j/8); 0x006c28e0: colours 1
+        #[allow(clippy::cast_precision_loss)]
+        for i in 0..9u32 {
+            for j in 0..9u32 {
+                let k = 9 * i + j;
+                put(
+                    pos + 12 * k,
+                    &[i as f32 * 0.25 - 1.0, j as f32 * 0.25 - 1.0, 1.0],
+                );
+                put(uv + 8 * k, &[i as f32 * 0.125, j as f32 * 0.125]);
+                put(col + 16 * k, &[1.0; 4]);
+            }
+        }
+        // 0x006c2990: quad t = 9 r + c, (t, t+10, t+1), (t, t+9, t+10)
+        let mut n = 0;
+        for r in 0..8u32 {
+            for c in 0..8u32 {
+                let t = 9 * r + c;
+                for x in [t, t + 10, t + 1, t, t + 9, t + 10] {
+                    arena.write_bytes(idx + 4 * n, &x.to_le_bytes());
+                    n += 1;
+                }
+            }
+        }
+        // 0x006c3240: k = 9 row - col + 8; colour, then uv (u, 1 - v)
+        for row in 0..9u32 {
+            for c in 0..9u32 {
+                let ([u, v], rgba) = vertex(row, c);
+                let k = 9 * row + 8 - c;
+                put(col + 16 * k, &rgba);
+                put(uv + 8 * k, &[u, 1.0 - v]);
+            }
+        }
+        arena
+    }
+
+    #[allow(clippy::cast_precision_loss)]
+    fn undistorted(row: u32, col: u32) -> ([f32; 2], [f32; 4]) {
+        ([row as f32 / 8.0, col as f32 / 8.0], [1.0; 4])
+    }
+
+    #[test]
+    fn the_distortion_grid_reads_in_screen_space() {
+        let a = game_grid(1, [0, 1], 0.25, &undistorted);
+        let d = read_distortion(&Reader(&a)).expect("on");
+        assert!(!d.skipped && d.reset);
+        assert!((d.blur - 0.25).abs() < f32::EPSILON);
+        assert_eq!(d.positions.len(), GRID_VERTICES);
+        assert_eq!(d.indices.len(), GRID_INDICES);
+        // the undistorted ripple samples where it draws
+        assert_eq!(d.uvs, d.positions);
+        // the field's (row, col) is screen (row / 8, col / 8), y down:
+        // vertex 9 row + 8 - col
+        assert_eq!(d.positions[8], [0.0, 0.0]);
+        assert_eq!(d.positions[0], [0.0, 1.0]);
+        assert_eq!(d.positions[80], [1.0, 0.0]);
+        assert_eq!(d.positions[9 * 3 + 8 - 5], [0.375, 0.625]);
+        assert_eq!(&d.indices[..6], &[0, 10, 1, 0, 9, 10]);
+    }
+
+    #[test]
+    fn a_rippled_vertex_keeps_its_place_and_moves_its_sample() {
+        #[allow(clippy::cast_precision_loss)]
+        let a = game_grid(1, [1, 0], 1.0, &|row, col| {
+            let ([u, v], _) = undistorted(row, col);
+            if (row, col) == (4, 2) {
+                ([u + 0.03, v - 0.02], [0.5, 0.75, 1.0, 1.0])
+            } else {
+                ([u, v], [1.0; 4])
+            }
+        });
+        let d = read_distortion(&Reader(&a)).expect("on");
+        assert!(d.skipped && !d.reset);
+        assert!((d.copy_alpha() - COPY_ALPHA_MAX).abs() < f32::EPSILON);
+        let k = 9 * 4 + 8 - 2;
+        assert_eq!(d.positions[k], [0.5, 0.25]);
+        assert!((d.uvs[k][0] - 0.53).abs() < 1e-6 && (d.uvs[k][1] - 0.23).abs() < 1e-6);
+        assert_eq!(d.colours[k], [0.5, 0.75, 1.0, 1.0]);
+    }
+
+    #[test]
+    fn the_distortion_is_none_while_off() {
+        let a = game_grid(0, [0, 0], 0.5, &undistorted);
+        assert_eq!(read_distortion(&Reader(&a)), None);
+    }
+
+    #[test]
+    fn a_frame_with_the_distortion_encodes_and_decodes_unchanged() {
+        let a = game_grid(1, [0, 1], 0.5, &undistorted);
+        let f = Frame {
+            update: 3,
+            draws: vec![draw(1)],
+            distortion: read_distortion(&Reader(&a)),
+            ..Frame::default()
+        };
+        let b = f.encode();
+        assert_eq!(Frame::decode(&b), Some(f.clone()));
+        // the distortion: flags, blur, counts 16, 81 * (8 + 8 + 16), 384 * 2
+        let tail = 16 + GRID_VERTICES * 32 + GRID_INDICES * 2;
+        let none = Frame {
+            distortion: None,
+            ..f
+        };
+        assert_eq!(b.len(), none.encode().len() - 16 + tail);
+        let t = &b[b.len() - tail..];
+        assert_eq!(u32::from_le_bytes([t[0], t[1], t[2], t[3]]), 1 | 4);
+        assert_eq!(f32::from_le_bytes([t[4], t[5], t[6], t[7]]), 0.5);
+        assert_eq!(u32::from_le_bytes([t[8], t[9], t[10], t[11]]), 81);
+        assert_eq!(u32::from_le_bytes([t[12], t[13], t[14], t[15]]), 0x180);
+        // the first position, (0, 1)
+        assert_eq!(f32::from_le_bytes([t[20], t[21], t[22], t[23]]), 1.0);
     }
 
     #[test]
@@ -733,8 +1045,12 @@ mod tests {
         .encode();
         assert_eq!(Frame::decode(&b[..b.len() - 1]), None);
         let mut other = b.clone();
-        other[4] = 2;
-        assert_eq!(Frame::decode(&other), None);
+        other[4] = 1;
+        assert_eq!(Frame::decode(&other), None, "version 1");
+        let mut other = b.clone();
+        let n = other.len();
+        other[n - 8] = 1;
+        assert_eq!(Frame::decode(&other), None, "counts without the flag");
         assert_eq!(Frame::decode(b"FXD"), None);
     }
 
