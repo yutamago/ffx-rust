@@ -950,14 +950,18 @@ impl Materials {
         }
         let tech = technique_for(m, effect, pass)?;
         let data = m.u32(self.mi.wrapping_add(0x28))?.wrapping_add(0x24 * i);
+        let variants = m.u32(tech.wrapping_add(4))? & 0x7fff_ffff;
+        // the renderer's cached variant, else (an assumption: the game asks
+        // `PEffect_findContextVariant`, which may answer -1 and draw nothing)
+        // the only one of a one-variant technique, as every VFX technique seen
         let variant = if m.u32(data.wrapping_add(0x18)) == Some(effect) {
             m.u32(data.wrapping_add(0x14))?
-        } else if m.u32(tech.wrapping_add(4))? & 0x7fff_ffff == 1 {
+        } else if variants == 1 {
             0
         } else {
             return None;
         };
-        if variant.cast_signed() < 0 {
+        if variant >= variants {
             return None;
         }
         let shader = m

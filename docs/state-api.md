@@ -199,7 +199,9 @@ blending. `technique` is `None` and `blends` empty when the chain could
 not be read (no material yet, a context variant the renderer has not
 picked, a value outside D3D11's); none was in the probe runs.
 
-Seen (Besaid and battles; alpha (one, zero, add) throughout): `0xa`,
+Seen (Besaid and battles; the full table, with `0x28`, `0x80a`, `0x0`,
+`0x10` and `0x40000000` (write mask 0), is effects-draw.md's; alpha (one,
+zero, add) except the write-mask-0 draws): `0xa`,
 `0xb` `Transparent` (one, one, add), `OptimizedTrans` (src alpha, one,
 add); `0x8`, `0x9` `Transparent` (one, inv src alpha, add),
 `OptimizedTrans` (src alpha, inv src alpha, add); `0x18` either, (one,
