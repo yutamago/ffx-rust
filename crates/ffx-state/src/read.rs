@@ -783,7 +783,7 @@ mod tests {
         assert!(l.valid);
         assert_eq!(l.colour_scale, [0.5, 0.6, 0.7]);
         assert!((l.fog_near - 62.0).abs() < f32::EPSILON);
-        assert!(l.lights.is_empty());
+        assert_eq!(l.lights, [] as [Light; 0]);
         assert_eq!(l.character_ambient, [0.0; 3]);
         // initialised, with a light set whose second PLight is null
         let (set, table, light, record) = (
