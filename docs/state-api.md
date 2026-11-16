@@ -162,6 +162,16 @@ here. `menus.windows` lists the PS2 menus' windows in use
 the opener's words (kind, character, index), so each screen's cursor and
 the character it shows can be drawn.
 
+## Objects (API 8)
+
+`objects` is the map's object tree as the scene keeps it (`PhyreScene`
+`+0x1198`): per object id (the number in its meshes' names, `N_kShape`)
+its meshes' live world matrices (3x4, the camera's packing, render space)
+and whether each is drawn (the layer mask). Scripts move objects
+(`graphicObjectSetTranslation`/`Rotation` rewrite the matrices) and show
+one of several meshes at a time (layers), e.g. Besaid's birds (objects
+18..32, two wing poses each, placed at the origin in the file).
+
 ## Schema
 
 `cargo run -p ffx-state --example schema` prints it; the test
@@ -183,6 +193,7 @@ struct Snapshot
   battlers: list<Battler>
   look: Look
   save: Save
+  objects: list<SceneObject>
 struct World
   map: u16
   previous_map: u16
@@ -317,6 +328,13 @@ struct MenuWindow
   cursor: i16
   kind: u8
   args: bytes
+struct SceneObject
+  id: u32
+  meshes: list<SceneMesh>
+struct SceneMesh
+  world: mat3x4
+  drawn: bool
+  layer: u8
 struct Save
   valid: bool
   gil: u32

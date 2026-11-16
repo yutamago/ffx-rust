@@ -116,6 +116,12 @@ api_struct! {
         /// the characters' names and stats, the inventory; what the menus
         /// and the save screens show.
         save: Save,
+        /// The map's objects as the scene keeps them now (`PhyreScene`
+        /// `+0x1198`): each id's meshes with their live world matrices and
+        /// whether they are drawn, so objects that scripts move
+        /// (`graphicObjectSetTranslation`/`Rotation`) or show and hide (the
+        /// layer mask) can be drawn where the game draws them.
+        objects: Vec<SceneObject>,
     }
 }
 
@@ -396,6 +402,32 @@ api_struct! {
 }
 
 api_struct! {
+    /// One map object (a key of the scene's object tree, `PhyreScene`
+    /// `+0x1198`: the number in its meshes' names, `N_kShape`).
+    SceneObject {
+        /// The object id (the tree node's key, `+0xc`).
+        id: u32,
+        /// Its meshes in the scene's order (the node's list, `+0x10`).
+        meshes: Vec<SceneMesh>,
+    }
+}
+
+api_struct! {
+    /// One mesh instance of a map object.
+    SceneMesh {
+        /// Its world matrix (`*(mesh +4)`), 3x4 in the camera's packing
+        /// (`PMatrix4_toWorldMatrix3x4`; render space, the map's x 10
+        /// included).
+        world: [f32; 12],
+        /// It is drawn: its draw record (`+0x1c`) points back at it (the
+        /// layer mask `+0xfb14` has its layer, `+0x48`).
+        drawn: bool,
+        /// Its layer (`+0x48`).
+        layer: u8,
+    }
+}
+
+api_struct! {
     /// The game state block's parts the menus show (`g_SaveData`
     /// `0x0112ca90`, docs/formats/save.md; the names Fahrenheit's).
     Save {
@@ -638,6 +670,8 @@ pub fn structs() -> Vec<&'static StructSchema> {
         Look::schema(),
         Light::schema(),
         MenuWindow::schema(),
+        SceneObject::schema(),
+        SceneMesh::schema(),
         Save::schema(),
         PartyMember::schema(),
         ItemStack::schema(),
@@ -682,12 +716,25 @@ mod tests {
         let save = 1 + 4 + 4 + 2 + 2 + 2 + 2 + 2 + 2;
         assert_eq!(
             b.len(),
-            8 + 4 + 8 + world + camera + input + 2 + actor + menus + 2 + effects + 2 + look + save
+            8 + 4
+                + 8
+                + world
+                + camera
+                + input
+                + 2
+                + actor
+                + menus
+                + 2
+                + effects
+                + 2
+                + look
+                + save
+                + 2
         );
     }
 
     /// FNV-1a of `schema::text()` at [`API_VERSION`].
-    const PINNED: u64 = 0x764d_ba32_6ee5_a54b;
+    const PINNED: u64 = 0x490d_a917_3585_fede;
 
     /// A field change must raise [`API_VERSION`]: the schema's text is
     /// pinned to the version here.
@@ -722,11 +769,12 @@ mod tests {
                 "effects",
                 "battlers",
                 "look",
-                "save"
+                "save",
+                "objects"
             ]
         );
         assert!(matches!(s.fields[5].ty, Ty::List(_)));
-        assert_eq!(structs().len(), 19);
+        assert_eq!(structs().len(), 21);
         assert!(Actor::schema().fields.iter().all(|f| !f.doc.is_empty()));
     }
 }

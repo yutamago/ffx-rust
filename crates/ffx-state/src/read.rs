@@ -11,7 +11,8 @@ use ffx_chara::layout as l;
 
 use crate::{
     Actor, Battler, Bone, Camera, EffectInstance, Effects, Input, ItemStack, Light, Look,
-    MenuOption, MenuWindow, Menus, Message, PartyMember, Save, ScreenFilter, Snapshot, World,
+    MenuOption, MenuWindow, Menus, Message, PartyMember, Save, SceneMesh, SceneObject,
+    ScreenFilter, Snapshot, World,
 };
 
 /// The game's memory, read only.
@@ -299,6 +300,7 @@ pub fn read(mem: &dyn Reader, update: u32, game_time: f64) -> Snapshot {
         battlers: battlers(&m),
         look: look(&m),
         save: save(&m),
+        objects: scene_objects(&m),
     }
 }
 
@@ -558,6 +560,76 @@ const LIGHTING_PITCH: u32 = 0x1ac;
 const LIGHTING_YAW: u32 = 0x1b0;
 const LIGHTING_READY: u32 = 0x1cc;
 const PLIGHT_LEVEL: u32 = 0x24;
+
+/// The scene's object tree (`PhyreScene` `+0x1198`; `DynGeoTree`, as
+/// `ffx_graphic`'s `tree_find_key` walks it): the head, the root at its
+/// `+0xc`, nodes `+0` lower, `+4` higher, `+0xc` the key, `+0x10` the list
+/// (`+0` count, `+8` the meshes); a mesh `+4` its world 3x4, `+0x1c` its
+/// draw record (whose `+0x1c` is the mesh while drawn), `+0x48` its layer.
+const SCENE_OBJECTS: u32 = 0x1198;
+const SCENE_MAP_CLUSTER: u32 = 0x10d4;
+/// At most this many objects and meshes an object (a guard against a
+/// tree being rebuilt while read).
+const MAX_OBJECTS: usize = 512;
+const MAX_MESHES: u32 = 64;
+
+fn scene_objects(m: &Mem<'_>) -> Vec<SceneObject> {
+    let scene = m.u32(G_PHYRE_SCENE);
+    if scene == 0 || m.u32(scene.wrapping_add(SCENE_MAP_CLUSTER)) == 0 {
+        return Vec::new();
+    }
+    let head = scene.wrapping_add(SCENE_OBJECTS);
+    let mut out = Vec::new();
+    // in order, iteratively (lower subtree, node, higher subtree)
+    let mut stack = Vec::new();
+    let mut node = m.u32(head.wrapping_add(0xc));
+    while (node != head && node != 0) || !stack.is_empty() {
+        while node != head && node != 0 && stack.len() < MAX_OBJECTS {
+            stack.push(node);
+            node = m.u32(node);
+        }
+        let Some(n) = stack.pop() else { break };
+        if out.len() >= MAX_OBJECTS {
+            break;
+        }
+        let list = m.u32(n.wrapping_add(0x10));
+        let count = if list == 0 {
+            0
+        } else {
+            m.u32(list).min(MAX_MESHES)
+        };
+        let data = if list == 0 {
+            0
+        } else {
+            m.u32(list.wrapping_add(8))
+        };
+        let meshes = (0..count)
+            .filter_map(|i| {
+                let mesh = m.u32(data.wrapping_add(4 * i));
+                if mesh == 0 {
+                    return None;
+                }
+                let world = m.u32(mesh.wrapping_add(4));
+                let rec = m.u32(mesh.wrapping_add(0x1c));
+                Some(SceneMesh {
+                    world: if world == 0 {
+                        [0.0; 12]
+                    } else {
+                        m.floats(world)
+                    },
+                    drawn: rec != 0 && m.u32(rec.wrapping_add(0x1c)) == mesh,
+                    layer: m.u8(mesh.wrapping_add(0x48)),
+                })
+            })
+            .collect();
+        out.push(SceneObject {
+            id: m.u32(n.wrapping_add(0xc)),
+            meshes,
+        });
+        node = m.u32(n.wrapping_add(4));
+    }
+    out
+}
 
 /// `g_TkMenuWindows`: 32 records of `0x98` bytes (docs/formats/menu.md).
 const MENU_WINDOWS: u32 = 0x0184_0900;
