@@ -127,6 +127,8 @@ ffx-pcore.workspace = true
 # tests/boot.rs: a subtitle's text decoded with the archive's charset
 ffx-text.workspace = true
 ffx-vbf.workspace = true
+# tests/vfx_uv.rs and examples/vfx-probe.rs (`--texels`): effect textures decoded
+ffx-phyre.workspace = true
 
 [lints]
 workspace = true

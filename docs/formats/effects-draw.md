@@ -355,6 +355,99 @@ counts appear in the same order as the game's draws (runs of up to 21
 consecutive draws on Besaid), and the DTT's second pass is drawn as often
 as the first (26,308 times each in the Valefor run).
 
+## Texture coordinates (2026-11-16)
+
+**The shaders use the uvs as the arrays hold them.** Every textured VFX
+family's vertex shader copies `TEXCOORD0` to its output unchanged
+(`mov o2.xy, v3.xy`: `vfxdefaultshader` for `0x8` and `0x18`,
+`vfxadditiveshader`'s, shared with `vfxadditivenclipshader`, for `0xa` and
+`0xb`, `vfxshapeshader` for `0x9`), and every pixel shader of those
+families samples `TextureSampler` (`t1`) with `TextureSamplerState` (`s0`)
+at the interpolated value (`sample r0, v2.xy, t1, s0`), its first
+instruction (`ffx-dxbc`'s `dump_ops` on every container of the five
+files). No texture matrix, constant, second uv stream or per-draw value
+takes part: the shaders' constants are the ones in "States and
+constants". An effect's frames are in the arrays: the fills write each
+frame's uvs (the field's strips and the save sphere's orb scroll theirs
+every update; the sphere's sparkle quads keep one block, the same over
+updates 60-210).
+
+**`v` counts from the texture's bottom row.** The game uploads a
+texture's rows as the file stores them, bottom row first, with no flip
+(docs/formats/scene.md, "Asset parity": `0x0058fc20`), and D3D11 samples
+the first row in memory at `v = 0`. `ffx_phyre`'s decoders, its DDS export
+and the PNGs `ffx-import` makes turn the image upright (top row first), so
+on those a captured `(u, v)` samples `(u, 1 - v)` (`vfx::upright_uv`). A
+frontend that uploads the stored rows (`Texture::pixels`) uses the uvs as
+they are. The same holds for the scene's own meshes (the scene builder
+uploads the stored rows); the UI draw flips `v` in its fill instead
+(docs/formats/ui-draw.md).
+
+Seen at Besaid (developer save 7): the save sphere's two sparkle quads
+(flags `0xa`, keys `(6, 0xd29c68)` and `(8, 0xd29da8)`) sample
+`yonishi_data/dat_et/bat_eff/et_tex/tex/D3D11/15456_19_0_0_256_1024.dds.phyre`
+(512 x 2048 in the file: animation frames of 64 texels, 8 a row, then
+larger images) at u
+0.0039..0.2461, v 0.4385..0.4990. Corners `(0.0039, 0.4990)`, `(0.2461,
+0.4990)`, `(0.0039, 0.4385)`, `(0.2461, 0.4385)`: texels (2, 1022), (126,
+1022), (2, 898), (126, 898) from the first stored row, which are rows
+1026 and 1150 of the upright image. That block, x 2..126 and upright y
+1026..1150, is one of the larger images: one soft white ball (alpha 255
+in the middle, 0 at the corners), the glow the game shows around the
+orb. Read top-down (upright rows 898..1022) the block covers four
+64-texel frames of other animations (two lightning frames, a ball and a
+ring of dots), clear in the middle (alpha 2). `tests/vfx_uv.rs` checks both on the
+archive's texture.
+
+**Each draw has its own sampler.** The pixel shader's `s0` is the
+material's `TextureSamplerState`: a tweakable definition of the
+material's effect (`+0x20` count, `+0x24` 16-byte definitions: `+2` the
+type, `0x47` a sampler state, `+4` the name, bit 0 a flag, `+8` the
+offset in the parameter buffer), whose slot in the parameter buffer
+(material `+4`) is `{0x47, 0, PSamplerState, 0}`;
+`PShaderProgramBindingD3D11::setTextureParameters` (`0x0059b3d0`) binds
+the state's D3D11 object (`+0x20`). The VFX effects also declare
+`GlobalSamplerState`, `NormalMapSamplerState` and `ZBufferSamplerState`
+(the last for the soft particles' depth read, `ld`, no sampler). The
+description is `PSamplerStateD3D11::create`'s (`0x00595bf0`): filter by
+`0x0058aa10` from the min filter byte `+0` (0, 2 point; 1, 3 linear; 4
+point with linear mips; 5 linear with linear mips), the mag filter byte
+`+1` (non-zero linear, `+4`) and the comparison bit 6 of `+0x1c` (`+0x80`),
+anisotropic (`0x55`) whenever the renderer's maximum anisotropy
+(`0x00c25370`) is over 1; the address modes from the wrap bytes `+2..+4`
+(`0x0058ab10`: 1 wrap, 3 border, 4 mirror, else clamp); the bias `+8`,
+the anisotropy `+0xc`, the border bytes `+0x10..+0x13`. `ffx_host::vfx`
+captures it (`Draw::sampler`, FXDR version 5).
+
+At Besaid every field effect of `map/bsil/bsil00/fp/tex` (the sea's
+strips, the orb's hemispheres and its disc) is `0x15` (min, mag and mip
+linear), wrap, and the uvs need it: the strips run u 1.0..2.4, v
+-1.83..-0.14, the hemispheres u 1.2..2.98, v -1.98..0.5. The sparkle
+quads (`bat_eff`) are `0x15`, clamp. Checked against the game's own binds:
+a trace of the bound pixel sampler at every `DrawIndexed` (the graphics
+layer's `CreateSamplerState` descriptions, headless, null device; a
+throwaway patch, not kept) gives, in draw order, wrap for the 24 draws
+before the sparkle quads (the strips and the hemispheres, index counts
+960, 576, 720, …, 192, 192), clamp for the two 6-index sparkle draws,
+wrap for the disc's two after them, all `0x15`, as the capture reads
+them. The orb's hemispheres follow the same rules (the
+same shader path and upload); their texture (`14336`) is a soft pattern
+whose mean alpha at the vertices is about the same either way (195 with
+`1 - v`, 192 without), so it does not tell the two readings apart the
+way the atlas does.
+
+In battle (field 34, save 51 driven, 4,000 frames: black magic, attacks)
+the mode varies within one family and texture folder, so it is per
+material, not per family or folder: flags `0xa` with `yonishi_data`
+textures 130,402 draws clamp and 1,630 wrap, with `magic` textures 29,890
+clamp and 2,031 wrap, with the battle map's (`btlmap`) 8,895 wrap; `0x8`
+`btlmap` 15,952 clamp; `0x9` wrap; `0xb` `yonishi_data` 8,003 wrap; `0x18`
+(`yonishi_data`) and `0x28` (`magic`) clamp; the DTT draws (`0x1000`,
+`FrameBuffer`) clamp. Every sampler read was `0x15` (the renderer's
+maximum anisotropy was not over 1 in these headless runs). The untextured families (`0x0`,
+`0x2`, `0x3`, `0x10`, `0x40000000`) have no `TextureSamplerState`
+(`Draw::sampler` `None`).
+
 ## Instance keys and makers
 
 A geometry is found in the table by its 64-bit instance key, `(lo, hi)` as
@@ -538,6 +631,8 @@ gd-ffx. What it adds to the census:
 - **The blend** of each draw: the material's technique and the blend of
   each of its shader passes ("Blend" above), read from the material
   chain as `selectTechniquePass` walks it (FXDR version 4).
+- **The sampler** of each draw: the material's `TextureSamplerState` as
+  D3D11 describes it ("Texture coordinates" above; FXDR version 5).
 - **Field effects.** Besaid at the save sphere (developer save 7): 30
   draws, all from `DrawMostVFX`, no draw events, every entry in the
   table. The save sphere `f001`'s glow is six entries (two hemispheres,
