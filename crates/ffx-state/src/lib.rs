@@ -23,7 +23,7 @@ pub use read::{LANGUAGE_UNKNOWN, Reader, read};
 pub use schema::{ApiStruct, ApiType, Field, StructSchema, Ty};
 
 /// The API's version: a frontend checks it before it decodes a snapshot.
-pub const API_VERSION: u32 = 7;
+pub const API_VERSION: u32 = 8;
 
 /// The first four bytes of an encoded snapshot (`FFXS`).
 pub const MAGIC: u32 = u32::from_le_bytes(*b"FFXS");
@@ -112,6 +112,10 @@ api_struct! {
         /// How the scene is lit and coloured: the colour scale every
         /// material gets, the fog, the character lights.
         look: Look,
+        /// The game's own record of play (`g_SaveData`): gil, the party,
+        /// the characters' names and stats, the inventory; what the menus
+        /// and the save screens show.
+        save: Save,
     }
 }
 
@@ -366,6 +370,78 @@ api_struct! {
 }
 
 api_struct! {
+    /// The game state block's parts the menus show (`g_SaveData`
+    /// `0x0112ca90`, docs/formats/save.md; the names Fahrenheit's).
+    Save {
+        /// `g_SaveData` is readable (the values below were read).
+        valid: bool,
+        /// Gil (`+0x3d48`, `g_SaveGil`).
+        gil: u32,
+        /// Play time in seconds (`+0xbc`; the game stops it at 3,599,999,
+        /// 999:59:59).
+        play_time: u32,
+        /// The front line: 3 character indices (`+0x3d58`,
+        /// `g_SaveInParty`; 0xff empty).
+        frontline: Vec<u8>,
+        /// The back line: 17 (`+0x3d5b`, `g_SaveOutParty`; 0xff empty).
+        backline: Vec<u8>,
+        /// The 18 characters (`ply_save`, `+0x55cc`, 0x94 bytes each; and
+        /// their names, `+0x634c`).
+        members: Vec<PartyMember>,
+        /// The inventory's used slots (`+0x3ecc` the ids, `+0x40cc` the
+        /// counts; 256 slots): a slot with a count.
+        items: Vec<ItemStack>,
+        /// The key items, a bit each (`+0x448c`, 8 `u16`, as bytes).
+        key_items: Vec<u8>,
+    }
+}
+
+api_struct! {
+    /// One character's `ply_save` (docs/formats/save.md).
+    PartyMember {
+        /// Its index (0 Tidus .. 17; the battle's party index too).
+        index: u8,
+        /// Its name as the player set it, in the game's text encoding (20
+        /// bytes at `+0x634c + 20 i`, up to the first 0; decode with the
+        /// game's character set).
+        name: Vec<u8>,
+        /// Joined (`+0x2c` bit 0, `MsGetSavePlyJoin`).
+        joined: bool,
+        /// HP, MP and their maxima (`+0x1c`..`+0x28`).
+        hp: u32,
+        mp: u32,
+        max_hp: u32,
+        max_mp: u32,
+        /// The 8 stats (`+0x2f`..`+0x36`): strength, defence, magic, magic
+        /// defence, agility, luck, evasion, accuracy.
+        stats: Vec<u8>,
+        /// AP and all AP gained (`+0x18`, `+0x14`).
+        ap: u32,
+        total_ap: u32,
+        /// Sphere levels available (`+0x3b`).
+        sphere_levels: u8,
+        /// The limit gauge and its full value (`+0x39`, `+0x3a`).
+        limit_charge: u8,
+        limit_charge_max: u8,
+        /// Weapon and armour: their slots in `g_Equipment` (`+0x2d`, `+0x2e`).
+        weapon: u8,
+        armour: u8,
+    }
+}
+
+api_struct! {
+    /// One inventory slot in use.
+    ItemStack {
+        /// The slot (0..255): the menu's order.
+        slot: u8,
+        /// The item id (`0x2000` + the kernel's item index).
+        id: u16,
+        /// How many.
+        count: u8,
+    }
+}
+
+api_struct! {
     /// How the renderer colours the scene (docs/formats/render.md, "Lights
     /// and fog at run time" and "Scenery light levels"): what a frontend
     /// needs to draw the game's own shaders' result. `scene` is
@@ -523,6 +599,9 @@ pub fn structs() -> Vec<&'static StructSchema> {
         Battler::schema(),
         Look::schema(),
         Light::schema(),
+        Save::schema(),
+        PartyMember::schema(),
+        ItemStack::schema(),
     ]
 }
 
@@ -560,14 +639,16 @@ mod tests {
         // the look (no lights): valid, the scale, ambient, fog, character
         // ambient, the lights' count
         let look = 1 + 12 + 12 + 12 + 16 + 12 + 2;
+        // the save (default: empty lists): valid, gil, time, four counts
+        let save = 1 + 4 + 4 + 2 + 2 + 2 + 2 + 2;
         assert_eq!(
             b.len(),
-            8 + 4 + 8 + world + camera + input + 2 + actor + menus + 2 + effects + 2 + look
+            8 + 4 + 8 + world + camera + input + 2 + actor + menus + 2 + effects + 2 + look + save
         );
     }
 
     /// FNV-1a of `schema::text()` at [`API_VERSION`].
-    const PINNED: u64 = 0xab45_d0d4_7b2e_d792;
+    const PINNED: u64 = 0xf4f2_6dc1_85de_b59f;
 
     /// A field change must raise [`API_VERSION`]: the schema's text is
     /// pinned to the version here.
@@ -579,7 +660,7 @@ mod tests {
         });
         assert_eq!(
             (API_VERSION, hash),
-            (7, PINNED),
+            (8, PINNED),
             "the schema changed: raise API_VERSION and pin the new hash"
         );
     }
@@ -601,11 +682,12 @@ mod tests {
                 "messages",
                 "effects",
                 "battlers",
-                "look"
+                "look",
+                "save"
             ]
         );
         assert!(matches!(s.fields[5].ty, Ty::List(_)));
-        assert_eq!(structs().len(), 15);
+        assert_eq!(structs().len(), 18);
         assert!(Actor::schema().fields.iter().all(|f| !f.doc.is_empty()));
     }
 }

@@ -10,8 +10,8 @@
 use ffx_chara::layout as l;
 
 use crate::{
-    Actor, Battler, Bone, Camera, EffectInstance, Effects, Input, Light, Look, MenuOption, Menus,
-    Message, ScreenFilter, Snapshot, World,
+    Actor, Battler, Bone, Camera, EffectInstance, Effects, Input, ItemStack, Light, Look,
+    MenuOption, Menus, Message, PartyMember, Save, ScreenFilter, Snapshot, World,
 };
 
 /// The game's memory, read only.
@@ -298,6 +298,7 @@ pub fn read(mem: &dyn Reader, update: u32, game_time: f64) -> Snapshot {
         effects: effects(&m),
         battlers: battlers(&m),
         look: look(&m),
+        save: save(&m),
     }
 }
 
@@ -556,6 +557,72 @@ const LIGHTING_PITCH: u32 = 0x1ac;
 const LIGHTING_YAW: u32 = 0x1b0;
 const LIGHTING_READY: u32 = 0x1cc;
 const PLIGHT_LEVEL: u32 = 0x24;
+
+/// `g_SaveData`'s parts the menus show (docs/formats/save.md).
+const SAVE_TIME: u32 = 0xbc;
+const SAVE_GIL: u32 = 0x3d48;
+const SAVE_FRONTLINE: u32 = 0x3d58;
+const SAVE_BACKLINE: u32 = 0x3d5b;
+const SAVE_ITEM_IDS: u32 = 0x3ecc;
+const SAVE_ITEM_COUNTS: u32 = 0x40cc;
+const SAVE_ITEM_SLOTS: u32 = 256;
+const SAVE_KEY_ITEMS: u32 = 0x448c;
+const SAVE_PLY: u32 = 0x55cc;
+const PLY_SIZE: u32 = 0x94;
+const PLY_COUNT: u32 = 18;
+const SAVE_NAMES: u32 = 0x634c;
+const NAME_SIZE: u32 = 20;
+
+fn save(m: &Mem<'_>) -> Save {
+    let s = |o: u32| SAVE_DATA + o;
+    if !m.mapped::<4>(s(SAVE_NAMES + NAME_SIZE * PLY_COUNT - 4)) {
+        return Save::default();
+    }
+    let members = (0..PLY_COUNT)
+        .map(|i| {
+            let p = |o: u32| s(SAVE_PLY + PLY_SIZE * i + o);
+            let raw: [u8; NAME_SIZE as usize] = m.bytes(s(SAVE_NAMES + NAME_SIZE * i));
+            let end = raw.iter().position(|&b| b == 0).unwrap_or(raw.len());
+            PartyMember {
+                index: u8::try_from(i).unwrap_or(0),
+                name: raw[..end].to_vec(),
+                joined: m.u8(p(0x2c)) & 1 != 0,
+                hp: m.u32(p(0x1c)),
+                mp: m.u32(p(0x20)),
+                max_hp: m.u32(p(0x24)),
+                max_mp: m.u32(p(0x28)),
+                stats: m.bytes::<8>(p(0x2f)).to_vec(),
+                ap: m.u32(p(0x18)),
+                total_ap: m.u32(p(0x14)),
+                sphere_levels: m.u8(p(0x3b)),
+                limit_charge: m.u8(p(0x39)),
+                limit_charge_max: m.u8(p(0x3a)),
+                weapon: m.u8(p(0x2d)),
+                armour: m.u8(p(0x2e)),
+            }
+        })
+        .collect();
+    let items = (0..SAVE_ITEM_SLOTS)
+        .filter_map(|i| {
+            let count = m.u8(s(SAVE_ITEM_COUNTS + i));
+            (count > 0).then(|| ItemStack {
+                slot: u8::try_from(i).unwrap_or(0),
+                id: m.u16(s(SAVE_ITEM_IDS + 2 * i)),
+                count,
+            })
+        })
+        .collect();
+    Save {
+        valid: true,
+        gil: m.u32(s(SAVE_GIL)),
+        play_time: m.u32(s(SAVE_TIME)),
+        frontline: m.bytes::<3>(s(SAVE_FRONTLINE)).to_vec(),
+        backline: m.bytes::<17>(s(SAVE_BACKLINE)).to_vec(),
+        members,
+        items,
+        key_items: m.bytes::<16>(s(SAVE_KEY_ITEMS)).to_vec(),
+    }
+}
 
 fn look(m: &Mem<'_>) -> Look {
     let scene = m.u32(G_PHYRE_SCENE);

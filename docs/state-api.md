@@ -146,6 +146,18 @@ levels", "Lights and fog at run time"):
   `ambient + character_ambient + sum colour x level x (dot(L, N) x 0.5 +
   0.5)^2`.
 
+## Save (API 8)
+
+`save` holds the parts of the game state block (`g_SaveData`
+`0x0112ca90`, docs/formats/save.md) that the menus and the save screens
+show: gil, the play time, the front and back lines, the 18 characters
+(`ply_save`: name, joined, HP/MP, the 8 stats, AP, sphere levels, the
+limit gauge, weapon and armour slots), the inventory's used slots and the
+key-item bits. Names are in the game's text encoding (a frontend decodes
+them with the game's character set, as the messages). The battle's party
+index is the member's `index`, so a battle HUD names its battlers from
+here.
+
 ## Schema
 
 `cargo run -p ffx-state --example schema` prints it; the test
@@ -153,7 +165,7 @@ levels", "Lights and fog at run time"):
 the fields raises `API_VERSION`.
 
 ```text
-ffx-state API 7
+ffx-state API 8
 struct Snapshot
   update: u32
   game_time: f64
@@ -166,6 +178,7 @@ struct Snapshot
   effects: Effects
   battlers: list<Battler>
   look: Look
+  save: Save
 struct World
   map: u16
   previous_map: u16
@@ -291,6 +304,35 @@ struct Light
   level: f32
   pitch: f32
   yaw: f32
+struct Save
+  valid: bool
+  gil: u32
+  play_time: u32
+  frontline: bytes
+  backline: bytes
+  members: list<PartyMember>
+  items: list<ItemStack>
+  key_items: bytes
+struct PartyMember
+  index: u8
+  name: bytes
+  joined: bool
+  hp: u32
+  mp: u32
+  max_hp: u32
+  max_mp: u32
+  stats: bytes
+  ap: u32
+  total_ap: u32
+  sphere_levels: u8
+  limit_charge: u8
+  limit_charge_max: u8
+  weapon: u8
+  armour: u8
+struct ItemStack
+  slot: u8
+  id: u16
+  count: u8
 ```
 
 ## Sources
