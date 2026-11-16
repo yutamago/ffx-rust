@@ -812,7 +812,7 @@ fn look(m: &Mem<'_>) -> Look {
         m.u32(scene.wrapping_add(SCENE_CONTEXT))
     };
     if context == 0
-        || !m.mapped::<0x30>(context)
+        || !m.mapped::<0x3c>(context)
         || !m.mapped::<16>(scene.wrapping_add(SCENE_COLOUR_SCALE))
     {
         return Look::default();
@@ -1023,7 +1023,7 @@ mod tests {
             scene + SCENE_COLOUR_SCALE,
             &[f(0.5), f(0.6), f(0.7), f(1.0)].concat(),
         );
-        m.put(context, &[0u8; 0x30]);
+        m.put(context, &[0u8; 0x3c]);
         m.put(context + CONTEXT_FOG_NEAR, &f(62.0));
         m.put(
             context + CONTEXT_BACKGROUND,
