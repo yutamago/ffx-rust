@@ -45,7 +45,7 @@ The world holds two clusters:
 
 | Cluster | What | Instances |
 |---|---|---|
-| world list 1 | the characters' cluster (scene `+0x11e4`, `attachChrClusterTo3DWorld`): every character's and weapon's `PMeshInstance`, each in an instance list of its own (so a snapshot slot is 0; the instance's place is its record index) | cdsp0000: 0 a 15-segment character (82 joints), 1-3 `f001` (Tidus's sword, three unskinned meshes), 4 Tidus `c001` (13 segments, 79 joints, 53 skeleton matrices); bsil0000: 14 |
+| world list 1 | the characters' cluster (scene `+0x11e4`, `attachChrClusterTo3DWorld`): every character's and weapon's `PMeshInstance`, each in an instance list of its own (so a snapshot slot is 0; the instance's place is its record index) | cdsp0000: 0 a 15-segment character (82 joints), 1-3 `f001` (the deck's save sphere, three unskinned meshes: a field object of its own, not Tidus's sword; the save sphere's model on every map, `docs/state-api.md`, "Effect draws"), 4 Tidus `c001` (13 segments, 79 joints, 53 skeleton matrices); bsil0000: 14 |
 | world list 0 | the ground-shadow cluster (scene `+0x28c4`, added to `+0x7c` for shadow solutions 0 and 2, `docs/formats/scene-maps.md` Q7): a `ClassDynamicMesh`/`ClassDynamicMeshInstance`, one segment | 1 |
 
 ## Draws of cdsp0000 (scene draws 100-116)

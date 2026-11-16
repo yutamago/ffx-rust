@@ -597,6 +597,117 @@ fn a_developer_save_loads_on_request() {
     eprintln!("player {} at {:?}", p.model, p.position);
 }
 
+/// The effect draws' capture (`ffx_host::vfx`, docs/state-api.md "Effect
+/// draws"): on Besaid at the save sphere (developer save 7) the frame of
+/// update `n`, read as `PhyreScene_DrawMostVFX` draws, comes before the
+/// snapshot of update `n`; it draws the beach's field effects with the
+/// map's own textures, and the sphere's orb at the save sphere `f001`'s
+/// render point (its field position with x and y negated). The blob
+/// decodes to the same frame.
+#[test]
+fn the_effect_draws_are_captured_at_the_save_sphere() {
+    use std::sync::{Arc, Mutex};
+    let Some(exe) = exe() else { return };
+    let opts = ffx_host::Options {
+        documents: Some(documents("vfx-capture")),
+        gfx: ffx_host::gfx::Config {
+            backend: ffx_host::gfx::Choice::Null,
+            no_record: true,
+            ..ffx_host::gfx::Config::default()
+        },
+        ..ffx_host::Options::default()
+    };
+    let mut exec = ffx_host::boot_opts(&exe, ffx_host::ports::table(), &opts).unwrap();
+    exec.set_budget(Duration::from_secs(300));
+    assert!(!exec.shared().vfx.enabled(), "off unless switched on");
+    type Got = Option<(Arc<ffx_state::Snapshot>, Arc<ffx_host::vfx::Frame>)>;
+    let got: Arc<Mutex<Got>> = Arc::default();
+    let id = {
+        let got = Arc::clone(&got);
+        let shared = Arc::downgrade(exec.shared());
+        let asked = std::sync::atomic::AtomicBool::new(false);
+        let on_at = std::sync::atomic::AtomicU32::new(u32::MAX);
+        exec.shared().observers.add(Arc::new(move |s| {
+            use std::sync::atomic::Ordering::Relaxed;
+            let Some(shared) = shared.upgrade() else {
+                return;
+            };
+            if s.world.map == 0x15d && s.world.event_frame > 30 && !asked.swap(true, Relaxed) {
+                shared
+                    .requests
+                    .push(ffx_host::requests::Request::DevSave(7), Box::new(|_| {}));
+            }
+            let player = s.actors.iter().any(|a| a.player && a.hidden == 0);
+            if s.world.map == 0x46 && s.world.player_control && player {
+                if on_at.load(Relaxed) == u32::MAX {
+                    on_at.store(s.update, Relaxed);
+                    shared.vfx.set_enabled(true);
+                } else if s.update >= on_at.load(Relaxed) + 10 {
+                    if let (Some(f), Ok(mut g)) = (shared.vfx.frame(s.update), got.lock()) {
+                        *g = Some((Arc::clone(s), f));
+                    }
+                    shared.stop_all(Stop::Milestone("effect draws captured".into()));
+                }
+            }
+        }))
+    };
+    let stop = exec.run_entry().unwrap();
+    exec.join_threads(Duration::from_secs(5));
+    exec.shared().observers.remove(id);
+    assert_eq!(stop, Stop::Milestone("effect draws captured".into()));
+    let (s, f) = got
+        .lock()
+        .unwrap()
+        .clone()
+        .expect("a frame of the snapshot's update");
+    eprintln!(
+        "update {}: {} draws, {} events, {} unresolved",
+        f.update,
+        f.draws.len(),
+        f.events.len(),
+        f.unresolved
+    );
+    assert_eq!(f.update, s.update);
+    assert!(f.draws.len() > 10, "{}", f.draws.len());
+    assert_eq!(f.unresolved, 0);
+    for d in &f.draws {
+        assert!(!d.texture.is_empty(), "{d:?}");
+        assert_eq!(d.colours.len(), d.positions.len());
+        assert_eq!(d.uvs.len(), d.positions.len());
+        assert!(
+            d.indices
+                .iter()
+                .all(|&i| usize::from(i) < d.positions.len())
+        );
+    }
+    let map_tex = "/PS3Data/map/bsil/bsil00/fp/tex/D3D11/";
+    assert!(f.draws.iter().any(|d| d.texture.contains(map_tex)));
+    let sphere = s
+        .actors
+        .iter()
+        .find(|a| a.model == "f001")
+        .expect("the save sphere");
+    let at = [-sphere.position[0], -sphere.position[1], sphere.position[2]];
+    // the orb: textured draws whose vertices lie within a few units of the
+    // sphere, above it
+    let orb: Vec<_> = f
+        .draws
+        .iter()
+        .filter(|d| {
+            d.texture.contains(map_tex)
+                && d.positions.iter().all(|p| {
+                    (p[0] - at[0]).abs() < 6.0
+                        && (p[2] - at[2]).abs() < 6.0
+                        && (0.0..12.0).contains(&(p[1] - at[1]))
+                })
+        })
+        .collect();
+    eprintln!("save sphere at {at:?}: {} orb draws", orb.len());
+    assert!(orb.len() >= 2, "{at:?}");
+    let decoded = ffx_host::vfx::Frame::decode(&f.encode()).unwrap();
+    assert_eq!(&decoded, &*f);
+}
+
 /// The game-state API's message windows (API 3): developer save 6 (the
 /// arrival off Besaid, scenario 111) plays its cut scene, whose first
 /// subtitle opens a message window with its text.
