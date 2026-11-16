@@ -34,6 +34,7 @@ fn main() {
     let opts = ffx_host::Options {
         documents: Some(documents),
         gfx: ffx_host::gfx::Config {
+            backend: ffx_host::gfx::Choice::Null,
             no_record: true,
             ..ffx_host::gfx::Config::default()
         },

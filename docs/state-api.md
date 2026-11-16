@@ -149,7 +149,7 @@ kept).
   `latest()` the newest): the frame of update `n` is there before the
   snapshot of update `n` reaches the observers. Measured on Besaid
   (developer save 7, 60 frames): each frame's arrays equal those read at
-  the boundary of the same update on every draw (30 of 30), and differ
+  the boundary of the same update on every draw (30 of 30; one run of 60 frames, measured with the probe's boundary reads, not a test), and differ
   from the neighbouring boundaries' on 29 of 30 (the sea's strips move
   every update).
 - **Space.** `positions` are in render space (Godot's: the field's x and y

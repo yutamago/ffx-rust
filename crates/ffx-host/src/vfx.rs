@@ -170,6 +170,11 @@ impl Capture {
     /// Keeps `frame` as the newest.
     pub fn push(&self, frame: Frame) {
         let mut f = self.frames.lock().unwrap_or_else(PoisonError::into_inner);
+        // switched off while this frame was read: keep nothing (set_enabled
+        // cleared the list under the same lock)
+        if !self.enabled() {
+            return;
+        }
         if f.len() >= KEPT {
             f.remove(0);
         }
@@ -288,7 +293,7 @@ fn geometries(m: &Reader) -> HashMap<u32, Found> {
         return out;
     };
     let mut add = |key: u64, g: u32, pooled: bool| {
-        if let Some(mi) = m.ptr(g + 0xc) {
+        if let Some(mi) = m.ptr(g.wrapping_add(0xc)) {
             out.entry(mi).or_insert(Found {
                 key,
                 geometry: g,
@@ -298,32 +303,41 @@ fn geometries(m: &Reader) -> HashMap<u32, Found> {
     };
     if let Some(head) = m.ptr(table) {
         let mut stack = Vec::new();
-        let mut node = m.u32(head + 4).unwrap_or(head);
+        let mut node = m.u32(head.wrapping_add(4)).unwrap_or(head);
         let mut guard = 0;
         loop {
-            while node != head && node != 0 && m.u8(node + 0xd) == Some(0) && guard < 100_000 {
+            while node != head
+                && node != 0
+                && m.u8(node.wrapping_add(0xd)) == Some(0)
+                && guard < 100_000
+            {
                 guard += 1;
                 stack.push(node);
                 node = m.u32(node).unwrap_or(head);
             }
             let Some(n) = stack.pop() else { break };
-            let lo = m.u32(n + 0x10).unwrap_or(0);
-            let hi = m.u32(n + 0x14).unwrap_or(0);
-            if let Some(g) = m.ptr(n + 0x18) {
+            let lo = m.u32(n.wrapping_add(0x10)).unwrap_or(0);
+            let hi = m.u32(n.wrapping_add(0x14)).unwrap_or(0);
+            if let Some(g) = m.ptr(n.wrapping_add(0x18)) {
                 add((u64::from(hi) << 32) | u64::from(lo), g, false);
             }
-            node = m.u32(n + 8).unwrap_or(head);
+            node = m.u32(n.wrapping_add(8)).unwrap_or(head);
         }
     }
-    let n = m.u32(table + 8).unwrap_or(0) & 0x7fff_ffff;
-    if let (Some(keys), Some(geoms)) = (m.ptr(table + 0xc), m.ptr(table + 0x1c)) {
+    let n = m.u32(table.wrapping_add(8)).unwrap_or(0) & 0x7fff_ffff;
+    if let (Some(keys), Some(geoms)) = (
+        m.ptr(table.wrapping_add(0xc)),
+        m.ptr(table.wrapping_add(0x1c)),
+    ) {
         for i in 0..n.min(0x1_0000) {
-            let lo = m.u32(keys + 8 * i).unwrap_or(0);
-            let hi = m.u32(keys + 8 * i + 4).unwrap_or(0);
+            let lo = m.u32(keys.wrapping_add(i.wrapping_mul(8))).unwrap_or(0);
+            let hi = m
+                .u32(keys.wrapping_add(i.wrapping_mul(8).wrapping_add(4)))
+                .unwrap_or(0);
             if lo == 0 && hi == 0 {
                 continue;
             }
-            if let Some(g) = m.ptr(geoms + 4 * i) {
+            if let Some(g) = m.ptr(geoms.wrapping_add(i.wrapping_mul(4))) {
                 add((u64::from(hi) << 32) | u64::from(lo), g, true);
             }
         }
@@ -350,35 +364,37 @@ pub fn to_render(world: &[f32; 12], local: [f32; 3]) -> [f32; 3] {
 /// matrix (`*(mi +4)`).
 fn entry_draws(m: &Reader, place: u32, mi: u32, found: Found, out: &mut Vec<Draw>) {
     let g = found.geometry;
-    let flags = m.u32(g + 0x3c).unwrap_or(0);
+    let flags = m.u32(g.wrapping_add(0x3c)).unwrap_or(0);
     let world = m
-        .ptr(mi + 4)
+        .ptr(mi.wrapping_add(4))
         .and_then(|p| m.f32s::<12>(p, 1).first().copied())
         .unwrap_or(IDENTITY);
-    let Some(data) = m.ptr(g + 0x24) else { return };
+    let Some(data) = m.ptr(g.wrapping_add(0x24)) else {
+        return;
+    };
     let n = m
-        .u32(data + 0x90)
+        .u32(data.wrapping_add(0x90))
         .map_or(0, |n| n.cast_signed().clamp(0, SEGMENTS_MAX));
-    let Some(base) = m.ptr(data + 0x94) else {
+    let Some(base) = m.ptr(data.wrapping_add(0x94)) else {
         return;
     };
     for i in 0..n.cast_unsigned() {
-        let s = base + 0x6c * i;
-        let indices = m.u32(s + 8).unwrap_or(0);
+        let s = base.wrapping_add(0x6c * i);
+        let indices = m.u32(s.wrapping_add(8)).unwrap_or(0);
         if indices.cast_signed() <= 0 {
             continue;
         }
         let indices = indices.min(INDICES_MAX);
-        let vertices = m.u32(s + 4).unwrap_or(0).min(VERTICES_MAX);
+        let vertices = m.u32(s.wrapping_add(4)).unwrap_or(0).min(VERTICES_MAX);
         let positions: Vec<[f32; 3]> = m
-            .f32s::<3>(m.u32(s + 0xc).unwrap_or(0), vertices)
+            .f32s::<3>(m.u32(s.wrapping_add(0xc)).unwrap_or(0), vertices)
             .iter()
             .map(|p| to_render(&world, *p))
             .collect();
         let n = positions.len();
-        let mut colours = m.f32s::<4>(m.u32(s + 0x14).unwrap_or(0), vertices);
+        let mut colours = m.f32s::<4>(m.u32(s.wrapping_add(0x14)).unwrap_or(0), vertices);
         colours.resize(n, [0.0; 4]);
-        let mut uvs = m.f32s::<2>(m.u32(s + 0x18).unwrap_or(0), vertices);
+        let mut uvs = m.f32s::<2>(m.u32(s.wrapping_add(0x18)).unwrap_or(0), vertices);
         uvs.resize(n, [0.0; 2]);
         out.push(Draw {
             place,
@@ -388,11 +404,14 @@ fn entry_draws(m: &Reader, place: u32, mi: u32, found: Found, out: &mut Vec<Draw
             pooled: found.pooled,
             segment: u16::try_from(i).unwrap_or(u16::MAX),
             world,
-            texture: m.ptr(s + 0x20).and_then(|p| m.c_str(p)).unwrap_or_default(),
+            texture: m
+                .ptr(s.wrapping_add(0x20))
+                .and_then(|p| m.c_str(p))
+                .unwrap_or_default(),
             positions,
             colours,
             uvs,
-            indices: m.u16s(m.u32(s + 0x1c).unwrap_or(0), indices),
+            indices: m.u16s(m.u32(s.wrapping_add(0x1c)).unwrap_or(0), indices),
         });
     }
 }
@@ -408,16 +427,26 @@ pub fn read_frame(m: &Reader, scene: u32, update: u32) -> Frame {
         update,
         ..Frame::default()
     };
-    let count = m.u32(scene + 0xf8cc).unwrap_or(0).cast_signed().max(0);
-    let n_events = m.u32(scene + 0xfb54).unwrap_or(0).min(EVENTS_MAX);
+    let count = m
+        .u32(scene.wrapping_add(0xf8cc))
+        .unwrap_or(0)
+        .cast_signed()
+        .max(0);
+    let n_events = m
+        .u32(scene.wrapping_add(0xfb54))
+        .unwrap_or(0)
+        .min(EVENTS_MAX);
     let mut end = count.cast_unsigned();
-    if let Some(list) = m.ptr(scene + 0xfb5c) {
+    if let Some(list) = m.ptr(scene.wrapping_add(0xfb5c)) {
         for i in 0..n_events {
-            let at = list + 16 * i;
+            let at = list.wrapping_add(16 * i);
             let ev = Event {
                 kind: m.u32(at).unwrap_or(u32::MAX),
-                at: m.u32(at + 4).unwrap_or(0),
-                words: [m.u32(at + 8).unwrap_or(0), m.u32(at + 12).unwrap_or(0)],
+                at: m.u32(at.wrapping_add(4)).unwrap_or(0),
+                words: [
+                    m.u32(at.wrapping_add(8)).unwrap_or(0),
+                    m.u32(at.wrapping_add(12)).unwrap_or(0),
+                ],
             };
             end = end.max(ev.at);
             frame.events.push(ev);
@@ -428,7 +457,7 @@ pub fn read_frame(m: &Reader, scene: u32, update: u32) -> Frame {
     let held = m.u32(MAGIC_ID) == Some(LAST_DRAWN_MAGIC);
     let mut last = Vec::new();
     for place in 0..end {
-        let Some(mi) = m.ptr(scene + 0x38cc + 4 * place) else {
+        let Some(mi) = m.ptr(scene.wrapping_add(0x38cc + 4 * place)) else {
             continue;
         };
         let Some(&found) = table.get(&mi) else {
