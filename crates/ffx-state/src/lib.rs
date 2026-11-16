@@ -23,7 +23,7 @@ pub use read::{LANGUAGE_UNKNOWN, Reader, read};
 pub use schema::{ApiStruct, ApiType, Field, StructSchema, Ty};
 
 /// The API's version: a frontend checks it before it decodes a snapshot.
-pub const API_VERSION: u32 = 8;
+pub const API_VERSION: u32 = 9;
 
 /// The first four bytes of an encoded snapshot (`FFXS`).
 pub const MAGIC: u32 = u32::from_le_bytes(*b"FFXS");
@@ -601,6 +601,16 @@ api_struct! {
         /// 0.235, 0.275 on cdsp00): the scene target's clear colour, not
         /// tone-curved; the post passes still apply.
         background: [f32; 3],
+        /// The glow pass (docs/formats/postfx.md, "Glow map", "Glow"), from
+        /// the map's `GlobalCamera`: `FullGlowThreshold` (context `+0x80`),
+        /// `NoGlowThreshold` (`+0x84`, at least 0.35), `GlowGain` (`+0x88`)
+        /// and the spread (`+0x8c`). Without a `GlobalCamera`, and on map
+        /// 0x199 (0x12ea and 0x1733 while `getScenerioFlag` is 0): 1, 1, 0,
+        /// 0 (docs/formats/postfx.md, "Where the constants come from").
+        glow_full: f32,
+        glow_none: f32,
+        glow_gain: f32,
+        glow_spread: f32,
         /// The fog's colour (context `+0x10`).
         fog_colour: [f32; 3],
         /// The fog's near and far distances (`+0x20`, `+0x24`), its curve
@@ -789,9 +799,9 @@ mod tests {
         // the effects (default: no running ones, no filters): magic, the
         // two list counts, shake, music
         let effects = 4 + 2 + 2 + 4 + 4 + 4;
-        // the look (no lights): valid, the scale, ambient, background, fog,
-        // character ambient, the lights' count
-        let look = 1 + 12 + 12 + 12 + 12 + 16 + 12 + 2;
+        // the look (no lights): valid, the scale, ambient, background, glow,
+        // fog, character ambient, the lights' count
+        let look = 1 + 12 + 12 + 12 + 16 + 12 + 16 + 12 + 2;
         // the save (default: empty lists): valid, gil, time, five counts
         let save = 1 + 4 + 4 + 2 + 2 + 2 + 2 + 2 + 2;
         // the sphere grid (closed): open, current, cursor, two list counts
@@ -817,7 +827,7 @@ mod tests {
     }
 
     /// FNV-1a of `schema::text()` at [`API_VERSION`].
-    const PINNED: u64 = 0x6a7c_7533_6cec_d286;
+    const PINNED: u64 = 0xf493_18ba_2217_a2c0;
 
     /// A field change must raise [`API_VERSION`]: the schema's text is
     /// pinned to the version here.
@@ -829,7 +839,7 @@ mod tests {
         });
         assert_eq!(
             (API_VERSION, hash),
-            (8, PINNED),
+            (9, PINNED),
             "the schema changed: raise API_VERSION and pin the new hash"
         );
     }

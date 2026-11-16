@@ -239,6 +239,10 @@ levels", "Lights and fog at run time"):
 - `background`: the scene target's clear colour (context `+0x30`, the
   map's `GlobalCamera` `m_bgColor`), not tone-curved; the post passes still
   apply.
+- `glow_full`, `glow_none`, `glow_gain`, `glow_spread` (API 9): the glow
+  pass's thresholds, gain and spread (context `+0x80..+0x8c`,
+  docs/formats/postfx.md "Glow"); 1, 1, 0, 0 without a `GlobalCamera` and
+  on map 0x199 (0x12ea and 0x1733 while `getScenerioFlag` is 0).
 - `ambient`, the fog (`fog_colour`, `fog_near`, `fog_far`, `fog_curve`,
   `fog_limit`): the scene context (`*(scene +0xcc)`) `+0x00`, `+0x10`..
   `+0x2c`.
@@ -303,7 +307,7 @@ code.
 the fields raises `API_VERSION`.
 
 ```text
-ffx-state API 8
+ffx-state API 9
 struct Snapshot
   update: u32
   game_time: f64
@@ -434,6 +438,10 @@ struct Look
   colour_scale: vec3
   ambient: vec3
   background: vec3
+  glow_full: f32
+  glow_none: f32
+  glow_gain: f32
+  glow_spread: f32
   fog_colour: vec3
   fog_near: f32
   fog_far: f32
