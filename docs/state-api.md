@@ -176,12 +176,38 @@ untextured draws: the game leaves them unset), `indices` (`u16`, a
 triangle list). `vfx::Event`: kind, place, two words
 (`PhyreScene_processVFXDrawEvent`).
 
-**Encoding** (`Frame::encode`, `Frame::decode`; little-endian, version 1):
+`Frame.distortion` (`vfx::Distortion`, `None` while it is off): the
+screen distortion `Distortion_renderDistortion` draws later in the same
+render, after the effects (docs/formats/postfx.md, "Distortion": the
+field's under-water and heat ripple). The same read takes it from
+`Distortion_GetInstance` (`*0x00cdeb88`); nothing writes it between the
+two. To draw it as the game does, keep a screen-sized buffer across
+frames:
+
+1. Each frame not `skipped`: `buffer = colour` when `reset`, else
+   `buffer = colour * a + buffer * (1 - a)` with `a = copy_alpha()`
+   (`min(blur, 0.8)`), `colour` being the frame so far (scene, glow,
+   effects).
+2. Then replace the colour with the grid: 81 vertices at `positions`,
+   triangles `indices`, each pixel `buffer(uv) * colour` (interpolated
+   `uvs` and `colours`, blend off; the grid covers the screen).
+
+A `skipped` frame draws neither; the game then resets on the next. While
+the broken-screen effect draws the game skips the pass too (not
+captured). Fields: `skipped` (`+0x7d`), `reset` (`+0x7e`), `blur`
+(`+0x78`), and the grid: `positions` (normalised screen: (0, 0) top
+left, (1, 1) bottom right), `uvs` (where each vertex samples the buffer,
+the same space: undistorted equal to `positions`), `colours` (RGBA, 1.0
+the field's `0x80`; alpha 0 where the ripple is faded out) and `indices`
+(`u16`, a triangle list, 384).
+
+**Encoding** (`Frame::encode`, `Frame::decode`; little-endian, version 2;
+version 1 had no distortion part and is refused):
 
 | Bytes | Field |
 |---|---|
 | 4 | `FXDR` |
-| 2, 2 | version (1), 0 |
+| 2, 2 | version (2), 0 |
 | 4 | `update` |
 | 4 | `unresolved` |
 | 4, 4 | event count `e`, draw count `d` |
@@ -198,10 +224,25 @@ triangle list). `vfx::Event`: kind, place, two words
 | 16 `v` | colours (`f32` r, g, b, a) |
 | 8 `v` | uvs (`f32` u, v) |
 | 2 `i` | indices (`u16`) |
+| | then the distortion: |
+| 4 | flags: bit 0 on (the rest is empty without it), bit 1 `skipped`, bit 2 `reset` |
+| 4 | `blur` (`f32`) |
+| 4, 4 | vertex count `n` (81), index count `m` (384); 0 and 0 when off |
+| 8 `n` | `positions` (`f32` x, y) |
+| 8 `n` | `uvs` (`f32` u, v) |
+| 16 `n` | `colours` (`f32` r, g, b, a) |
+| 2 `m` | `indices` (`u16`) |
+
+`Frame::decode` checks the layout (magic, version, lengths), not the
+contents: an index past its vertex count, a draw's or the distortion's,
+decodes as it is. The capture never writes one (it refuses the
+distortion's indices of 81 or more); a frontend that reads blobs from
+elsewhere checks indices before drawing.
 
 **On Besaid** (developer save 7, map 70, `/map/bsil/bsil00/`; the probe
 below): 30 draws a frame (25 list entries), no events, none unresolved,
-348,080 bytes encoded. Textures from `map/bsil/bsil00/fp/tex` (the map's
+348,080 bytes encoded (version 1; 351,456 in version 2 with the
+distortion: on, blur 1, the grid flat, colours (1, 1, 1, 0)). Textures from `map/bsil/bsil00/fp/tex` (the map's
 field effects), `yonishi_data/dat_et/bat_eff/et_tex/tex` (two sparkle
 quads) and `NoTexture` (two untextured discs). Entries 0-18: the sea's
 foam and wave strips at y -1.8 to -11 (flags 8, 0xa, one 0x18). Entries
@@ -212,6 +253,11 @@ untextured disc (2, two segments) at 2.4 and 2.5 above it. Their keys'
 low words are 6, 8 and 9 and their high words addresses in `0x00d29c68`
 .. `0x00d2c118` (field effect objects; which field program each is was
 not resolved).
+
+The distortion moves on developer saves 4 (`cdsp07`), 29 (`lchb08`) and
+76 (`stbv00`): samples up to 0.0076 of the screen off their vertices
+(postfx.md, "Where it is on"); the probe prints it per frame, with the
+ripple's parameters.
 
 ```text
 FFX_GAME_DIR=~/steam-games/FFX-X2-HD cargo run --release -p ffx-host \

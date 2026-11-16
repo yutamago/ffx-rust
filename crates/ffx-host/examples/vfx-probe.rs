@@ -2,7 +2,8 @@
 //! player's `FFX.exe` headless (null device, virtual clock), loads a
 //! developer save, switches the capture on and prints each captured frame
 //! (every draw's list place, instance key, flags, texture, counts and
-//! render-space bounds, the encoded size) with the actors of the snapshot
+//! render-space bounds, the encoded size, the screen distortion and the
+//! field ripple's parameters) with the actors of the snapshot
 //! of the same update (field position and render point `(-x, -y, z)`).
 //!
 //! ```text
@@ -121,6 +122,9 @@ fn probe(shared: &Shared, snaps: &Snaps, save: i32, frames: u32) {
         if got.last().is_some_and(|g| g.update == f.update) {
             continue;
         }
+        if got.is_empty() {
+            print_ripple(shared);
+        }
         got.push(f);
     }
     // the snapshot of update n comes at the boundary after the frame
@@ -153,6 +157,7 @@ fn print_frame(f: &ffx_host::vfx::Frame, snap: Option<&ffx_state::Snapshot>) {
     for e in &f.events {
         println!("  event kind {} at {} words {:#x?}", e.kind, e.at, e.words);
     }
+    print_distortion(f.distortion.as_ref());
     for d in &f.draws {
         let (mut lo, mut hi) = ([f32::MAX; 3], [f32::MIN; 3]);
         for p in &d.positions {
@@ -201,4 +206,70 @@ fn print_frame(f: &ffx_host::vfx::Frame, snap: Option<&ffx_state::Snapshot>) {
         }
         None => println!("  no snapshot of update {}", f.update),
     }
+}
+
+/// The screen distortion: its flags and alpha, how far the samples move
+/// from their vertices (screen fractions), the colour range.
+fn print_distortion(d: Option<&ffx_host::vfx::Distortion>) {
+    let Some(d) = d else {
+        println!("  distortion off");
+        return;
+    };
+    let (mut shift, mut sum) = (0.0f32, 0.0f32);
+    for (p, t) in d.positions.iter().zip(&d.uvs) {
+        let s = (t[0] - p[0]).hypot(t[1] - p[1]);
+        shift = shift.max(s);
+        sum += s;
+    }
+    let (mut lo, mut hi) = ([f32::MAX; 4], [f32::MIN; 4]);
+    for c in &d.colours {
+        for k in 0..4 {
+            lo[k] = lo[k].min(c[k]);
+            hi[k] = hi[k].max(c[k]);
+        }
+    }
+    #[allow(clippy::cast_precision_loss)]
+    let mean = sum / d.positions.len().max(1) as f32;
+    println!(
+        "  distortion on{}{} blur {} (copy alpha {}) v {} i {} sample shift max {shift:.4} mean {mean:.4} colours {lo:.3?}..{hi:.3?} centre uv {:.4?}",
+        if d.skipped { " skipped" } else { "" },
+        if d.reset { " reset" } else { "" },
+        d.blur,
+        d.copy_alpha(),
+        d.positions.len(),
+        d.indices.len(),
+        d.uvs.get(40),
+    );
+}
+
+/// The field ripple's parameters (`yiScreff_draw`, `g_YiRender +0xbe078..`,
+/// docs/formats/postfx.md "Distortion"): flags, depth, phases, step,
+/// speed, amplitude, blur level, tint, frame count.
+fn print_ripple(shared: &Shared) {
+    let arena = shared.arena();
+    let at = 0x0187_6e00 + 0xbe078;
+    if !arena.is_mapped(at, 0x34) {
+        return;
+    }
+    let mut raw = [0u8; 0x34];
+    arena.read_bytes(at, &mut raw);
+    let word = |o: usize| u32::from_le_bytes([raw[o], raw[o + 1], raw[o + 2], raw[o + 3]]);
+    let float = |o: usize| f32::from_bits(word(o));
+    let mut status = [0u8; 4];
+    arena.read_bytes(0x018d_ed08, &mut status);
+    println!(
+        "ripple: status bit 24 {} flags {:#x} depth {} phases {} {} step {} speed {} amplitude {} (+0xbe09c {}) blur level {} tint {:02x?} frames {}",
+        u32::from_le_bytes(status) >> 24 & 1,
+        word(0),
+        float(4),
+        float(8),
+        float(0xc),
+        float(0x18),
+        float(0x1c),
+        float(0x20),
+        float(0x24),
+        word(0x28),
+        &raw[0x2c..0x2f],
+        word(0x30),
+    );
 }
