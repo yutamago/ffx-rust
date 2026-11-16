@@ -138,8 +138,9 @@ levels", "Lights and fog at run time"):
   `+0x1198`; nothing while `+0x10d4` is 0). The map shaders
   multiply by it just before the tone curve `2.1 min(c, 0.4) + 1.08
   clamp(c, 0.4, 0.58) - 0.47`.
-- `background`: the clear colour (context `+0x30`, the map's
-  `GlobalCamera` `m_bgColor`), drawn wherever nothing covers the screen.
+- `background`: the scene target's clear colour (context `+0x30`, the
+  map's `GlobalCamera` `m_bgColor`), not tone-curved; the post passes still
+  apply.
 - `ambient`, the fog (`fog_colour`, `fog_near`, `fog_far`, `fog_curve`,
   `fog_limit`): the scene context (`*(scene +0xcc)`) `+0x00`, `+0x10`..
   `+0x2c`.

@@ -597,8 +597,9 @@ api_struct! {
         /// `GlobalCamera` `m_ambientColor`, 0 without character lighting).
         ambient: [f32; 3],
         /// The background (clear) colour (context `+0x30`: the map's
-        /// `GlobalCamera` `m_bgColor`, docs/formats/postfx.md; default 0.235,
-        /// 0.235, 0.275), drawn as it is wherever nothing covers the screen.
+        /// `GlobalCamera` `m_bgColor`, docs/formats/postfx.md; e.g. 0.235,
+        /// 0.235, 0.275 on cdsp00): the scene target's clear colour, not
+        /// tone-curved; the post passes still apply.
         background: [f32; 3],
         /// The fog's colour (context `+0x10`).
         fog_colour: [f32; 3],
