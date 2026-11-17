@@ -131,8 +131,12 @@ the style, 0 free; `MsNumberPut`) and links them at the end of the list
 `g_BtlNumberList` (`0x011360bc`, the next at `+0x10`): its digits lowest
 first (`+3` the place, `+4` the digit), then the word (one glyph of the
 damage font) at the place after them, each with the colour (`+1`), the
-battler (`+2`), a delay of its place plus one (`+5`), the age (`+6`) and
-the life (`+7`, 30). The reader walks the list (at most 0x80 records,
+battler (`+2`), a delay of its place plus one (`+5`; a number's delay
+is its digit count, plus one with a word), the age (`+6`) and the life
+(`+7`, 30). A new number reads age 0 or 1 in the snapshot after its
+update, by who put it (effect and motion damage are put after the
+update's ageing step, the status step's Regen/Zombie and `chr_damage`'s
+HP loss before it); a frontend spots new numbers by comparing snapshots. The reader walks the list (at most 0x80 records,
 each inside the pool on a record's boundary) and joins a number's
 characters back: the same battler, style, colour, age and life, the
 places in a row. `MsNumberCalcProcess` (`0x0079f5e0`) counts each delay
@@ -1193,7 +1197,8 @@ leaving the pool stopped, none out of battle) and
 the deck's battle fought with Circle to the results; every new HP number
 (age 0) stands over a battler that lost that much HP in its update (all
 it had when the number was more), equal to its `damage` while it is
-listed; three hits, two of them killing blows with overkill.
+listed; three hits, two of them killing blows doing more than the HP
+left (one of them with the overkill word).
 
 API 11: `crates/ffx-state`'s unit tests (the live and the confirmed
 choice, a variable of each number kind and a raw text expanded in a
