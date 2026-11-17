@@ -822,6 +822,37 @@ For gd-ffx's second playtest round.
   1 and 0 at 0; the held fade-out before it (mode 3, `frames` 1, total 1)
   1.0.
 
+## The free camera, the numbers' frames, the weapons' names (API 13)
+
+For gd-ffx, which read these from game memory until now.
+
+- **The free camera** (`Snapshot.free_camera`): the PC build's fly camera,
+  the singleton `g_FreeCamera` (`0x00ccc830`, 0x340 bytes, made on first
+  use; docs/formats/field.md, "Free camera"). `free` is its word `+0` (the
+  capture counter `FreeCamera_handleInput` toggles on bit 0x40000, tips
+  0x2ed/0x2ee), `time_stop` its byte `+0x338` (`FreeCamera_setFreePause`
+  on bit 0x100000, tips 0x2f3/0x2f4), `pause_freeze` its byte `+0x33c`
+  (`FreeCamera_setFreeCameraMode`: `Pause_Enter` sets it, `Pause_Leave`
+  clears it). While `time_stop` or `pause_freeze` is set,
+  `graphicGetFreeCameraType` answers 2 and the world stops. The game asks
+  its icon panel for icons 8 and 9 for the first two, which it refuses
+  (`IconPanel_showIcon` takes 0..6), so a frontend shows them itself. Bits
+  0x40000 and 0x100000 have no settings word in `Input_BuildPadMap`
+  (pairs 30 and 32 are pushed with 0): no key reaches them in the PC
+  build.
+- **The damage numbers' frames** (`Effects.number_frames`, while `numbers`
+  is not empty): `g_BtlNumberFrames` (`0x00c424b0`, 32 rows of 3 bytes up
+  to `g_BtlShoutStreams` at `0x00c42510`), the x and y offsets (`i8`,
+  widened) and alpha `MsNumberDrawProcess` draws a number's character by
+  (row `age - 1 - place`). Read live: x always 0; y 0, 3, 6, 8, 10, 11,
+  12, 11, 10, 8, 6, 3, 0, then a small second bounce (2, 3, 2, 0, 1) and 0
+  from row 19 on; alpha 32, 60, 84, 104, 120, then 128 (opaque).
+- **The weapons' names** (`PartyMember.weapon_gear`, the members who
+  joined and have a weapon): the `g_Equipment` record of slot `weapon`
+  as `MsGetSaveWeapon` finds it, with its `w_name` record, character, the
+  config's kana bit and `MsGetSaveWeaponName`'s text, as
+  `BattleEnd.gear_spoils` gives the gear won.
+
 ## Schema
 
 `cargo run -p ffx-state --example schema` prints it; the test
@@ -829,7 +860,7 @@ For gd-ffx's second playtest round.
 the fields raises `API_VERSION`.
 
 ```text
-ffx-state API 12
+ffx-state API 13
 struct Snapshot
   update: u32
   game_time: f64
@@ -847,6 +878,7 @@ struct Snapshot
   sphere_grid: SphereGrid
   layers: Layers
   boosters: Boosters
+  free_camera: FreeCamera
 struct World
   map: u16
   previous_map: u16
@@ -957,6 +989,7 @@ struct Effects
   shake_y: f32
   music: i32
   numbers: list<BattleNumber>
+  number_frames: list<NumberFrame>
 struct EffectInstance
   slot: u16
   id: u32
@@ -1068,6 +1101,7 @@ struct PartyMember
   limit_charge_max: u8
   weapon: u8
   armour: u8
+  weapon_gear: GearSpoil
   commands: bytes
   overdrive_mode: u8
   overdrive_modes: u32
@@ -1179,6 +1213,15 @@ struct BattleNumber
   delay: u8
   x: i32
   y: i32
+struct NumberFrame
+  x: i16
+  y: i16
+  alpha: u8
+struct FreeCamera
+  exists: bool
+  free: bool
+  time_stop: bool
+  pause_freeze: bool
 ```
 
 ## Sources
@@ -1199,6 +1242,17 @@ the opening's event, so the drawn camera comes from the scene); the pad `g_PadHe
 `ffx_chara::layout`), `g_Player` `0x01300788`.
 
 ## Tests
+
+API 13: `crates/ffx-state`'s `the_free_camera_and_the_number_frames` (the
+three flags, a camera not mapped, the frame table's signed rows, none
+without numbers); `crates/ffx-host/tests/boot.rs`
+`the_state_api_sees_the_damage_numbers` (the frame table listed in every
+snapshot with numbers and only there, the same 32 rows each time) and
+`the_state_api_sees_the_free_camera_and_the_weapons`: in developer save
+6's cut scene the singleton exists and stays off while Start is pressed
+twice (Start does not pause it there); after the run each flag set alone
+in the game's memory is read at its offset; Tidus's weapon is in use,
+his, and named.
 
 API 12: `crates/ffx-state`'s `the_damage_numbers_join_their_characters`
 (the list walked out of the pool's order, digits and words joined, a walk
