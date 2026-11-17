@@ -258,6 +258,16 @@ vertex follows the skin; larger values pick the binding mode. The HD
 cloth segments use (255, 255, 255) or (255, 0, 0) on free vertices and
 (26, 26, 26) on anchored ones (ffx-demaster `docs/models.md`, "Cloth").
 
+Each update `Sg_ClothPlaceAnchors` (`0x0082dbc0`) writes every bound
+vertex of an HD cloth segment into the segment's cloth object (`+0x4c`,
+16 bytes a vertex, in the segment's vertex order; `+0x44` the count,
+`+0x40`/`+0x42` the model and piece): its triangle's corners weighted,
+in the space the object's first 16 floats (`ClothWorld`,
+`Ch_UpdateClothMatrix`) place in render space. Unbound vertices stay at
+zero, and the shaders keep a vertex skinned by `1 - min(|v|² · 10000,
+1)`. `ffx_host::cloth` captures them for a frontend (docs/state-api.md,
+"Cloth").
+
 
 ## Module settings
 

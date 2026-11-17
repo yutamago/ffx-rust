@@ -1959,7 +1959,10 @@ the other.
   the game's main thread between two updates; it only reads. The effects'
   own geometry comes apart from it: `shared.vfx` (`ffx_host::vfx`), off
   unless switched on, keeps the `DrawMostVFX` draws of the newest frames
-  by update (`docs/state-api.md`, "Effect draws").
+  by update (`docs/state-api.md`, "Effect draws"); `shared.cloth`
+  (`ffx_host::cloth`), the same way, the characters' simulated cloth
+  vertices `graphicCharacterInstanceSetClothVertexBuffers` hands over
+  (`docs/state-api.md`, "Cloth").
 - **The rest.** `steam` loads the platform's Steam library and implements
   `steam::Backend` over it (on Linux `libsteam_api.so`: the M6 survey
   lists the two ABI differences); `documents_folder` is the folder the

@@ -709,6 +709,138 @@ fn the_effect_draws_are_captured_at_the_save_sphere() {
     assert_eq!(&decoded, &*f);
 }
 
+/// The cloth capture (`ffx_host::cloth`, docs/state-api.md "Cloth"): on
+/// Besaid at the save sphere (developer save 7) the frame of update `n`,
+/// read as `graphicCharacterInstanceSetClothVertexBuffers` hands the
+/// vertices over, comes before the snapshot of update `n`; Tidus (the
+/// player) has his five cloth segments (hood, leg mesh and the rest), each
+/// with as many vertices as the segment, the simulated ones (weight above
+/// 0) within a body length of his render point, and they move between two
+/// frames apart from him. The blob decodes to the same frame.
+#[test]
+fn the_cloth_is_captured_at_the_save_sphere() {
+    use std::sync::{Arc, Mutex};
+    type Got = Vec<(Arc<ffx_state::Snapshot>, Arc<ffx_host::cloth::Frame>)>;
+    let Some(exe) = exe() else { return };
+    let opts = ffx_host::Options {
+        documents: Some(documents("cloth-capture")),
+        gfx: ffx_host::gfx::Config {
+            backend: ffx_host::gfx::Choice::Null,
+            no_record: true,
+            ..ffx_host::gfx::Config::default()
+        },
+        ..ffx_host::Options::default()
+    };
+    let mut exec = ffx_host::boot_opts(&exe, ffx_host::ports::table(), &opts).unwrap();
+    exec.set_budget(Duration::from_secs(300));
+    assert!(!exec.shared().cloth.enabled(), "off unless switched on");
+    let got: Arc<Mutex<Got>> = Arc::default();
+    let id = {
+        let got = Arc::clone(&got);
+        let shared = Arc::downgrade(exec.shared());
+        let asked = std::sync::atomic::AtomicBool::new(false);
+        let on_at = std::sync::atomic::AtomicU32::new(u32::MAX);
+        exec.shared().observers.add(Arc::new(move |s| {
+            use std::sync::atomic::Ordering::Relaxed;
+            let Some(shared) = shared.upgrade() else {
+                return;
+            };
+            if s.world.map == 0x15d && s.world.event_frame > 30 && !asked.swap(true, Relaxed) {
+                shared
+                    .requests
+                    .push(ffx_host::requests::Request::DevSave(7), Box::new(|_| {}));
+            }
+            let player = s.actors.iter().any(|a| a.player && a.hidden == 0);
+            if s.world.map == 0x46 && s.world.player_control && player {
+                let on = on_at.load(Relaxed);
+                if on == u32::MAX {
+                    on_at.store(s.update, Relaxed);
+                    shared.cloth.set_enabled(true);
+                } else if s.update == on + 10 || s.update >= on + 12 {
+                    let Ok(mut g) = got.lock() else { return };
+                    if let Some(f) = shared.cloth.frame(s.update) {
+                        g.push((Arc::clone(s), f));
+                    }
+                    if s.update >= on + 12 {
+                        shared.stop_all(Stop::Milestone("cloth captured".into()));
+                    }
+                }
+            }
+        }))
+    };
+    let stop = exec.run_entry().unwrap();
+    exec.join_threads(Duration::from_secs(5));
+    exec.shared().observers.remove(id);
+    assert_eq!(stop, Stop::Milestone("cloth captured".into()));
+    let got = got.lock().unwrap().clone();
+    assert_eq!(got.len(), 2, "the frames of both snapshots' updates");
+    let mut simulated = Vec::new();
+    for (s, f) in &got {
+        assert_eq!(f.update, s.update);
+        let tidus = s.actors.iter().find(|a| a.player).expect("the player");
+        assert_eq!(tidus.model, "c001");
+        let at = [-tidus.position[0], -tidus.position[1], tidus.position[2]];
+        let c = f
+            .actor(i16::try_from(tidus.slot).unwrap())
+            .expect("the player's cloth");
+        assert_eq!(c.id, tidus.id);
+        eprintln!(
+            "update {}: {} characters; the player's: {:?}",
+            f.update,
+            f.characters.len(),
+            c.segments
+                .iter()
+                .map(|x| (x.model, x.piece, x.local.len()))
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(c.segments.len(), 5);
+        let mut n = 0;
+        for seg in &c.segments {
+            assert_eq!(seg.local.len(), seg.segment_vertices as usize, "{seg:?}");
+            assert_eq!(seg.positions.len(), seg.local.len());
+            for (p, &w) in seg.positions.iter().zip(&seg.weights) {
+                if w > 0.0 {
+                    n += 1;
+                    let d = (0..3).map(|k| (p[k] - at[k]).powi(2)).sum::<f32>().sqrt();
+                    assert!(d < 20.0, "{p:?} is {d} from {at:?}");
+                }
+            }
+        }
+        assert!(n > 50, "{n} simulated vertices");
+        simulated.push((c.clone(), at));
+        let decoded = ffx_host::cloth::Frame::decode(&f.encode()).unwrap();
+        assert_eq!(&decoded, &**f);
+    }
+    let moved = cloth_moved(&simulated[0], &simulated[1]);
+    eprintln!("{moved} simulated vertices moved");
+    assert!(moved > 50, "{moved}");
+}
+
+/// How many vertices simulated in both frames moved between them, apart
+/// from the character's own move (its render point `at_a` to `at_b`).
+fn cloth_moved(
+    (a, at_a): &(ffx_host::cloth::Character, [f32; 3]),
+    (b, at_b): &(ffx_host::cloth::Character, [f32; 3]),
+) -> usize {
+    let shift: [f32; 3] = std::array::from_fn(|k| at_b[k] - at_a[k]);
+    let mut moved = 0;
+    for (sa, sb) in a.segments.iter().zip(&b.segments) {
+        assert_eq!((sa.model, sa.piece), (sb.model, sb.piece));
+        for k in 0..sa.positions.len() {
+            if sa.weights[k] > 0.0 && sb.weights[k] > 0.0 {
+                let d: f32 = (0..3)
+                    .map(|i| (sb.positions[k][i] - sa.positions[k][i] - shift[i]).powi(2))
+                    .sum::<f32>()
+                    .sqrt();
+                if d > 1e-4 {
+                    moved += 1;
+                }
+            }
+        }
+    }
+    moved
+}
+
 /// The save sphere's blends (docs/formats/effects-draw.md, "Blend"): every
 /// draw's is read, one shader pass each; the orb's modulated draws use the
 /// Transparent technique (one, inverse source alpha), the sparkle quads

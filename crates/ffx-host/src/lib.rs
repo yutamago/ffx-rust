@@ -28,6 +28,7 @@ compile_error!(
 pub mod arena;
 pub mod audio;
 pub mod clock;
+pub mod cloth;
 pub mod com;
 pub mod com_methods;
 pub mod crt;
