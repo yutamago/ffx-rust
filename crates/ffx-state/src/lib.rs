@@ -23,7 +23,7 @@ pub use read::{LANGUAGE_UNKNOWN, Reader, read};
 pub use schema::{ApiStruct, ApiType, Field, StructSchema, Ty};
 
 /// The API's version: a frontend checks it before it decodes a snapshot.
-pub const API_VERSION: u32 = 12;
+pub const API_VERSION: u32 = 13;
 
 /// The first four bytes of an encoded snapshot (`FFXS`).
 pub const MAGIC: u32 = u32::from_le_bytes(*b"FFXS");
@@ -131,6 +131,37 @@ api_struct! {
         /// The PC's boosters (F1-F4): the speed-up, the power-up, the
         /// encounter mode and the auto-battle.
         boosters: Boosters,
+        /// The PC's free camera and time stop (API 13).
+        free_camera: FreeCamera,
+    }
+}
+
+api_struct! {
+    /// The PC's free camera (`FreeCamera`, the singleton `g_FreeCamera`
+    /// `0x00ccc830`, 0x340 bytes, made on first use; docs/formats/field.md,
+    /// "Free camera"), as `FreeCamera_handleInput` (`0x00680030`) and
+    /// `graphicGetFreeCameraType` (`0x006411e0`) read it. While
+    /// `time_stop` or `pause_freeze` is set the type is 2 and `Sg_MainLoop`
+    /// stops the world; while any of the three is set `PhyreScene_render`
+    /// draws from the free camera. `FreeCamera_handleInput` shows the
+    /// changes as tips (0x2ed/0x2ee the free camera, 0x2f3/0x2f4 the time
+    /// stop) and asks the icon panel for icons 8 and 9, which it refuses
+    /// (`IconPanel_showIcon` takes 0..6): a frontend shows them itself.
+    FreeCamera {
+        /// The singleton exists (`*0x00ccc830` nonzero; the fields below
+        /// were read).
+        exists: bool,
+        /// The free camera flies (word `+0`, the capture counter, nonzero:
+        /// the key `0x40000` toggles it, `FreeCamera_setType` sets it; the
+        /// mouse is captured and moves the camera).
+        free: bool,
+        /// The time stop (byte `+0x338`, `FreeCamera_setFreePause`: the
+        /// game frozen under the free camera, the sound paused).
+        time_stop: bool,
+        /// The pause screen's freeze (byte `+0x33c`,
+        /// `FreeCamera_setFreeCameraMode`: set by `Pause_Enter`, cleared by
+        /// `Pause_Leave`).
+        pause_freeze: bool,
     }
 }
 
@@ -270,6 +301,26 @@ api_struct! {
         /// The battle's damage numbers on screen (`g_BtlNumberList`), in
         /// the list's order (the oldest first); empty out of battle.
         numbers: Vec<BattleNumber>,
+        /// How the numbers move (API 13): `g_BtlNumberFrames`
+        /// (`0x00c424b0`, 32 rows of 3 bytes up to `0x00c42510`), the rows
+        /// `MsNumberDrawProcess` draws a number's character by (row `age -
+        /// 1 - place`); listed while `numbers` is not empty, else empty.
+        number_frames: Vec<NumberFrame>,
+    }
+}
+
+api_struct! {
+    /// One row of the damage numbers' frame table (`g_BtlNumberFrames`).
+    NumberFrame {
+        /// The x and y offsets (`i8` `+0`, `+1`; PS2 pixels; a loss bounces
+        /// by them): `MsNumberDrawProcess` adds `x` and subtracts `y`
+        /// (`y += oy - rise`), so a positive `y` moves the number up; every
+        /// colour takes its alpha from the row.
+        x: i16,
+        /// See `x`.
+        y: i16,
+        /// The alpha (`+2`; 0x80 opaque).
+        alpha: u8,
     }
 }
 
@@ -629,10 +680,11 @@ api_struct! {
 }
 
 api_struct! {
-    /// One piece of gear won (its 22-byte record; docs/formats/kernel.md
+    /// One piece of gear: won in battle (`BattleEnd.gear_spoils`) or worn
+    /// (`PartyMember.weapon_gear`); its 22-byte record (docs/formats/kernel.md
     /// "Equipment").
     GearSpoil {
-        /// Its id (`gear`'s).
+        /// Its id (the spoil's `gear`, or the worn weapon's).
         id: u16,
         /// The record is in use (`+2` nonzero; the results screen draws
         /// only those).
@@ -1049,6 +1101,11 @@ api_struct! {
         /// 0xff none, docs/formats/battle.md "Saved parameters").
         weapon: u8,
         armour: u8,
+        /// The weapon named (API 13): its `g_Equipment` record as
+        /// `MsGetSaveWeapon` finds slot `weapon` (`GearSpoil.id` the slot),
+        /// the name as `MsGetSaveWeaponName` gives it; default for no
+        /// weapon (0xff) or a member not joined.
+        weapon_gear: GearSpoil,
         /// The commands `0x3000`..`0x305f` learnt (`+0x3e`, 6 `u16` as
         /// bytes): command `0x3000 + i` is bit `i % 16` of `u16` `i / 16`
         /// (`MsSetSaveCommand`); later ones are `Save.shared_commands`.
@@ -1319,6 +1376,8 @@ pub fn structs() -> Vec<&'static StructSchema> {
         GearSpoil::schema(),
         MessageVar::schema(),
         BattleNumber::schema(),
+        NumberFrame::schema(),
+        FreeCamera::schema(),
     ]
 }
 
@@ -1400,8 +1459,9 @@ mod tests {
             + battle_end
             + target;
         // the effects (default: no running ones, no filters): magic, the
-        // two list counts, shake, music (API 12: no numbers)
-        let effects = 4 + 2 + 2 + 4 + 4 + 4 + 2;
+        // two list counts, shake, music (API 12: no numbers; API 13: no
+        // frames)
+        let effects = 4 + 2 + 2 + 4 + 4 + 4 + 2 + 2;
         // the look (no lights): valid, the scale, ambient, background, glow,
         // fog, character ambient, the lights' count, the global time
         let look = 1 + 12 + 12 + 12 + 16 + 12 + 16 + 12 + 2 + 4;
@@ -1415,6 +1475,8 @@ mod tests {
         // the boosters: level, speeding, the scale, power-up, encounters,
         // auto-battle
         let boosters = 1 + 1 + 4 + 1 + 1 + 1;
+        // the free camera: exists, free, time stop, the pause's freeze
+        let free_camera = 4;
         assert_eq!(
             b.len(),
             8 + 4
@@ -1434,11 +1496,12 @@ mod tests {
                 + grid
                 + layers
                 + boosters
+                + free_camera
         );
     }
 
     /// FNV-1a of `schema::text()` at [`API_VERSION`].
-    const PINNED: u64 = 0x05f2_5cab_e346_93ad;
+    const PINNED: u64 = 0xb21a_d3e8_1fc0_11fc;
 
     /// A field change must raise [`API_VERSION`]: the schema's text is
     /// pinned to the version here.
@@ -1450,7 +1513,7 @@ mod tests {
         });
         assert_eq!(
             (API_VERSION, hash),
-            (12, PINNED),
+            (13, PINNED),
             "the schema changed: raise API_VERSION and pin the new hash"
         );
     }
@@ -1477,11 +1540,12 @@ mod tests {
                 "objects",
                 "sphere_grid",
                 "layers",
-                "boosters"
+                "boosters",
+                "free_camera"
             ]
         );
         assert!(matches!(s.fields[5].ty, Ty::List(_)));
-        assert_eq!(structs().len(), 38);
+        assert_eq!(structs().len(), 40);
         assert!(Actor::schema().fields.iter().all(|f| !f.doc.is_empty()));
     }
 }

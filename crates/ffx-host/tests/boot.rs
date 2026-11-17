@@ -1615,14 +1615,28 @@ fn the_state_api_sees_the_damage_numbers() {
     let mut exec = ffx_host::boot_opts(&exe, ffx_host::ports::table(), &opts).unwrap();
     exec.set_budget(Duration::from_secs(400));
     let seen: Arc<Mutex<Seen>> = Arc::default();
+    // API 13: the frame table of each snapshot with numbers
+    let frames: Arc<Mutex<Vec<Vec<ffx_state::NumberFrame>>>> = Arc::default();
     let id = {
-        let seen = Arc::clone(&seen);
+        let (seen, frames) = (Arc::clone(&seen), Arc::clone(&frames));
         let shared = Arc::downgrade(exec.shared());
         let step = AtomicU32::new(0);
         exec.shared().observers.add(Arc::new(move |s| {
             let Some(shared) = shared.upgrade() else {
                 return;
             };
+            // listed with the numbers only (an empty table marks a
+            // snapshot that lists one without the other)
+            if (s.effects.numbers.is_empty() != s.effects.number_frames.is_empty()
+                || !s.effects.number_frames.is_empty())
+                && let Ok(mut f) = frames.lock()
+            {
+                f.push(if s.effects.numbers.is_empty() {
+                    Vec::new()
+                } else {
+                    s.effects.number_frames.clone()
+                });
+            }
             match step.load(Relaxed) {
                 0 if s.world.map == 0x15d && s.world.event_frame > 30 => {
                     shared
@@ -1707,6 +1721,171 @@ fn the_state_api_sees_the_damage_numbers() {
     eprintln!("{hits} hits, {kills} with overkill");
     assert!(hits >= 2, "{hits}");
     assert!(kills >= 1, "{kills}");
+    // the frame table: 32 rows, the same in every snapshot with numbers
+    // (the game's data) and only there, opaque rows and a loss's bounce
+    // among them
+    let frames = frames.lock().unwrap().clone();
+    assert_ne!(frames.len(), 0);
+    let rows = &frames[0];
+    eprintln!(
+        "frames: {:?}",
+        rows.iter().map(|r| (r.x, r.y, r.alpha)).collect::<Vec<_>>()
+    );
+    assert!(frames.iter().all(|f| f == rows));
+    assert_eq!(rows.len(), 32);
+    assert!(rows.iter().any(|r| r.alpha == 0x80));
+    assert!(rows.iter().any(|r| r.y != 0));
+}
+
+/// API 13: the free camera (`Snapshot.free_camera`) and the party's weapons
+/// named (`PartyMember.weapon_gear`), in developer save 6's cut scene (the
+/// arrival off Besaid). The singleton exists and stays off while the scene
+/// plays and Start is pressed twice: the free camera's keys (pairs 30 and
+/// 32, bits 0x40000 and 0x100000) have no settings word in
+/// `Input_BuildPadMap`, so no key reaches them in the PC build, and Start
+/// does not pause the scene here (no `Pause_Enter`, so `+0x33c` stays
+/// clear). Once the game stopped, the
+/// flags are set in its memory one by one and read back through
+/// `observe::snapshot`: the reader finds them at the live object's offsets.
+#[test]
+#[allow(clippy::too_many_lines)] // one walk through the game, step by step
+fn the_state_api_sees_the_free_camera_and_the_weapons() {
+    use ffx_bridge::Mem as _;
+    use std::sync::atomic::{AtomicU32, Ordering::Relaxed};
+    use std::sync::{Arc, Mutex};
+    /// the step, the update, the free camera
+    type Seen = Vec<(u32, u32, ffx_state::FreeCamera)>;
+    // after the first subtitle: (buttons, updates)
+    const STEPS: [(u32, u32); 5] = [(0, 10), (0x800, 3), (0, 40), (0x800, 3), (0, 40)];
+    let Some(exe) = exe() else { return };
+    let opts = ffx_host::Options {
+        documents: Some(documents("free-camera")),
+        gfx: ffx_host::gfx::Config {
+            backend: ffx_host::gfx::Choice::Null,
+            no_record: true,
+            ..ffx_host::gfx::Config::default()
+        },
+        ..ffx_host::Options::default()
+    };
+    let mut exec = ffx_host::boot_opts(&exe, ffx_host::ports::table(), &opts).unwrap();
+    exec.set_budget(Duration::from_secs(400));
+    let seen: Arc<Mutex<Seen>> = Arc::default();
+    let weapons: Arc<Mutex<Vec<ffx_state::PartyMember>>> = Arc::default();
+    let id = {
+        let (seen, weapons) = (Arc::clone(&seen), Arc::clone(&weapons));
+        let shared = Arc::downgrade(exec.shared());
+        let step = AtomicU32::new(0);
+        let at = AtomicU32::new(0);
+        exec.shared().observers.add(Arc::new(move |s| {
+            let Some(shared) = shared.upgrade() else {
+                return;
+            };
+            let n = step.load(Relaxed);
+            if n >= 2
+                && let Ok(mut v) = seen.lock()
+            {
+                v.push((n - 2, s.update, s.free_camera.clone()));
+            }
+            match n {
+                0 if s.world.map == 0x15d && s.world.event_frame > 30 => {
+                    shared
+                        .requests
+                        .push(ffx_host::requests::Request::DevSave(6), Box::new(|_| {}));
+                    step.store(1, Relaxed);
+                }
+                // the arrival's cut scene: its first subtitle
+                1 if s.world.story == 111
+                    && s.messages
+                        .iter()
+                        .any(|m| m.state == 2 && !m.text.is_empty()) =>
+                {
+                    if let Ok(mut w) = weapons.lock() {
+                        w.clone_from(&s.save.members);
+                    }
+                    at.store(s.update, Relaxed);
+                    step.store(2, Relaxed);
+                }
+                n if n >= 2 => {
+                    let i = usize::try_from(n - 2).unwrap_or(usize::MAX);
+                    let length = STEPS.get(i).map_or(0, |s| s.1);
+                    if s.update.saturating_sub(at.load(Relaxed)) >= length {
+                        at.store(s.update, Relaxed);
+                        step.store(n + 1, Relaxed);
+                        if let Some(&(b, _)) = STEPS.get(i + 1) {
+                            shared.clock.buttons.store(b, Relaxed);
+                        } else {
+                            shared.clock.buttons.store(0, Relaxed);
+                            shared.stop_all(Stop::Milestone("the scene".into()));
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }))
+    };
+    let stop = exec.run_entry().unwrap();
+    exec.join_threads(Duration::from_secs(5));
+    exec.shared().observers.remove(id);
+    assert_eq!(stop, Stop::Milestone("the scene".into()));
+    let seen = seen.lock().unwrap().clone();
+    assert!(seen.len() > 90, "{}", seen.len());
+    let off = ffx_state::FreeCamera {
+        exists: true,
+        ..ffx_state::FreeCamera::default()
+    };
+    assert!(seen.iter().all(|v| v.2 == off), "{seen:?}");
+    // the live object: each flag set alone is read at its offset
+    let cam: u32 = exec.mem().read(0x00cc_c830);
+    assert_ne!(cam, 0);
+    let flags = [(0u32, 4usize), (0x338, 1), (0x33c, 1)];
+    let saved: Vec<Vec<u8>> = flags
+        .iter()
+        .map(|&(o, n)| {
+            let mut b = vec![0u8; n];
+            exec.mem().read_bytes(cam + o, &mut b);
+            b
+        })
+        .collect();
+    let read = |exec: &Exec| {
+        let f = ffx_host::observe::snapshot(exec.shared()).free_camera;
+        (f.exists, f.free, f.time_stop, f.pause_freeze)
+    };
+    assert_eq!(read(&exec), (true, false, false, false));
+    let want = [
+        (true, true, false, false),
+        (true, false, true, false),
+        (true, false, false, true),
+    ];
+    for (k, &(o, n)) in flags.iter().enumerate() {
+        let mut one = vec![0u8; n];
+        one[0] = 1;
+        exec.mem().write_bytes(cam + o, &one);
+        assert_eq!(read(&exec), want[k], "flag +{o:#x}");
+        exec.mem().write_bytes(cam + o, &saved[k]);
+    }
+    assert_eq!(read(&exec), (true, false, false, false));
+    // the joined members' weapons: in use, named, their own
+    let weapons = weapons.lock().unwrap().clone();
+    let mut named = 0;
+    for m in weapons.iter().filter(|m| m.joined && m.weapon != 0xff) {
+        let g = &m.weapon_gear;
+        eprintln!(
+            "member {}: weapon slot {} record {} character {} kana {} name {:02x?}",
+            m.index, m.weapon, g.name_id, g.character, g.kana, g.name
+        );
+        assert_eq!(g.id, u16::from(m.weapon));
+        assert!(g.used, "{m:?}");
+        assert!(!g.name.is_empty(), "{m:?}");
+        assert_eq!(g.character, m.index, "{m:?}");
+        named += 1;
+    }
+    assert!(named >= 1);
+    assert!(
+        weapons
+            .iter()
+            .filter(|m| !m.joined || m.weapon == 0xff)
+            .all(|m| m.weapon_gear == ffx_state::GearSpoil::default())
+    );
 }
 
 /// API 11 at Besaid (developer save 7): the map change is seen before the

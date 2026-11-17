@@ -12,10 +12,10 @@ use ffx_chara::layout as l;
 
 use crate::{
     Actor, ActorModel, BattleEnd, BattleEndRow, BattleNumber, BattleTarget, Battler, Bone,
-    Boosters, Camera, ConfigMenu, ConfigOption, ConfigRow, EffectInstance, Effects, GearSpoil,
-    GridLink, GridNode, HandCursor, Input, ItemStack, LayerEntry, Layers, Light, Look, MenuOption,
-    MenuWindow, Menus, Message, PartyMember, Save, SceneMesh, SceneObject, ScreenFilter, Snapshot,
-    SphereGrid, World,
+    Boosters, Camera, ConfigMenu, ConfigOption, ConfigRow, EffectInstance, Effects, FreeCamera,
+    GearSpoil, GridLink, GridNode, HandCursor, Input, ItemStack, LayerEntry, Layers, Light, Look,
+    MenuOption, MenuWindow, Menus, Message, NumberFrame, PartyMember, Save, SceneMesh, SceneObject,
+    ScreenFilter, Snapshot, SphereGrid, World,
 };
 
 mod text;
@@ -332,6 +332,28 @@ pub fn read(mem: &dyn Reader, update: u32, game_time: f64) -> Snapshot {
         sphere_grid: sphere_grid(&m),
         layers: layers(&m),
         boosters: boosters(&m),
+        free_camera: free_camera(&m),
+    }
+}
+
+/// `g_FreeCamera` (docs/formats/field.md, "Free camera"): `+0` the capture
+/// counter (`u32`), `+0x338` the time stop, `+0x33c` the pause's freeze
+/// (bytes).
+const FREE_CAMERA: u32 = 0x00cc_c830;
+const FREE_CAMERA_TIME_STOP: u32 = 0x338;
+const FREE_CAMERA_PAUSE: u32 = 0x33c;
+
+fn free_camera(m: &Mem<'_>) -> FreeCamera {
+    let cam = m.u32(FREE_CAMERA);
+    // the object's first word and its last flag mapped: the rest between
+    if cam == 0 || !m.mapped::<4>(cam) || !m.mapped::<1>(cam.wrapping_add(FREE_CAMERA_PAUSE)) {
+        return FreeCamera::default();
+    }
+    FreeCamera {
+        exists: true,
+        free: m.u32(cam) != 0,
+        time_stop: m.u8(cam.wrapping_add(FREE_CAMERA_TIME_STOP)) != 0,
+        pause_freeze: m.u8(cam.wrapping_add(FREE_CAMERA_PAUSE)) != 0,
     }
 }
 
@@ -470,6 +492,28 @@ fn battle_numbers(m: &Mem<'_>) -> Vec<BattleNumber> {
     out
 }
 
+/// `g_BtlNumberFrames`: 32 rows of 3 bytes (x, y as `i8`, alpha), up to
+/// `g_BtlShoutStreams` (`0x00c42510`).
+const NUMBER_FRAMES: u32 = 0x00c4_24b0;
+const NUMBER_FRAME_ROWS: usize = 32;
+
+/// The frame table in one read (empty where it is not mapped).
+fn number_frames(m: &Mem<'_>) -> Vec<NumberFrame> {
+    let mut b = [0u8; 3 * NUMBER_FRAME_ROWS];
+    if !m.0.read_bytes(NUMBER_FRAMES, &mut b) {
+        return Vec::new();
+    }
+    b.as_chunks::<3>()
+        .0
+        .iter()
+        .map(|r| NumberFrame {
+            x: i16::from(r[0].cast_signed()),
+            y: i16::from(r[1].cast_signed()),
+            alpha: r[2],
+        })
+        .collect()
+}
+
 fn effects(m: &Mem<'_>) -> Effects {
     let mut running = Vec::new();
     // the whole table in one read when it is mapped
@@ -498,6 +542,7 @@ fn effects(m: &Mem<'_>) -> Effects {
             });
         }
     }
+    let numbers = battle_numbers(m);
     let active = m.u32(FADE_ACTIVE);
     let filters = (0..5u8)
         .map(|i| {
@@ -536,7 +581,12 @@ fn effects(m: &Mem<'_>) -> Effects {
         shake_x: m.f32(SCREEN_SHAKE),
         shake_y: m.f32(SCREEN_SHAKE + 4),
         music: m.i32(MUSIC),
-        numbers: battle_numbers(m),
+        number_frames: if numbers.is_empty() {
+            Vec::new()
+        } else {
+            number_frames(m)
+        },
+        numbers,
     }
 }
 
@@ -1277,33 +1327,7 @@ fn battle_end(m: &Mem<'_>) -> BattleEnd {
     let gear_n = count(BTL_END_GEAR_COUNT, BTL_END_MAX_GEAR);
     let kana = (m.u32(SAVE_MENU) >> 3) & 1 != 0;
     let gear_spoils = (0..u32::from(gear_n))
-        .map(|i| {
-            let id = m.u16(BTL_END_GEAR + 2 * i);
-            let mut r = ReadOnly(m.0);
-            let slot = ffx_battle::save::bridge::ms_get_save_weapon(&mut r, u32::from(id), 0);
-            let used = slot != 0 && m.u8(slot.wrapping_add(2)) != 0;
-            GearSpoil {
-                id,
-                used,
-                name_id: if slot == 0 { 0 } else { m.u16(slot) },
-                character: if slot == 0 {
-                    0
-                } else {
-                    m.u8(slot.wrapping_add(4))
-                },
-                kana,
-                name: if used {
-                    let at = text::weapon_text(m, u32::from(id));
-                    if at != 0 && m.mapped::<1>(at) {
-                        m.text(at)
-                    } else {
-                        Vec::new()
-                    }
-                } else {
-                    Vec::new()
-                },
-            }
-        })
+        .map(|i| gear(m, m.u16(BTL_END_GEAR + 2 * i), kana))
         .collect();
     BattleEnd {
         open: true,
@@ -1328,6 +1352,36 @@ fn battle_end(m: &Mem<'_>) -> BattleEnd {
     }
 }
 
+/// Gear `id` (a `MsGetSaveWeapon` id: `0x7000 + i`, `0xb000 + i`, else an
+/// inventory slot) named: its record (`+0` the `w_name` record, `+2` in
+/// use, `+4` the character) and `MsGetSaveWeaponName`'s text.
+fn gear(m: &Mem<'_>, id: u16, kana: bool) -> GearSpoil {
+    let mut r = ReadOnly(m.0);
+    let slot = ffx_battle::save::bridge::ms_get_save_weapon(&mut r, u32::from(id), 0);
+    let used = slot != 0 && m.u8(slot.wrapping_add(2)) != 0;
+    GearSpoil {
+        id,
+        used,
+        name_id: if slot == 0 { 0 } else { m.u16(slot) },
+        character: if slot == 0 {
+            0
+        } else {
+            m.u8(slot.wrapping_add(4))
+        },
+        kana,
+        name: if used {
+            let at = text::weapon_text(m, u32::from(id));
+            if at != 0 && m.mapped::<1>(at) {
+                m.text(at)
+            } else {
+                Vec::new()
+            }
+        } else {
+            Vec::new()
+        },
+    }
+}
+
 /// `g_SaveData`'s parts the menus show (docs/formats/save.md).
 const SAVE_TIME: u32 = 0xbc;
 const SAVE_GIL: u32 = 0x3d48;
@@ -1349,15 +1403,17 @@ fn save(m: &Mem<'_>) -> Save {
     if !m.mapped::<4>(s(SAVE_NAMES + NAME_SIZE * PLY_COUNT - 4)) {
         return Save::default();
     }
+    let kana = (m.u32(SAVE_MENU) >> 3) & 1 != 0;
     let members = (0..PLY_COUNT)
         .map(|i| {
             let p = |o: u32| s(SAVE_PLY + PLY_SIZE * i + o);
             let raw: [u8; NAME_SIZE as usize] = m.bytes(s(SAVE_NAMES + NAME_SIZE * i));
             let end = raw.iter().position(|&b| b == 0).unwrap_or(raw.len());
+            let (joined, weapon) = (m.u8(p(0x2c)) & 1 != 0, m.u8(p(0x2d)));
             PartyMember {
                 index: u8::try_from(i).unwrap_or(0),
                 name: raw[..end].to_vec(),
-                joined: m.u8(p(0x2c)) & 1 != 0,
+                joined,
                 hp: m.u32(p(0x1c)),
                 mp: m.u32(p(0x20)),
                 max_hp: m.u32(p(0x24)),
@@ -1368,8 +1424,13 @@ fn save(m: &Mem<'_>) -> Save {
                 sphere_levels: m.u8(p(0x3b)),
                 limit_charge: m.u8(p(0x39)),
                 limit_charge_max: m.u8(p(0x3a)),
-                weapon: m.u8(p(0x2d)),
+                weapon,
                 armour: m.u8(p(0x2e)),
+                weapon_gear: if joined && weapon != 0xff {
+                    gear(m, u16::from(weapon), kana)
+                } else {
+                    GearSpoil::default()
+                },
                 commands: m.bytes::<12>(p(0x3e)).to_vec(),
                 overdrive_mode: m.u8(p(0x38)),
                 overdrive_modes: m.u32(p(0x88)),
@@ -2202,6 +2263,41 @@ mod tests {
         mem.put(MSG_WINDOWS + 0x14, &2u16.to_le_bytes());
         mem.put(MSG_BANK, &[0xff]);
         assert_eq!(read(&mem, 0, 0.0).messages.len(), 1);
+    }
+
+    #[test]
+    fn the_free_camera_and_the_number_frames() {
+        let mut mem = Sparse(HashMap::new());
+        // no camera yet, no numbers: nothing
+        let s = read(&mem, 0, 0.0);
+        assert_eq!(s.free_camera, FreeCamera::default());
+        assert_eq!(s.effects.number_frames.len(), 0);
+        // a camera whose last flag is not mapped: none
+        let cam: u32 = 0x0470_0000;
+        mem.put(FREE_CAMERA, &cam.to_le_bytes());
+        mem.put(cam, &1u32.to_le_bytes());
+        assert!(!read(&mem, 0, 0.0).free_camera.exists);
+        mem.put(cam + FREE_CAMERA_TIME_STOP, &[1]);
+        mem.put(cam + FREE_CAMERA_PAUSE, &[0]);
+        let f = read(&mem, 0, 0.0).free_camera;
+        assert_eq!(
+            (f.exists, f.free, f.time_stop, f.pause_freeze),
+            (true, true, true, false)
+        );
+        mem.put(cam, &0u32.to_le_bytes());
+        mem.put(cam + FREE_CAMERA_TIME_STOP, &[0]);
+        mem.put(cam + FREE_CAMERA_PAUSE, &[1]);
+        let f = read(&mem, 0, 0.0).free_camera;
+        assert_eq!((f.free, f.time_stop, f.pause_freeze), (false, false, true));
+        // the frame table, signed offsets, read only with a number on screen
+        let mut table = [0u8; 3 * NUMBER_FRAME_ROWS];
+        table[..6].copy_from_slice(&[0xfe, 0x03, 0x80, 0x00, 0xf0, 0x40]);
+        mem.put(NUMBER_FRAMES, &table);
+        assert_eq!(read(&mem, 0, 0.0).effects.number_frames.len(), 0);
+        let rows = number_frames(&Mem(&mem));
+        assert_eq!(rows.len(), NUMBER_FRAME_ROWS);
+        assert_eq!((rows[0].x, rows[0].y, rows[0].alpha), (-2, 3, 0x80));
+        assert_eq!((rows[1].x, rows[1].y, rows[1].alpha), (0, -16, 0x40));
     }
 
     #[test]
