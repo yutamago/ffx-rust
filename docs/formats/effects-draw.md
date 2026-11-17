@@ -769,11 +769,17 @@ the census itself on a synthetic frame.
    machine should take the git scripts' captures and run the gate on them.
 8. **Vertex colours the game never wrote** (found by gd-ffx, 2026-11-17):
    in 94 of the 110 developer saves some captured effect draws index
-   vertices whose colour is the MSVC debug fill `0xCDCDCDCD` or another
-   stale value. The clearest case is the Besaid village lens flare's ring
-   quad on `bsvr00` (key ending `0xd`, texture `13888_19_0_0_128_64`, 16
-   vertices, all `0xCDCDCDCD`). Either the capture reads an array slot the
-   game did not fill this frame, or the game leaves these vertices unset
-   itself (and its shader or blend makes them invisible). gd-ffx leaves
-   such triangles out (`--keep-unset-colours` draws them); with or without
+   vertices whose colour components (`f32`) have the heap fill's bits
+   `0xcdcdcdcd` (unset, as above) or another stale value. The clearest
+   case is the Besaid village lens flare's ring quad on `bsvr00`
+   (texture `13888_19_0_0_128_64`, 16 vertices, every colour unset).
+   The capture reads only as many vertices as the segment's `+4` says,
+   so it does not run past the filled count. The likely cause: it reads
+   the segment's own arrays (`+0xc`, `+0x14`, `+0x18`, `+0x1c`;
+   `ffx_host::vfx::entry_draws`) while the game draws from a buffer slot
+   (`+0x2c + 0x1c n`, above), which only the eight census frames checked;
+   a weaker one: a shape fill reserving `+4 += 4n` but writing fewer
+   vertices. Whether those vertices' positions and uvs are stale too
+   (which would point at the slot) was not checked. gd-ffx leaves such
+   triangles out (`--keep-unset-colours` draws them); with or without
    them its pictures look the same.
