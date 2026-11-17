@@ -443,7 +443,7 @@ rounded to 16, in that order. The segment (`0x6c` bytes) records them:
 | `0x10` | the third |
 | `0x18` | the fourth |
 | `0x1c` | the indices |
-| `0x2c + 0x1c n` ... `0x44 + 0x1c n` | the same counts and arrays again in buffer `n`'s slot (`n` the current buffer: counts `+0x2c`/`+0x30`, arrays `+0x34`, `+0x3c`, `+0x38`, `+0x40`, `+0x44`) |
+| `0x2c + 0x1c n` ... `0x44 + 0x1c n` | the same counts and arrays again in buffer `n`'s slot (`n` the current buffer: counts `+0x2c`/`+0x30`, arrays `+0x34`, `+0x3c`, `+0x38`, `+0x40`, `+0x44`); the draw copies this slot while its `+0x34` is set (`docs/formats/effects-draw.md`, "Which arrays the draw reads") |
 
 `DynGeoTree_Find`/`_Insert` (`0x006dedd0`/`0x006dee50`) keep a search
 tree under a head (root at head `+0xc`; nodes `+0` lower, `+4` higher,

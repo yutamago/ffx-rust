@@ -213,6 +213,16 @@ holds it: `../../../FFX_Data/GameData/PS3Data/<folder>/D3D11/<name>.dds.phyre`,
 the arrays: `positions`, `colours` (RGBA floats; 0.5 is the PS2's `0x80`,
 which the VFX vertex shaders double), `uvs` (garbage on untextured draws:
 the game leaves them unset; below), `indices` (`u16`, a triangle list).
+The arrays are the ones the game's draw copies: each segment's slot of
+the current dynamic-geometry buffer, else its own arrays
+(effects-draw.md, "Which arrays the draw reads"; the same bytes wherever
+measured). Some vertices a fill reserved but did not write hold colours
+(and uvs) no fill writes: `0xcdcdcdcd` (-4.3e8) or another effect's
+stale numbers. Only degenerate triangles (a repeated index; the fills
+leave such quads' indices 0) use them, and the only exception seen, the
+battle's full-screen quads of flags `0x40000000`, writes no colour (write
+mask 0), so the game draws no colour from them; a frontend may drop
+triangles with a repeated index.
 
 **Texture coordinates** (`Draw.uvs`, `Draw.sampler`; effects-draw.md,
 "Texture coordinates"): the shaders sample the texture at the uvs as
