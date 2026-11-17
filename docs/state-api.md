@@ -80,7 +80,8 @@ as `Native_MsgSelect_Poll` reads it), the one the script started it at,
 and the text as the game encodes it (a frontend decodes it with ffx-
 text's charset for `World.language`, the text's language
 (`g_LocalizationManager` `+4`, as `TOGetFFXLang`; 0xff unknown; a fresh
-`GameSetting.ini` gives Japanese, 0); `{VAR}` codes are not filled). The
+`GameSetting.ini` gives Japanese, 0); since API 11 the macros are
+expanded, below). The
 battle record's offsets come from the ports (`TOBtlMemoryCursorPos`,
 `ffx_system::tolib`), not yet from a run in battle; the title's menu and
 the Esc menu's pages (Flash) are not covered.
@@ -537,6 +538,112 @@ code.
   (character, kind, slide timer, front line, colour, level-up flash), the
   items and gear won, and the spoils pages' cursors.
 
+## Choices, variables, battle targets, the camera's adjustment, loads, boosters, fades (API 11)
+
+For gd-ffx's second playtest round.
+
+- **Choices** (`Message.choice`, `picked`): `choice` is the option the
+  cursor is on now, counted from the first option: the window's text box
+  record (`0x01868a90[w]`, `TOFuncPadMessageSelect` `0x008b64e0`) `i8 +2`
+  less its first row `i8 +4` (`TOLayoutMessageChoices` clears `+4`), -1
+  when the record lays out no rows (`+5` not above `+4`). The pad moves
+  `+2` while the choice is open, and the confirm leaves it on the pick.
+  Before API 11 `choice` was the confirmed pick, so the cursor seemed not
+  to move until Circle. `picked` is now the confirmed pick: `+0x18`, what
+  `Native_MsgSelect_Poll` hands the script, once `+1` is 2 (all picks
+  made, `+7`), else -1.
+- **Variables** (`Message.text`, `vars`): the text's macros are expanded
+  as the game draws them (`TOGetChangeMacroAddress` `0x008b6660`,
+  recursively, as `TODrawChangeMacro2`): `{VAR:n}` (code `0x12`) from the
+  window's records (`g_MsgVars` `0x01869ab0`, 32 a window, the kind at
+  `+1`, the value `i32 +4`), the characters' names (`0x13`), item texts
+  (`0x16`, `0x17`) and key items (`0x23`). By the variable's kind: 0 a text
+  at the value; 1 and 2 the value in decimal (2 with the digit-group mark
+  `0x46`, `TOFuncMacroCmdValue`); `0x13`..`0x23` a macro code (`value /
+  0xd0` added to it, `value % 0xd0` its argument); `0x2b`..`0x32` the value
+  in `kind - 0x2a` digits (`TOIntToMes` mode 0, padded as the language
+  pads); `0x33`..`0x36` an item's, a weapon's (`MsGetSaveWeaponName`), a
+  command's (`MsGetComData`) or an ability's name; `0x37` the field pickup
+  (`msFieldItemGet`'s `takara` record by the value: its kind, id and count
+  in `pickup`, `pickup_id`, `pickup_count`; an item's or key item's name,
+  the gear's from the spoils `MsFieldItemGetMes` remade at the last draw,
+  and for gil nothing, since `TOIntToMes(gil, out, 0, 0)` keeps no digit),
+  so "Obtained {VAR:0}!" reads with the item's name. The reader builds the
+  bytes itself, never writing the game's buffers or calling its code. The
+  dictionary codes (`0x19`..`0x22`) and anything not mapped stay as codes.
+  `vars` keeps each record that is set, its expansion with it.
+- **Battle targets** (`Menus.battle_target`): while the command window's
+  level is a target selection (its record's kind, byte `+2` of
+  `g_BtlWindowRecords + 0xf0 g_BtlActionDepth`, is 1), the character the
+  cursor is on (`g_BtlTargetChr` `0x0133d1f4`), the selected bits
+  (`g_BtlTargetSelMask` `0x0133d178`; `TOBtlDrawTargetCursor` puts a cursor
+  over each bit below 28), the cursor's index in the side's list
+  (`0x0133d1fc`), the list's length (`0x0133d1f6`), the side
+  (`0x0133d200`: 1 the monsters', 0 the party's) and whether it can be
+  swapped (`0x0133d1fe`). The command lists' hand cursors are
+  `g_BtlCurPos` (`0x0133f7b4`, `TOBtlSetCurPos(kind, x, y)` on the PS2
+  screen); the draw clears their count after drawing them, so the records
+  are given, zeroed ones left out.
+- **The camera's adjustment** (`Camera.shift_x`, `shift_y`, `pan`,
+  `map_pan`, `squeezed`, `scene_3d`, `offset_y`). The game's
+  view-projection (`PhyreScene_getViewProjectionMatrix` `0x0065e660`,
+  render.md, round 24) is the camera's own 4x4 (`*(scene +0xdc) +0x74`,
+  made from `world`, `fov_y`, `aspect` and its planes) times the
+  translation by the shift (`+0xfa34`, `+0xfa38`), then,
+  when `squeezed` (neither `+0xf9c7` nor `g_PhyreScene3D`), times
+  `PhyreScene_GetScreenAdjustedView`'s (`0x00651650`) `[1 0 0 0; 0 4/3 0
+  0; 0 0 1 0; 0 d 0 1]` (row vectors), `d = 0.33333337 - 2 (+0xf9c0 +
+  +0xf9bc)` = `offset_y`. In clip space, with `(x, y, z, w)` the camera's
+  projection of a point:
+  `x' = x + shift_x w`, `y' = (y + shift_y w) 4/3 + offset_y w` (squeezed;
+  else `y + shift_y w`), `z`, `w` unchanged. `aspect` is the camera's own:
+  16/9 on 3D maps (`PhyreScene_setCameraAspectRatio` makes the PS2's 4/3
+  16/9 there), 4/3 in the 2D-background rooms (`scene_3d` clear), where the
+  PS2 picture is stretched by 4/3 across the 16:9 target and the squeeze
+  picks the 16:9 window over it; the game's last copy fits the result into
+  the window at 16:9 with bars (`PostProcessManager_setNon16By9Viewport`
+  `0x00698750`). `pan` is the window's pan `b` (the layer pass uses the
+  same window without `map_pan`, `Layers`); `map_pan` (`+0xf9c0`) is the
+  per-map term `PhyreScene_fieldMapInitialize` sets. Measured: Besaid
+  (`bsil00`, 3D) 16/9, not squeezed, pan 0.035; the S.S. Liki's corridor
+  (`slik04`, 2D) 4/3, squeezed, pan 0.295, `map_pan` 0, `offset_y`
+  -0.25666666, `shift_y` swaying by a few thousandths from update to update
+  (the ship).
+- **Loads and map changes** (`World.scene_loading`, `map_loading`,
+  `characters_loading`, `assets_loading`, `map_change`):
+  `scene_loading` is `Sg_IsSceneLoading` (`0x0081fcd0`), the test
+  `Sg_MainLoop` holds the update on: the field map loads (`PhyreScene
+  +0x1195`) outside a battle map (`+0x1196`, `+0x1197`), characters load
+  or instantiate (`g_GraphicCharacterLoading`) on one of the 16 maps
+  `graphicIsMapInList` names outside a battle map, or the asset loader has
+  requests left (`g_AsyncLoadManager +0x20`, `+0x2c`) while the screen
+  fade's colour is locked. The parts are given too: a frontend can hold
+  its picture while any of them runs. `map_change` is
+  `g_TkEventJumpRequest` (`0x0133084c`): `TkSetEventJump` (the scripts'
+  map changes, `0x0011`, `0x00ab`, `0x010c`, through `AtelSetEventJump`/`2`)
+  writes the target map and entrance into `g_SaveData` and sets it;
+  `TkInitScene` clears it when the new map starts. While it is set,
+  `World.map` and `entrance` are the target and `level` still the map
+  shown. On the virtual clock a map loads within one update (the reads
+  wait in `CdReadSync`), so only the request is seen between two updates;
+  on the real clock the asset loader runs on its own and the loading
+  fields show it.
+- **Boosters** (`Snapshot.boosters`): F1's speed level (`g_SpdCtrl_b4`)
+  and whether it scaled the last update (`g_SpdCtrl_b8`) with its scale
+  (`g_SpdCtrlScales`), F2's power-up (`g_BtlCheatPowerup`), F3's encounter
+  mode (`g_EncountMode`: 0 none, 1 normal, 2 ten times) and F4's
+  auto-battle (`0x0133d6e0`). A new game: 0, false, 1, false, 1, false.
+- **Fades** (`ScreenFilter.drawn`, `alpha`, `draw_colour`, `subtract`):
+  what `Sg_DrawFilter` (`0x0082c0c0`) drew for each fade slot in the update
+  just run, by its integer formulas, from the words it left (it runs after
+  the update, steps `frames` down and holds a fade to black or white at
+  `frames` 1): the formulas are in `ScreenFilter`'s fields. A held fade to
+  black draws 1 (not `1 - 1/level`); the frame of its last step reads as
+  held too (it leaves the same words). Measured at the beach's fade-in
+  (mode 2, total 15): 0.929 at `frames` 14, then 0.866, 0.795 .. 0.063 at
+  1 and 0 at 0; the held fade-out before it (mode 3, `frames` 1, total 1)
+  1.0.
+
 ## Schema
 
 `cargo run -p ffx-state --example schema` prints it; the test
@@ -544,7 +651,7 @@ code.
 the fields raises `API_VERSION`.
 
 ```text
-ffx-state API 10
+ffx-state API 11
 struct Snapshot
   update: u32
   game_time: f64
@@ -561,6 +668,7 @@ struct Snapshot
   objects: list<SceneObject>
   sphere_grid: SphereGrid
   layers: Layers
+  boosters: Boosters
 struct World
   map: u16
   previous_map: u16
@@ -574,6 +682,11 @@ struct World
   paused: bool
   fading: bool
   language: u8
+  scene_loading: bool
+  map_loading: bool
+  characters_loading: u32
+  assets_loading: bool
+  map_change: bool
 struct Camera
   valid: bool
   world: mat3x4
@@ -582,6 +695,13 @@ struct Camera
   far: f32
   eye: vec3
   target: vec3
+  shift_x: f32
+  shift_y: f32
+  pan: f32
+  map_pan: f32
+  squeezed: bool
+  scene_3d: bool
+  offset_y: f32
 struct Input
   held: u32
   pressed: u16
@@ -634,6 +754,7 @@ struct Menus
   current_player: u8
   config: ConfigMenu
   battle_end: BattleEnd
+  battle_target: BattleTarget
 struct MenuOption
   id: u16
   enabled: bool
@@ -648,6 +769,8 @@ struct Message
   choice: i16
   initial_choice: i16
   text: bytes
+  picked: i16
+  vars: list<MessageVar>
 struct Effects
   magic: i32
   running: list<EffectInstance>
@@ -671,6 +794,10 @@ struct ScreenFilter
   level: i16
   target: i16
   step: i16
+  drawn: bool
+  alpha: f32
+  draw_colour: vec3
+  subtract: bool
 struct Battler
   index: u8
   hp: i32
@@ -800,6 +927,7 @@ struct BattleEnd
   picked: bool
   top: i32
   gear_list: i32
+  gear_spoils: list<GearSpoil>
 struct BattleEndRow
   character: i16
   kind: u16
@@ -823,6 +951,42 @@ struct LayerEntry
   shown: bool
   scene: i16
   id: i16
+struct Boosters
+  speed_level: u8
+  speeding: bool
+  speed: f32
+  powerup: bool
+  encounters: u8
+  auto_battle: bool
+struct BattleTarget
+  open: bool
+  kind: u8
+  character: u16
+  mask: u32
+  cursor: i16
+  count: u16
+  side: u16
+  switchable: bool
+  hands: list<HandCursor>
+struct HandCursor
+  kind: i16
+  x: i16
+  y: i16
+struct GearSpoil
+  id: u16
+  used: bool
+  name_id: u16
+  character: u8
+  kana: bool
+  name: bytes
+struct MessageVar
+  slot: u8
+  kind: u8
+  value: i32
+  text: bytes
+  pickup: u8
+  pickup_id: u16
+  pickup_count: u32
 ```
 
 ## Sources
@@ -843,6 +1007,20 @@ the opening's event, so the drawn camera comes from the scene); the pad `g_PadHe
 `ffx_chara::layout`), `g_Player` `0x01300788`.
 
 ## Tests
+
+API 11: `crates/ffx-state`'s unit tests (the live and the confirmed
+choice, a variable of each number kind and a raw text expanded in a
+window's text) and `crates/ffx-host/tests/boot.rs`
+`the_state_api_follows_a_choice_and_a_2d_rooms_camera`: at Besaid
+(developer save 7) a map change is seen before the beach; the beach is 3D
+(16/9, not squeezed) with a new game's boosters; Circle at the save
+sphere opens its two-way choice, Down, Up, Down read 1, 0, 1 before the
+confirm and Circle picks 1; then the S.S. Liki's corridor (developer save
+12) is a 2D room: 4/3, squeezed, `offset_y` = `0.33333337 - 2 (map_pan +
+pan)`. `the_state_api_sees_the_battle_target_selection`: in the deck's
+battle the command list's hand is at (50, 314); Circle (Attack) opens the
+target selection on character 0x14 (its bit, two targets, side 1), Right
+moves it to 0x15 and back, Cross closes it.
 
 `crates/ffx-state` (the reader on a made-up memory, the encoding, the
 schema) and `crates/ffx-host/tests/boot.rs`

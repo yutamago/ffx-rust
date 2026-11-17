@@ -762,7 +762,17 @@ scene `+0x10d8c` is 1; a camera's `+0xbc` far plane, `+0x150` aspect,
   `g_PhyreScene2DMaps_b421c8`) the camera keeps `a` (4/3, from
   `rcbgSceneSetMatrix`'s `+0xb4 = +0xb0 * 1.1666666`) on the 16:9 target,
   the PS2 view stretched by 4/3 (ffx-demaster `docs/screen.md`, measured
-  in the harness on Besaid and hiku00).
+  in the harness on Besaid and hiku00). The main camera's whole
+  projection, for a frontend that draws with the game's: the camera's
+  view-projection times the translation by the shift (`+0xfa34`,
+  `+0xfa38`), then, unless byte `+0xf9c7` or `g_PhyreScene3D` is set,
+  `PhyreScene_GetScreenAdjustedView`'s (`0x00651650`, round 20) squeeze:
+  in clip space `x' = x + sx w`, `y' = (y + sy w) 4/3 + d w`, `d =
+  0.33333337 - 2 (+0xf9c0 + +0xf9bc)` (`PhyreScene_getViewProjectionMatrix`,
+  round 24). The game-state API gives the terms (docs/state-api.md, API
+  11, `Camera`): measured 3D at Besaid (16/9, no squeeze), 2D in the S.S.
+  Liki's corridor `slik04` (4/3, squeezed, `+0xf9bc` 0.295, `+0xf9c0` 0,
+  `d` -0.25666666).
 - The output shape: the last copy into the back buffer goes through
   `PostProcessManager_setNon16By9Viewport` (`0x00698750`), which fits the
   frame to `g_PostProcessOutputAspect` (`0x00c34154`, f32 16/9 in `.data`,

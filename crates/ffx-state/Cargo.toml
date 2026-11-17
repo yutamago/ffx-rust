@@ -13,6 +13,9 @@ ffx-bridge.workspace = true
 ffx-kernel.workspace = true
 # the character records' layout (ffx_chara::layout)
 ffx-chara.workspace = true
+# the game's name lookups (MsGetSaveWeaponName, MsImportantName, MsGetComData,
+# the character names), over the read-only memory
+ffx-battle.workspace = true
 
 [lints]
 workspace = true

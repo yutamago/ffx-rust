@@ -7,14 +7,17 @@
 //! and docs/formats (chara.md for the characters, save.md for
 //! `g_SaveData`); the character record's offsets are `ffx_chara::layout`'s.
 
+use ffx_bridge::x87;
 use ffx_chara::layout as l;
 
 use crate::{
-    Actor, ActorModel, BattleEnd, BattleEndRow, Battler, Bone, Camera, ConfigMenu, ConfigOption,
-    ConfigRow, EffectInstance, Effects, GridLink, GridNode, Input, ItemStack, LayerEntry, Layers,
-    Light, Look, MenuOption, MenuWindow, Menus, Message, PartyMember, Save, SceneMesh, SceneObject,
-    ScreenFilter, Snapshot, SphereGrid, World,
+    Actor, ActorModel, BattleEnd, BattleEndRow, BattleTarget, Battler, Bone, Boosters, Camera,
+    ConfigMenu, ConfigOption, ConfigRow, EffectInstance, Effects, GearSpoil, GridLink, GridNode,
+    HandCursor, Input, ItemStack, LayerEntry, Layers, Light, Look, MenuOption, MenuWindow, Menus,
+    Message, PartyMember, Save, SceneMesh, SceneObject, ScreenFilter, Snapshot, SphereGrid, World,
 };
+
+mod text;
 
 /// The game's memory, read only.
 pub trait Reader {
@@ -124,9 +127,11 @@ const MSG_BANK: u32 = 0x0132_6b82;
 const MSG_WINDOW: u32 = 0x2c;
 /// The text boxes' table (`TOGetTable_01868a90`): 8 pointers, one per
 /// script window, to 0x138-byte records (`TOSetExeMessageArea` points them
-/// at the current bank's). In a record byte 1 is 2 for a choice and byte 7
-/// its option count; the highlighted option is the first byte at `+0x18`
-/// (`TOGetTableKind2Data_008b7fd0`, as `Native_MsgSelect_Poll` reads it).
+/// at the current bank's). A choice's record (`TOFuncPadMessageSelect`):
+/// `+2` the cursor, `+3` the default, `+4`/`+5` the rows (first, end), `+6`
+/// the picks to make, `+7` those made, `+0x18` the picks; byte 1 becomes 2
+/// once all are made (`TOGetTableKind2Data_008b7fd0`, as
+/// `Native_MsgSelect_Poll` reads the pick).
 const MSG_TABLE: u32 = 0x0186_8a90;
 /// `g_MsgNone`: an empty text.
 const MSG_NONE: u32 = 0x0132_5b74;
@@ -318,6 +323,34 @@ pub fn read(mem: &dyn Reader, update: u32, game_time: f64) -> Snapshot {
         objects: scene_objects(&m),
         sphere_grid: sphere_grid(&m),
         layers: layers(&m),
+        boosters: boosters(&m),
+    }
+}
+
+/// The boosters (docs/formats/render.md, `SpdCtrl_Tick`; symbols/ffx.sym).
+const SPD_LEVEL: u32 = 0x00ce_82b4;
+const SPD_RUNNING: u32 = 0x00ce_82b8;
+const SPD_SCALES: u32 = 0x00c3_8e1c;
+const CHEAT_POWERUP: u32 = 0x012f_b7cc;
+const ENCOUNT_MODE: u32 = 0x00c4_21d8;
+const AUTO_BATTLE: u32 = 0x0133_d6e0;
+
+fn boosters(m: &Mem<'_>) -> Boosters {
+    let level = m.u32(SPD_LEVEL);
+    let speeding = m.u32(SPD_RUNNING) != 0;
+    // the table holds 3 scales; a level past it reads as unscaled
+    let speed = if speeding && level < 3 {
+        m.f32(SPD_SCALES + 4 * level)
+    } else {
+        1.0
+    };
+    Boosters {
+        speed_level: u8::try_from(level).unwrap_or(u8::MAX),
+        speeding,
+        speed,
+        powerup: m.u32(CHEAT_POWERUP) != 0,
+        encounters: u8::try_from(m.u32(ENCOUNT_MODE)).unwrap_or(u8::MAX),
+        auto_battle: m.i32(AUTO_BATTLE) == 1,
     }
 }
 
@@ -380,7 +413,7 @@ fn effects(m: &Mem<'_>) -> Effects {
     let filters = (0..5u8)
         .map(|i| {
             let at = FADE_SLOTS + u32::from(i) * 0x10;
-            ScreenFilter {
+            let mut f = ScreenFilter {
                 slot: i,
                 active: active & (1 << i) != 0,
                 mode: m.u8(at),
@@ -389,7 +422,22 @@ fn effects(m: &Mem<'_>) -> Effects {
                 level: m.i16(at + 6),
                 target: m.i16(at + 8),
                 step: m.i16(at + 0xa),
+                ..ScreenFilter::default()
+            };
+            if f.active
+                && let Some(alpha) = filter_alpha(f.mode, f.frames, f.level)
+            {
+                f.drawn = true;
+                f.alpha = alpha;
+                f.draw_colour = if matches!(f.mode, 2 | 3) {
+                    [0.0; 3]
+                } else {
+                    // the bytes times the f64 1/256 (`0x00b50198`), stored
+                    f.color.map(|c| stored(x87::mul(f64::from(c), 1.0 / 256.0)))
+                };
+                f.subtract = f.mode == 8;
             }
+            f
         })
         .collect();
     Effects {
@@ -400,6 +448,37 @@ fn effects(m: &Mem<'_>) -> Effects {
         shake_y: m.f32(SCREEN_SHAKE + 4),
         music: m.i32(MUSIC),
     }
+}
+
+/// The alpha `Sg_DrawFilter` (`0x0082c0c0`) drew a fade slot with in the
+/// update just run, from the words it left (`frames` after its step,
+/// `total` the slot's `+6`): `None` for the modes it draws no fade task for
+/// (0, the cross-fade's level quad; 1; above 8). The divisions are the
+/// game's (`idiv`, a total of 0 counting as 0, where the original faults),
+/// the levels over the `f64` 127 and 255 as stored floats.
+fn filter_alpha(mode: u8, frames: i16, total: i16) -> Option<f32> {
+    let div = |x: i32| x.checked_div(i32::from(total)).unwrap_or(0);
+    #[allow(clippy::cast_precision_loss)] // small integers
+    let over = |q: i32| x87::div(f64::from(q as f32), 127.0);
+    let n = i32::from(frames);
+    let a = match mode {
+        2 => x87::sub(1.0, over(0x7f - div(n * 0x7f))),
+        // held at its last frame: `frames` stays 1, the alpha 1
+        3 if n == 1 => 1.0,
+        3 => x87::sub(1.0, over(div(n * 0x7f))),
+        4 => over(div((n + 1) * 0xff)),
+        5 if n == 1 => over(0xff),
+        5 => over(0xff - div(n * 0xff)),
+        6 => over(div((n + 1) * 0x7f)),
+        7 | 8 => over(i32::from(total)),
+        _ => return None,
+    };
+    Some(stored(a))
+}
+
+/// An x87 value as `fstp dword` stores it.
+fn stored(x: f64) -> f32 {
+    f32::from_bits(x87::store(x))
 }
 
 /// `TkMenuMainMes(id)`: `MsMenuGetText(i, id, kana)` as the game runs it
@@ -478,6 +557,63 @@ fn menus(m: &Mem<'_>) -> Menus {
         current_player: menu_current_player(m),
         config: config_menu(m),
         battle_end: battle_end(m),
+        battle_target: battle_target(m, depth),
+    }
+}
+
+/// The target selection's words (`TOBtlGetTargetPad`,
+/// `TOBtlMakeTargetTargetBit`; symbols/ffx.sym) and the hand cursors
+/// (`g_BtlCurPos`, `g_BtlCurPosCount`).
+const BTL_TARGET_MASK: u32 = 0x0133_d178;
+const BTL_TARGET_CHR: u32 = 0x0133_d1f4;
+const BTL_TARGET_COUNT: u32 = 0x0133_d1f6;
+const BTL_TARGET_CURSOR: u32 = 0x0133_d1fc;
+const BTL_TARGET_SWITCH: u32 = 0x0133_d1fe;
+const BTL_TARGET_SIDE: u32 = 0x0133_d200;
+const BTL_CUR_POS: u32 = 0x0133_f7b4;
+const BTL_CUR_POS_COUNT: u32 = 0x0133_d6f0;
+/// A command record's kind byte (`TOBtlCtrlHelpWin`: 1 the target).
+const BTL_RECORD_KIND: u32 = 2;
+/// At most this many hand cursors (`TOBtlSetCurPos` pushes 4).
+const MAX_HANDS: u32 = 4;
+
+fn battle_target(m: &Mem<'_>, depth: i8) -> BattleTarget {
+    if depth < 0 || m.u8(BTL_STATUS) == 0 {
+        return BattleTarget {
+            kind: 0xff,
+            ..BattleTarget::default()
+        };
+    }
+    let record = BTL_WINDOW_RECORDS + u32::from(depth.min(7).cast_unsigned()) * BTL_RECORD;
+    let kind = m.u8(record + BTL_RECORD_KIND);
+    // the count the draw cleared, else the first record (kept: the draw
+    // clears the count, not the records)
+    let count = u32::try_from(m.i16(BTL_CUR_POS_COUNT).max(1))
+        .unwrap_or(1)
+        .min(MAX_HANDS);
+    // a zeroed record is no cursor (observed in the target selection,
+    // which draws none)
+    let hands = (0..count)
+        .map(|i| {
+            let at = BTL_CUR_POS + 8 * i;
+            HandCursor {
+                kind: m.i16(at),
+                x: m.i16(at + 4),
+                y: m.i16(at + 6),
+            }
+        })
+        .filter(|h| *h != HandCursor::default())
+        .collect();
+    BattleTarget {
+        open: kind == 1,
+        kind,
+        character: m.u16(BTL_TARGET_CHR),
+        mask: m.u32(BTL_TARGET_MASK),
+        cursor: m.i16(BTL_TARGET_CURSOR),
+        count: m.u16(BTL_TARGET_COUNT),
+        side: m.u16(BTL_TARGET_SIDE),
+        switchable: m.u16(BTL_TARGET_SWITCH) == 1,
+        hands,
     }
 }
 
@@ -493,6 +629,8 @@ fn messages(m: &Mem<'_>) -> Vec<Message> {
                 return None;
             }
             let text_at = m.u32(at + 8);
+            let (choice, picked) = choice(m, w);
+            let window = u32::from(w);
             Some(Message {
                 window: w,
                 state,
@@ -500,26 +638,42 @@ fn messages(m: &Mem<'_>) -> Vec<Message> {
                 y: m.i16(at + 2),
                 flags: m.u16(at + 0x16),
                 mode: m.u8(at + 0x1d),
-                choice: {
-                    let rec = m.u32(MSG_TABLE + 4 * u32::from(w));
-                    if rec != 0
-                        && m.u8(rec.wrapping_add(1)) == 2
-                        && m.u8(rec.wrapping_add(7)).cast_signed() > 0
-                    {
-                        i16::from(m.u8(rec.wrapping_add(0x18)))
-                    } else {
-                        -1
-                    }
-                },
+                choice,
                 initial_choice: i16::from(m.u8(at + 0x1e).cast_signed()),
                 text: if text_at == 0 || text_at == MSG_NONE {
                     Vec::new()
                 } else {
-                    m.text(text_at)
+                    text::expand(m, window, &m.text(text_at))
                 },
+                picked,
+                vars: text::vars(m, window),
             })
         })
         .collect()
+}
+
+/// Window `w`'s choice through its text box record (`0x01868a90[w]`,
+/// `TOFuncPadMessageSelect`): the cursor `i8 +2` from the first row `i8
+/// +4` while the record lays out rows (`+5` above `+4`), else -1; and the
+/// first pick `+0x18` once `+1` is 2 with a pick made (`+7`), else -1.
+fn choice(m: &Mem<'_>, w: u8) -> (i16, i16) {
+    let rec = m.u32(MSG_TABLE + 4 * u32::from(w));
+    if rec == 0 || !m.mapped::<0x19>(rec) {
+        return (-1, -1);
+    }
+    let b = |o: u32| m.u8(rec.wrapping_add(o)).cast_signed();
+    let (cursor, first, end) = (b(2), b(4), b(5));
+    let choice = if end > first {
+        i16::from(cursor) - i16::from(first)
+    } else {
+        -1
+    };
+    let picked = if b(1) == 2 && b(7) > 0 {
+        i16::from(m.u8(rec.wrapping_add(0x18)))
+    } else {
+        -1
+    };
+    (choice, picked)
 }
 
 fn world(m: &Mem<'_>) -> World {
@@ -554,6 +708,60 @@ fn world(m: &Mem<'_>) -> World {
                     .unwrap_or(LANGUAGE_UNKNOWN)
             }
         },
+        ..loading(m)
+    }
+}
+
+/// `Sg_IsSceneLoading`'s queries (`ffx_field::yi::sg_is_scene_loading`):
+/// the scene's bytes `+0x1195` (the field map loads), `+0x1196`/`+0x1197`
+/// (a battle map), `g_GraphicCharacterLoading`'s count, the map id
+/// `graphicIsMapInList` tests and its 16 maps, `g_AsyncLoadManager`'s two
+/// lists (`AsyncLoadManager_isAllRequestDone`: `+0x20`, `+0x2c`) and the
+/// post-process manager's fade lock (`graphicIsScreenFadeColorLocked`:
+/// `+0x123a0`).
+const SCENE_MAP_LOADING: u32 = 0x1195;
+const SCENE_BATTLE_MAP: u32 = 0x1196;
+const CHARACTER_LOADING: u32 = 0x00cc_b6d4;
+const GRAPHIC_MAP_ID: u32 = 0x0133_0844;
+const LOADING_MAPS: [u32; 16] = [
+    0x118, 0x52, 0x51, 0xde, 0x13c, 0x17d, 0x5d, 0x12, 0x15d, 0xf8, 0x99, 0xb3, 0x50, 0x137, 0x16b,
+    0x84,
+];
+const ASYNC_LOAD: u32 = 0x00cc_c88c;
+const POST_PROCESS: u32 = 0x00cc_c8a0;
+const FADE_LOCKED: u32 = 0x1_23a0;
+/// `g_TkEventJumpRequest`: `TkSetEventJump` sets it, `TkInitScene` clears it.
+const EVENT_JUMP_REQUEST: u32 = 0x0133_084c;
+
+/// The world's loading fields (the rest default).
+fn loading(m: &Mem<'_>) -> World {
+    let scene = m.u32(G_PHYRE_SCENE);
+    let s = |o: u32| scene.wrapping_add(o);
+    let (map_loading, battle_map) = if scene == 0 {
+        (false, false)
+    } else {
+        (
+            m.u8(s(SCENE_MAP_LOADING)) != 0,
+            m.u8(s(SCENE_BATTLE_MAP)) != 0 || m.u8(s(SCENE_BATTLE_MAP + 1)) != 0,
+        )
+    };
+    let characters_loading = m.u32(CHARACTER_LOADING) & 0x7fff_ffff;
+    let async_load = m.u32(ASYNC_LOAD);
+    // no manager yet: nothing asked of it (its query would not run either)
+    let assets_loading = async_load != 0
+        && (m.u32(async_load.wrapping_add(0x20)) != 0 || m.u32(async_load.wrapping_add(0x2c)) != 0);
+    let post = m.u32(POST_PROCESS);
+    let fade_locked = post != 0 && m.u8(post.wrapping_add(FADE_LOCKED)) != 0;
+    let listed = LOADING_MAPS.contains(&m.u32(GRAPHIC_MAP_ID));
+    World {
+        scene_loading: (map_loading && !battle_map)
+            || (characters_loading != 0 && listed && !battle_map)
+            || (assets_loading && fade_locked),
+        map_loading,
+        characters_loading,
+        assets_loading,
+        map_change: m.u32(EVENT_JUMP_REQUEST) != 0,
+        ..World::default()
     }
 }
 
@@ -619,6 +827,13 @@ const SCENE_2D_TABLE: u32 = 0x1140;
 const SCENE_2D_CURRENT: u32 = 0x11d8;
 const SCENE_2D_PAN: u32 = 0xf9bc;
 const SCENE_2D_NO_SQUEEZE: u32 = 0xf9c7;
+/// The map's term of the main camera's adjustment (`PhyreScene`
+/// `+0xf9c0`, `PhyreScene_fieldMapInitialize`).
+const SCENE_MAP_PAN: u32 = 0xf9c0;
+/// The adjustment's `f64` third (`0x00b43d40`, `PhyreScene_GetScreenAdjustedView`)
+/// and what it holds, should it not be mapped.
+const SCREEN_ADJUST_THIRD: u32 = 0x00b4_3d40;
+const SCREEN_ADJUST_THIRD_VALUE: f64 = 0.333_333_37;
 const SCENE_SHIFT: u32 = 0xfa34;
 /// `g_PhyreScene3D` (a byte): no squeeze while set.
 const PHYRE_SCENE_3D: u32 = 0x00cc_b9c0;
@@ -970,6 +1185,36 @@ fn battle_end(m: &Mem<'_>) -> BattleEnd {
         })
         .collect();
     let gear_n = count(BTL_END_GEAR_COUNT, BTL_END_MAX_GEAR);
+    let kana = (m.u32(SAVE_MENU) >> 3) & 1 != 0;
+    let gear_spoils = (0..u32::from(gear_n))
+        .map(|i| {
+            let id = m.u16(BTL_END_GEAR + 2 * i);
+            let mut r = ReadOnly(m.0);
+            let slot = ffx_battle::save::bridge::ms_get_save_weapon(&mut r, u32::from(id), 0);
+            let used = slot != 0 && m.u8(slot.wrapping_add(2)) != 0;
+            GearSpoil {
+                id,
+                used,
+                name_id: if slot == 0 { 0 } else { m.u16(slot) },
+                character: if slot == 0 {
+                    0
+                } else {
+                    m.u8(slot.wrapping_add(4))
+                },
+                kana,
+                name: if used {
+                    let at = text::weapon_text(m, u32::from(id));
+                    if at != 0 && m.mapped::<1>(at) {
+                        m.text(at)
+                    } else {
+                        Vec::new()
+                    }
+                } else {
+                    Vec::new()
+                },
+            }
+        })
+        .collect();
     BattleEnd {
         open: true,
         state: m.u32(BTL_END_STATE),
@@ -989,6 +1234,7 @@ fn battle_end(m: &Mem<'_>) -> BattleEnd {
         picked: m.u32(BTL_END_PICKED) != 0,
         top: m.i32(BTL_END_TOP),
         gear_list: m.i32(BTL_END_GEAR_LIST),
+        gear_spoils,
     }
 }
 
@@ -1163,6 +1409,30 @@ fn camera(m: &Mem<'_>) -> Camera {
         )
     };
     let at = |o: u32| m.f32(pcamera.wrapping_add(o));
+    let s = |o: u32| scene.wrapping_add(o);
+    // the adjustment's terms, as `PhyreScene_getViewProjectionMatrix` reads
+    // them (the scene mapped over them)
+    let adjust = valid && m.mapped::<0x10>(s(SCENE_2D_PAN)) && m.mapped::<8>(s(SCENE_SHIFT));
+    let scene_3d = m.u8(PHYRE_SCENE_3D) != 0;
+    let squeezed = adjust && m.u8(s(SCENE_2D_NO_SQUEEZE)) == 0 && !scene_3d;
+    let (pan, map_pan) = if adjust {
+        (m.f32(s(SCENE_2D_PAN)), m.f32(s(SCENE_MAP_PAN)))
+    } else {
+        (0.0, 0.0)
+    };
+    let offset_y = if squeezed {
+        // `0.33333337 - 2 (+0xf9c0 + +0xf9bc)`: the f64 at `0x00b43d40`
+        let third = f64::from_le_bytes(m.bytes(SCREEN_ADJUST_THIRD));
+        let third = if third.is_finite() && third != 0.0 {
+            third
+        } else {
+            SCREEN_ADJUST_THIRD_VALUE
+        };
+        let sum = x87::add(f64::from(map_pan), f64::from(pan));
+        stored(x87::sub(third, x87::add(sum, sum)))
+    } else {
+        0.0
+    };
     Camera {
         valid,
         world: if valid { m.floats(world_at) } else { [0.0; 12] },
@@ -1171,6 +1441,17 @@ fn camera(m: &Mem<'_>) -> Camera {
         far: if valid { at(PCAMERA_FAR) } else { 0.0 },
         eye,
         target,
+        shift_x: if adjust { m.f32(s(SCENE_SHIFT)) } else { 0.0 },
+        shift_y: if adjust {
+            m.f32(s(SCENE_SHIFT + 4))
+        } else {
+            0.0
+        },
+        pan,
+        map_pan,
+        squeezed,
+        scene_3d,
+        offset_y,
     }
 }
 
@@ -1627,28 +1908,107 @@ mod tests {
         assert_eq!(s.menus.battle_ids, [0x01, 0x30, 0x02, 0x30, 0x03, 0x30]);
     }
 
-    #[test]
-    fn the_live_choice_through_the_text_box_table() {
+    /// Window 3 open, its table entry pointing at a text box record of
+    /// `size` bytes (zeros).
+    fn a_choice_window(size: usize) -> (Sparse, u32) {
         let mut mem = Sparse(HashMap::new());
         mem.put(MSG_BANK, &[0]);
         mem.put(MSG_WINDOWS, &vec![0u8; 16 * MSG_WINDOW as usize]);
-        // window 3 open; its table entry points at a record: a choice of
-        // 3 options with the second highlighted
         mem.put(MSG_WINDOWS + 3 * MSG_WINDOW + 0x14, &2u16.to_le_bytes());
         mem.put(MSG_WINDOWS + 3 * MSG_WINDOW + 0x1e, &[0]);
         mem.put(MSG_TABLE, &[0u8; 32]);
         let rec: u32 = 0x0440_0000;
         mem.put(MSG_TABLE + 12, &rec.to_le_bytes());
-        mem.put(rec, &[0u8; 0x138]);
-        mem.put(rec + 1, &[2]);
-        mem.put(rec + 7, &[3]);
+        mem.put(rec, &vec![0u8; size]);
+        (mem, rec)
+    }
+
+    #[test]
+    fn the_picked_choice_through_the_text_box_table() {
+        // a choice of 3 rows (0..3), confirmed on the second: the pick at
+        // +0x18, +1 2, one pick made; the cursor left on it
+        let (mut mem, rec) = a_choice_window(0x138);
+        mem.put(rec + 1, &[2, 1, 0, 0, 3, 1, 1]);
         mem.put(rec + 0x18, &[1]);
         let s = read(&mem, 0, 0.0);
-        assert_eq!((s.messages[0].window, s.messages[0].choice), (3, 1));
-        assert_eq!(s.messages[0].initial_choice, 0);
-        // no options: no choice
+        let msg = &s.messages[0];
+        assert_eq!((msg.window, msg.choice, msg.picked), (3, 1, 1));
+        assert_eq!(msg.initial_choice, 0);
+        // no pick made: none
         mem.put(rec + 7, &[0]);
+        assert_eq!(read(&mem, 0, 0.0).messages[0].picked, -1);
+        // no rows: no choice
+        mem.put(rec + 4, &[0, 0]);
         assert_eq!(read(&mem, 0, 0.0).messages[0].choice, -1);
+        // a record not all mapped: neither
+        let (mem, _) = a_choice_window(0x10);
+        let msg = &read(&mem, 0, 0.0).messages[0];
+        assert_eq!((msg.choice, msg.picked), (-1, -1));
+    }
+
+    #[test]
+    fn the_live_choice_moves_before_the_confirm() {
+        // open (+1 0), rows 1..4 (+4, +5), the cursor on row 3: the third
+        // option from the first; nothing picked yet (+0x18 left over)
+        let (mut mem, rec) = a_choice_window(0x138);
+        mem.put(rec + 1, &[0, 3, 1, 1, 4, 1, 0]);
+        mem.put(rec + 0x18, &[2]);
+        let msg = &read(&mem, 0, 0.0).messages[0];
+        assert_eq!((msg.choice, msg.picked), (2, -1));
+        // the pad moves it up: the next snapshot shows the new row
+        mem.put(rec + 2, &[1]);
+        assert_eq!(read(&mem, 0, 0.0).messages[0].choice, 0);
+    }
+
+    #[test]
+    fn a_message_variable_expands_in_the_text() {
+        let (mut mem, _) = a_choice_window(0x138);
+        // the text: "A" {VAR:0} "B" {VAR:1} {VAR:2}
+        let text: u32 = 0x0450_0000;
+        mem.put(MSG_WINDOWS + 3 * MSG_WINDOW + 8, &text.to_le_bytes());
+        mem.put(
+            text,
+            &[0x50, 0x12, 0x30, 0x51, 0x12, 0x31, 0x12, 0x32, 0x00],
+        );
+        // window 3's records: slot 0 a grouped number (1234567), slot 1 a
+        // raw text, slot 2 a number of 3 digits (7: padded), the rest unused
+        let (vars, recs, raw) = (0x0186_9ab0_u32, 0x0460_0000_u32, 0x0470_0000_u32);
+        for n in 0..32u32 {
+            let e = recs + 8 * n;
+            mem.put(vars + 4 * (3 * 32 + n), &e.to_le_bytes());
+            mem.put(e, &[0xff, 0xff, 0, 0, 0, 0, 0, 0]);
+        }
+        mem.put(recs, &[0xff, 2, 0, 0]);
+        mem.put(recs + 4, &1_234_567i32.to_le_bytes());
+        mem.put(recs + 8, &[0xff, 0, 0, 0]);
+        mem.put(recs + 12, &raw.to_le_bytes());
+        mem.put(raw, &[0x52, 0x53, 0x00]);
+        mem.put(recs + 16, &[0xff, 0x2d, 0, 0]);
+        mem.put(recs + 20, &7i32.to_le_bytes());
+        // the language: English (the pad 0xfe)
+        let lm: u32 = 0x0480_0000;
+        mem.put(LOCALIZATION, &lm.to_le_bytes());
+        mem.put(lm, &[0, 0, 0, 0, 1, 0, 0, 0]);
+        let msg = &read(&mem, 0, 0.0).messages[0];
+        assert_eq!(
+            msg.text,
+            [
+                [0x50].as_slice(),
+                b"1\x46234\x46567",
+                &[0x51, 0x52, 0x53],
+                &[0xfe, 0xfe, b'7'],
+            ]
+            .concat()
+        );
+        assert_eq!(
+            msg.vars
+                .iter()
+                .map(|v| (v.slot, v.kind, v.value))
+                .collect::<Vec<_>>(),
+            [(0, 2, 1_234_567), (1, 0, raw.cast_signed()), (2, 0x2d, 7)]
+        );
+        assert_eq!(msg.vars[1].text, [0x52, 0x53]);
+        assert!(msg.vars.iter().all(|v| v.pickup == 0xff));
     }
 
     #[test]
