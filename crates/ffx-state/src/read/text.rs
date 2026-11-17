@@ -28,10 +28,8 @@ const PICKUP_ITEMS: u32 = 0x0231_0db0;
 const PICKUP_KEYS: u32 = 0x0231_0db1;
 const PICKUP_GEAR: u32 = 0x0231_0db2;
 const PICKUP_GEAR_ID: u32 = 0x0231_0dce;
-/// `g_LocalizationManager` (`+4` the language, `TOGetFFXLang`) and
-/// `g_SaveMenu` (bit 16: `MsGetSaveConfigEnglish`).
+/// `g_LocalizationManager` (`+4` the language, `TOGetFFXLang`).
 const LOCALIZATION: u32 = 0x00cd_ed58;
-const SAVE_MENU: u32 = 0x0113_079c;
 /// How deep macros expand into macros, and the longest text built.
 const MAX_DEPTH: u32 = 4;
 const MAX_LEN: usize = 4096;
@@ -66,20 +64,27 @@ fn code_len(t: &[u8]) -> usize {
 /// `0x17`) and key items (`0x23`), each expansion expanded in turn; other
 /// codes and macros that expand to no address are kept.
 pub(super) fn expand(m: &Mem<'_>, window: u32, text: &[u8]) -> Vec<u8> {
-    expand_at(m, window, text, 0)
+    let mut budget = MAX_EXPANSIONS;
+    expand_at(m, window, text, 0, &mut budget)
 }
 
+/// At most this many macros are expanded in one text (with every nested
+/// one): a text of empty expansions adds no output, so `MAX_LEN` alone does
+/// not bound the work (a stale pointer or a mod's text read every frame).
+const MAX_EXPANSIONS: u32 = 256;
+
 #[allow(clippy::many_single_char_names)] // the game's own short names
-fn expand_at(m: &Mem<'_>, window: u32, text: &[u8], depth: u32) -> Vec<u8> {
+fn expand_at(m: &Mem<'_>, window: u32, text: &[u8], depth: u32, budget: &mut u32) -> Vec<u8> {
     let mut out = Vec::with_capacity(text.len());
     let mut i = 0;
     while i < text.len() && out.len() < MAX_LEN {
         let n = code_len(&text[i..]);
         let code = &text[i..i + n];
-        match (depth < MAX_DEPTH, code) {
+        match (depth < MAX_DEPTH && *budget > 0, code) {
             (true, &[c, arg]) if matches!(c, 0x12 | 0x13 | 0x16 | 0x17 | 0x23) => {
+                *budget -= 1;
                 match macro_text(m, window, c, arg) {
-                    Some(t) => out.extend(expand_at(m, window, &t, depth + 1)),
+                    Some(t) => out.extend(expand_at(m, window, &t, depth + 1, budget)),
                     None => out.extend_from_slice(code),
                 }
             }
@@ -109,7 +114,8 @@ fn macro_text(m: &Mem<'_>, window: u32, code: u8, arg: u8) -> Option<Vec<u8>> {
                 .wrapping_sub(0x140);
             u32::from(m.u16(entry)).wrapping_add(strings)
         }
-        0x12 => return var(m, window, n).map(|v| v.text),
+        // an unset slot (kind 0xff) gives the game's empty text (`0x00c5a040`)
+        0x12 => return Some(var(m, window, n).map(|v| v.text).unwrap_or_default()),
         0x13 => chr_name(m, n),
         0x16 | 0x17 => item_text(m, n),
         0x23 => ffx_battle::minor::bridge::ms_important_name(&ReadOnly(m.0), n),
@@ -199,7 +205,9 @@ fn int_to_mes(m: &Mem<'_>, value: i32, digits: u32) -> Vec<u8> {
     let mut out = Vec::new();
     if s.len() < d {
         let lang = language(m);
-        let pad = if lang == 0 && (m.u32(SAVE_MENU) >> 16) & 1 == 0 {
+        // `MsGetSaveConfigEnglish` is `xor eax, eax; ret` on PC (0x007851d0):
+        // Japanese always pads with 0x5d
+        let pad = if lang == 0 {
             0x5d
         } else if lang == 10 || lang == 9 {
             0x3a
@@ -279,9 +287,11 @@ fn var(m: &Mem<'_>, window: u32, n: u32) -> Option<MessageVar> {
             let code = i32::from(kind) + value / 0xd0;
             let arg = (value % 0xd0 + 0x30).to_le_bytes()[0];
             match u8::try_from(code) {
-                Ok(c @ (0x13 | 0x16 | 0x17 | 0x23)) => macro_text(m, window, c, arg)
-                    .map(|t| expand_at(m, window, &t, 1))
-                    .unwrap_or_default(),
+                // the macro's text as it stands: the window's expansion
+                // expands it in turn (once, within its budget)
+                Ok(c @ (0x13 | 0x16 | 0x17 | 0x23)) => {
+                    macro_text(m, window, c, arg).unwrap_or_default()
+                }
                 _ => Vec::new(),
             }
         }
