@@ -17,8 +17,8 @@
 //!
 //! `--skip` waits `n` more updates before capturing; `--party` writes the
 //! battle party (`g_SaveInParty`, 8 bytes in hex) and `--battle` asks for
-//! a battle once the map runs (the second line: Tidus, Yuna, Wakka and
-//! Lulu against the first formation of battle field 34). The probe ends
+//! a battle once the map runs (the second line: Tidus, Yuna and Wakka, Lulu
+//! the reserve, against the first formation of battle field 34). The probe ends
 //! with exit code 1 when no frame had a simulated vertex, none moved
 //! relative to its actor, or a frame did not decode to itself.
 

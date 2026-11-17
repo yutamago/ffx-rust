@@ -175,7 +175,8 @@ pub fn to_render(world: &[f32; 16], local: [f32; 4]) -> [f32; 3] {
 
 /// How much of the cloth position the shaders take over the skinned one:
 /// `min((x² + y² + z²) · 10000, 1)` ([`WEIGHT_SCALE`]); 0 for a vertex the
-/// simulation does not move (anchored, or skinned by its colour).
+/// simulation does not move (the skin-coloured ones, vertex colour <= 0.3,
+/// which stay skinned).
 #[must_use]
 pub fn weight(local: [f32; 4]) -> f32 {
     let d = local[0] * local[0] + local[1] * local[1] + local[2] * local[2];
@@ -284,8 +285,10 @@ fn ready(m: &Reader, entry: u32) -> bool {
 /// `EighthAtLeastOne(slot count)`; ready slots after the last full batch
 /// are not submitted (a short batch at the end, with 16 slots or more).
 fn submitted_slots(m: &Reader) -> Vec<u32> {
-    let count = m.u32(TABLE_COUNT).unwrap_or(0).min(SLOTS_MAX);
-    let batch = batch_size(count.cast_signed());
+    let all = m.u32(TABLE_COUNT).unwrap_or(0);
+    // the batch from the game's own count; only the slots read are capped
+    let batch = batch_size(all.cast_signed());
+    let count = all.min(SLOTS_MAX);
     let mut out = Vec::new();
     let (mut start, mut n) = (0u32, 0i32);
     for i in 0..count {
@@ -502,10 +505,9 @@ impl Frame {
     #[must_use]
     pub fn decode(bytes: &[u8]) -> Option<Self> {
         let mut i = In(bytes);
-        if i.take(4)? != MAGIC || i.u16()? != VERSION {
+        if i.take(4)? != MAGIC || i.u16()? != VERSION || i.u16()? != 0 {
             return None;
         }
-        i.u16()?;
         let update = i.u32()?;
         let n_chars = i.u32()? as usize;
         let mut characters = Vec::with_capacity(n_chars.min(SLOTS_MAX as usize));

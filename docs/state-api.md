@@ -426,9 +426,11 @@ drops what it kept).
   floats as the shader's `ClothWorld`. The character shaders' cloth path
   mixes the skinned position `s` and the cloth one `c = ClothWorld(v)`:
   `mix(s, c, min(|v|² · 10000, 1))` with `v` the vertex's x, y, z. A vertex
-  the simulation leaves at zero (anchored ones, and those whose vertex
-  colour keeps them skinned: `Ch_PreCalcActiveClothMesh` clears them)
-  stays skinned.
+  the simulation leaves at zero (the skin-coloured ones, vertex colour
+  <= 0.3, which `Ch_PreCalcActiveClothMesh` never binds; not the
+  `Ch_UseAnchorVertex` anchors above, which move and weigh 1) stays
+  skinned. The reserved `u16` after the version is 0; `decode` refuses
+  another value.
 - **What.** A wrapper on `graphicCharacterInstanceSetClothVertexBuffers`.
   Off, it only checks the switch and calls the port; on, it first reads
   what the call is about to hand over, with its conditions: the cloth
