@@ -767,3 +767,13 @@ the census itself on a synthetic frame.
    builder's, with the summon's character drawn after the glow.
 7. **PC2 captures** use other saves and timing (above); the main
    machine should take the git scripts' captures and run the gate on them.
+8. **Vertex colours the game never wrote** (found by gd-ffx, 2026-11-17):
+   in 94 of the 110 developer saves some captured effect draws index
+   vertices whose colour is the MSVC debug fill `0xCDCDCDCD` or another
+   stale value. The clearest case is the Besaid village lens flare's ring
+   quad on `bsvr00` (key ending `0xd`, texture `13888_19_0_0_128_64`, 16
+   vertices, all `0xCDCDCDCD`). Either the capture reads an array slot the
+   game did not fill this frame, or the game leaves these vertices unset
+   itself (and its shader or blend makes them invisible). gd-ffx leaves
+   such triangles out (`--keep-unset-colours` draws them); with or without
+   them its pictures look the same.
