@@ -49,7 +49,7 @@
 //!   seed) register with these.
 
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
-use std::sync::{Condvar, Mutex, OnceLock};
+use std::sync::{Condvar, Mutex};
 use std::time::{Duration, Instant};
 
 use ffx_bridge::Mem as _;
@@ -196,9 +196,10 @@ pub struct Clock {
     /// The replay script (`--replay`).
     pub script: Mutex<Option<crate::replay::Script>>,
     /// The real clock ([`Clock::set_real`]): game time follows the
-    /// host's from `epoch` on, as in the original.
+    /// host's from its start on, as in the original, times the speed
+    /// ([`Clock::set_speed`]).
     real: AtomicBool,
-    epoch: OnceLock<Instant>,
+    real_time: Mutex<RealTime>,
     /// The opening logos end on their first frame on the real clock too
     /// ([`Clock::set_skip_opening`]).
     skip_opening: AtomicBool,
@@ -217,14 +218,47 @@ pub struct Clock {
     changed: Condvar,
 }
 
+/// The real clock's time: the host's since `at`, times `speed`, after
+/// `base` seconds of it (re-anchored at every change of the speed, so game
+/// time never jumps).
+#[derive(Debug, Clone, Copy)]
+struct RealTime {
+    at: Option<Instant>,
+    base: f64,
+    speed: f64,
+}
+
+impl Default for RealTime {
+    fn default() -> Self {
+        Self {
+            at: None,
+            base: 0.0,
+            speed: 1.0,
+        }
+    }
+}
+
+impl RealTime {
+    fn now(&self) -> f64 {
+        self.base
+            + self
+                .at
+                .map_or(0.0, |t| t.elapsed().as_secs_f64() * self.speed)
+    }
+}
+
+/// The game speeds [`Clock::set_speed`] takes.
+pub const SPEEDS: std::ops::RangeInclusive<f64> = 0.25..=8.0;
+
 impl Clock {
     /// The game time now, in seconds: [`VIRTUAL_START`] plus the time
-    /// skipped, plus on the real clock the host's time since it started.
+    /// skipped, plus on the real clock the host's time since it started
+    /// (times the speed, [`Clock::set_speed`]).
     #[must_use]
     pub fn now(&self) -> f64 {
         let skipped = f64::from_bits(self.skipped.load(Ordering::Acquire));
         let real = if self.is_real() {
-            self.epoch.get().map_or(0.0, |t| t.elapsed().as_secs_f64())
+            self.real_time.lock().map_or(0.0, |r| r.now())
         } else {
             0.0
         };
@@ -238,10 +272,41 @@ impl Clock {
     /// lockstep, no turns, the opening logos play (unless
     /// [`Clock::set_skip_opening`]).
     pub fn set_real(&self, real: bool) {
-        if real {
-            let _ = self.epoch.set(Instant::now());
+        if real && let Ok(mut r) = self.real_time.lock() {
+            r.at.get_or_insert_with(Instant::now);
         }
         self.real.store(real, Ordering::Release);
+    }
+
+    /// The game's speed on the real clock, for debugging (`docs/host.md`
+    /// "The clock", "Game speed"): game time runs `speed` times as fast as
+    /// the host's from now on (clamped to [`SPEEDS`]; not a number: 1),
+    /// and the frame limiter's sleep is shortened (or lengthened) as much,
+    /// so the game's updates come `speed` times as often while the host
+    /// keeps up. Any thread, any time; game time goes on from where it is.
+    /// The virtual clock (the tests', the replays', lockstep) has no speed:
+    /// it runs as fast as the host goes and ignores this.
+    pub fn set_speed(&self, speed: f64) {
+        let speed = if speed.is_nan() {
+            1.0
+        } else {
+            speed.clamp(*SPEEDS.start(), *SPEEDS.end())
+        };
+        if let Ok(mut r) = self.real_time.lock() {
+            let now = Instant::now();
+            if let Some(at) = r.at {
+                r.base += now.duration_since(at).as_secs_f64() * r.speed;
+                r.at = Some(now);
+            }
+            r.speed = speed;
+        }
+    }
+
+    /// The game's speed on the real clock ([`Clock::set_speed`]; 1 unless
+    /// set).
+    #[must_use]
+    pub fn speed(&self) -> f64 {
+        self.real_time.lock().map_or(1.0, |r| r.speed)
     }
 
     /// The harness's `timing`: the updates and flips since the last ask,
@@ -518,6 +583,10 @@ pub fn woke(e: &Exec) {
 /// (`crate::crt_start`), which calls it where the original calls `Sleep`.
 pub(crate) fn limiter(e: &mut Exec, ms: u32) {
     if clock(e).is_real() {
+        // the limiter counts game milliseconds: as many of the host's at
+        // the game's speed (truncated, as the limiter's own `fistp`)
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // ms / 0.25 fits
+        let ms = (f64::from(ms) / clock(e).speed()) as u32;
         let sleep = Args {
             stack: vec![ms],
             ..Args::default()

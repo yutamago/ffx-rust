@@ -1456,3 +1456,418 @@ fn the_state_api_sees_the_battle_results() {
     assert!((0..18).all(|c| ap(last, c) <= ap(first, c)));
     assert!(seen.iter().any(|s| s.menus.battle_end.state != first.state));
 }
+
+/// API 11 at Besaid (developer save 7): the map change is seen before the
+/// beach starts; the beach is a 3D map (no squeeze, no offset) with the
+/// boosters as a new game has them; Circle at the save sphere opens its
+/// two-way choice, whose cursor the snapshots follow before the confirm
+/// (Down, Up, Down) and whose pick they show after it. Then developer save
+/// 12 (the S.S. Liki's corridor, `slik04`), a 2D-background room: the
+/// camera keeps the PS2's 4/3 and gets the squeeze, its offset `1/3 - 2
+/// (map_pan + pan)`.
+#[test]
+#[allow(clippy::too_many_lines)] // one walk through the game, step by step
+fn the_state_api_follows_a_choice_and_a_2d_rooms_camera() {
+    use std::sync::atomic::{AtomicU32, Ordering::Relaxed};
+    use std::sync::{Arc, Mutex};
+    type Seen = Vec<(&'static str, Arc<ffx_state::Snapshot>)>;
+    let Some(exe) = exe() else { return };
+    let opts = ffx_host::Options {
+        documents: Some(documents("choice-2d")),
+        gfx: ffx_host::gfx::Config {
+            backend: ffx_host::gfx::Choice::Null,
+            no_record: true,
+            ..ffx_host::gfx::Config::default()
+        },
+        ..ffx_host::Options::default()
+    };
+    let mut exec = ffx_host::boot_opts(&exe, ffx_host::ports::table(), &opts).unwrap();
+    exec.set_budget(Duration::from_secs(400));
+    let seen: Arc<Mutex<Seen>> = Arc::default();
+    let changes: Arc<Mutex<Vec<(u32, u16)>>> = Arc::default();
+    let id = {
+        let (seen, changes) = (Arc::clone(&seen), Arc::clone(&changes));
+        let shared = Arc::downgrade(exec.shared());
+        let step = AtomicU32::new(0);
+        let at = AtomicU32::new(0);
+        exec.shared().observers.add(Arc::new(move |s| {
+            let Some(shared) = shared.upgrade() else {
+                return;
+            };
+            if s.world.map_change
+                && let Ok(mut c) = changes.lock()
+            {
+                c.push((s.update, s.world.map));
+            }
+            let since = s.update.saturating_sub(at.load(Relaxed));
+            let keep = |what: &'static str| {
+                if let Ok(mut v) = seen.lock() {
+                    v.push((what, Arc::clone(s)));
+                }
+            };
+            let press = |b: u32, next: u32| {
+                shared.clock.buttons.store(b, Relaxed);
+                at.store(s.update, Relaxed);
+                step.store(next, Relaxed);
+            };
+            let choice = s.messages.iter().find(|m| m.mode & 0x02 != 0);
+            match step.load(Relaxed) {
+                0 if s.world.map == 0x15d && s.world.event_frame > 30 => {
+                    shared
+                        .requests
+                        .push(ffx_host::requests::Request::DevSave(7), Box::new(|_| {}));
+                    step.store(1, Relaxed);
+                }
+                // the beach at the control, the fade-in over: Circle
+                1 if s.world.map == 0x46
+                    && s.world.player_control
+                    && s.effects.filters.iter().all(|f| !f.drawn) =>
+                {
+                    keep("beach");
+                    press(0x20, 2);
+                }
+                2 if since > 3 => press(0, 3),
+                // the choice open (state 2): Down, Up, Down, each kept
+                3 if choice.is_some_and(|m| m.state == 2) && since > 20 => {
+                    keep("open");
+                    press(0x4000, 4);
+                }
+                4 if since > 3 => press(0, 5),
+                5 if since > 10 => {
+                    keep("down");
+                    press(0x1000, 6);
+                }
+                6 if since > 3 => press(0, 7),
+                7 if since > 10 => {
+                    keep("up");
+                    press(0x4000, 8);
+                }
+                8 if since > 3 => press(0, 9),
+                9 if since > 10 => {
+                    keep("down again");
+                    press(0x20, 10);
+                }
+                10 if since > 3 => press(0, 11),
+                11 if choice.is_some_and(|m| m.picked >= 0) => {
+                    keep("picked");
+                    step.store(12, Relaxed);
+                }
+                // the choice gone and the control back: the corridor
+                12 if s.messages.is_empty() && s.world.player_control => {
+                    shared
+                        .requests
+                        .push(ffx_host::requests::Request::DevSave(12), Box::new(|_| {}));
+                    step.store(13, Relaxed);
+                }
+                13 if s.world.map == 0x94 && s.world.player_control && !s.world.scene_loading => {
+                    keep("corridor");
+                    shared.stop_all(Stop::Milestone("the corridor".into()));
+                }
+                _ => {}
+            }
+        }))
+    };
+    let stop = exec.run_entry().unwrap();
+    exec.join_threads(Duration::from_secs(5));
+    exec.shared().observers.remove(id);
+    let seen = seen.lock().unwrap().clone();
+    let changes = changes.lock().unwrap().clone();
+    for (what, s) in &seen {
+        eprintln!(
+            "{what}: update {} map {:#x} camera {:?} boosters {:?} messages {:?}",
+            s.update,
+            s.world.map,
+            (
+                s.camera.aspect,
+                s.camera.shift_x,
+                s.camera.shift_y,
+                s.camera.pan,
+                s.camera.map_pan,
+                s.camera.squeezed,
+                s.camera.scene_3d,
+                s.camera.offset_y
+            ),
+            s.boosters,
+            s.messages
+                .iter()
+                .map(|m| (m.window, m.state, m.mode, m.choice, m.picked, m.vars.len()))
+                .collect::<Vec<_>>()
+        );
+    }
+    eprintln!("map changes seen: {changes:?}");
+    assert_eq!(stop, Stop::Milestone("the corridor".into()));
+    let get = |what: &str| &seen.iter().find(|(w, _)| *w == what).unwrap().1;
+    // a map change seen at a boundary before the beach (a developer save
+    // served at a boundary loads its map within the next update, so only
+    // the script's own jumps are seen)
+    let (beach, corridor) = (get("beach"), get("corridor"));
+    assert!(
+        changes.iter().any(|&(u, _)| u < beach.update),
+        "{changes:?}"
+    );
+    assert!(!beach.world.map_change && !beach.world.scene_loading);
+    // Besaid: a 3D map, no squeeze; a new game's boosters
+    let c = &beach.camera;
+    assert!(c.scene_3d && !c.squeezed && c.offset_y == 0.0, "{c:?}");
+    assert!((c.aspect - 16.0 / 9.0).abs() < 1e-4);
+    let b = &beach.boosters;
+    assert_eq!(
+        (
+            b.speed_level,
+            b.speeding,
+            b.powerup,
+            b.encounters,
+            b.auto_battle
+        ),
+        (0, false, false, 1, false)
+    );
+    assert!((b.speed - 1.0).abs() < f32::EPSILON);
+    // the choice: the cursor before the confirm, the pick after it
+    let choice = |what: &str| {
+        let m = get(what)
+            .messages
+            .iter()
+            .find(|m| m.mode & 0x02 != 0)
+            .unwrap();
+        (m.choice, m.picked)
+    };
+    assert_eq!(choice("open"), (0, -1));
+    assert_eq!(choice("down"), (1, -1));
+    assert_eq!(choice("up"), (0, -1));
+    assert_eq!(choice("down again"), (1, -1));
+    assert_eq!(choice("picked"), (1, 1));
+    // the corridor: a 2D room, the PS2's aspect, squeezed, `d` as the game
+    // computes it
+    let c = &corridor.camera;
+    assert!(!c.scene_3d && c.squeezed, "{c:?}");
+    assert!((c.aspect - 4.0 / 3.0).abs() < 1e-4);
+    let d = 0.333_333_37 - 2.0 * (f64::from(c.map_pan) + f64::from(c.pan));
+    assert!((f64::from(c.offset_y) - d).abs() < 1e-6, "{c:?}");
+    assert!((0.034..=0.296).contains(&c.pan), "{c:?}");
+    assert_eq!(corridor.layers.pan.to_bits(), c.pan.to_bits());
+}
+
+/// API 11 in the deck's battle (Besaid, then `Battle { 3, 0, 0 }`): the
+/// command list puts its hand cursor on the screen; Circle (Attack) opens
+/// the target selection on the first monster (character 0x14, its bit in
+/// the mask, two targets on the monsters' side), Right moves it to the
+/// other and back (wrapping), Cross closes it.
+#[test]
+#[allow(clippy::too_many_lines)] // one walk through the game, step by step
+fn the_state_api_sees_the_battle_target_selection() {
+    use std::sync::atomic::{AtomicU32, Ordering::Relaxed};
+    use std::sync::{Arc, Mutex};
+    type Seen = Vec<(&'static str, Arc<ffx_state::Snapshot>)>;
+    let Some(exe) = exe() else { return };
+    let opts = ffx_host::Options {
+        documents: Some(documents("battle-target")),
+        gfx: ffx_host::gfx::Config {
+            backend: ffx_host::gfx::Choice::Null,
+            no_record: true,
+            ..ffx_host::gfx::Config::default()
+        },
+        ..ffx_host::Options::default()
+    };
+    let mut exec = ffx_host::boot_opts(&exe, ffx_host::ports::table(), &opts).unwrap();
+    exec.set_budget(Duration::from_secs(400));
+    let seen: Arc<Mutex<Seen>> = Arc::default();
+    let id = {
+        let seen = Arc::clone(&seen);
+        let shared = Arc::downgrade(exec.shared());
+        let step = AtomicU32::new(0);
+        let at = AtomicU32::new(0);
+        exec.shared().observers.add(Arc::new(move |s| {
+            let Some(shared) = shared.upgrade() else {
+                return;
+            };
+            let since = s.update.saturating_sub(at.load(Relaxed));
+            let keep = |what: &'static str| {
+                if let Ok(mut v) = seen.lock() {
+                    v.push((what, Arc::clone(s)));
+                }
+            };
+            let press = |b: u32, next: u32| {
+                shared.clock.buttons.store(b, Relaxed);
+                at.store(s.update, Relaxed);
+                step.store(next, Relaxed);
+            };
+            let t = &s.menus.battle_target;
+            match step.load(Relaxed) {
+                0 if s.world.map == 0x15d && s.world.event_frame > 30 => {
+                    shared
+                        .requests
+                        .push(ffx_host::requests::Request::DevSave(7), Box::new(|_| {}));
+                    step.store(1, Relaxed);
+                }
+                1 if s.world.map == 0x46 && s.world.player_control => {
+                    shared.requests.push(
+                        ffx_host::requests::Request::Battle {
+                            field: 3,
+                            group: 0,
+                            formation: 0,
+                        },
+                        Box::new(|_| {}),
+                    );
+                    step.store(2, Relaxed);
+                }
+                // the command list, its hand drawn; Circle once the window
+                // takes input
+                2 if s.world.battle && s.menus.battle_window != 0 && !t.hands.is_empty() => {
+                    keep("commands");
+                    press(0, 20);
+                }
+                20 if since > 30 => press(0x20, 3),
+                3 if since > 3 => press(0, 4),
+                4 if t.open && since > 20 => {
+                    keep("target");
+                    press(0x2000, 5);
+                }
+                5 if since > 3 => press(0, 6),
+                6 if since > 20 => {
+                    keep("right");
+                    press(0x2000, 7);
+                }
+                7 if since > 3 => press(0, 8),
+                8 if since > 20 => {
+                    keep("right again");
+                    press(0x40, 9);
+                }
+                9 if since > 3 => press(0, 10),
+                10 if since > 20 => {
+                    keep("cancelled");
+                    shared.stop_all(Stop::Milestone("the target selection".into()));
+                }
+                _ => {}
+            }
+        }))
+    };
+    let stop = exec.run_entry().unwrap();
+    exec.join_threads(Duration::from_secs(5));
+    exec.shared().observers.remove(id);
+    let seen = seen.lock().unwrap().clone();
+    for (what, s) in &seen {
+        eprintln!(
+            "{what}: update {} depth {} {:?}",
+            s.update, s.menus.battle_depth, s.menus.battle_target
+        );
+    }
+    assert_eq!(stop, Stop::Milestone("the target selection".into()));
+    let get = |what: &str| {
+        &seen
+            .iter()
+            .find(|(w, _)| *w == what)
+            .unwrap()
+            .1
+            .menus
+            .battle_target
+    };
+    // the command list: kind 0, its hand on the PS2 screen
+    let c = get("commands");
+    assert!(!c.open && c.kind == 0, "{c:?}");
+    assert!(
+        c.hands
+            .iter()
+            .all(|h| (0..512).contains(&h.x) && (0..448).contains(&h.y) && (h.x, h.y) != (0, 0)),
+        "{c:?}"
+    );
+    // the target: one monster, its bit, two on its side
+    let first = get("target");
+    assert!(first.open && first.kind == 1, "{first:?}");
+    assert!((0x14..0x1c).contains(&first.character), "{first:?}");
+    assert_eq!(first.mask, 1 << first.character);
+    assert_eq!(first.count, 2);
+    // Right: the other monster, then back (the list wraps)
+    let right = get("right");
+    assert!(
+        right.open && right.character != first.character,
+        "{right:?}"
+    );
+    assert_eq!(right.mask, 1 << right.character);
+    assert_eq!(right.cursor, (first.cursor + 1) % 2);
+    let again = get("right again");
+    assert_eq!(
+        (again.character, again.cursor),
+        (first.character, first.cursor)
+    );
+    // Cross: back to the command list
+    assert!(!get("cancelled").open);
+}
+
+/// The real clock's game speed (`Options::speed`, `Clock::set_speed`): at
+/// 0.5 the limiter holds 15 updates a second and game time runs at half
+/// the host's; set to 0.25 at run time, 7.5 a second, the game time going
+/// on from where it was.
+#[test]
+fn the_real_clock_runs_at_the_game_speed() {
+    use std::time::Instant;
+    let Some(exe) = exe() else { return };
+    let opts = ffx_host::Options {
+        documents: Some(documents("game-speed")),
+        gfx: ffx_host::gfx::Config {
+            backend: ffx_host::gfx::Choice::Null,
+            no_record: true,
+            ..ffx_host::gfx::Config::default()
+        },
+        real_clock: true,
+        skip_opening: true,
+        speed: Some(0.5),
+        ..ffx_host::Options::default()
+    };
+    let mut exec = ffx_host::boot_opts(&exe, ffx_host::ports::table(), &opts).unwrap();
+    exec.set_budget(Duration::from_secs(300));
+    let shared = std::sync::Arc::clone(exec.shared());
+    let watch = std::thread::spawn(move || {
+        let at = |n: u32| {
+            while shared.clock.frame() < n {
+                if shared.stopped().is_some() {
+                    return None;
+                }
+                std::thread::sleep(Duration::from_micros(200));
+            }
+            Some((Instant::now(), shared.clock.now()))
+        };
+        // windows of 30 updates: their rate (a second's updates) and the
+        // game time over the host's
+        let window = |from: u32, to: u32| -> Option<Vec<(f64, f64)>> {
+            let mut last = at(from)?;
+            let mut out = Vec::new();
+            for n in (from + 30..=to).step_by(30) {
+                let t = at(n)?;
+                let host = t.0.duration_since(last.0).as_secs_f64();
+                out.push((30.0 / host, (t.1 - last.1) / host));
+                last = t;
+            }
+            Some(out)
+        };
+        let half = window(90, 240)?;
+        let before = shared.clock.now();
+        shared.clock.set_speed(0.25);
+        let after = shared.clock.now();
+        let quarter = window(shared.clock.frame() + 15, shared.clock.frame() + 15 + 90)?;
+        shared.stop_all(Stop::Milestone("speeds measured".into()));
+        Some((half, quarter, after - before))
+    });
+    let stop = exec.run_entry().unwrap();
+    exec.join_threads(Duration::from_secs(5));
+    let (half, quarter, jump) = watch
+        .join()
+        .unwrap()
+        .unwrap_or_else(|| panic!("stopped first: {stop}"));
+    eprintln!(
+        "speed 0.5: (updates/s, game s/host s) {half:.3?}; 0.25: {quarter:.3?}; set_speed moved the clock by {jump:.6} s"
+    );
+    let median = |v: &[(f64, f64)], k: usize| {
+        let mut x: Vec<f64> = v.iter().map(|p| if k == 0 { p.0 } else { p.1 }).collect();
+        x.sort_by(f64::total_cmp);
+        x[x.len() / 2]
+    };
+    assert!((14.7..=15.2).contains(&median(&half, 0)), "{half:.3?}");
+    assert!((0.49..=0.51).contains(&median(&half, 1)), "{half:.3?}");
+    assert!((7.3..=7.6).contains(&median(&quarter, 0)), "{quarter:.3?}");
+    assert!(
+        (0.245..=0.255).contains(&median(&quarter, 1)),
+        "{quarter:.3?}"
+    );
+    // no jump at the change
+    assert!((0.0..0.01).contains(&jump), "{jump}");
+}

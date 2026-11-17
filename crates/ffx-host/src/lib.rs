@@ -188,6 +188,11 @@ pub struct Options {
     /// Ruffle (no `swf` feature), whose null Iggy player never sends the
     /// movie's `Finish`, so the start-up loop would wait for it forever.
     pub skip_opening: bool,
+    /// The game's speed on the real clock, for debugging
+    /// (`clock::Clock::set_speed`, which also changes it at run time:
+    /// `shared.clock.set_speed`): game time runs this many times as fast
+    /// as the host's, 0.25 to 8; `None` 1. No effect on the virtual clock.
+    pub speed: Option<f64>,
 }
 
 /// [`boot_with`] with [`Options`]: maps the image and (unless
@@ -215,6 +220,9 @@ pub fn boot_opts(exe: &Path, table: table::Table, opts: &Options) -> Result<exec
     shared.gfx.configure(opts.gfx.clone());
     shared.clock.set_real(opts.real_clock);
     shared.clock.set_skip_opening(opts.skip_opening);
+    if let Some(speed) = opts.speed {
+        shared.clock.set_speed(speed);
+    }
     let mut exec = exec::Exec::new(shared)?;
     match exec.attach_dlls(1) {
         Ok(()) => Ok(exec),

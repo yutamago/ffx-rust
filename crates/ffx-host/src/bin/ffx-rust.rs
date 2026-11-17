@@ -6,6 +6,7 @@
 //!          [--documents DIR] [--profile FILE] [--routes FILE] [--ports FILE]
 //!          [--gfx-out DIR] [--gfx-null] [--presents N] [--replay FILE]
 //!          [--audio-wav FILE] [--clock real|virtual] [--skip-opening]
+//!          [--speed X]
 //! ```
 //!
 //! `--skip-opening` ends the start-up logos on their first frame on the
@@ -20,7 +21,9 @@
 //! `realtime` replay: no `FFX_HARNESS_FAST=1`); the virtual one (as fast as
 //! the host goes) for fast-mode harness games, `--replay`, and runs on the
 //! null device without the harness. `--clock` (else `FFX_HOST_CLOCK`)
-//! picks one.
+//! picks one. `--speed X` (else `FFX_HOST_SPEED`) runs the real clock X
+//! times as fast, 0.25 to 8, for debugging (`Options::speed`; docs/host.md
+//! "Game speed").
 //!
 //! `FFX_HOST_GFX=null` picks the null device as `--gfx-null` does (harness
 //! runs pass no arguments).
@@ -71,6 +74,9 @@ fn main() -> ExitCode {
     let mut gfx_out: Option<PathBuf> = None;
     let mut replay: Option<PathBuf> = None;
     let mut audio_wav: Option<PathBuf> = None;
+    opts.speed = std::env::var("FFX_HOST_SPEED")
+        .ok()
+        .and_then(|v| v.parse::<f64>().ok());
     let mut clock: Option<String> = std::env::var("FFX_HOST_CLOCK")
         .ok()
         .filter(|v| !v.is_empty());
@@ -102,6 +108,13 @@ fn main() -> ExitCode {
             "--clock" => clock = args.next(),
             "--gfx-null" => opts.gfx.backend = ffx_host::gfx::Choice::Null,
             "--skip-opening" => opts.skip_opening = true,
+            "--speed" => {
+                let Some(x) = args.next().and_then(|s| s.parse::<f64>().ok()) else {
+                    eprintln!("--speed X: a number, 0.25 to 8");
+                    return ExitCode::FAILURE;
+                };
+                opts.speed = Some(x);
+            }
             "--presents" => {
                 opts.gfx.stop_after_presents = args.next().and_then(|s| s.parse().ok());
             }

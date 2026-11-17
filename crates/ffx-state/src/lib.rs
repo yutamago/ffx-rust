@@ -23,7 +23,7 @@ pub use read::{LANGUAGE_UNKNOWN, Reader, read};
 pub use schema::{ApiStruct, ApiType, Field, StructSchema, Ty};
 
 /// The API's version: a frontend checks it before it decodes a snapshot.
-pub const API_VERSION: u32 = 10;
+pub const API_VERSION: u32 = 11;
 
 /// The first four bytes of an encoded snapshot (`FFXS`).
 pub const MAGIC: u32 = u32::from_le_bytes(*b"FFXS");
@@ -128,6 +128,38 @@ api_struct! {
         /// scene draws them now (docs/formats/scene-maps.md, "How the game
         /// draws the 2D layers"; render.md).
         layers: Layers,
+        /// The PC's boosters (F1-F4): the speed-up, the power-up, the
+        /// encounter mode and the auto-battle.
+        boosters: Boosters,
+    }
+}
+
+api_struct! {
+    /// The PC's boosters as the game keeps them (docs/formats/platform.md,
+    /// the keys; render.md, `SpdCtrl_Tick`; `PhyreScene_animate` steps
+    /// them, and resets the last three on maps 0x17, 0x15c and 0x15d).
+    Boosters {
+        /// F1's speed level (`g_SpdCtrl_b4` `0x00ce82b4`): 0 off, 1 x2, 2 x4
+        /// (`g_SpdCtrlScales` `0x00c38e1c`).
+        speed_level: u8,
+        /// The speed-up ran in the last update (`g_SpdCtrl_b8`
+        /// `0x00ce82b8`): `SpdCtrl_ScaleElapsedTime` scales only where it
+        /// is allowed (the field with the control or a battle, not on a few
+        /// maps or under some spells, not in the save screen, the sphere
+        /// grid or a movie's fade); while it scales the sound is muted.
+        speeding: bool,
+        /// The scale it applied (`g_SpdCtrlScales[speed_level]` while
+        /// `speeding`, else 1).
+        speed: f32,
+        /// F2's power-up (`g_BtlCheatPowerup` `0x012fb7cc` nonzero:
+        /// `MsCheatPlayerPowerup` on each turn).
+        powerup: bool,
+        /// F3's encounter mode (`g_EncountMode` `0x00c421d8`): 0 none, 1
+        /// normal, 2 ten times as many (`MsBattleEncountExe`).
+        encounters: u8,
+        /// F4's auto-battle (`i32` `0x0133d6e0` == 1; `forceAutoBattleOff`
+        /// clears it).
+        auto_battle: bool,
     }
 }
 
@@ -282,6 +314,30 @@ api_struct! {
         target: i16,
         /// `+0xa`: the cross-fade's step.
         step: i16,
+        /// `Sg_DrawFilter` drew the slot as a fade task in the update just
+        /// run: its `g_FadeActive` bit is set (`Sg_DrawFilter` clears it
+        /// when it finds no frames left) and its mode is 2..8; mode 0, the
+        /// cross-fade, draws its level quad instead (`level`), mode 1
+        /// nothing.
+        drawn: bool,
+        /// The alpha it drew, by the integer formulas of `Sg_DrawFilter`
+        /// (`0x0082c0c0`), which runs after the update and steps `frames`
+        /// down: with `n = frames` (what is left after its step) and `t =
+        /// level` (the total), mode 2 `1 - (127 - n 127 / t) / 127`; 3 `1 -
+        /// (n 127 / t) / 127`, 1 once held; 4 `((n + 1) 255 / t) / 127` (up
+        /// to 2: a frontend clamps it); 5 `(255 - n 255 / t) / 127`, 255 /
+        /// 127 once held; 6 `((n + 1) 127 / t) / 127`; 7 and 8 `level / 127`
+        /// (`/` integer division, then the `f64` 127 as the game does). A
+        /// held fade (modes 3 and 5) keeps `frames` at 1, which its last
+        /// step leaves too: `frames` 1 gives the hold's alpha, so the one
+        /// frame before the hold reads as held. 0 when not `drawn`.
+        alpha: f32,
+        /// The colour it drew: black for modes 2 and 3, else `color / 256`
+        /// (the `f64` 1/256 the game multiplies by).
+        draw_colour: [f32; 3],
+        /// Drawn subtracting (mode 8: `graphicAddScreenFadeTask`'s flag
+        /// `0x10`), else blended over the picture.
+        subtract: bool,
     }
 }
 
@@ -345,6 +401,62 @@ api_struct! {
         /// The battle results screen (menu slot 0x11, `main_mask` bit
         /// `0x20000`).
         battle_end: BattleEnd,
+        /// The battle command window's target selection and hand cursors.
+        battle_target: BattleTarget,
+    }
+}
+
+api_struct! {
+    /// The battle command window's target selection (`TOBtlGetTargetPad`
+    /// `0x0089d390`, `TOBtlMakeTargetTargetBit` `0x00898640`) and the hand
+    /// cursors the battle windows put on the screen (`TOBtlSetCurPos`).
+    BattleTarget {
+        /// The command window's level chooses a target (`kind` 1).
+        open: bool,
+        /// The level's kind, as `TOBtlCtrlHelpWin` reads it: byte `+2` of its
+        /// record (`g_BtlWindowRecords` + 0xf0 x `g_BtlActionDepth`): 0 a
+        /// command list, 1 the target; 0xff at level -1.
+        kind: u8,
+        /// The character the target cursor is on (`g_BtlTargetChr`
+        /// `0x0133d1f4`: the highest bit of `mask` below 28; 0..0x11 the
+        /// party, 0x14..0x1b the monsters).
+        character: u16,
+        /// The targets selected (`g_BtlTargetSelMask` `0x0133d178`), a bit
+        /// per character: `TOBtlDrawTargetCursor` puts a target cursor over
+        /// each bit below 28 (`MsGetChrTargetPos`; none while the
+        /// auto-battle runs).
+        mask: u32,
+        /// The cursor's index in its side's list (`i16` `0x0133d1fc`).
+        cursor: i16,
+        /// That list's length (`u16` `0x0133d1f6`).
+        count: u16,
+        /// The side the list is (`u16` `0x0133d200`, which the pad swaps
+        /// while `switchable`): 1 the monsters' (`0x0133d1d4`), 0 the
+        /// party's (`0x0133d180`); observed: Attack opens on side 1.
+        side: u16,
+        /// The side can be swapped (`0x0133d1fe` == 1).
+        switchable: bool,
+        /// The hand cursors the last draw put on the screen (`g_BtlCurPos`
+        /// `0x0133f7b4`, 8 bytes each, pushed by `TOBtlSetCurPos` while the
+        /// windows draw; `TOBtlDrawCursors` draws them and clears their
+        /// count, `g_BtlCurPosCount` `0x0133d6f0`, so between two updates
+        /// the records are read: as many as the count says, at least the
+        /// first, at most 4), but zeroed ones (observed while the target is
+        /// chosen, which draws the target cursor instead); none at level -1.
+        hands: Vec<HandCursor>,
+    }
+}
+
+api_struct! {
+    /// A battle hand cursor (a `g_BtlCurPos` record), on the PS2 screen
+    /// (512 x 448; `TOMakePktShapeCursor(kind, x, y)`).
+    HandCursor {
+        /// `i16 +0`: `TOBtlSetCurPos`'s first argument.
+        kind: i16,
+        /// `i16 +4`.
+        x: i16,
+        /// `i16 +6`.
+        y: i16,
     }
 }
 
@@ -443,6 +555,35 @@ api_struct! {
         top: i32,
         /// See `top`.
         gear_list: i32,
+        /// The gear won, named: each `gear` id's record as
+        /// `MsGetSaveWeapon` finds it (`0x7000 + i` at `0x02310f9e`,
+        /// `0xb000 + i` at `0x02310dde`, else `g_Equipment`; 22 bytes each,
+        /// an index out of range record 0) and the name
+        /// `MsGetSaveWeaponName` gives it.
+        gear_spoils: Vec<GearSpoil>,
+    }
+}
+
+api_struct! {
+    /// One piece of gear won (its 22-byte record; docs/formats/kernel.md
+    /// "Equipment").
+    GearSpoil {
+        /// Its id (`gear`'s).
+        id: u16,
+        /// The record is in use (`+2` nonzero; the results screen draws
+        /// only those).
+        used: bool,
+        /// Its `w_name` record (`u16 +0`), named by the kernel's
+        /// `w_name` table (`MsWeaponName`).
+        name_id: u16,
+        /// Its character (`+4`, 0..6 the party): the record's string.
+        character: u8,
+        /// The config's hiragana (`g_SaveMenu` bit 3): the second set of
+        /// names.
+        kana: bool,
+        /// The name as the game gives it (`MsGetSaveWeaponName`), in the
+        /// game's encoding; empty for a record not in use.
+        name: Vec<u8>,
     }
 }
 
@@ -518,15 +659,65 @@ api_struct! {
         flags: u16,
         /// The mode bits (0x02 a choice, 0x10 waiting, 0x20 a selection).
         mode: u8,
-        /// The choice the player has highlighted now (the text box's
-        /// record through `0x01868a90`'s table, `TOGetTableKind2Data`), -1
-        /// when the window holds no choice.
+        /// The option the cursor is on now, from the first option (0): the
+        /// text box's record (`0x01868a90`'s table, 0x138 bytes) `i8 +2`
+        /// less its first row `i8 +4`, which `TOFuncPadMessageSelect`
+        /// moves while the choice is open and leaves on the pick; -1 when
+        /// the window lays out no options (`+5` not above `+4`).
         choice: i16,
         /// The choice the script set it to at the start (`+0x1e`).
         initial_choice: i16,
         /// The text in the game's encoding (ffx-text's charset decodes
-        /// it; `{VAR}` codes are filled from `g_MsgVars`, not here).
+        /// it), its macros expanded as the game draws them
+        /// (`TOGetChangeMacroAddress`, recursively): `{VAR:n}` (code
+        /// `0x12`) from the window's variables (`vars`), the characters'
+        /// names (`0x13`), items (`0x16`, `0x17`) and key items (`0x23`);
+        /// the dictionary codes (`0x19`..`0x22`) and anything that cannot be
+        /// read stay as their codes.
         text: Vec<u8>,
+        /// The option picked, once the player confirmed it: the record's
+        /// first pick (`+0x18`, what `TOGetTableKind2Data` gives
+        /// `Native_MsgSelect_Poll`, the row as the cursor `+2` had it) after
+        /// `+1` is 2 (`TOFuncPadMessageSelect` sets it when every pick is
+        /// made; `+7` picks made); else -1.
+        picked: i16,
+        /// The window's text variables that are set (`g_MsgVars`
+        /// `0x01869ab0`, 32 pointers a window to 8-byte records), the raw
+        /// values with what each expands to.
+        vars: Vec<MessageVar>,
+    }
+}
+
+api_struct! {
+    /// One text variable of a message window (`g_MsgVars`; set by the
+    /// script natives `0x009e`..`0x00a0`, `TOMacroSetType`/`SetValue`;
+    /// docs/formats/text.md, code `12`).
+    MessageVar {
+        /// Its slot (0..31): `{VAR:n}` is code `0x12`, `0x30 + n`.
+        slot: u8,
+        /// Its kind as the text reads it (`+1`; `TOResetMessageVars`
+        /// copies the script's `+0` there): 0 a text at `value`, 1 a
+        /// number, 2 a number with digit groups, `0x13`..`0x23` a macro
+        /// code (`value / 0xd0` added to the code, `value % 0xd0` its
+        /// argument), `0x2b`..`0x32` a number of `kind - 0x2a` digits, `0x33`
+        /// an item's name, `0x34` a weapon's, `0x35` a command's, `0x36` an
+        /// ability's, `0x37` the field pickup (`value` a treasure, `takara`).
+        kind: u8,
+        /// Its value (`i32 +4`).
+        value: i32,
+        /// What `{VAR:n}` expands to, in the game's encoding (empty when
+        /// it expands to nothing).
+        text: Vec<u8>,
+        /// For `0x37`: the treasure's kind (`takara` record `+0`: 2 an
+        /// item, 5 gear, 10 a key item, others gil; `msFieldItemGet`), else
+        /// 0xff.
+        pickup: u8,
+        /// For `0x37`: the item or key item id (record `u16 +2`), or the
+        /// gear's id in the pickup's spoils (`0x02310dce`, a `0xb000` id).
+        pickup_id: u16,
+        /// For `0x37`: the items' count (record `+1`), or the gil (`+1` x
+        /// 100).
+        pickup_count: u32,
     }
 }
 
@@ -561,6 +752,29 @@ api_struct! {
         /// 10 Chinese; 0xff unknown): the character set that decodes the
         /// messages.
         language: u8,
+        /// The game holds its update for a load (`Sg_IsSceneLoading`
+        /// `0x0081fcd0`, which `Sg_MainLoop` asks): the field map loads
+        /// outside a battle map (`map_loading`), characters load or
+        /// instantiate on one of 16 listed maps outside a battle map, or
+        /// the scene's assets are not all in (`assets_loading`) while the
+        /// screen fade's colour is locked.
+        scene_loading: bool,
+        /// The field map loads (`graphicIsFieldMapLoading`: `PhyreScene`
+        /// `+0x1195`).
+        map_loading: bool,
+        /// The character loads and instantiations waiting
+        /// (`graphicIsCharacterLoadingOrInstanciating`:
+        /// `g_GraphicCharacterLoading` `0x00ccb6d4` & `0x7fffffff`).
+        characters_loading: u32,
+        /// The asset loader has requests left (`graphicIsAllSceneAssetsLoaded`
+        /// false: `g_AsyncLoadManager` `+0x20` or `+0x2c` nonzero).
+        assets_loading: bool,
+        /// A map change is under way (`g_TkEventJumpRequest` `0x0133084c`:
+        /// `TkSetEventJump`, from `AtelSetEventJump`/`2` and the script's map
+        /// changes, sets it after writing the new map and entrance to
+        /// `g_SaveData`, so `map` and `entrance` are already the target;
+        /// `TkInitScene` clears it when the map starts).
+        map_change: bool,
     }
 }
 
@@ -587,6 +801,31 @@ api_struct! {
         eye: [f32; 3],
         /// The camera channel's look-at point in field space.
         target: [f32; 3],
+        /// The screen shift (`PhyreScene` `+0xfa34`, `+0xfa38`), added to
+        /// the projected x and y (`PhyreScene_getViewProjectionMatrix`
+        /// `0x0065e660`, always; docs/state-api.md "Camera adjustment").
+        shift_x: f32,
+        /// See `shift_x`.
+        shift_y: f32,
+        /// The 16:9 window's pan `b` (`+0xf9bc`; also `Layers.pan`).
+        pan: f32,
+        /// The map's own term of the main camera's offset (`+0xf9c0`, set
+        /// per map by `PhyreScene_fieldMapInitialize`), which the layer
+        /// pass leaves out.
+        map_pan: f32,
+        /// The main camera gets the screen adjustment
+        /// (`PhyreScene_GetScreenAdjustedView` `0x00651650`): neither byte
+        /// `+0xf9c7` nor `g_PhyreScene3D` (`0x00ccb9c0`) is set.
+        squeezed: bool,
+        /// `g_PhyreScene3D`: a 3D map (`PhyreScene_fieldMapLoad` sets it
+        /// for 3D maps outside the 2D list). Clear in the 2D-background
+        /// rooms, whose camera keeps the PS2's 4/3 `aspect` on the 16:9
+        /// target (`PhyreScene_setCameraAspectRatio`).
+        scene_3d: bool,
+        /// The adjustment's y offset `d = 0.33333337 - 2 (map_pan + pan)`
+        /// (computed in `f64` from the two floats, stored as an `f32`, as
+        /// the game does), 0 when not `squeezed`.
+        offset_y: f32,
     }
 }
 
@@ -1010,6 +1249,11 @@ pub fn structs() -> Vec<&'static StructSchema> {
         BattleEndRow::schema(),
         Layers::schema(),
         LayerEntry::schema(),
+        Boosters::schema(),
+        BattleTarget::schema(),
+        HandCursor::schema(),
+        GearSpoil::schema(),
+        MessageVar::schema(),
     ]
 }
 
@@ -1036,8 +1280,10 @@ mod tests {
         assert_eq!(f64::from_le_bytes(b[12..20].try_into().unwrap()), 1.5);
         // update, game time, the world (with an empty event), the camera,
         // the input, then one actor ("c001", no bones)
-        let world = 2 + 2 + 1 + 2 + 2 + 2 + 4 + 4 + 1;
-        let camera = 1 + 48 + 4 + 4 + 4 + 12 + 12;
+        // (API 11: the loading flags, the characters' count, the map change)
+        let world = 2 + 2 + 1 + 2 + 2 + 2 + 4 + 4 + 1 + (1 + 1 + 4 + 1 + 1);
+        // (API 11: shift, pan, the map's pan, squeezed, 3D, the offset)
+        let camera = 1 + 48 + 4 + 4 + 4 + 12 + 12 + (4 + 4 + 4 + 4 + 1 + 1 + 4);
         let input = 4 + 2 + 1 + 1;
         // (no bones; drawn, the two flag words, no models)
         let actor = 2
@@ -1064,9 +1310,30 @@ mod tests {
         // the config menu (closed: open, cursor, the PC row, no rows) and
         // the battle end (closed: its scalars and four empty lists)
         let config = 1 + 2 + 4 + 2;
-        let battle_end = 1 + 4 + 1 + 4 + 4 + 4 + 2 + 2 + 2 + 2 + 1 + 4 + 4 + 4 + 1 + 4 + 4;
-        let menus =
-            4 + 4 + 4 + 2 + 4 + 2 + 2 + 2 + 2 + 4 + 4 + 4 + 4 + 4 + 1 + 2 + 1 + config + battle_end;
+        // (API 11: the named gear, empty)
+        let battle_end = 1 + 4 + 1 + 4 + 4 + 4 + 2 + 2 + 2 + 2 + 1 + 4 + 4 + 4 + 1 + 4 + 4 + 2;
+        // the target selection (none: its scalars, no hands)
+        let target = 1 + 1 + 2 + 4 + 2 + 2 + 2 + 1 + 2;
+        let menus = 4
+            + 4
+            + 4
+            + 2
+            + 4
+            + 2
+            + 2
+            + 2
+            + 2
+            + 4
+            + 4
+            + 4
+            + 4
+            + 4
+            + 1
+            + 2
+            + 1
+            + config
+            + battle_end
+            + target;
         // the effects (default: no running ones, no filters): magic, the
         // two list counts, shake, music
         let effects = 4 + 2 + 2 + 4 + 4 + 4;
@@ -1080,6 +1347,9 @@ mod tests {
         // the 2D layers (no scene): the flags, scene, pan, shift, squeezed,
         // no entries
         let layers = 1 + 1 + 1 + 1 + 1 + 4 + 4 + 8 + 1 + 2;
+        // the boosters: level, speeding, the scale, power-up, encounters,
+        // auto-battle
+        let boosters = 1 + 1 + 4 + 1 + 1 + 1;
         assert_eq!(
             b.len(),
             8 + 4
@@ -1098,11 +1368,12 @@ mod tests {
                 + 2
                 + grid
                 + layers
+                + boosters
         );
     }
 
     /// FNV-1a of `schema::text()` at [`API_VERSION`].
-    const PINNED: u64 = 0xd87b_0520_1515_563f;
+    const PINNED: u64 = 0x50fc_4bd9_0abc_f2fd;
 
     /// A field change must raise [`API_VERSION`]: the schema's text is
     /// pinned to the version here.
@@ -1114,7 +1385,7 @@ mod tests {
         });
         assert_eq!(
             (API_VERSION, hash),
-            (10, PINNED),
+            (11, PINNED),
             "the schema changed: raise API_VERSION and pin the new hash"
         );
     }
@@ -1140,11 +1411,12 @@ mod tests {
                 "save",
                 "objects",
                 "sphere_grid",
-                "layers"
+                "layers",
+                "boosters"
             ]
         );
         assert!(matches!(s.fields[5].ty, Ty::List(_)));
-        assert_eq!(structs().len(), 32);
+        assert_eq!(structs().len(), 37);
         assert!(Actor::schema().fields.iter().all(|f| !f.doc.is_empty()));
     }
 }

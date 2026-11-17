@@ -117,6 +117,8 @@ tools/build-host.sh        # x86_64-pc-windows-msvc, through cargo xwin (Unicorn
   (`tools/replays/boot.txt`); the run ends when it is done or fails.
 - `--audio-wav FILE`: the mix in FMOD's WAV writer format (below, "FMOD").
 - `--clock real|virtual`: the clock (below, "The clock").
+- `--speed X` (else `FFX_HOST_SPEED`): the real clock runs X times as fast,
+  0.25 to 8, for debugging (below, "The clock", "Game speed").
 - `--skip-opening`: on the real clock the start-up logos end on their first
   frame too, as on the virtual clock (`Options::skip_opening`, below, "The
   clock"). A build without the `swf` feature needs it on the real clock:
@@ -966,6 +968,48 @@ picks the virtual clock described below for fast-mode harness games,
 real|virtual` (else `FFX_HOST_CLOCK`) overrides the choice. Test:
 `tests/no_unicorn.rs` `the_real_clock_paces_the_updates_as_the_original`;
 `tests/boot.rs` `the_real_clock_skips_the_opening_logos_when_asked`.
+
+**Game speed** (2026-11-17, for debugging; gd-ffx's second playtest
+round). On the real clock the game can run faster or slower than the
+host: `Options::speed`, `--speed X` (else `FFX_HOST_SPEED`), and at run
+time `shared.clock.set_speed(x)` from any thread (`Clock::set_speed`,
+`Clock::speed`), 0.25 to 8 (clamped; not a number: 1). Game time (every
+clock the game reads: `Phyre_PTimerWin32_GetTime`,
+`QueryPerformanceCounter`, `GetTickCount`, `timeGetTime`) runs `x` times
+as fast as the host's; a change re-anchors it, so game time goes on from
+where it was (measured: 1 to 5 µs at the change). The frame limiter
+counts game milliseconds, so its `Sleep` sleeps `ms / x` of the host's
+(`clock::limiter`): it keeps its 30 updates a game second, `30 x` a host
+second while the host keeps up. Other `Sleep`s and waits sleep the host's
+time as the original asks (the game's threads: the loader, FMOD's
+manager, the vsync thread's 16 ms wait). The virtual clock (tests,
+`--replay`, the harness's fast mode, lockstep) has no speed and ignores
+it, so the replays and the lockstep runs are unchanged. Measured
+(headless, null device, the opening; `tests/boot.rs`
+`the_real_clock_runs_at_the_game_speed`): 0.5 holds 15.0 updates a second
+with game time at 0.500 of the host's, set to 0.25 at run time 7.5 and
+0.250; 2 holds 60 before the opening's map load. Above what the host
+sustains the game falls behind more and more: `Sg_FrameSync` runs as many
+logic ticks as the game time since the last update asks (up to 0.3 s of
+it), so a late update makes the next one longer. At 4 the opening reached
+54 updates a second (not 120) before its map load and after it took about
+200 ms an update (430 ms at 8), and Luca's arrival (developer save 22, a
+scene this host runs at about 5 updates a second at 1) ran slower at 2:
+356 event frames in 98 s, against 482 in 102 s at 1.
+High speeds help only where the host has room.
+
+Sound and movies: the mixer's feeder follows the device (headless, the
+wall clock), not game time (below, "FMOD"), so music, voices and a
+movie's sound play at their own pace and pitch, while sound effects come
+with the game's ticks. A scene that waits for a voice or a sound to end
+waits the host's time for it. `FmodManager_tick` counts its periods in
+game time, so its ticks (the end callbacks, the movie's reads) come `x`
+times as often. Luca's arrival at 2 played its movie (`LCI_us.webm`,
+793,088 frames by its first pause), the scene going on after it. Whether
+a movie's pictures follow game time was not looked at (no picture
+headless). The game's own speed-up (F1, `SpdCtrl_ScaleElapsedTime`)
+scales the frame time inside the update and mutes the sound; this one
+changes the clock under the whole game and mutes nothing.
 
 On the virtual clock, `src/clock.rs` applies the hook harness's fast
 mode, virtual clock and lockstep rules (docs/harness.md, "Frames and
