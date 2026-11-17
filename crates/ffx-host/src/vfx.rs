@@ -114,9 +114,9 @@ const MENU_CAPTURE_STATE: u32 = 0x0134_0844;
 const UI2D_SKIP_NAME: u32 = 0x00cc_b9e4;
 /// `g_ChrCount` and `g_ChrArray` (records of 0x880 bytes): a character
 /// instance's `+0x18` is one of them.
-const CHR_COUNT: u32 = 0x023c_44e0;
-const CHR_ARRAY: u32 = 0x023c_44e4;
-const CHR_SIZE: u32 = 0x880;
+pub(crate) const CHR_COUNT: u32 = 0x023c_44e0;
+pub(crate) const CHR_ARRAY: u32 = 0x023c_44e4;
+pub(crate) const CHR_SIZE: u32 = 0x880;
 /// Bounds on what one frame reads (guards against a torn list).
 const SEGMENTS_MAX: i32 = 256;
 const VERTICES_MAX: u32 = 0x1_0000;
@@ -758,7 +758,7 @@ fn draw_most_vfx(e: &mut Exec, args: &Args) -> Ret {
 pub struct Reader<'a>(pub &'a Arena);
 
 impl Reader<'_> {
-    fn bytes(&self, at: u32, n: usize) -> Option<Vec<u8>> {
+    pub(crate) fn bytes(&self, at: u32, n: usize) -> Option<Vec<u8>> {
         if at == 0 || !self.0.is_mapped(at, n) {
             return None;
         }
@@ -767,21 +767,21 @@ impl Reader<'_> {
         Some(v)
     }
 
-    fn u32(&self, at: u32) -> Option<u32> {
+    pub(crate) fn u32(&self, at: u32) -> Option<u32> {
         let b = self.bytes(at, 4)?;
         Some(u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
     }
 
-    fn u8(&self, at: u32) -> Option<u8> {
+    pub(crate) fn u8(&self, at: u32) -> Option<u8> {
         self.bytes(at, 1).map(|b| b[0])
     }
 
-    fn ptr(&self, at: u32) -> Option<u32> {
+    pub(crate) fn ptr(&self, at: u32) -> Option<u32> {
         self.u32(at).filter(|&p| p != 0)
     }
 
     /// A NUL-terminated string at `at` (at most 256 bytes).
-    fn c_str(&self, at: u32) -> Option<String> {
+    pub(crate) fn c_str(&self, at: u32) -> Option<String> {
         let mut s = Vec::new();
         for i in 0..256 {
             let b = self.u8(at.wrapping_add(i))?;
@@ -794,7 +794,7 @@ impl Reader<'_> {
     }
 
     /// `n` groups of `N` floats at `at` (none when unreadable).
-    fn f32s<const N: usize>(&self, at: u32, n: u32) -> Vec<[f32; N]> {
+    pub(crate) fn f32s<const N: usize>(&self, at: u32, n: u32) -> Vec<[f32; N]> {
         let Some(b) = self.bytes(at, 4 * N * n as usize) else {
             return Vec::new();
         };
@@ -807,7 +807,7 @@ impl Reader<'_> {
             .collect()
     }
 
-    fn u16s(&self, at: u32, n: u32) -> Vec<u16> {
+    pub(crate) fn u16s(&self, at: u32, n: u32) -> Vec<u16> {
         self.bytes(at, 2 * n as usize)
             .map(|b| {
                 b.as_chunks::<2>()
@@ -1401,31 +1401,31 @@ pub fn read_distortion(m: &Reader) -> Option<Distortion> {
 // ---- the encoding ----------------------------------------------------------
 
 /// Appends little-endian values.
-struct Out(Vec<u8>);
+pub(crate) struct Out(pub(crate) Vec<u8>);
 
 impl Out {
-    fn u8(&mut self, v: u8) {
+    pub(crate) fn u8(&mut self, v: u8) {
         self.0.push(v);
     }
-    fn u16(&mut self, v: u16) {
+    pub(crate) fn u16(&mut self, v: u16) {
         self.0.extend_from_slice(&v.to_le_bytes());
     }
-    fn u32(&mut self, v: u32) {
+    pub(crate) fn u32(&mut self, v: u32) {
         self.0.extend_from_slice(&v.to_le_bytes());
     }
-    fn u64(&mut self, v: u64) {
+    pub(crate) fn u64(&mut self, v: u64) {
         self.0.extend_from_slice(&v.to_le_bytes());
     }
-    fn f32(&mut self, v: f32) {
+    pub(crate) fn f32(&mut self, v: f32) {
         self.0.extend_from_slice(&v.to_le_bytes());
     }
 }
 
 /// Reads little-endian values.
-struct In<'a>(&'a [u8]);
+pub(crate) struct In<'a>(pub(crate) &'a [u8]);
 
 impl In<'_> {
-    fn take(&mut self, n: usize) -> Option<&[u8]> {
+    pub(crate) fn take(&mut self, n: usize) -> Option<&[u8]> {
         if self.0.len() < n {
             return None;
         }
@@ -1433,25 +1433,25 @@ impl In<'_> {
         self.0 = b;
         Some(a)
     }
-    fn u8(&mut self) -> Option<u8> {
+    pub(crate) fn u8(&mut self) -> Option<u8> {
         self.take(1).map(|b| b[0])
     }
-    fn u16(&mut self) -> Option<u16> {
+    pub(crate) fn u16(&mut self) -> Option<u16> {
         self.take(2).map(|b| u16::from_le_bytes([b[0], b[1]]))
     }
-    fn u32(&mut self) -> Option<u32> {
+    pub(crate) fn u32(&mut self) -> Option<u32> {
         self.take(4)
             .map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
     }
-    fn u64(&mut self) -> Option<u64> {
+    pub(crate) fn u64(&mut self) -> Option<u64> {
         let lo = self.u32()?;
         let hi = self.u32()?;
         Some((u64::from(hi) << 32) | u64::from(lo))
     }
-    fn f32(&mut self) -> Option<f32> {
+    pub(crate) fn f32(&mut self) -> Option<f32> {
         self.u32().map(f32::from_bits)
     }
-    fn f32s<const N: usize>(&mut self, n: usize) -> Option<Vec<[f32; N]>> {
+    pub(crate) fn f32s<const N: usize>(&mut self, n: usize) -> Option<Vec<[f32; N]>> {
         let mut v = Vec::with_capacity(n.min(self.0.len() / (4 * N)));
         for _ in 0..n {
             let mut a = [0.0; N];

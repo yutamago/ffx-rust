@@ -395,6 +395,9 @@ pub struct Shared {
     pub requests: crate::requests::Requests,
     /// The effect draws' capture (`crate::vfx`; off unless switched on).
     pub vfx: crate::vfx::Capture,
+    /// The characters' cloth capture (`crate::cloth`; off unless switched
+    /// on).
+    pub cloth: crate::cloth::Capture,
     /// [`crate::devsave::load`] runs on this game: its
     /// `debugLoadForViewer` reads from the archive without the harness.
     pub(crate) devsave_loading: std::sync::atomic::AtomicBool,
@@ -512,6 +515,7 @@ impl Shared {
             observers: crate::observe::Observers::default(),
             requests: crate::requests::Requests::default(),
             vfx: crate::vfx::Capture::default(),
+            cloth: crate::cloth::Capture::default(),
             devsave_loading: std::sync::atomic::AtomicBool::new(false),
         };
         s.bind_imports(stubs_at);

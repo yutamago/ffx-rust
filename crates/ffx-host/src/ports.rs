@@ -158,7 +158,8 @@ pub fn ported() -> Table {
 /// entries over them, then the clock's ports and wrappers over both
 /// (`crate::clock::register`; a wrapper over a `ported!` entry calls that
 /// port as its original), the input's wrapper (`crate::input`), the effect
-/// draws' capture (`crate::vfx`), then the C runtime helpers (`crate::crt`).
+/// draws' capture (`crate::vfx`), the cloth capture (`crate::cloth`), then
+/// the C runtime helpers (`crate::crt`).
 #[must_use]
 pub fn table() -> Table {
     let mut t = hand();
@@ -168,6 +169,7 @@ pub fn table() -> Table {
     crate::clock::register(&mut t);
     crate::input::register(&mut t);
     crate::vfx::register(&mut t);
+    crate::cloth::register(&mut t);
     crate::crt::register(&mut t);
     crate::crt_start::register(&mut t);
     t

@@ -401,6 +401,136 @@ FFX_GAME_DIR=~/steam-games/FFX-X2-HD cargo run --release -p ffx-host \
   --battle 34,0,0 --drive --summary   # a battle played: the summon, the overdrive
 ```
 
+## Cloth (`ffx_host::cloth`, not in the snapshot)
+
+The characters' simulated hair and cloth as the game draws them, frame by
+frame, so a frontend can move them (the snapshot's `bones` are the
+elements' matrices only: cloth is a vertex simulation). Like the effect
+draws, a capture in `ffx-host` with a blob of its own, off unless a
+frontend switches it on (`shared.cloth.set_enabled(true)`; off again
+drops what it kept).
+
+- **What the game does** (docs/formats/chara.md, "Cloth"; docs/host.md,
+  "The cloth race"). `Ch_DrawMain` queues one `Ch_Cloth_PerCharacter`
+  job per cloth character; `Sg_ClothStep` (`0x00822de0`) moves the PS2
+  model's cloth points, then `Sg_ClothPlaceAnchors` (`0x0082dbc0`) puts
+  every vertex of each HD cloth segment on the PS2 triangle
+  `Ch_PreCalcActiveClothMesh` bound it to (the weighted corners, lifted
+  along the normal for anchors) and writes it into the segment's cloth
+  object (`+0x4c`, 16 bytes a vertex, `+0x44` of them, in the segment's
+  vertex order). `Sg_MainLoop` waits for the jobs at the end of the
+  update. After the update `FFXApplication_render` (`0x0042f930`, main
+  thread) calls `graphicCharacterInstanceSetClothVertexBuffers`
+  (`0x0063b740`): `batchSetClothVertexBuffers` hands each cloth segment's
+  draw those vertices (its `COLOR1` stream) and the object's first 16
+  floats as the shader's `ClothWorld`. The character shaders' cloth path
+  mixes the skinned position `s` and the cloth one `c = ClothWorld(v)`:
+  `mix(s, c, min(|v|² · 10000, 1))` with `v` the vertex's x, y, z. A vertex
+  the simulation leaves at zero (the skin-coloured ones, vertex colour
+  <= 0.3, which `Ch_PreCalcActiveClothMesh` never binds; not the
+  `Ch_UseAnchorVertex` anchors above, which move and weigh 1) stays
+  skinned. The reserved `u16` after the version is 0; `decode` refuses
+  another value.
+- **What.** A wrapper on `graphicCharacterInstanceSetClothVertexBuffers`.
+  Off, it only checks the switch and calls the port; on, it first reads
+  what the call is about to hand over, with its conditions: the cloth
+  table's slots (`0x00ccb254`, count `0x00ccb250`; one cloth record each,
+  a character's `+0x834`) whose record is ready (instance list `+0`
+  set, hide word `+8` 0, state `+0xc` 2) and that the call submits (it
+  submits in batches of `EighthAtLeastOne(slot count)` ready slots and
+  drops a short last batch, which can happen only with 16 slots or more),
+  each instance `k` of the record (`+0x14` of them) with a cloth table
+  (`+0x30 + 4k`), each segment of the instance's mesh whose
+  `PMeshSegment` `+0x20`/`+0x24` (the PS2 model and piece) are not
+  `0xffff` and that has a cloth object. It only reads memory: replays,
+  saves and timing are the same with it on or off.
+- **When.** Between update `n` and the boundary of update `n + 1`, after
+  the cloth jobs (no race with them) and before `graphicRender` copies
+  the buffers, in the same `FFXApplication_render` as the effect draws:
+  `cloth::Frame.update` is `n`, the `Snapshot.update` of the state it
+  draws; `shared.cloth.frame(snapshot.update)` pairs them (the newest
+  four kept; `latest()` the newest). No frame is captured when the call
+  does not run (utility mode, the trophy error, the sphere grid's state
+  below 4). The renderer copies a segment's vertices only when the render
+  thread has staged the previous ones; natively it nearly always has, and
+  when it has not the game draws the previous update's vertices for that
+  segment (docs/host.md, "The cloth race"): the capture holds what the
+  call hands over.
+- **Space.** `positions` are in render space (Godot's: the field's x and
+  y negated, "Spaces" above), the space of `Camera.world` and the effect
+  draws: `ClothWorld` (`Ch_UpdateClothMatrix` `0x008314c0`: the segment
+  model's base element with its translation × 1000, the character's root
+  `world`, then x and y negated) applied to the vertex's x, y, z as the
+  game's matrices apply, to a row vector: `p = x · row 0 + y · row 1 + z
+  · row 2 + row 3` of the 16 floats in memory order (`cloth::to_render`).
+  `local` keeps the vertices as uploaded and `world` the matrix.
+
+`cloth::Character`: `actor` (the `Snapshot.actors` `slot` whose `+0x834`
+the record is; -1 when no `g_ChrArray` record holds it), `id` (the
+character's id), `table_slot`, and `segments`. `cloth::Segment`:
+`instance` (the instance's place in the record's list: 0 for the body,
+more for a character's other instances), `segment` (its index in the
+instance's mesh), `model` and `piece` (the segment's `+0x20` and `+0x24`
+as the segment holds them: what an importer reads from the HD mesh to
+know which segments are cloth; `Sg_ClothPlaceAnchors` takes the PS2
+sub-mesh as `piece % 100`), `segment_vertices` (its first `PDataBlock`'s
+`m_elementCount`; equal to the vertex count on every segment measured),
+`world` (`ClothWorld`, 16 floats, memory order), and per vertex in the
+segment's vertex order: `local` (the 4 floats uploaded; the fourth is
+not read for the position), `positions` (render space) and `weights`
+(`min(|local.xyz|² · 10000, 1)`).
+
+A frontend draws a cloth segment's vertex `k` at `mix(skinned_k,
+positions[k], weights[k])`, with `skinned_k` its skinned position in
+render space: in practice it replaces the positions of the vertices with
+weight 1 and keeps the others skinned. A character that is drawn but
+missing from a frame was not handed over (hidden, not ready, or the
+segment has no cloth object): its cloth follows the skin, as the game
+would draw it without new vertices.
+
+**Measured** (`cloth-probe`, release, null device): developer save 7
+(Besaid at the save sphere): Tidus (actor 0, `c001`) only, five segments
+(model 0 pieces 0, 1, 2 and model 1 pieces 1, 2; 68, 28, 22, 16 and 64
+vertices, 104 simulated), their centres 5 to 14 units from his render
+point, every
+simulated vertex moving relative to him on each frame (up to 0.014 units
+a frame standing still); the blob 6,760 bytes. Developer save 29: an NPC
+`c105` with two segments (165 and 16 vertices), up to 0.46 units a
+frame. Developer save 12 with the party `01000405ff020306` in battle 34
+(`--battle 34,0,0 --skip 300`): Tidus, Yuna (`c002`, 17 segments, pieces
+0 to 313), Wakka (`c005`, 4 segments, 568 vertices) and the weapon
+`w012` (actor 5, instance 1, 168 vertices): 1,200 of 1,840 vertices a
+frame simulated, all moving; the blob 61,088 bytes. Read with the matrix the
+other way round (column vectors) the characters' cloth lands 23 to 2,400
+units off them.
+
+```text
+FFX_GAME_DIR=~/steam-games/FFX-X2-HD cargo run --release -p ffx-host \
+  --example cloth-probe -- 7 20      # developer save, frames
+FFX_GAME_DIR=~/steam-games/FFX-X2-HD cargo run --release -p ffx-host \
+  --example cloth-probe -- 12 6 /tmp/cloth-probe --party 01000405ff020306 \
+  --battle 34,0,0 --skip 300         # Tidus, Yuna, Wakka in battle
+```
+
+**Encoding** (`cloth::Frame::encode`, `decode`; version 1), little
+endian:
+
+| Bytes | What |
+|---|---|
+| 4 | `CLTH` |
+| 2, 2 | version (1), 0 |
+| 4, 4 | `update`, character count |
+| per character: 2, 2, 2, 2 | `actor` (`i16`), `id`, `table_slot`, segment count |
+| per segment: 2, 2, 2, 2 | `instance`, `segment`, `model`, `piece` |
+| 4, 4 | `segment_vertices`, vertex count `n` |
+| 64 | `world` (16 `f32`, memory order) |
+| 16 n | `local` (4 `f32` a vertex) |
+| 12 n | `positions` (3 `f32`, render space) |
+| 4 n | `weights` (`f32`) |
+
+`decode` refuses another magic or version, bytes cut short and bytes
+left over.
+
 ## Encoding
 
 `Snapshot::encode`: `FFXS`, the API version (`u32`), then the fields in
@@ -1037,6 +1167,15 @@ map's effect textures, its orb lies on the save sphere `f001`'s render
 point, and its blob decodes to the same frame. `ffx_host::vfx`'s unit
 tests: the encoding and its layout, the matrix, the kept frames, the
 sampler read from a material, `upright_uv`.
+`crates/ffx-host/tests/boot.rs` `the_cloth_is_captured_at_the_save_sphere`:
+with the cloth capture on at Besaid (developer save 7), the frames of two
+snapshots' updates are there when the snapshots come; the player (Tidus)
+has his five cloth segments, each with as many vertices as the segment,
+the simulated ones within 20 units of his render point, more than 50 of
+them moving between the two frames apart from his own move; each blob
+decodes to its frame. `ffx_host::cloth`'s unit tests: the encoding and
+its layout, the matrix and the weight, the frame read from a made-up
+memory (the call's conditions, the actor slot, the dropped short batch).
 `crates/ffx-host/tests/vfx_uv.rs` (needs `FFX_GAME_DIR`): the save
 sphere's sparkle uv block, read with `upright_uv`, is the one glow ball
 of its atlas texture.
