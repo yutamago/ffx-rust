@@ -41,7 +41,8 @@
 //!
 //! Every run ends with the odd colours' tally (docs/formats/effects-draw.md,
 //! "Which arrays the draw reads"): vertices whose colour is no colour the
-//! game writes (a component not finite or outside 0..8), and how many of
+//! game writes (a component not finite or outside 0..8, 1e-3 below 0
+//! allowed), and how many of
 //! them a triangle with area uses (three different indices, the positions
 //! not on one line); the others only degenerate triangles index, which
 //! draw nothing.
@@ -391,7 +392,8 @@ fn count(f: &ffx_host::vfx::Frame) {
 }
 
 /// Counts a frame's odd colours into the summary (the module's comment):
-/// vertices with a colour component not finite or outside 0..8, the draws
+/// vertices with a colour component not finite or outside 0..8 (1e-3
+/// below 0 allowed), the draws
 /// with one, and those of them a triangle with area uses.
 fn odd_colours(frame: &ffx_host::vfx::Frame) {
     let odd = |colour: &[f32; 4]| colour.iter().any(|x| !(-1e-3..=8.0).contains(x));

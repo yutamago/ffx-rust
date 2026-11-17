@@ -760,8 +760,10 @@ per dynamic-geometry buffer (`+0x2c + 0x1c n` …). From the ports:
 So the draw of an update reads the slot of the buffer that update filled:
 the render thread can draw it while the main thread's next update fills
 the other buffer and moves the segment's own words there. A segment not
-filled in an update has its slot cleared and is drawn from its own words
-(the arrays of the update before, still intact in the other buffer).
+filled in an update has its slot cleared and is drawn from its own words:
+the arrays of its last fill, intact in the other buffer only when that
+fill was the update before; filled two or more updates back, its words
+point into the buffer being refilled now, holding other effects' data.
 
 `ffx_host::vfx` reads the arrays the same way (`arrays_at`: the slot of
 the current buffer id at `DrawMostVFX`, on the main thread after the
@@ -807,7 +809,8 @@ indices all 0 (one vertex), so D3D11 draws nothing for them. Examples:
 | save 8 to `bsvr00`, 60 frames | 208 | 6,193 | 0 |
 | save 51, battle field 34 formation 0 driven (`--drive`), 2,000 frames | 6,571 | 278,966 | 143, in 54 draws of flags `0x40000000` |
 
-(odd: a component not finite or outside 0..8; with area: three different
+(odd: a component not finite or outside 0..8, with a tolerance of 1e-3
+below 0; with area: three different
 indices and positions not on one line; the probe's tally, printed after
 every run.) The battle's exception writes no colour either: flags
 `0x40000000` are the five untextured full-screen quads of keys
@@ -818,7 +821,8 @@ the target; 54 of the run's 100 such draws had odd colours.
 
 The zero indices are most likely written by the fills (the buffer
 memory is never cleared, and unwritten words hold `0xcdcdcdcd`); which
-code writes them for the flare's hidden parts was not traced. A frontend may drop triangles with a repeated index (they
+code writes them for the flare's hidden parts was not traced. A frontend
+may drop triangles with a repeated index (they
 draw nothing in the game either) and need not draw the `0x40000000`
 family's colour.
 

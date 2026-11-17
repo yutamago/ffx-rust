@@ -2378,6 +2378,12 @@ mod tests {
         f.put(set + 4, 1);
         f.put(slot1 + 0xc, 0);
         assert_eq!(read(&f), (3, 3, 1.0));
+        // a set's id past the two buffers (or none): the segment's own
+        f.put(slot1 + 0xc, pos);
+        f.put(set + 4, 2);
+        assert_eq!(read(&f), (3, 3, 1.0));
+        f.put(manager, 0);
+        assert_eq!(read(&f), (3, 3, 1.0));
     }
 
     #[test]
