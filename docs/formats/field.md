@@ -384,7 +384,8 @@ animation's first byte is set while they run (`rcefObjIsParEnd`,
 
 ## Free camera, map teardown, windows (round 7)
 
-- Free camera (`FreeCamera`, the PC build's fly camera, `0x344` bytes,
+- Free camera (`FreeCamera`, the PC build's fly camera, `0x340` bytes as
+  `graphicGetFreeCameraType` allocates it,
   singleton `g_FreeCamera` `0x00ccc830`): two `Phyre::PCameraPerspective`
   at `+0xc` and `+0x164` (their buffers at `+0xdc`, `+0x234`; bit 0 marks a
   buffer not owned), a `PWorldMatrixFlyController` at `+0x2bc`, speed

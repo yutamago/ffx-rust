@@ -313,7 +313,9 @@ api_struct! {
     /// One row of the damage numbers' frame table (`g_BtlNumberFrames`).
     NumberFrame {
         /// The x and y offsets (`i8` `+0`, `+1`; PS2 pixels; a loss bounces
-        /// by them).
+        /// by them): `MsNumberDrawProcess` adds `x` and subtracts `y`
+        /// (`y += oy - rise`), so a positive `y` moves the number up; every
+        /// colour takes its alpha from the row.
         x: i16,
         /// See `x`.
         y: i16,
@@ -678,10 +680,11 @@ api_struct! {
 }
 
 api_struct! {
-    /// One piece of gear won (its 22-byte record; docs/formats/kernel.md
+    /// One piece of gear: won in battle (`BattleEnd.gear_spoils`) or worn
+    /// (`PartyMember.weapon_gear`); its 22-byte record (docs/formats/kernel.md
     /// "Equipment").
     GearSpoil {
-        /// Its id (`gear`'s).
+        /// Its id (the spoil's `gear`, or the worn weapon's).
         id: u16,
         /// The record is in use (`+2` nonzero; the results screen draws
         /// only those).
