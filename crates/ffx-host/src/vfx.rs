@@ -117,6 +117,13 @@ const UI2D_SKIP_NAME: u32 = 0x00cc_b9e4;
 pub(crate) const CHR_COUNT: u32 = 0x023c_44e0;
 pub(crate) const CHR_ARRAY: u32 = 0x023c_44e4;
 pub(crate) const CHR_SIZE: u32 = 0x880;
+/// `g_DynGeoFillBuffer` (`0x00cdedf0`): the dynamic geometry's
+/// `DynGeoMemManager`; its buffer set (`*manager`) holds the current
+/// buffer's index at `+4` (`graphicDynGeoMemManagerGetCurrentBufferId`,
+/// -1 without a set).
+const DYN_GEO_FILL: u32 = 0x00cd_edf0;
+/// `g_DynGeoBuffersOn` (`0x00c32694`): the dynamic buffers are in use.
+const DYN_GEO_BUFFERS_ON: u32 = 0x00c3_2694;
 /// Bounds on what one frame reads (guards against a torn list).
 const SEGMENTS_MAX: i32 = 256;
 const VERTICES_MAX: u32 = 0x1_0000;
@@ -918,12 +925,42 @@ pub fn upright_uv(uv: [f32; 2]) -> [f32; 2] {
     [uv[0], 1.0 - uv[1]]
 }
 
+/// Where the draw reads segment `s`'s arrays: the current dynamic buffer's
+/// slot (`s + 0x28 + 0x1c id`, so that its counts sit at `+4`/`+8` and its
+/// arrays at `+0xc..+0x1c` as the segment's own do) when that slot holds
+/// arrays for this frame (its positions, slot `+0x34`, set), else the
+/// segment itself, as `ClassDynamicMesh_fillDynamicBlocks` (`0x00672b80`)
+/// picks them for the vertex and index blocks and
+/// `ClassDynamicMesh_fillDrawTable_006732a0` for the counts
+/// (docs/formats/effects-draw.md, "Which arrays the draw reads"). The
+/// slot is filled with the segment's own arrays
+/// (`graphicDynGeoMemManagerGetBufferForSegment`) and cleared when its
+/// buffer comes round again (`ClassVFXRenderDataTable_ClearVFXDrawData`),
+/// so both give the same arrays wherever this was measured.
+fn arrays_at(m: &Reader, s: u32, slot: Option<u32>) -> u32 {
+    slot.map(|id| s.wrapping_add(0x28 + 0x1c * id))
+        .filter(|&a| m.ptr(a.wrapping_add(0xc)).is_some())
+        .unwrap_or(s)
+}
+
+/// The current dynamic buffer whose slot the draw may read
+/// ([`arrays_at`]): `graphicDynGeoMemManagerGetCurrentBufferId`'s index
+/// while the buffers are on; ids past the segment's two slots (the
+/// manager has two buffers) read none.
+fn buffer_slot(m: &Reader) -> Option<u32> {
+    if m.u32(DYN_GEO_BUFFERS_ON).unwrap_or(0) == 0 {
+        return None;
+    }
+    let set = m.ptr(DYN_GEO_FILL).and_then(|mgr| m.ptr(mgr))?;
+    m.u32(set.wrapping_add(4)).filter(|&id| id <= 1)
+}
+
 /// The draws of one list entry: each segment with indices (`+8` > 0) of
 /// its geometry's render data (`+0x24`: `+0x90` count, `+0x94` segments of
-/// `0x6c` bytes), with the segment's own arrays (`+4` vertices, `+8`
-/// indices, `+0xc` positions, `+0x14` colours, `+0x18` uvs, `+0x1c`
-/// indices; `docs/formats/render.md`), placed by the mesh instance's world
-/// matrix (`*(mi +4)`).
+/// `0x6c` bytes), with the arrays the draw reads ([`arrays_at`]: `+4`
+/// vertices, `+8` indices, `+0xc` positions, `+0x14` colours, `+0x18`
+/// uvs, `+0x1c` indices; `docs/formats/render.md`), placed by the mesh
+/// instance's world matrix (`*(mi +4)`).
 fn entry_draws(m: &Reader, pass: Pass, place: u32, mi: u32, found: Found, out: &mut Vec<Draw>) {
     let g = found.geometry;
     let flags = m.u32(g.wrapping_add(0x3c)).unwrap_or(0);
@@ -941,9 +978,11 @@ fn entry_draws(m: &Reader, pass: Pass, place: u32, mi: u32, found: Found, out: &
         return;
     };
     let materials = Materials::of(m, mi);
+    let slot = buffer_slot(m);
     for i in 0..n.cast_unsigned() {
         let s = base.wrapping_add(0x6c * i);
-        let indices = m.u32(s.wrapping_add(8)).unwrap_or(0);
+        let arrays = arrays_at(m, s, slot);
+        let indices = m.u32(arrays.wrapping_add(8)).unwrap_or(0);
         if indices.cast_signed() <= 0 {
             continue;
         }
@@ -953,16 +992,16 @@ fn entry_draws(m: &Reader, pass: Pass, place: u32, mi: u32, found: Found, out: &
             .and_then(|x| x.blends(m, i))
             .map_or((None, Vec::new()), |(t, b)| (Some(t), b));
         let sampler = materials.as_ref().and_then(|x| x.sampler(m, i));
-        let vertices = m.u32(s.wrapping_add(4)).unwrap_or(0).min(VERTICES_MAX);
+        let vertices = m.u32(arrays.wrapping_add(4)).unwrap_or(0).min(VERTICES_MAX);
         let positions: Vec<[f32; 3]> = m
-            .f32s::<3>(m.u32(s.wrapping_add(0xc)).unwrap_or(0), vertices)
+            .f32s::<3>(m.u32(arrays.wrapping_add(0xc)).unwrap_or(0), vertices)
             .iter()
             .map(|p| to_render(&world, *p))
             .collect();
         let n = positions.len();
-        let mut colours = m.f32s::<4>(m.u32(s.wrapping_add(0x14)).unwrap_or(0), vertices);
+        let mut colours = m.f32s::<4>(m.u32(arrays.wrapping_add(0x14)).unwrap_or(0), vertices);
         colours.resize(n, [0.0; 4]);
-        let mut uvs = m.f32s::<2>(m.u32(s.wrapping_add(0x18)).unwrap_or(0), vertices);
+        let mut uvs = m.f32s::<2>(m.u32(arrays.wrapping_add(0x18)).unwrap_or(0), vertices);
         uvs.resize(n, [0.0; 2]);
         out.push(Draw {
             pass,
@@ -983,7 +1022,7 @@ fn entry_draws(m: &Reader, pass: Pass, place: u32, mi: u32, found: Found, out: &
             positions,
             colours,
             uvs,
-            indices: m.u16s(m.u32(s.wrapping_add(0x1c)).unwrap_or(0), indices),
+            indices: m.u16s(m.u32(arrays.wrapping_add(0x1c)).unwrap_or(0), indices),
         });
     }
 }
@@ -2281,6 +2320,70 @@ mod tests {
         fn frame(&self) -> Frame {
             read_frame(&Reader(&self.arena), self.scene, 5)
         }
+    }
+
+    /// The arrays the draw copies (`ClassDynamicMesh_fillDynamicBlocks`):
+    /// the current buffer's slot while the buffers are on and the slot's
+    /// positions are set, else the segment's own.
+    #[test]
+    fn a_segment_is_read_from_the_current_buffers_slot_when_it_is_set() {
+        let mut f = Fixture::new();
+        let mi = f.instance(0x8);
+        f.table();
+        f.put(f.scene + 0x38cc, mi);
+        f.put(f.scene + 0xf8cc, 1);
+        f.arena
+            .map(DYN_GEO_FILL & !0xfff, 0x1000, "dyn geo fill")
+            .unwrap();
+        f.arena
+            .map(DYN_GEO_BUFFERS_ON & !0xfff, 0x1000, "dyn geo on")
+            .unwrap();
+        let manager = f.alloc(0x20);
+        let set = f.alloc(0x20);
+        f.put(DYN_GEO_FILL, manager);
+        f.put(manager, set);
+        // own: 3 vertices at 1.0; buffer 1's slot: 4 vertices at 2.0, a quad
+        let g = f.pool[0];
+        let seg = f.arena_u32(f.arena_u32(g + 0x24) + 0x94);
+        let own = f.arena_u32(seg + 0xc);
+        for k in 0..9 {
+            f.put(own + 4 * k, 1f32.to_bits());
+        }
+        let pos = f.alloc(48);
+        for k in 0..12 {
+            f.put(pos + 4 * k, 2f32.to_bits());
+        }
+        let idx = f.alloc(12);
+        f.arena
+            .write_bytes(idx, &[0, 0, 1, 0, 2, 0, 1, 0, 3, 0, 2, 0]);
+        let slot1 = seg + 0x28 + 0x1c;
+        f.put(slot1 + 4, 4);
+        f.put(slot1 + 8, 6);
+        f.put(slot1 + 0xc, pos);
+        f.put(slot1 + 0x1c, idx);
+        let read = |f: &Fixture| {
+            let d = &f.frame().draws[0];
+            (d.positions.len(), d.indices.len(), d.positions[0][2])
+        };
+        // the buffers off: the segment's own
+        f.put(set + 4, 1);
+        assert_eq!(read(&f), (3, 3, 1.0));
+        // on, buffer 1 current: its slot
+        f.put(DYN_GEO_BUFFERS_ON, 1);
+        assert_eq!(read(&f), (4, 6, 2.0));
+        // buffer 0 current, its slot empty: the segment's own
+        f.put(set + 4, 0);
+        assert_eq!(read(&f), (3, 3, 1.0));
+        // buffer 1 again, its slot cleared (`ClearVFXDrawData`): the own
+        f.put(set + 4, 1);
+        f.put(slot1 + 0xc, 0);
+        assert_eq!(read(&f), (3, 3, 1.0));
+        // a set's id past the two buffers (or none): the segment's own
+        f.put(slot1 + 0xc, pos);
+        f.put(set + 4, 2);
+        assert_eq!(read(&f), (3, 3, 1.0));
+        f.put(manager, 0);
+        assert_eq!(read(&f), (3, 3, 1.0));
     }
 
     #[test]

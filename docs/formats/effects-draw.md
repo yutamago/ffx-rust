@@ -157,7 +157,10 @@ the census reads:
 A segment's vertex arrays (`graphicDynGeoMemManagerGetBufferForSegment`
 `0x0063fdb0`): `+4` vertices, `+8` indices, `+0xc` positions (12 bytes a
 vertex), `+0x10` normals (12), `+0x14` colours (16), `+0x18` uvs (8),
-`+0x1c` indices (u16); the same at `+0x2c + 0x1c n` for buffer slot `n`.
+`+0x1c` indices (u16); the same at `+0x2c + 0x1c n` for buffer slot `n`
+(counts `+0x2c`, `+0x30`, positions `+0x34`, normals `+0x38`, colours
+`+0x3c`, uvs `+0x40`, indices `+0x44`), which is what the draw reads
+("Which arrays the draw reads" below).
 The draw binds them as rings: positions slot 0, normals slot 1, colours
 slot 2, uvs slot 3 (strides 12, 12, 16, 8; `POSITION0` f6, `NORMAL0` f6,
 `COLOR0` f2, `TEXCOORD0` f16), the indices as a ring `R16_UINT` buffer, the
@@ -636,6 +639,9 @@ gd-ffx. What it adds to the census:
   chain as `selectTechniquePass` walks it (FXDR version 4).
 - **The sampler** of each draw: the material's `TextureSamplerState` as
   D3D11 describes it ("Texture coordinates" above; FXDR version 5).
+- **The arrays** the draw copies: the current buffer's slot of each
+  segment, else its own arrays ("Which arrays the draw reads" below;
+  the same bytes wherever measured, FXDR unchanged).
 - **Field effects.** Besaid at the save sphere (developer save 7): 30
   draws, all from `DrawMostVFX`, no draw events, every entry in the
   table. The save sphere `f001`'s glow is six entries (two hemispheres,
@@ -718,6 +724,108 @@ entry.
   several parts (`lo + 10000 i`). Which effect makes them and which
   `vfxShader_fx.txt` line flag `0x1000` picks were not looked up.
 
+## Which arrays the draw reads (2026-11-17)
+
+A segment holds its arrays twice: its own (`+4` … `+0x1c`) and one slot
+per dynamic-geometry buffer (`+0x2c + 0x1c n` …). From the ports:
+
+1. **The fill.** `graphicDynGeoMemManagerGetBufferForSegment`
+   (`0x0063fdb0`, `ffx_graphic::managers`) takes one block from the
+   current buffer of `g_DynGeoFillBuffer` (`0x00cdedf0`) and writes the
+   same counts and array addresses to the segment's own words and to the
+   slot of the current buffer (`graphicDynGeoMemManagerGetCurrentBufferId`
+   `0x0063ff50`: the manager's set `+4`). The fills then write their
+   vertices through the own words.
+2. **The swap.** Once per drawn frame `FFXApplication::afterGraphicSync`
+   calls `graphicDynGeoMemManagerSwapBuffer(1)` (`0x0063ff70`): the next
+   of the two buffers becomes current, its fill position goes back to its
+   start (`DynGeoMemManager_swapBuffer_006dece0`), and
+   `ClassVFXRenderDataTable_ClearVFXDrawData` (`0x0069f2b0`) clears that
+   buffer's slot positions (`+0x34 + 0x1c n`) in every segment of the
+   table. While the frame is held (a pause, a busy load, the free camera)
+   it does neither.
+3. **The draw.** `ClassDynamicGeometry_updateRenderData` (`0x006a4a50`)
+   fills the dynamic mesh's draw table
+   (`ClassDynamicMesh_fillDrawTable_006732a0`, `ffx_pother_b::p4_mesh`):
+   the counts of the current buffer's slot when the buffers are on
+   (`g_DynGeoBuffersOn` `0x00c32694`) and the slot's `+0x34` is set, else
+   the segment's own. `ClassDynamicMeshInstance_populatePreprocessData`
+   (`0x00673b20`) keeps the render data and the current buffer id with the
+   draw (`+0x10`, `+0x14`), and `ClassDynamicMesh_fillDynamicBlocks`
+   (`0x00672b80`, `ffx_pother_b::m4r_dynblocks`) copies the vertex streams
+   and indices into the blocks the renderer binds from the slot of that id
+   when its `+0x34` is set, else from the segment's own words; with no id
+   or the buffers off it draws nothing.
+
+So the draw of an update reads the slot of the buffer that update filled:
+the render thread can draw it while the main thread's next update fills
+the other buffer and moves the segment's own words there. A segment not
+filled in an update has its slot cleared and is drawn from its own words:
+the arrays of its last fill, intact in the other buffer only when that
+fill was the update before; filled two or more updates back, its words
+point into the buffer being refilled now, holding other effects' data.
+
+`ffx_host::vfx` reads the arrays the same way (`arrays_at`: the slot of
+the current buffer id at `DrawMostVFX`, on the main thread after the
+update and before the swap, else the own words). Where the game would
+draw nothing (no buffer id, or the buffers off) the capture still reads
+the own words; no run had that.
+
+**Measured** (`vfx-probe`, a throwaway read of both slots beside the own
+words, not kept): developer save 7 at the save sphere (60 frames, 1,800
+segment draws), save 29 at Luca (120 frames, 30,613), save 8 walked out
+of the lodge to Besaid village's `bsvr00` (`--script`, 60 frames). On
+every segment draw the current buffer's slot held exactly the segment's
+own counts and arrays (the ids alternating 0, 1 frame by frame), and no
+drawn segment had an empty slot. The capture's bytes are the same with
+either read.
+
+### Vertex colours the game never wrote
+
+The unset (`0xcdcdcdcd`, the allocator's fill of buffer memory no fill
+has reached yet) and stale colours that gd-ffx found are in the arrays the
+draw copies, on vertices that only **degenerate triangles** index: a
+fill reserves its vertices and indices (`+4 += 4n`, `+8 += 6n`, as
+`updateVFXRenderDataShp` does) and leaves some quads collapsed, their six
+indices all 0 (one vertex), so D3D11 draws nothing for them. Examples:
+
+- Besaid village's lens flare (`bsvr00`, key `(0xd, 0xd2bea8)`, texture
+  `13888_19_0_0_128_64`, flags `0x80a`): 16 vertices with positions and
+  uvs, every colour unset, all 24 indices 0 in each of the 60 frames; the
+  flare's other parts (keys lo `0xa`, `0xb`, `0xc`) likewise in every
+  frame where they hold odd colours (`0xcdcdcdcd` or stale numbers).
+- The save sphere's orb hemisphere (save 7, key `(6, 0xd2a1f8)`, 128
+  vertices, 192 indices): vertices 12-15 and 108-111 unset (positions
+  set, colours and uvs `0xcdcdcdcd`), no index names them; their quads'
+  indices are 0.
+- Luca (save 29): battle-effect quads (`bat_eff` texture `15456`, keys lo
+  8, 4 vertices, 6 indices) whose indices are all 0 and vertex 0's
+  position `(0, 0, 0)`, its colour another effect's numbers.
+
+| Run | Draws with odd colours | Odd vertices | In a triangle with area |
+|---|---|---|---|
+| save 7, 60 frames | 60 | 480 | 0 |
+| save 29, 120 frames | 517 | 854 | 0 |
+| save 8 to `bsvr00`, 60 frames | 208 | 6,193 | 0 |
+| save 51, battle field 34 formation 0 driven (`--drive`), 2,000 frames | 6,571 | 278,966 | 143, in 54 draws of flags `0x40000000` |
+
+(odd: a component not finite or outside 0..8, with a tolerance of 1e-3
+below 0; with area: three different
+indices and positions not on one line; the probe's tally, printed after
+every run.) The battle's exception writes no colour either: flags
+`0x40000000` are the five untextured full-screen quads of keys
+`(1..5, 0)` (positions `(±1, ±1, 1)`, two triangles each) in the
+battle's first updates (157-260 of that run), drawn with blend (zero,
+one, add) and write mask 0 ("Blend"), so their vertex colours never reach
+the target; 54 of the run's 100 such draws had odd colours.
+
+The zero indices are most likely written by the fills (the buffer
+memory is never cleared, and unwritten words hold `0xcdcdcdcd`); which
+code writes them for the flare's hidden parts was not traced. A frontend
+may drop triangles with a repeated index (they
+draw nothing in the game either) and need not draw the `0x40000000`
+family's colour.
+
 ## Gate
 
 The M4 census: every effect draw of the eight captured frames is traced:
@@ -768,18 +876,17 @@ the census itself on a synthetic frame.
 7. **PC2 captures** use other saves and timing (above); the main
    machine should take the git scripts' captures and run the gate on them.
 8. **Vertex colours the game never wrote** (found by gd-ffx, 2026-11-17):
-   in 94 of the 110 developer saves some captured effect draws index
-   vertices whose colour components (`f32`) have the heap fill's bits
-   `0xcdcdcdcd` (unset, as above) or another stale value. The clearest
-   case is the Besaid village lens flare's ring quad on `bsvr00`
-   (texture `13888_19_0_0_128_64`, 16 vertices, every colour unset).
-   The capture reads only as many vertices as the segment's `+4` says,
-   so it does not run past the filled count. The likely cause: it reads
-   the segment's own arrays (`+0xc`, `+0x14`, `+0x18`, `+0x1c`;
-   `ffx_host::vfx::entry_draws`) while the game draws from a buffer slot
-   (`+0x2c + 0x1c n`, above), which only the eight census frames checked;
-   a weaker one: a shape fill reserving `+4 += 4n` but writing fewer
-   vertices. Whether those vertices' positions and uvs are stale too
-   (which would point at the slot) was not checked. gd-ffx leaves such
-   triangles out (`--keep-unset-colours` draws them); with or without
-   them its pictures look the same.
+   answered ("Which arrays the draw reads"). In 94 of the 110 developer
+   saves some captured effect draws index vertices whose colour
+   components have the heap fill's bits `0xcdcdcdcd` or stale values
+   (the Besaid village lens flare's ring quad on `bsvr00` the clearest).
+   Not a wrong slot: the draw reads the current buffer's slot, which held
+   the segment's own arrays on every measured draw, and the capture now
+   reads it the same way. The vertices are ones a fill reserved and left
+   in collapsed quads (indices all 0): only degenerate triangles name
+   them, and the only ones with area in the measured runs are drawn
+   with write mask 0 (flags `0x40000000`), so the game draws no colour
+   with them. Left open: which code writes the zero indices (the
+   flare's hidden parts), and the other saves of gd-ffx's sweep, which
+   counted by vertex (its view leaves such triangles out, the same
+   pictures either way).

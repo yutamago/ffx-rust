@@ -11,7 +11,8 @@
 //! FFX_GAME_DIR=~/steam-games/FFX-X2-HD cargo run --release -p ffx-host \
 //!   --example vfx-probe -- [devsave 7] [frames 20] [documents dir] \
 //!   [--battle field,group,formation] [--auto] [--skip n] [--summary] \
-//!   [--from-save] [--fields] [--drive] [--party hex] [--texels]
+//!   [--from-save] [--fields] [--drive] [--party hex] [--texels] \
+//!   [--script file]
 //! ```
 //!
 //! `--battle` asks for a battle once the map runs and captures from its
@@ -32,7 +33,19 @@
 //! texel as D3D addresses it (`u w`, `v h` from the first stored row) and
 //! the upright image's colour there (`vfx::upright_uv`) and top-down
 //! (`(u, v)` on the upright image, the wrong reading); for every draw the
-//! mean alpha at its vertices both ways.
+//! mean alpha at its vertices both ways; `--script` plays a replay script
+//! (`ffx_host::replay`: `press`, `wait`, …) once the map runs, before the
+//! capture (developer save 8 out of the lodge to Besaid village's
+//! `bsvr00`: `press right 180`, `press down 210`, `press up 156`, `press
+//! up+right 204`, `wait 240`).
+//!
+//! Every run ends with the odd colours' tally (docs/formats/effects-draw.md,
+//! "Which arrays the draw reads"): vertices whose colour is no colour the
+//! game writes (a component not finite or outside 0..8, 1e-3 below 0
+//! allowed), and how many of
+//! them a triangle with area uses (three different indices, the positions
+//! not on one line); the others only degenerate triangles index, which
+//! draw nothing.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -105,6 +118,7 @@ struct Config {
     drive: bool,
     party: Option<Vec<u8>>,
     texels: bool,
+    script: Option<PathBuf>,
 }
 
 impl Config {
@@ -142,6 +156,7 @@ impl Config {
                         .collect();
                 }
                 "--skip" => c.skip = args.next().and_then(|x| x.parse().ok()).unwrap_or(0),
+                "--script" => c.script = args.next().map(PathBuf::from),
                 _ => rest.push(a),
             }
         }
@@ -208,6 +223,21 @@ fn set_up(shared: &Shared, save: i32, cfg: &Config) {
         &|| shared.clock.frame() >= start,
         Duration::from_secs(900),
     );
+    if let Some(path) = &cfg.script {
+        let text = std::fs::read_to_string(path).expect("the script");
+        if let Ok(mut s) = shared.clock.script.lock() {
+            *s = Some(ffx_host::replay::Script::new(&text));
+        }
+        let done = || {
+            shared
+                .clock
+                .script
+                .lock()
+                .is_ok_and(|s| s.as_ref().is_none_or(ffx_host::replay::Script::done))
+        };
+        wait("the script", &done, Duration::from_secs(1800));
+        eprintln!("script done at frame {}", shared.clock.frame());
+    }
     if cfg.fields {
         print_fields(shared);
     }
@@ -259,6 +289,7 @@ fn probe(shared: &Shared, snaps: &Snaps, save: i32, frames: u32, cfg: &Config) {
         if got.is_empty() {
             print_ripple(shared);
         }
+        odd_colours(&f);
         if cfg.summary {
             // keep memory down: only the frames worth printing in full
             let worth =
@@ -302,6 +333,15 @@ fn probe(shared: &Shared, snaps: &Snaps, save: i32, frames: u32, cfg: &Config) {
             print_texels(f);
         }
     }
+    COUNTS.with(|c| {
+        for (k, v) in c
+            .borrow()
+            .iter()
+            .filter(|(k, _)| k.starts_with("odd colours"))
+        {
+            println!("{k}: {v}");
+        }
+    });
     shared.stop_all(Stop::Milestone("probe done".into()));
 }
 
@@ -348,6 +388,61 @@ fn count(f: &ffx_host::vfx::Frame) {
             *c.entry(format!("frames with event kind {k}")).or_default() += 1;
         }
         *c.entry("unresolved".into()).or_default() += u64::from(f.unresolved);
+    });
+}
+
+/// Counts a frame's odd colours into the summary (the module's comment):
+/// vertices with a colour component not finite or outside 0..8 (1e-3
+/// below 0 allowed), the draws
+/// with one, and those of them a triangle with area uses.
+fn odd_colours(frame: &ffx_host::vfx::Frame) {
+    let odd = |colour: &[f32; 4]| colour.iter().any(|x| !(-1e-3..=8.0).contains(x));
+    COUNTS.with(|counts| {
+        let mut counts = counts.borrow_mut();
+        for draw in &frame.draws {
+            let n = draw.colours.iter().filter(|x| odd(x)).count();
+            if n == 0 {
+                continue;
+            }
+            *counts.entry("odd colours: draws".into()).or_default() += 1;
+            *counts.entry("odd colours: vertices".into()).or_default() += n as u64;
+            let mut drawn = std::collections::BTreeSet::<u16>::new();
+            for tri in draw.indices.as_chunks::<3>().0 {
+                if tri[0] == tri[1] || tri[1] == tri[2] || tri[0] == tri[2] {
+                    continue;
+                }
+                let at = |k: usize| draw.positions.get(usize::from(tri[k])).copied();
+                let (Some(p0), Some(p1), Some(p2)) = (at(0), at(1), at(2)) else {
+                    continue;
+                };
+                let side1 = [p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]];
+                let side2 = [p2[0] - p0[0], p2[1] - p0[1], p2[2] - p0[2]];
+                let normal = [
+                    side1[1] * side2[2] - side1[2] * side2[1],
+                    side1[2] * side2[0] - side1[0] * side2[2],
+                    side1[0] * side2[1] - side1[1] * side2[0],
+                ];
+                if normal.iter().any(|k| *k != 0.0) {
+                    drawn.extend(
+                        tri.iter()
+                            .filter(|&&v| draw.colours.get(usize::from(v)).is_some_and(odd)),
+                    );
+                }
+            }
+            *counts
+                .entry("odd colours: vertices in a triangle with area".into())
+                .or_default() += drawn.len() as u64;
+            if !drawn.is_empty() {
+                // which draws: by flags (0x40000000 writes no colour)
+                *counts
+                    .entry(format!(
+                        "odd colours: draws with them in a triangle with area, flags {:#x} {}",
+                        draw.flags,
+                        blend_text(draw)
+                    ))
+                    .or_default() += 1;
+            }
+        }
     });
 }
 
