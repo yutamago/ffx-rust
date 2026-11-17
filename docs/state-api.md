@@ -109,7 +109,7 @@ colour and the `+4`..`+0xa` words, whose meaning differs per slot: see
 `ScreenFilter`'s fields), the screen's shake offset (`g_Screens[0]`
 `+0x30`, `+0x34`) and the music playing (`g_SndNowPlayMusic`). Not yet:
 the field's particle effects (`g_FpData`/`g_FpRun`), effect positions,
-damage numbers, sound effects.
+sound effects (the damage numbers since API 12, below).
 
 ## Battlers (API 6)
 
@@ -120,6 +120,40 @@ shown (`+0xdd2`) and the turn counter (`+0x6ec`): a frontend's battle HUD.
 A monster that dies with a death pattern (`+0x3f5`) usually leaves the list
 (its `+0xdc8` cleared) rather than showing `dead`
 (docs/formats/battle.md, "The battle actor").
+
+## Damage numbers (API 12)
+
+`Effects.numbers`, in battle only: the numbers the battle shows over its
+battlers, as the game keeps them, so a frontend shows the game's own
+values. `MsNumberRegist` (`0x0079fa00`) puts a number's characters into
+the pool `*g_BtlNumbers` (`0x011360b8`: 0x80 records of 0x14 bytes, `+0`
+the style, 0 free; `MsNumberPut`) and links them at the end of the list
+`g_BtlNumberList` (`0x011360bc`, the next at `+0x10`): its digits lowest
+first (`+3` the place, `+4` the digit), then the word (one glyph of the
+damage font) at the place after them, each with the colour (`+1`), the
+battler (`+2`), a delay of its place plus one (`+5`), the age (`+6`) and
+the life (`+7`, 30). The reader walks the list (at most 0x80 records,
+each inside the pool on a record's boundary) and joins a number's
+characters back: the same battler, style, colour, age and life, the
+places in a row. `MsNumberCalcProcess` (`0x0079f5e0`) counts each delay
+down and each age up once an update and drops a record past its life;
+`MsNumberDrawProcess` draws a character once its delay is 0, by the row
+`age - 1 - place` of `g_BtlNumberFrames` (`0x00c424b0`: x and y offsets,
+alpha), fading over the last 5 updates.
+
+`MsSubHP` (`0x0078e230`) registers the HP loss it is handed before it
+clamps the HP at 0, so a killing blow shows its overkill;
+`MsDamageCheckDeath` (`0x0078c740`) adds the overkill word (kind 5,
+glyph `0x3d`, colour 2) when the monster's overkill HP (`+0xf60`) is
+spent. Measured in the deck's
+battle (`Battle { 3, 0, 0 }`, Circle): a monster's 34 on Tidus (520 to
+486 HP); Tidus's 268 on monster 0x14 with the overkill word, and 108 on
+0x15, which had 100 HP (no word: below its threshold); both monsters left
+`battlers` in the update of the blow. A new number reads age 0 in the
+snapshot after its update (it is put after the update's ages were
+counted), its delay its digit count. `Battler.damage` is `+0xd34`
+(`damage_hp`), the HP the last action took as `MsCalcDamage` calculated
+it, set before the HP changes (seen one snapshot before the loss).
 
 ## Effect draws (`ffx_host::vfx`, not in the snapshot)
 
@@ -781,7 +815,7 @@ For gd-ffx's second playtest round.
 the fields raises `API_VERSION`.
 
 ```text
-ffx-state API 11
+ffx-state API 12
 struct Snapshot
   update: u32
   game_time: f64
@@ -908,6 +942,7 @@ struct Effects
   shake_x: f32
   shake_y: f32
   music: i32
+  numbers: list<BattleNumber>
 struct EffectInstance
   slot: u16
   id: u32
@@ -937,6 +972,7 @@ struct Battler
   dead: bool
   exists: bool
   ctb: i32
+  damage: i32
 struct Look
   valid: bool
   colour_scale: vec3
@@ -1117,6 +1153,18 @@ struct MessageVar
   pickup: u8
   pickup_id: u16
   pickup_count: u32
+struct BattleNumber
+  battler: u8
+  value: i32
+  digits: u8
+  colour: u8
+  word: u8
+  style: u8
+  age: u8
+  life: u8
+  delay: u8
+  x: i32
+  y: i32
 ```
 
 ## Sources
@@ -1137,6 +1185,15 @@ the opening's event, so the drawn camera comes from the scene); the pad `g_PadHe
 `ffx_chara::layout`), `g_Player` `0x01300788`.
 
 ## Tests
+
+API 12: `crates/ffx-state`'s `the_damage_numbers_join_their_characters`
+(the list walked out of the pool's order, digits and words joined, a walk
+leaving the pool stopped, none out of battle) and
+`crates/ffx-host/tests/boot.rs` `the_state_api_sees_the_damage_numbers`:
+the deck's battle fought with Circle to the results; every new HP number
+(age 0) stands over a battler that lost that much HP in its update (all
+it had when the number was more), equal to its `damage` while it is
+listed; three hits, two of them killing blows with overkill.
 
 API 11: `crates/ffx-state`'s unit tests (the live and the confirmed
 choice, a variable of each number kind and a raw text expanded in a

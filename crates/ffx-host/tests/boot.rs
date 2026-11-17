@@ -1589,6 +1589,126 @@ fn the_state_api_sees_the_battle_results() {
     assert!(seen.iter().any(|s| s.menus.battle_end.state != first.state));
 }
 
+/// API 12's damage numbers: the deck's battle (Besaid, then `Battle { 3,
+/// 0, 0 }`) fought with Circle (Attack on the first target) until the
+/// results. Every HP number on screen stands over a battler that lost
+/// that much HP in the update it came (all of its HP when it was more: a
+/// killing blow shows its overkill), its value is the battler's
+/// calculated damage (`damage`), and the numbers age by one an update.
+#[test]
+#[allow(clippy::too_many_lines)] // one walk through the game, step by step
+fn the_state_api_sees_the_damage_numbers() {
+    use std::sync::atomic::{AtomicU32, Ordering::Relaxed};
+    use std::sync::{Arc, Mutex};
+    /// update, the battlers (index, HP, damage), the numbers
+    type Seen = Vec<(u32, Vec<(u8, i32, i32)>, Vec<ffx_state::BattleNumber>)>;
+    let Some(exe) = exe() else { return };
+    let opts = ffx_host::Options {
+        documents: Some(documents("damage-numbers")),
+        gfx: ffx_host::gfx::Config {
+            backend: ffx_host::gfx::Choice::Null,
+            no_record: true,
+            ..ffx_host::gfx::Config::default()
+        },
+        ..ffx_host::Options::default()
+    };
+    let mut exec = ffx_host::boot_opts(&exe, ffx_host::ports::table(), &opts).unwrap();
+    exec.set_budget(Duration::from_secs(400));
+    let seen: Arc<Mutex<Seen>> = Arc::default();
+    let id = {
+        let seen = Arc::clone(&seen);
+        let shared = Arc::downgrade(exec.shared());
+        let step = AtomicU32::new(0);
+        exec.shared().observers.add(Arc::new(move |s| {
+            let Some(shared) = shared.upgrade() else {
+                return;
+            };
+            match step.load(Relaxed) {
+                0 if s.world.map == 0x15d && s.world.event_frame > 30 => {
+                    shared
+                        .requests
+                        .push(ffx_host::requests::Request::DevSave(7), Box::new(|_| {}));
+                    step.store(1, Relaxed);
+                }
+                1 if s.world.map == 0x46 && s.world.player_control => {
+                    shared.requests.push(
+                        ffx_host::requests::Request::Battle {
+                            field: 3,
+                            group: 0,
+                            formation: 0,
+                        },
+                        Box::new(|_| {}),
+                    );
+                    step.store(2, Relaxed);
+                }
+                2 if s.menus.battle_end.open => {
+                    shared.clock.buttons.store(0, Relaxed);
+                    shared.stop_all(Stop::Milestone("the results".into()));
+                    step.store(3, Relaxed);
+                }
+                // in battle until the results: Circle 3 updates of 10,
+                // every snapshot kept
+                2 if s.world.battle => {
+                    let b = if s.update % 10 < 3 { 0x20 } else { 0 };
+                    shared.clock.buttons.store(b, Relaxed);
+                    let battlers = s.battlers.iter().map(|b| (b.index, b.hp, b.damage));
+                    if let Ok(mut v) = seen.lock() {
+                        v.push((s.update, battlers.collect(), s.effects.numbers.clone()));
+                    }
+                }
+                _ => {}
+            }
+        }))
+    };
+    let stop = exec.run_entry().unwrap();
+    exec.join_threads(Duration::from_secs(5));
+    exec.shared().observers.remove(id);
+    assert_eq!(stop, Stop::Milestone("the results".into()));
+    let seen = seen.lock().unwrap().clone();
+    let hp = |s: &(u32, Vec<(u8, i32, i32)>, _), i: u8| {
+        s.1.iter().find(|b| b.0 == i).map(|b| (b.1, b.2))
+    };
+    let (mut hits, mut kills) = (0, 0);
+    for w in seen.windows(2) {
+        let (before, now) = (&w[0], &w[1]);
+        assert_eq!(now.0, before.0 + 1, "one snapshot an update");
+        for n in &now.2 {
+            // the ones the last snapshot had are an update older
+            let old = before.2.iter().any(|o| {
+                o.battler == n.battler
+                    && o.value == n.value
+                    && o.word == n.word
+                    && o.age + 1 == n.age
+            });
+            if !old {
+                eprintln!(
+                    "update {}: {n:?}; the battler (HP, damage) {:?}, before {:?}",
+                    now.0,
+                    hp(now, n.battler),
+                    hp(before, n.battler)
+                );
+            }
+            if old || n.digits == 0 || n.word != 0 || n.colour != 0 {
+                continue;
+            }
+            // a new HP loss: the battler lost that much, all it had at most
+            let (hp_before, _) = hp(before, n.battler).expect("a battler before its number");
+            let (hp_now, damage) = hp(now, n.battler).unwrap_or((0, n.value));
+            assert_eq!(n.age, 0, "{n:?}");
+            assert_eq!(hp_before - hp_now, n.value.min(hp_before), "{n:?}");
+            assert_eq!(damage, n.value, "{n:?}");
+            hits += 1;
+            if n.value > hp_before {
+                assert_eq!(hp_now, 0);
+                kills += 1;
+            }
+        }
+    }
+    eprintln!("{hits} hits, {kills} with overkill");
+    assert!(hits >= 2, "{hits}");
+    assert!(kills >= 1, "{kills}");
+}
+
 /// API 11 at Besaid (developer save 7): the map change is seen before the
 /// beach starts; the beach is a 3D map (no squeeze, no offset) with the
 /// boosters as a new game has them; Circle at the save sphere opens its

@@ -23,7 +23,7 @@ pub use read::{LANGUAGE_UNKNOWN, Reader, read};
 pub use schema::{ApiStruct, ApiType, Field, StructSchema, Ty};
 
 /// The API's version: a frontend checks it before it decodes a snapshot.
-pub const API_VERSION: u32 = 11;
+pub const API_VERSION: u32 = 12;
 
 /// The first four bytes of an encoded snapshot (`FFXS`).
 pub const MAGIC: u32 = u32::from_le_bytes(*b"FFXS");
@@ -240,6 +240,10 @@ api_struct! {
         exists: bool,
         /// Its turn counter (`+0x6ec` `current_ctb`).
         ctb: i32,
+        /// The HP the last action took as calculated (`+0xd34`
+        /// `damage_hp`, `MsCalcDamage`): before the clamp at 0, negative a
+        /// heal; kept until the next action's calculation.
+        damage: i32,
     }
 }
 
@@ -262,6 +266,60 @@ api_struct! {
         shake_y: f32,
         /// The music playing (`g_SndNowPlayMusic`), -1 none.
         music: i32,
+        /// The battle's damage numbers on screen (`g_BtlNumberList`), in
+        /// the list's order (the oldest first); empty out of battle.
+        numbers: Vec<BattleNumber>,
+    }
+}
+
+api_struct! {
+    /// A damage number as the battle shows it: the characters
+    /// `MsNumberRegist` (`0x0079fa00`) put for one number, rebuilt from the
+    /// list of `g_BtlNumbers`' records (0x14 bytes each: `+0` style, `+1`
+    /// colour, `+2` the battler, `+3` the place, `+4` the character, `+5`
+    /// the delay, `+6` the age, `+7` the life). `MsSubHP` registers the HP
+    /// loss before it clamps the HP at 0: a killing blow shows its
+    /// overkill.
+    BattleNumber {
+        /// The battler it stands over (`+2`; 0..0x11 the party,
+        /// 0x14..0x1b the monsters).
+        battler: u8,
+        /// The digits' value (at most 9 digits); -1 for a word alone.
+        value: i32,
+        /// How many digits (0 for a word alone).
+        digits: u8,
+        /// Its colour (`+1`): 0 a loss (grey, bouncing), 1 a heal (green,
+        /// rising by half its age: the value negative, or 0 with the other
+        /// part negative), 2 the overkill word (grey, rising by its age);
+        /// a heal's `value` is the amount healed.
+        colour: u8,
+        /// The word after the digits, a glyph of the damage font (0 none):
+        /// 0x3a "MP" (kind 1, `MsSubMP`), 0x3b and 0x3c the words of kinds
+        /// 3 and 4 (an action's result `+1`, `AfterDamageProcess`), 0x3d
+        /// the overkill's (kind 5, `MsDamageCheckDeath`).
+        word: u8,
+        /// The style (`+0`): bit 7 at the battler's second number point;
+        /// `& 0x7f` 1 or 2 the numbers the battle waits on
+        /// (`g_BtlNumbersKind1`, `g_BtlNumbersKind12`).
+        style: u8,
+        /// Updates since it was put (`+6`, `MsNumberCalcProcess` adds 1 an
+        /// update, before the update's new numbers are put): a new number
+        /// reads 0 in the snapshot after its update.
+        age: u8,
+        /// The age past which it is removed (`+7`, 30); its characters
+        /// fade over their last 5 frames.
+        life: u8,
+        /// Updates until all its characters show (the most `+5` left):
+        /// the character in place `k` waits `k + 1` updates from its put
+        /// (it shows from age `k + 1`), the lowest digit first; 0 when the
+        /// whole number shows.
+        delay: u8,
+        /// The battler's number point on the PS2 screen (512 x 416), where
+        /// `MsNumberDrawProcess` centres it (`+0xf44`, `+0xf48`; `+0xf4c`,
+        /// `+0xf50` with style bit 7).
+        x: i32,
+        /// See `x`.
+        y: i32,
     }
 }
 
@@ -1254,6 +1312,7 @@ pub fn structs() -> Vec<&'static StructSchema> {
         HandCursor::schema(),
         GearSpoil::schema(),
         MessageVar::schema(),
+        BattleNumber::schema(),
     ]
 }
 
@@ -1335,8 +1394,8 @@ mod tests {
             + battle_end
             + target;
         // the effects (default: no running ones, no filters): magic, the
-        // two list counts, shake, music
-        let effects = 4 + 2 + 2 + 4 + 4 + 4;
+        // two list counts, shake, music (API 12: no numbers)
+        let effects = 4 + 2 + 2 + 4 + 4 + 4 + 2;
         // the look (no lights): valid, the scale, ambient, background, glow,
         // fog, character ambient, the lights' count, the global time
         let look = 1 + 12 + 12 + 12 + 16 + 12 + 16 + 12 + 2 + 4;
@@ -1373,7 +1432,7 @@ mod tests {
     }
 
     /// FNV-1a of `schema::text()` at [`API_VERSION`].
-    const PINNED: u64 = 0x50fc_4bd9_0abc_f2fd;
+    const PINNED: u64 = 0x05f2_5cab_e346_93ad;
 
     /// A field change must raise [`API_VERSION`]: the schema's text is
     /// pinned to the version here.
@@ -1385,7 +1444,7 @@ mod tests {
         });
         assert_eq!(
             (API_VERSION, hash),
-            (11, PINNED),
+            (12, PINNED),
             "the schema changed: raise API_VERSION and pin the new hash"
         );
     }
@@ -1416,7 +1475,7 @@ mod tests {
             ]
         );
         assert!(matches!(s.fields[5].ty, Ty::List(_)));
-        assert_eq!(structs().len(), 37);
+        assert_eq!(structs().len(), 38);
         assert!(Actor::schema().fields.iter().all(|f| !f.doc.is_empty()));
     }
 }

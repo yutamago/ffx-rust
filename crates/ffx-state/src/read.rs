@@ -11,10 +11,11 @@ use ffx_bridge::x87;
 use ffx_chara::layout as l;
 
 use crate::{
-    Actor, ActorModel, BattleEnd, BattleEndRow, BattleTarget, Battler, Bone, Boosters, Camera,
-    ConfigMenu, ConfigOption, ConfigRow, EffectInstance, Effects, GearSpoil, GridLink, GridNode,
-    HandCursor, Input, ItemStack, LayerEntry, Layers, Light, Look, MenuOption, MenuWindow, Menus,
-    Message, PartyMember, Save, SceneMesh, SceneObject, ScreenFilter, Snapshot, SphereGrid, World,
+    Actor, ActorModel, BattleEnd, BattleEndRow, BattleNumber, BattleTarget, Battler, Bone,
+    Boosters, Camera, ConfigMenu, ConfigOption, ConfigRow, EffectInstance, Effects, GearSpoil,
+    GridLink, GridNode, HandCursor, Input, ItemStack, LayerEntry, Layers, Light, Look, MenuOption,
+    MenuWindow, Menus, Message, PartyMember, Save, SceneMesh, SceneObject, ScreenFilter, Snapshot,
+    SphereGrid, World,
 };
 
 mod text;
@@ -142,6 +143,13 @@ const MAX_TEXT: usize = 2048;
 const BTL_CHR_TOP: u32 = 0x0113_34d4;
 const BTL_CHR_SIZE: u32 = 0xf90;
 const BTL_CHR_COUNT: u32 = 0x1f;
+/// `g_BtlNumbers`: the damage numbers' records (a pointer; 0x80 records of
+/// 0x14 bytes, `+0` 0 free), `MsNumberPut` (`0x0079fc60`).
+const BTL_NUMBERS: u32 = 0x0113_60b8;
+const NUMBER_RECORDS: u32 = 0x80;
+const NUMBER_SIZE: u32 = 0x14;
+/// `g_BtlNumberList`: the first record on screen, each linked at `+0x10`.
+const BTL_NUMBER_LIST: u32 = 0x0113_60bc;
 
 /// `g_MagicFile_MagicId`: the spell playing, -1 none.
 const MAGIC_ID: u32 = 0x00c6_4ca0;
@@ -376,9 +384,90 @@ fn battlers(m: &Mem<'_>) -> Vec<Battler> {
                 dead: m.u8(f(0xdcc)) != 0,
                 exists: m.u8(f(0xdd2)) != 0,
                 ctb: m.i32(f(0x6ec)),
+                damage: m.i32(f(0xd34)),
             })
         })
         .collect()
+}
+
+/// The damage numbers on screen, in battle only: the list of
+/// `g_BtlNumbers`' records walked from `g_BtlNumberList` (at most its 0x80
+/// records, each inside the pool on a record's boundary, else the walk
+/// stops), the characters of one `MsNumberRegist` joined into a number.
+/// They are put in a row: the digits lowest first at places 0, 1, ..,
+/// then the word (one glyph) at the place after them, all with the same
+/// battler, style, colour, age and life.
+fn battle_numbers(m: &Mem<'_>) -> Vec<BattleNumber> {
+    let pool = m.u32(BTL_NUMBERS);
+    let mut out = Vec::new();
+    if pool == 0 || m.u8(BTL_STATUS) == 0 {
+        return out;
+    }
+    let mut records = [0u8; (NUMBER_RECORDS * NUMBER_SIZE) as usize];
+    if !m.0.read_bytes(pool, &mut records) {
+        return out;
+    }
+    let top = m.u32(BTL_CHR_TOP);
+    let mut node = m.u32(BTL_NUMBER_LIST);
+    let mut value = 0i64;
+    for _ in 0..NUMBER_RECORDS {
+        let off = node.wrapping_sub(pool);
+        if node == 0 || off >= NUMBER_RECORDS * NUMBER_SIZE || !off.is_multiple_of(NUMBER_SIZE) {
+            break;
+        }
+        let r = &records[off as usize..(off + NUMBER_SIZE) as usize];
+        if r[0] == 0 {
+            break;
+        }
+        let (style, colour, battler, place, ch) = (r[0], r[1], r[2], r[3], r[4]);
+        let (delay, age, life) = (r[5], r[6], r[7]);
+        let joins = out.last().is_some_and(|n: &BattleNumber| {
+            n.battler == battler
+                && n.style == style
+                && n.colour == colour
+                && n.age == age
+                && n.life == life
+                && n.word == 0
+                && n.digits == place
+        });
+        if !joins {
+            // the battler's number point (`MsNumberDrawProcess`)
+            let at = top
+                .wrapping_add(u32::from(battler) * BTL_CHR_SIZE)
+                .wrapping_add(if style & 0x80 == 0 { 0xf44 } else { 0xf4c });
+            let (x, y) = if top != 0 && u32::from(battler) < BTL_CHR_COUNT {
+                (m.i32(at), m.i32(at.wrapping_add(4)))
+            } else {
+                (0, 0)
+            };
+            out.push(BattleNumber {
+                battler,
+                value: -1,
+                digits: 0,
+                colour,
+                word: 0,
+                style,
+                age,
+                life,
+                delay: 0,
+                x,
+                y,
+            });
+            value = 0;
+        }
+        let n = out.last_mut().expect("pushed above");
+        n.delay = n.delay.max(delay);
+        // `MsNumberDigits` splits into 0..9; the words' glyphs are above
+        if ch < 10 && n.digits < 9 {
+            value += i64::from(ch) * 10i64.pow(u32::from(n.digits));
+            n.digits += 1;
+            n.value = i32::try_from(value).unwrap_or(i32::MAX);
+        } else {
+            n.word = ch;
+        }
+        node = u32::from_le_bytes([r[0x10], r[0x11], r[0x12], r[0x13]]);
+    }
+    out
 }
 
 fn effects(m: &Mem<'_>) -> Effects {
@@ -447,6 +536,7 @@ fn effects(m: &Mem<'_>) -> Effects {
         shake_x: m.f32(SCREEN_SHAKE),
         shake_y: m.f32(SCREEN_SHAKE + 4),
         music: m.i32(MUSIC),
+        numbers: battle_numbers(m),
     }
 }
 
@@ -1597,6 +1687,67 @@ mod tests {
 
     fn f(v: f32) -> [u8; 4] {
         v.to_le_bytes()
+    }
+
+    #[test]
+    fn the_damage_numbers_join_their_characters() {
+        let (pool, top) = (0x0200_0000_u32, 0x0210_0000_u32);
+        let mut m = Sparse(HashMap::new());
+        m.put(BTL_STATUS, &[1]);
+        m.put(BTL_NUMBERS, &pool.to_le_bytes());
+        m.put(pool, &[0; (NUMBER_RECORDS * NUMBER_SIZE) as usize]);
+        m.put(BTL_CHR_TOP, &top.to_le_bytes());
+        // battler 0x14's number points
+        let a = top + 0x14 * BTL_CHR_SIZE;
+        m.put(a + 0xf44, &[100, 0, 0, 0, 200, 0, 0, 0]);
+        m.put(a + 0xf4c, &[110, 0, 0, 0, 210, 0, 0, 0]);
+        // (style, colour, battler, place, character, delay, age, life),
+        // in list order, out of the pool's order: 1234 on 0x14 (its
+        // delays counted down), "Overkill" on 0x14 at the second point, 7
+        // MP healed on 0, a lone 5 on 0 put an update later
+        let recs: [(u32, [u8; 8]); 9] = [
+            (5, [1, 0, 0x14, 0, 4, 0, 3, 30]),
+            (2, [1, 0, 0x14, 1, 3, 0, 3, 30]),
+            (9, [1, 0, 0x14, 2, 2, 0, 3, 30]),
+            (0, [1, 0, 0x14, 3, 1, 1, 3, 30]),
+            (7, [0x81, 2, 0x14, 0, 0x3d, 0, 3, 30]),
+            (1, [1, 1, 0, 0, 7, 0, 2, 30]),
+            (3, [1, 1, 0, 1, 0x3a, 1, 2, 30]),
+            (4, [1, 0, 0, 0, 5, 0, 1, 30]),
+            (0x7f, [1, 0, 0, 0, 9, 0, 1, 30]),
+        ];
+        let at = |i: u32| pool + i * NUMBER_SIZE;
+        m.put(BTL_NUMBER_LIST, &at(recs[0].0).to_le_bytes());
+        for (k, (i, r)) in recs.iter().enumerate() {
+            m.put(at(*i), r);
+            // the last one links outside the pool: the walk stops
+            let next = recs.get(k + 1).map_or(0, |n| at(n.0));
+            let next = if k == recs.len() - 2 { pool + 3 } else { next };
+            m.put(at(*i) + 0x10, &next.to_le_bytes());
+        }
+        let n = read(&m, 0, 0.0).effects.numbers;
+        let got: Vec<_> = n
+            .iter()
+            .map(|n| {
+                (
+                    n.battler, n.value, n.digits, n.colour, n.word, n.age, n.delay,
+                )
+            })
+            .collect();
+        assert_eq!(
+            got,
+            [
+                (0x14, 1234, 4, 0, 0, 3, 1),
+                (0x14, -1, 0, 2, 0x3d, 3, 0),
+                (0, 7, 1, 1, 0x3a, 2, 1),
+                (0, 5, 1, 0, 0, 1, 0),
+            ]
+        );
+        assert_eq!((n[0].x, n[0].y, n[1].x, n[1].y), (100, 200, 110, 210));
+        assert_eq!((n[0].style, n[1].style, n[0].life), (1, 0x81, 30));
+        // out of battle: none
+        m.put(BTL_STATUS, &[0]);
+        assert_eq!(read(&m, 0, 0.0).effects.numbers, []);
     }
 
     #[test]
