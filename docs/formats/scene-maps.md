@@ -542,9 +542,15 @@ A map's starting camera is in one of two places.
   (`rcbgSetProjectionMatrixSub`). In the 3D world, ffx-remix takes the
   eye and target x 10 (`rcbgSetViewMatrix`, `rcbgScaleVector`) with x
   and y negated (as `graphicCameraSetWorldMatrix` turns the PS2 view),
-  and up with x and y negated. That conversion is **not checked against
-  a capture** of any of the 28 3D maps, and how the PC renderer uses the
-  y offset is open.
+  and up with x and y negated. gd-ffx checked that conversion against
+  the camera the game draws with (the state API's scene camera,
+  2026-11-18): on `slik04` (developer save 12, one of the 28 3D maps;
+  scene 0's block) and `ptkl14` (developer save 14, 2D layers only) the
+  eye is the block's times 10 with x and y negated to 0.01 units, the
+  view direction the block's to 0.02°, and the vertical field of view
+  `2 atan(0.75 tan(fov / 2))` the game's to 0.01° (40.70° and 35.29°).
+  Both blocks have a y offset of 0; how the PC renderer uses another one
+  is open.
 - **The event script's camera worker**, on any map that has one.
   `AtelRequestMapCamera` (`0x0086ed80`) signals the camera worker
   (script block `+0x18`) with the camera entry of the current entrance's
