@@ -552,8 +552,8 @@ animation's first byte is set while they run (`rcefObjIsParEnd`,
 - Background files (`rcbgLoadBin` `0x00921d60`, from `Yn_PreBgSetData`):
   a `YNDT` chunk, then chunks with a 16-byte header (the tag from the
   `rcbgChkId` table, `+4` the body's length in 16-byte units, the
-  header not counted: `YNDT` 0 and `YNPR` 1 on `kami01`, `+0xa` a scene
-  index): `YNPR` the map (`rcbgPreInit`, `rcbgPreLoad`), `YNSC` the next
+  header not counted (`rcbgLoadBin` goes on at `body + length`), `+0xa`
+  a scene index): `YNPR` the map (`rcbgPreInit`, `rcbgPreLoad`), `YNSC` the next
   scene (`rcbgSceneLoad`: layers, the camera block, `rcbgSceneChkLayers` /
   `rcbgSceneChkSortLayer`, `rcbgSceneSetMatrix`), `YNSM`/`YNST` a model or
   transfer of that scene, `YNTT`/`YNFT` texture transfers of the current
@@ -1902,11 +1902,13 @@ writer should keep the stored links. 717 of the pages' 301,978 triangles
 point in them (main.md, "Round 13: the id triangle under a point
 (`Sg_IdFindTriangle`)"). Another 720 have no area in x and z.
 
-A vertex over the page's scale / 10 is in field units, in the space the
-characters' positions are in: gd-ffx's remaster editor draws Besaid
-beach's page 0 (518 vertices, 839 triangles, every one kind 0) that way,
-and the player of developer save 7 stands 0.00 units from it, the five
-other characters shown there within 1.5 (checked 2026-11-18).
+A vertex divided by the id map's scale (the page's `+0x0c` over 10, as
+the table says) is in field units, the space the characters' positions
+are in. Checked 2026-11-18: gd-ffx's remaster editor draws Besaid beach's
+page 0 (`bsil00`; 518 vertices, 839 triangles, every one kind 0) that
+way, and the player of developer save 7 is at the walk mesh's height
+(0.00 field units off), the five other characters shown there within 1.5
+field units of it.
 
 ## Sqs standby requests and info paths (round 36)
 
