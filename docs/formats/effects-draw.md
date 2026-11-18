@@ -468,18 +468,22 @@ it:
 | fixed pairs | `opus_0706_noise_draw` `(0x15, …)`, `opus_0706_noise_update`/`_acc_update` `(1|2, 0x2c2)`, `opus_0154_wave_draw` `(b, 0x9a)`, `setPolyTris0434`/`setPolyQuad0434` `(0|1, id)`, `AtelExecDrawShape`, `rcbgGuideUpdateWalk`, `rcefModelProc`, … | |
 
 **Which field program.** A map's field program (scene-maps.md, "Map
-effects: the field-program table") runs entry `i` of `g_FpData` as the ppp
-part `g_FpRun + 0x80 i` (`0x00d2c260`; `pppStartPart` from `pppFpLoop`), and
-`pppCreatePObject` links each object it makes into that part's list: the head
-at part `+0x30`, each object's next at `+0`, its birth record at `+8`. So the
-entry of a field-program draw is the part whose list holds the key's object:
-walking the `u16` count at `g_FpData + 4` parts' lists at the frame's boundary
-resolves every field-program draw (gd-ffx R7a, `rust/ffx-gd/src/fxowner.rs`:
-on Besaid beach, developer save 7, all 30 draws, 15 entries, the save sphere's
-glow entry 15 with the six list entries above; other maps not counted). A table entry's position (`+0`, field units) is its place as
-`(-x, -y, z)`, unless the entry sticks to a character or object (`g_FpDisp`
-`+0` low bits) or its program places the draws itself (the save sphere's
-entry is at the origin; its draws' world matrices hold the sphere's place).
+effects: the field-program table") runs entry `i` of the table `g_FpData`
+points to as the ppp part `g_FpRun + 0x80 i` (`0x00d2c260`; `pppStartPart`
+from `pppFpLoop`), and `pppCreatePObject` links each object it makes into
+that part's list: the head at part `+0x30`, each object's next at `+0`, its
+birth record at `+8`. So the entry of a field-program draw is the part whose
+list holds the key's object. Walking the lists of the table's parts (the
+table's `u16` count is at `[g_FpData] + 4`) between updates, while the
+frame's objects still exist, resolves every field-program draw. gd-ffx R7a
+measured this on Besaid beach (developer save 7; its
+`rust/ffx-gd/src/fxowner.rs`): all 30 draws resolve to 15 table entries,
+the save sphere's glow to entry 15 (state-api.md, "Effect draws"); other
+maps were not counted. A table entry's position (`+0`, field units) is its
+place as `(-x, -y, z)` unless the entry sticks to a character or object
+(`g_FpDisp` `+0` low bits). Besaid's entry 15 is at the origin while its
+draws' world matrices hold the sphere's place; what places them was not
+checked.
 
 For a ppp key the census walks object `+8` (its birth record) `+0` (the
 program list), entry `index` (`+0x28 + 0x10 index`, count `+0x26`) to the
