@@ -551,8 +551,8 @@ A map's starting camera is in one of two places.
   with x and y negated, to 0.01 field units (render space); the block's
   target - eye with x and y negated is the camera's -Z axis in
   `Camera.world`, to 0.02° (up not compared); and the vertical field of
-  view `2 atan(0.75 tan(fov / 2))` is the game's to 0.01° (40.70° on
-  `slik04`, 35.29° on `ptkl14`).
+  view `2 atan(0.75 tan(fov / 2))` is the game's to 0.01° (the game's
+  `fov_y`: 40.70° on `slik04`, 35.29° on `ptkl14`).
   Both blocks have a y offset of 0; how the PC renderer uses another one
   is open.
 - **The event script's camera worker**, on any map that has one.
