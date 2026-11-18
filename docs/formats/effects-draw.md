@@ -474,24 +474,25 @@ points to as the ppp part `g_FpRun` (`0x00d2c260`) `+ 0x80 i`
 it makes into that part's list: the head at part `+0x30`, each object's next
 at `+0`, its birth record at `+8`. So the entry of a field-program draw is
 the part whose list holds the key's object. Walking the lists of the
-table's parts (the table's `u16` count is at `[g_FpData] + 4`) after the
-draw's effect pass and before the next update (frame-timing.md, "The
-effects step in the draw") resolved every field-program draw on Besaid
+table's parts (the table's `u16` count is at `[g_FpData] + 4`) at the end
+of the frame's effect passes (frame-timing.md, "The effects step in the
+draw": `exec` passes, at least one) resolved every field-program draw on Besaid
 beach (developer save 7; gd-ffx R7a, its `rust/ffx-gd/src/fxowner.rs`): all
-30 draws to 15 table entries, the save sphere's glow to entry (index) 15
+30 draws to 15 table entries, the save sphere's glow to table entry 15
 (state-api.md, "Effect draws"); other maps were not counted. In general
-(worked out from the code, not seen): an object deleted in the same effect
-pass that drew it (its end frame, or its entry ending: `end_objects` in
+(worked out from the code, not seen): an object deleted in the frame's
+passes after it drew (its end frame, or its entry ending: `end_objects` in
 `pppRunPartFp`, `free_objects` in `pppFpLoop`) is no longer in any list,
-so its draw has no entry; and if a later entry's birth in that pass reuses
-its address, the walk names that later entry instead, a wrong answer with
+so its draw has no entry; and if a later birth in those passes reuses its
+address, the walk names that later entry instead, a wrong answer with
 no sign of failure. A table entry's position
 (`+0`, field units) is its place as `(-x, -y, z)` (scene-maps.md,
-"Position") unless the entry sticks to a character or object (its
-`g_FpDisp` record's `+0`, low four bits) or has display flag `0x100`, which
-takes the display record's matrix (`+0xc`, set by `rcbgFPmRestart` from a
-character element). Besaid's entry 15 is at the origin
-while its draws' world matrices hold the sphere's place, as `cdsp00`'s glow
+"Position") unless any of the low four bits or `0x100` of its `g_FpDisp`
+record's `+0` is set: then the display record's matrix (`+0xc`) places it,
+times the stick target's matrix for bits 1, 2 and 8 (`pppFpLoopMatrix`);
+`rcbgFPmRestart` (from a character element) and `rcbgFPmStartList` (from
+its list entry) set those. Besaid's entry 15 is at the origin
+while its draws' world matrices hold the sphere's place, like `cdsp00`'s glow
 (entry 0, bound by a worker's script); what places Besaid's was not checked.
 
 For a ppp key the census walks object `+8` (its birth record) `+0` (the
