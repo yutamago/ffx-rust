@@ -474,18 +474,23 @@ points to as the ppp part `g_FpRun` (`0x00d2c260`) `+ 0x80 i`
 it makes into that part's list: the head at part `+0x30`, each object's next
 at `+0`, its birth record at `+8`. So the entry of a field-program draw is
 the part whose list holds the key's object. Walking the lists of the
-table's parts (the table's `u16` count is at `[g_FpData] + 4`) between
-updates resolved every field-program draw on Besaid beach (developer save
-7; gd-ffx R7a, its `rust/ffx-gd/src/fxowner.rs`): all 30 draws to 15 table
-entries, the save sphere's glow to entry (index) 15 (state-api.md, "Effect
-draws"); other maps were not counted. It cannot resolve every draw in
-general: an object deleted in its own update (its end frame, or its entry
-ending or restarting, `pppRunPartFp` and `pppFpLoop`) is gone by the
-boundary, and its address may be reused by a later entry's birth in the
-same pass (worked out from the code, not seen). A table entry's position
+table's parts (the table's `u16` count is at `[g_FpData] + 4`) after the
+draw's effect pass and before the next update (frame-timing.md, "The
+effects step in the draw") resolved every field-program draw on Besaid
+beach (developer save 7; gd-ffx R7a, its `rust/ffx-gd/src/fxowner.rs`): all
+30 draws to 15 table entries, the save sphere's glow to entry (index) 15
+(state-api.md, "Effect draws"); other maps were not counted. In general
+(worked out from the code, not seen): an object deleted in the same effect
+pass that drew it (its end frame, or its entry ending: `end_objects` in
+`pppRunPartFp`, `free_objects` in `pppFpLoop`) is no longer in any list,
+so its draw has no entry; and if a later entry's birth in that pass reuses
+its address, the walk names that later entry instead, a wrong answer with
+no sign of failure. A table entry's position
 (`+0`, field units) is its place as `(-x, -y, z)` (scene-maps.md,
 "Position") unless the entry sticks to a character or object (its
-`g_FpDisp` record's `+0`, low four bits). Besaid's entry 15 is at the origin
+`g_FpDisp` record's `+0`, low four bits) or has display flag `0x100`, which
+takes the display record's matrix (`+0xc`, set by `rcbgFPmRestart` from a
+character element). Besaid's entry 15 is at the origin
 while its draws' world matrices hold the sphere's place, as `cdsp00`'s glow
 (entry 0, bound by a worker's script); what places Besaid's was not checked.
 
