@@ -481,19 +481,22 @@ beach (developer save 7; gd-ffx R7a, its `rust/ffx-gd/src/fxowner.rs`): all
 30 draws to 15 table entries, the save sphere's glow to table entry 15
 (state-api.md, "Effect draws"); other maps were not counted. In general
 (worked out from the code, not seen): an object deleted in the frame's
-passes after it drew (its end frame, or its entry ending: `end_objects` in
-part.rs's `ppp_run_part_fp`, `free_objects` in fp.rs's `ppp_fp_loop`) is no
+passes after it drew (its end frame, or its entry ending: `end_objects`
+reached from part.rs's `ppp_run_part_fp`, `free_objects` in fp.rs's `ppp_fp_loop`) is no
 longer in any list, so its draw has no entry; and if a later birth in those
 passes reuses its address, the walk names the reusing object's entry, which
 may be another one, with no sign of failure. A table entry's position
 (`+0`, field units) is its place as `(-x, -y, z)` (scene-maps.md,
 "Position") unless any of the low four bits or `0x100` of its `g_FpDisp`
 record's `+0` is set: then the display record's matrix (`+0xc`) places it,
-times the stick target's matrix (`+4`, when set) for bits 1, 2 and 8
-(`pppFpLoopMatrix`). The `pppFpSetStick*` functions set the sticking bits,
-the target and `+0xc` (`pppFpResetStick` clears them), usually from the
-event scripts (`AtelBindFp`, the `0x805x` natives); `rcbgFPmRestart` (a
-character element) and `rcbgFPmStartList` (its list entry) set them too.
+times the stick target's matrix (`+4`, when set) for flags 1, 2 and 8
+(`pppFpLoopMatrix`). `pppFpSetStickChr`/`Map`/`MapDObj` set a sticking flag
+(1, 2, 8) and the target, `pppFpSetStickPos` sets `+0xc`, and
+`pppFpResetStick` clears the low four bits and the target (not `0x100` or
+`+0xc`); the event scripts call them (e.g. `AtelBindFp`, natives
+`0x8058`-`0x805b` and `0x8069`). `rcbgFPmRestart` sets `0x100` and `+0xc`
+(a character element's matrix); `rcbgFPmStartList` resets, then sets a
+sticking flag, 4 or `0x100`, then `0x60` and `+0xc` (its list entry).
 Besaid's entry 15 is at the origin while its draws' world matrices hold the
 sphere's place (both measured by gd-ffx R7a), like `cdsp00`'s glow
 (entry 0, bound by a worker's script); what places Besaid's was not checked.
