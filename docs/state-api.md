@@ -425,8 +425,12 @@ hemispheres of 128 vertices (flags 8, centred 6.2 above it, radius about
 2.5), two sparkle quads (0xa), a textured disc (8, two segments) and an
 untextured disc (2, two segments) at 2.4 and 2.5 above it. Their keys'
 low words are 6, 8 and 9 and their high words addresses in `0x00d29c68`
-.. `0x00d2c118` (field effect objects; which field program each is was
-not resolved).
+.. `0x00d2c118`: ppp objects of the map's field programs. Which entry of the
+map's field-program table made each draw follows from the objects' owners
+(effects-draw.md, "Instance keys and makers"): list entries 0-18 (the sea's
+22 draws) come from table entries 0 to 13, list entries 19-24 (the save
+sphere's 8 draws) from table entry 15 of `bsil00`'s table (gd-ffx R7a:
+all 30 draws resolve to 15 table entries).
 
 The distortion moves on developer saves 4 (`cdsp07`), 29 (`lchb08`) and
 76 (`stbv00`): samples up to 0.0076 of the screen off their vertices
