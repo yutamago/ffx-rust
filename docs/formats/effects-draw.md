@@ -482,17 +482,20 @@ beach (developer save 7; gd-ffx R7a, its `rust/ffx-gd/src/fxowner.rs`): all
 (state-api.md, "Effect draws"); other maps were not counted. In general
 (worked out from the code, not seen): an object deleted in the frame's
 passes after it drew (its end frame, or its entry ending: `end_objects` in
-`pppRunPartFp`, `free_objects` in `pppFpLoop`) is no longer in any list,
-so its draw has no entry; and if a later birth in those passes reuses its
-address, the walk names that later entry instead, a wrong answer with
-no sign of failure. A table entry's position
+part.rs's `ppp_run_part_fp`, `free_objects` in fp.rs's `ppp_fp_loop`) is no
+longer in any list, so its draw has no entry; and if a later birth in those
+passes reuses its address, the walk names the reusing object's entry, which
+may be another one, with no sign of failure. A table entry's position
 (`+0`, field units) is its place as `(-x, -y, z)` (scene-maps.md,
 "Position") unless any of the low four bits or `0x100` of its `g_FpDisp`
 record's `+0` is set: then the display record's matrix (`+0xc`) places it,
-times the stick target's matrix for bits 1, 2 and 8 (`pppFpLoopMatrix`);
-`rcbgFPmRestart` (from a character element) and `rcbgFPmStartList` (from
-its list entry) set those. Besaid's entry 15 is at the origin
-while its draws' world matrices hold the sphere's place, like `cdsp00`'s glow
+times the stick target's matrix (`+4`, when set) for bits 1, 2 and 8
+(`pppFpLoopMatrix`). The `pppFpSetStick*` functions set the sticking bits,
+the target and `+0xc` (`pppFpResetStick` clears them), usually from the
+event scripts (`AtelBindFp`, the `0x805x` natives); `rcbgFPmRestart` (a
+character element) and `rcbgFPmStartList` (its list entry) set them too.
+Besaid's entry 15 is at the origin while its draws' world matrices hold the
+sphere's place (both measured by gd-ffx R7a), like `cdsp00`'s glow
 (entry 0, bound by a worker's script); what places Besaid's was not checked.
 
 For a ppp key the census walks object `+8` (its birth record) `+0` (the
