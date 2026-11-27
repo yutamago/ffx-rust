@@ -47,6 +47,14 @@
 //! The game directory defaults to `FFX_GAME_DIR`, then the directory of
 //! this executable. The run's report goes to stdout. Development build:
 //! functions without a port run in Unicorn from the player's `FFX.exe`.
+//!
+//! Started with no arguments outside the harness, it is a player's run
+//! (`ffx_host::player`; docs/host.md, "A player's run"): the game folder
+//! is `FFX_GAME_DIR`, else the current folder or this executable's when
+//! it holds `FFX.exe`, else Steam's install of the game; the documents
+//! folder the original uses (Linux: the game's Proton prefix, else a
+//! folder of our own); `SteamAppId` set when Steam didn't set it; no time
+//! limit. Problems show in a message box.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -54,6 +62,13 @@ use std::time::{Duration, Instant};
 
 #[allow(clippy::too_many_lines)] // the argument loop and the report
 fn main() -> ExitCode {
+    // a player's run: no arguments, not under the harness
+    let player = std::env::args_os().len() <= 1 && std::env::var_os("FFX_HARNESS").is_none();
+    if player && std::env::var_os("SteamAppId").is_none_or(|v| v.is_empty()) {
+        // SAFETY: the first thing the process does: no other thread exists
+        // to read the environment.
+        unsafe { std::env::set_var("SteamAppId", ffx_host::player::STEAM_APP_ID) };
+    }
     let mut args = std::env::args().skip(1);
     let mut game: Option<PathBuf> = std::env::var_os("FFX_GAME_DIR").map(PathBuf::from);
     let mut sym: Option<PathBuf> = None;
@@ -127,15 +142,38 @@ fn main() -> ExitCode {
     let sym = sym
         .or_else(ffx_host::report::Symbols::locate)
         .unwrap_or_else(|| PathBuf::from("symbols/ffx.sym"));
-    let game = game.or_else(|| {
-        std::env::current_exe()
-            .ok()
-            .and_then(|p| p.parent().map(PathBuf::from))
-    });
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(PathBuf::from));
+    let game = if player {
+        let cwd = std::env::current_dir().ok();
+        ffx_host::player::find_game(
+            game,
+            cwd.as_deref(),
+            exe_dir.as_deref(),
+            &ffx_host::player::steam_roots(),
+        )
+    } else {
+        game.or(exe_dir)
+    };
     let Some(game) = game else {
-        eprintln!("no game directory (--game-dir or FFX_GAME_DIR)");
+        if player {
+            ffx_host::platform::get().message_box(
+                "ffx-rust",
+                "FINAL FANTASY X/X-2 HD Remaster was not found.\n\nPut ffx-rust into the \
+                 game folder (the one with FFX.exe), start it from there, or set \
+                 FFX_GAME_DIR to that folder.",
+                false,
+            );
+        } else {
+            eprintln!("no game directory (--game-dir or FFX_GAME_DIR)");
+        }
         return ExitCode::FAILURE;
     };
+    if player && opts.documents.is_none() {
+        opts.documents =
+            ffx_host::player::documents(ffx_host::platform::get().documents_folder(), &game);
+    }
     // the draw recording only when it will be written (it grows by every
     // frame's draws)
     opts.gfx.no_record = gfx_out.is_none()
@@ -163,12 +201,27 @@ fn main() -> ExitCode {
         None if harness => !fast,
         None => replay.is_none() && !null,
     };
-    let budget = budget.unwrap_or(Duration::from_secs(if harness { 7 * 86_400 } else { 60 }));
+    // a harness game runs a week, a player's run a year (no time limit);
+    // development runs stop after a minute unless --budget says
+    let budget = budget.unwrap_or(Duration::from_secs(if harness {
+        7 * 86_400
+    } else if player {
+        365 * 86_400
+    } else {
+        60
+    }));
     let t = Instant::now();
     let table = ffx_host::ports::table();
     let mut exec = match ffx_host::boot_opts(&game.join("FFX.exe"), table, &opts) {
         Ok(e) => e,
         Err(e) => {
+            if player {
+                ffx_host::platform::get().message_box(
+                    "ffx-rust",
+                    &format!("The game could not start from {}:\n\n{e}", game.display()),
+                    false,
+                );
+            }
             eprintln!("boot: {e}");
             return ExitCode::FAILURE;
         }

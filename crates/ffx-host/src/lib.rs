@@ -61,6 +61,7 @@ pub mod library;
 pub mod log;
 pub mod observe;
 pub mod platform;
+pub mod player;
 pub mod ports;
 pub mod replay;
 pub mod report;

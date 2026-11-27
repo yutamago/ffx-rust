@@ -46,6 +46,7 @@ same memory. The release runs no `FFX.exe` code.
 | `src/harness.rs` | the test harness's protocol, served from `ffx-rust` (`docs/harness.md`, "Two processes"); its frames are the clock's updates |
 | `src/devsave.rs` | the harness's `devsave` and the archive reader under `debugLoadForViewer` (`docs/harness.md`, "Developer saves") |
 | `src/tcg_commit.rs` | Windows: commits Unicorn's translation buffers as they fill (below, "The 64-bit build on PC2") |
+| `src/player.rs` | a player's run (no arguments): the game folder (here, beside the program, Steam's libraries), the documents folder, `SteamAppId` (below, "A player's run") |
 | `src/bin/ffx-rust.rs` | the program |
 | `tests/boot.rs` | the Linux check against the image |
 | `tests/table.rs` | the `ported!` lists in the table: entries, parity with Unicorn, the boot |
@@ -2031,6 +2032,40 @@ harness's background mode.
 against the CPU (above, "x87"), throw, catch, rethrow, faults and the
 unhandled report (above, "Exceptions").
 
+## A player's run
+
+`ffx-rust` started with no arguments, outside the harness, is a player's
+run (`src/player.rs`, `src/bin/ffx-rust.rs`; 2026-11-27): a double-click,
+a desktop entry, Steam's launch options. It needs nothing else:
+
+- **The game folder**: `FFX_GAME_DIR`, else the current folder when it
+  holds `FFX.exe`, else the executable's folder when it does, else
+  Steam's install of app 359870: every Steam installation
+  (`player::steam_roots`: the registry's `SteamPath` and Program Files
+  on Windows, `~/Library/Application Support/Steam` on macOS, the
+  native, Debian, Flatpak and Snap folders on Linux), each library in
+  its `steamapps/libraryfolders.vdf`, the game's
+  `appmanifest_359870.acf` (`installdir`). Folder names are matched
+  without case.
+- **The documents folder**: the platform's (Windows:
+  `SHGetFolderPathW(CSIDL_PERSONAL)`, as `FFX.exe` and `ffx-launch`), else
+  on Linux the game's Proton prefix
+  (`steamapps/compatdata/359870/pfx/drive_c/users/steamuser/Documents`,
+  so saves stay shared with the original under Proton), else our own
+  (`$XDG_DATA_HOME/ffx-rust/Documents`, `~/Library/Application
+  Support/ffx-rust/Documents` on macOS).
+- **`SteamAppId=359870`** when Steam didn't set it, before any thread
+  starts.
+- **No time limit** (a year, as `ffx-launch`'s `--budget`); other runs
+  without `--budget` keep the 60 s development default, harness games a
+  week.
+- No game found, or a boot error: a message box
+  (`Platform::message_box`; headless: stderr), exit status 1.
+
+`ffx-launch --rust` passes arguments, so it is not a player's run in
+this sense: it finds the game and the documents folder itself and
+passes them.
+
 ## Building for Windows
 
 `tools/build-host.sh` (`build`, or `clippy` with cargo's arguments after
@@ -2065,13 +2100,37 @@ zvidlib-vp8's `LICENSE` and `THIRD_PARTY_NOTICES.md`, `ffx-movie`'s
 checkout at the pinned rev) and `steam_api64-NOTICE.txt`
 (`tools/release/`).
 
+**Platforms** (2026-11-27). `--target` picks one:
+`x86_64-pc-windows-msvc` (the default, `-win64.zip`, as above),
+`x86_64-unknown-linux-gnu` (`-linux-x64.tar.gz`),
+`aarch64-unknown-linux-gnu` (`-linux-arm64.tar.gz`) and
+`aarch64-apple-darwin` (`-macos-arm64.tar.gz`). The Linux and macOS
+packages hold `ffx-rust`, `ffx.sym`, `README.txt` (LF), `SHA256SUMS.txt`
+and `licences/` without Steam's notice: no launcher, no Steam library
+yet. Windows builds from Linux through cargo-xwin or natively on Windows
+(Git Bash); the others build natively only. Off Windows `ffx-rust` runs
+on the headless platform today (no window, sound or input), so those
+packages are built but not published.
+
+**The release workflow** (`.github/workflows/release.yml`) runs
+`tools/package-release.sh` on one runner per platform (`windows-2025`,
+`macos-15`, `ubuntu-24.04`, `ubuntu-24.04-arm`). A tag `v*` publishes a
+GitHub release (a pre-release for `v0.*`) with the archives of the
+platforms in the workflow's `PUBLISHED` (today `win64`) and a
+`SHA256SUMS.txt`; run by hand it only keeps the archives as artifacts.
+`FFX_RELEASE_LABEL` (the tag) replaces `<version>-<rev>` in the names.
+The Windows package carries `steam_api64.dll` when the repository secret
+`STEAM_API64_DLL_B64` holds it (base64), else `--without-steam`.
+
 ```bash
 tools/package-release.sh --dry-run          # no build, no zip: stage, check, self-test (seconds)
 tools/package-release.sh --dev --dry-run    # the same for the development package
 tools/package-release.sh                    # the release (no emulator: boots only as far as the Rust side reaches)
 tools/package-release.sh --dev [--out DIR]  # ffx-rust-<version>-<rev>-win64-dev-not-for-release.zip
 tools/package-release.sh --prebuilt DIR     # package DIR's ffx-rust.exe and ffx-launch.exe
-python3 -I tools/release-files.py check DIR [--dev]   # the checks on any staged folder
+tools/package-release.sh --target x86_64-unknown-linux-gnu   # another platform (native build)
+tools/package-release.sh --without-steam    # Windows without steam_api64.dll
+python3 -I tools/release-files.py check DIR [--target T] [--dev] [--without-steam]   # the checks on any staged folder
 ```
 
 - **Features.** `FFX_RELEASE_FEATURES` (default `swf`), built with
