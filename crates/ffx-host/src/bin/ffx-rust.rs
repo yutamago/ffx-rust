@@ -60,15 +60,27 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
-#[allow(clippy::too_many_lines)] // the argument loop and the report
+/// A player's run: no arguments, not under the harness.
+fn player() -> bool {
+    std::env::args_os().len() <= 1 && std::env::var_os("FFX_HARNESS").is_none()
+}
+
+/// The program on the platform its system gives a player
+/// (`ffx_host::platform::run_main`: off Windows on a desktop the native
+/// platform, whose event loop takes this, the main, thread and runs
+/// [`run`] on another).
 fn main() -> ExitCode {
-    // a player's run: no arguments, not under the harness
-    let player = std::env::args_os().len() <= 1 && std::env::var_os("FFX_HARNESS").is_none();
-    if player && std::env::var_os("SteamAppId").is_none_or(|v| v.is_empty()) {
+    if player() && std::env::var_os("SteamAppId").is_none_or(|v| v.is_empty()) {
         // SAFETY: the first thing the process does: no other thread exists
         // to read the environment.
         unsafe { std::env::set_var("SteamAppId", ffx_host::player::STEAM_APP_ID) };
     }
+    ffx_host::platform::run_main(run)
+}
+
+#[allow(clippy::too_many_lines)] // the argument loop and the report
+fn run() -> ExitCode {
+    let player = player();
     let mut args = std::env::args().skip(1);
     let mut game: Option<PathBuf> = std::env::var_os("FFX_GAME_DIR").map(PathBuf::from);
     let mut sym: Option<PathBuf> = None;

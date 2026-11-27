@@ -82,13 +82,26 @@ ffx-system.workspace = true
 # The Flash screens on Ruffle (src/iggy/swf.rs): heavy (wgpu), so a feature.
 ffx-swf = { workspace = true, optional = true }
 goblin.workspace = true
+# Steam's library, loaded at run time (src/platform/steam_api.rs)
+libloading = "0.8"
 md-5.workspace = true
 miniz_oxide.workspace = true
+# the window handles the platform hands the graphics back end
+# (`platform::Surface`)
+raw-window-handle = "0.6"
 thiserror.workspace = true
 unicorn-engine = { workspace = true, optional = true }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+# The native platform off Windows (src/platform/native.rs; docs/host.md,
+# "Native platform"): the window and its events, the sound output, the
+# pads.
+[target.'cfg(not(windows))'.dependencies]
+cpal = "0.18"
+gilrs = "0.11"
+winit = { version = "0.30", default-features = false, features = ["rwh_06", "x11", "wayland", "wayland-dlopen"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { workspace = true, features = [

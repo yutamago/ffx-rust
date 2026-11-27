@@ -1,15 +1,26 @@
-//! The Windows platform's Steam: the real `steam_api64.dll`, loaded at run
-//! time (docs/host.md, "Steam"): `FFX_STEAM_API`, else beside the running
-//! executable.
+//! Steam's library, loaded at run time (docs/host.md, "Steam"): Windows'
+//! `steam_api64.dll`, Linux's `libsteam_api.so`, macOS's
+//! `libsteam_api.dylib`; `FFX_STEAM_API`, else beside the running
+//! executable. The flat exports and the interfaces' vtable slots are the
+//! same on every system (`this` first in the C convention: Win64's on
+//! Windows, System V's or AAPCS64's elsewhere); what differs, the callback
+//! objects' vtable order and the callback structs' packing, is
+//! `crate::steam`'s (`HostCallback`, `CALLBACKS`).
 
 use std::collections::HashMap;
 use std::ffi::{CStr, c_char, c_void};
 use std::path::Path;
 
-use windows_sys::Win32::Foundation::HMODULE;
-use windows_sys::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
-
 use crate::steam::{Backend, Call, Event, HostCallback, Iface, Reply};
+
+/// The library's file name on this system.
+pub const LIBRARY: &str = if cfg!(windows) {
+    "steam_api64.dll"
+} else if cfg!(target_os = "macos") {
+    "libsteam_api.dylib"
+} else {
+    "libsteam_api.so"
+};
 
 /// `SteamInternal_SteamAPI_Init(versions, SteamErrMsg *)` ->
 /// `ESteamAPIInitResult` (0: OK).
@@ -25,7 +36,7 @@ type UserIface = unsafe extern "C" fn(*mut c_void, i32, i32, *const c_char) -> *
 /// `SteamAPI_ISteamClient_GetISteamUtils`: (client, pipe, version).
 type PipeIface = unsafe extern "C" fn(*mut c_void, i32, *const c_char) -> *mut c_void;
 
-/// `steam_api64.dll`'s entry points and the interfaces it gave.
+/// The library's entry points and the interfaces it gave.
 pub struct Dll {
     init: Init,
     run_callbacks: Void,
@@ -46,11 +57,11 @@ pub struct Dll {
 }
 
 // SAFETY: the game calls Steam from its main thread only; the pointers
-// are the DLL's and live for the process.
+// are the library's, which stays loaded for the process.
 unsafe impl Send for Dll {}
 
-/// Where `steam_api64.dll` is looked for: `FFX_STEAM_API`, else beside
-/// the running executable.
+/// Where the library is looked for: `FFX_STEAM_API`, else [`LIBRARY`]
+/// beside the running executable.
 #[must_use]
 pub fn dll_path() -> Option<std::path::PathBuf> {
     if let Some(p) = std::env::var_os("FFX_STEAM_API") {
@@ -58,72 +69,57 @@ pub fn dll_path() -> Option<std::path::PathBuf> {
     }
     std::env::current_exe()
         .ok()
-        .and_then(|e| e.parent().map(|d| d.join("steam_api64.dll")))
+        .and_then(|e| e.parent().map(|d| d.join(LIBRARY)))
 }
 
-/// The DLL as the platform's Steam, or why there is none.
+/// The library as the platform's Steam, or why there is none.
 ///
 /// # Errors
-/// When the DLL is missing, won't load or lacks an export.
+/// When the library is missing, won't load or lacks an export.
 pub fn load() -> Result<Box<dyn Backend>, String> {
-    let path = dll_path().ok_or("no path for steam_api64.dll")?;
+    let path = dll_path().ok_or_else(|| format!("no path for {LIBRARY}"))?;
     if !path.is_file() {
         return Err(format!("no {}", path.display()));
     }
     Dll::load(&path).map(|d| Box::new(d) as Box<dyn Backend>)
 }
 
-/// `GetProcAddress`'s `FARPROC`.
-type Farproc = unsafe extern "system" fn() -> isize;
-
-fn export(module: HMODULE, name: &str) -> Result<Farproc, String> {
-    let c = format!("{name}\0");
-    // SAFETY: a module handle from LoadLibraryW and a NUL-terminated name.
-    unsafe { GetProcAddress(module, c.as_ptr()) }
-        .ok_or_else(|| format!("steam_api64.dll has no {name}"))
-}
-
 impl Dll {
-    /// Loads the DLL at `path` and finds [`crate::steam::EXPORTS`].
+    /// Loads the library at `path` and finds [`crate::steam::EXPORTS`].
+    /// The library stays loaded for the process (Steam's threads and the
+    /// callbacks' twins may use it until the end).
     ///
     /// # Errors
     /// When it won't load or lacks an export.
     pub fn load(path: &Path) -> Result<Self, String> {
-        use std::os::windows::ffi::OsStrExt;
-        let wide: Vec<u16> = path.as_os_str().encode_wide().chain([0]).collect();
-        // SAFETY: a NUL-terminated wide path.
-        let module = unsafe { LoadLibraryW(wide.as_ptr()) };
-        if module.is_null() {
-            return Err(format!("{} did not load", path.display()));
+        /// The export `name` as a `T`.
+        fn f<T: Copy>(lib: &'static libloading::Library, name: &str) -> Result<T, String> {
+            // SAFETY: each caller names the export's declared signature
+            // (steam_api.h, steam_api_flat.h) as `T`.
+            unsafe { lib.get::<T>(name.as_bytes()) }
+                .map(|s| *s)
+                .map_err(|_| format!("{LIBRARY} has no {name}"))
         }
-        let f = |name| export(module, name);
-        // SAFETY (each transmute): the export's declared signature
-        // (steam_api.h, steam_api_flat.h).
-        unsafe {
-            Ok(Self {
-                init: std::mem::transmute::<Farproc, Init>(f("SteamInternal_SteamAPI_Init")?),
-                run_callbacks: std::mem::transmute::<Farproc, Void>(f("SteamAPI_RunCallbacks")?),
-                shutdown: std::mem::transmute::<Farproc, Void>(f("SteamAPI_Shutdown")?),
-                register: std::mem::transmute::<Farproc, Register>(f("SteamAPI_RegisterCallback")?),
-                unregister: std::mem::transmute::<Farproc, Unregister>(f(
-                    "SteamAPI_UnregisterCallback",
-                )?),
-                get_user: std::mem::transmute::<Farproc, Handle>(f("SteamAPI_GetHSteamUser")?),
-                get_pipe: std::mem::transmute::<Farproc, Handle>(f("SteamAPI_GetHSteamPipe")?),
-                client: std::mem::transmute::<Farproc, Client>(f("SteamClient")?),
-                get_user_iface: std::mem::transmute::<Farproc, UserIface>(f(
-                    "SteamAPI_ISteamClient_GetISteamUser",
-                )?),
-                get_utils: std::mem::transmute::<Farproc, PipeIface>(f(
-                    "SteamAPI_ISteamClient_GetISteamUtils",
-                )?),
-                get_user_stats: std::mem::transmute::<Farproc, UserIface>(f(
-                    "SteamAPI_ISteamClient_GetISteamUserStats",
-                )?),
-                ifaces: [std::ptr::null_mut(); 3],
-                twins: HashMap::new(),
-            })
-        }
+        // SAFETY: Steam's library: its initialisers only set up its own
+        // state.
+        let lib = unsafe { libloading::Library::new(path) }
+            .map_err(|e| format!("{} did not load: {e}", path.display()))?;
+        let lib: &'static libloading::Library = Box::leak(Box::new(lib));
+        Ok(Self {
+            init: f(lib, "SteamInternal_SteamAPI_Init")?,
+            run_callbacks: f(lib, "SteamAPI_RunCallbacks")?,
+            shutdown: f(lib, "SteamAPI_Shutdown")?,
+            register: f(lib, "SteamAPI_RegisterCallback")?,
+            unregister: f(lib, "SteamAPI_UnregisterCallback")?,
+            get_user: f(lib, "SteamAPI_GetHSteamUser")?,
+            get_pipe: f(lib, "SteamAPI_GetHSteamPipe")?,
+            client: f(lib, "SteamClient")?,
+            get_user_iface: f(lib, "SteamAPI_ISteamClient_GetISteamUser")?,
+            get_utils: f(lib, "SteamAPI_ISteamClient_GetISteamUtils")?,
+            get_user_stats: f(lib, "SteamAPI_ISteamClient_GetISteamUserStats")?,
+            ifaces: [std::ptr::null_mut(); 3],
+            twins: HashMap::new(),
+        })
     }
 
     /// Slot `slot` of interface `iface`'s vtable.
@@ -222,7 +218,7 @@ impl Backend for Dll {
     fn call(&mut self, call: &Call) -> Reply {
         type Bool0 = unsafe extern "C" fn(*mut c_void) -> u8;
         // Each arm: the method's slot in the version's vtable and its
-        // signature (`isteam*.h`; `this` first, the Win64 convention).
+        // signature (`isteam*.h`; `this` first, in the C convention).
         // SAFETY (every arm): a live interface's slot, called with the
         // signature its header declares.
         unsafe {
