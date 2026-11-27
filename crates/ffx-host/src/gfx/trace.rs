@@ -205,7 +205,27 @@ fn encode_create(e: &mut Enc, id: u32, what: &Create<'_>) {
     }
 }
 
-fn encode_op(e: &mut Enc, op: &Op<'_>) {
+/// The runs of 256-byte blocks where `new` differs from `old` (same
+/// length): (offset, length).
+fn changed_runs(old: &[u8], new: &[u8]) -> Vec<(u32, u32)> {
+    const BLOCK: usize = 256;
+    let mut runs: Vec<(u32, u32)> = Vec::new();
+    for (k, (a, b)) in old.chunks(BLOCK).zip(new.chunks(BLOCK)).enumerate() {
+        if a != b {
+            let at = (k * BLOCK) as u32;
+            match runs.last_mut() {
+                Some((o, n)) if *o + *n == at => *n += b.len() as u32,
+                _ => runs.push((at, b.len() as u32)),
+            }
+        }
+    }
+    runs
+}
+
+/// The last bytes of each mapped subresource (the trace keeps changes).
+type Maps = std::collections::HashMap<(u32, u32), Vec<u8>>;
+
+fn encode_op(e: &mut Enc, op: &Op<'_>, maps: &mut Maps) {
     e.u8(OP);
     match op {
         Op::InputLayout(l) => {
@@ -299,18 +319,34 @@ fn encode_op(e: &mut Enc, op: &Op<'_>) {
             e.bytes(data).u32(*row).u32(*depth);
         }
         Op::Unmapped(id, sub, row, depth, data, spans) => {
+            // only the bytes that changed: the runs the layer names (a
+            // discarding map), else what differs from the last map of the
+            // same subresource; the replay keeps the whole copy
             e.u8(21)
                 .u32(*id)
                 .u32(*sub)
                 .u32(*row)
                 .u32(*depth)
-                .bytes(data);
+                .u32(data.len() as u32);
+            let last = maps.entry((*id, *sub)).or_default();
+            last.resize(data.len(), 0);
+            let runs: Vec<(u32, u32)> = match spans {
+                Some(s) => s.to_vec(),
+                None => changed_runs(last, data),
+            };
             e.opt(*spans, |e, s| {
                 e.u32(s.len() as u32);
                 for &(o, n) in s {
                     e.u32(o).u32(n);
                 }
             });
+            e.u32(runs.len() as u32);
+            for &(o, n) in &runs {
+                let (o, n) = (o as usize, n as usize);
+                let bytes = data.get(o..(o + n).min(data.len())).unwrap_or(&[]);
+                e.u32(o as u32).bytes(bytes);
+                last[o..o + bytes.len()].copy_from_slice(bytes);
+            }
         }
         Op::Begin(q) => {
             e.u8(22).u32(*q);
@@ -336,6 +372,7 @@ pub struct Tee {
     inner: Box<dyn Backend>,
     out: Option<BufWriter<std::fs::File>>,
     buf: Enc,
+    maps: Maps,
 }
 
 impl Tee {
@@ -356,12 +393,17 @@ impl Tee {
             inner,
             out: Some(out),
             buf: Enc::default(),
+            maps: Maps::new(),
         }
     }
 
     fn emit(&mut self, f: impl FnOnce(&mut Enc)) {
         self.buf.0.clear();
         f(&mut self.buf);
+        self.write_buf();
+    }
+
+    fn write_buf(&mut self) {
         if let Some(out) = self.out.as_mut()
             && out.write_all(&self.buf.0).is_err()
         {
@@ -398,7 +440,9 @@ impl Backend for Tee {
         self.inner.release(id);
     }
     fn op(&mut self, op: &Op<'_>) {
-        self.emit(|e| encode_op(e, op));
+        self.buf.0.clear();
+        encode_op(&mut self.buf, op, &mut self.maps);
+        self.write_buf();
         self.inner.op(op);
     }
     fn read(&mut self, id: u32, sub: u32, row: u32, out: &mut [u8]) -> bool {
@@ -445,6 +489,13 @@ pub struct Replayed {
     pub presents: u32,
     /// The pictures written.
     pub shots: Vec<PathBuf>,
+    /// The device's `HRESULT`.
+    pub device: u32,
+    /// Objects the back end refused to make: (`HRESULT`, what), the first
+    /// few, and how many in all.
+    pub refused: Vec<(u32, String)>,
+    /// How many objects were refused.
+    pub refused_count: u64,
 }
 
 /// Plays the trace `bytes` into `backend`. `shot(n)` says whether to save
@@ -465,9 +516,10 @@ pub fn replay(
     }
     let mut d = Dec { b: bytes, at: 8 };
     let mut r = Replayed::default();
+    let mut maps = Maps::new();
     while d.at < bytes.len() {
         let at = d.at;
-        play(&mut d, backend, dir, shot, &mut r)
+        play(&mut d, backend, dir, shot, &mut r, &mut maps)
             .ok_or_else(|| format!("trace: bad record at byte {at}"))??;
         r.calls += 1;
         if stop.is_some_and(|s| r.presents >= s) {
@@ -483,22 +535,31 @@ fn play(
     dir: &Path,
     shot: &dyn Fn(u32) -> bool,
     r: &mut Replayed,
+    maps: &mut Maps,
 ) -> Option<Result<(), String>> {
     match d.u8()? {
         DEVICE => {
-            let desc: [u32; 15] = d.words()?.try_into().ok()?;
+            let mut desc: [u32; 15] = d.words()?.try_into().ok()?;
+            // a replay draws offscreen: the recorded run's window is gone
+            desc[11] = 0;
             let flags = d.u32()?;
-            b.create_device(&SwapChainDesc(desc), flags);
+            r.device = b.create_device(&SwapChainDesc(desc), flags);
         }
         BACK_BUFFER => {
             b.back_buffer(d.u32()?);
         }
         CREATE => {
             let id = d.u32()?;
-            play_create(d, b, id)?;
+            let (hr, what) = play_create(d, b, id)?;
+            if hr >> 31 != 0 {
+                r.refused_count += 1;
+                if r.refused.len() < 16 {
+                    r.refused.push((hr, what));
+                }
+            }
         }
         RELEASE => b.release(d.u32()?),
-        OP => play_op(d, b)?,
+        OP => play_op(d, b, maps)?,
         READ => {
             let (id, sub, row, len) = (d.u32()?, d.u32()?, d.u32()?, d.u32()?);
             let mut out = vec![0u8; len as usize];
@@ -535,18 +596,20 @@ fn play(
     Some(Ok(()))
 }
 
-fn play_create(d: &mut Dec<'_>, b: &mut dyn Backend, id: u32) -> Option<()> {
-    match d.u8()? {
+fn play_create(d: &mut Dec<'_>, b: &mut dyn Backend, id: u32) -> Option<(u32, String)> {
+    let mut made = |what: &Create<'_>| {
+        let hr = b.create(id, what);
+        let text = format!("{what:?}");
+        (hr, text.chars().take(200).collect::<String>())
+    };
+    let r = match d.u8()? {
         0 => {
             let desc: [u32; 6] = d.words()?.try_into().ok()?;
             let init = if d.opt()? { Some(d.bytes()?) } else { None };
-            b.create(
-                id,
-                &Create::Buffer {
-                    desc,
-                    init: init.as_deref(),
-                },
-            );
+            made(&Create::Buffer {
+                desc,
+                init: init.as_deref(),
+            })
         }
         1 => {
             let dims = d.u8()?;
@@ -556,38 +619,29 @@ fn play_create(d: &mut Dec<'_>, b: &mut dyn Backend, id: u32) -> Option<()> {
             for _ in 0..n {
                 init.push((d.u32()?, d.u32()?, d.bytes()?));
             }
-            b.create(
-                id,
-                &Create::Texture {
-                    dims,
-                    desc: &desc,
-                    init: &init,
-                },
-            );
+            made(&Create::Texture {
+                dims,
+                desc: &desc,
+                init: &init,
+            })
         }
         2 => {
             let class = d.u32()? as usize;
             let resource = d.u32()?;
             let desc = if d.opt()? { Some(d.bytes()?) } else { None };
-            b.create(
-                id,
-                &Create::View {
-                    class,
-                    resource,
-                    desc: desc.as_deref(),
-                },
-            );
+            made(&Create::View {
+                class,
+                resource,
+                desc: desc.as_deref(),
+            })
         }
         3 => {
             let stage = d.u8()?;
             let code = d.bytes()?;
-            b.create(
-                id,
-                &Create::Shader {
-                    stage,
-                    bytecode: &code,
-                },
-            );
+            made(&Create::Shader {
+                stage,
+                bytecode: &code,
+            })
         }
         4 => {
             let n = d.u32()?;
@@ -604,29 +658,26 @@ fn play_create(d: &mut Dec<'_>, b: &mut dyn Backend, id: u32) -> Option<()> {
                 });
             }
             let code = d.bytes()?;
-            b.create(
-                id,
-                &Create::Layout {
-                    elements: &elements,
-                    bytecode: &code,
-                },
-            );
+            made(&Create::Layout {
+                elements: &elements,
+                bytecode: &code,
+            })
         }
         5 => {
             let kind = kind_stage(d.u8()?);
             let desc = d.bytes()?;
-            b.create(id, &Create::State { kind, desc: &desc });
+            made(&Create::State { kind, desc: &desc })
         }
         6 => {
             let q = [d.u32()?, d.u32()?];
-            b.create(id, &Create::Query(q));
+            made(&Create::Query(q))
         }
         _ => return None,
-    }
-    Some(())
+    };
+    Some(r)
 }
 
-fn play_op(d: &mut Dec<'_>, b: &mut dyn Backend) -> Option<()> {
+fn play_op(d: &mut Dec<'_>, b: &mut dyn Backend, maps: &mut Maps) -> Option<()> {
     match d.u8()? {
         0 => b.op(&Op::InputLayout(d.u32()?)),
         1 => {
@@ -722,8 +773,7 @@ fn play_op(d: &mut Dec<'_>, b: &mut dyn Backend) -> Option<()> {
             b.op(&Op::Update(id, sub, bx, &data, d.u32()?, d.u32()?));
         }
         21 => {
-            let (id, sub, row, depth) = (d.u32()?, d.u32()?, d.u32()?, d.u32()?);
-            let data = d.bytes()?;
+            let (id, sub, row, depth, len) = (d.u32()?, d.u32()?, d.u32()?, d.u32()?, d.u32()?);
             let spans = if d.opt()? {
                 let n = d.u32()?;
                 let mut s = Vec::new();
@@ -734,7 +784,14 @@ fn play_op(d: &mut Dec<'_>, b: &mut dyn Backend) -> Option<()> {
             } else {
                 None
             };
-            b.op(&Op::Unmapped(id, sub, row, depth, &data, spans.as_deref()));
+            let data = maps.entry((id, sub)).or_default();
+            data.resize(len as usize, 0);
+            for _ in 0..d.u32()? {
+                let o = d.u32()? as usize;
+                let bytes = d.bytes()?;
+                data.get_mut(o..o + bytes.len())?.copy_from_slice(&bytes);
+            }
+            b.op(&Op::Unmapped(id, sub, row, depth, data, spans.as_deref()));
         }
         22 => b.op(&Op::Begin(d.u32()?)),
         23 => b.op(&Op::End(d.u32()?)),
@@ -870,7 +927,10 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("t.trace");
         let calls = |b: &mut dyn Backend| {
-            b.create_device(&SwapChainDesc([7; 15]), 2);
+            b.create_device(
+                &SwapChainDesc([7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 0, 7, 7, 7]),
+                2,
+            );
             b.back_buffer(9);
             b.create(
                 10,
@@ -914,7 +974,15 @@ mod tests {
             b.op(&Op::Viewports(&[[0.0, 0.0, 640.0, 480.0, 0.0, 1.0]]));
             b.op(&Op::Scissors(&[[-1, 2, 3, 4]]));
             b.op(&Op::Draw(DrawKind::IndexedInstanced, [1, 2, 3, 4, 5]));
-            b.op(&Op::Unmapped(10, 0, 64, 64, &[9; 64], Some(&[(4, 8)])));
+            // a discarding map: only the runs are defined (the rest of
+            // the trace's copy stays zero)
+            let mut discard = [0u8; 64];
+            discard[4..12].fill(9);
+            b.op(&Op::Unmapped(10, 0, 64, 64, &discard, Some(&[(4, 8)])));
+            b.op(&Op::Unmapped(10, 0, 0, 0, &[7; 600], None));
+            let mut changed = [7u8; 600];
+            changed[300] = 1;
+            b.op(&Op::Unmapped(10, 0, 0, 0, &changed, None));
             b.op(&Op::Update(
                 11,
                 0,

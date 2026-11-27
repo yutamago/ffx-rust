@@ -2310,22 +2310,19 @@ impl Wgpu {
                 v.tex_serial,
             )
         });
-        // wgpu wants the depth target the colour targets' size; the game
-        // draws its 2D passes on the back buffer with a smaller depth
-        // buffer still bound (draws that don't test depth): drawn without
-        let depth = match depth {
-            Some(d) if size.is_some_and(|s| s != d.4) => {
-                self.fail(format!(
-                    "a {}x{} depth target with {}x{} colour targets (drawn without depth)",
-                    d.4.0,
-                    d.4.1,
-                    size.map_or(0, |s| s.0),
-                    size.map_or(0, |s| s.1)
-                ));
-                None
-            }
-            d => d,
-        };
+        // a depth target of another size than the colour targets: Direct3D
+        // 11 draws nothing then (measured: a headless run's 1280 x 720 depth
+        // buffer with its 1920 x 1080 back buffer left D3D11's frames
+        // black), and wgpu can't bind them together
+        if let (Some(d), Some(s)) = (&depth, size)
+            && d.4 != s
+        {
+            self.fail(format!(
+                "a {}x{} depth target with {}x{} colour targets (not drawn, as in D3D11)",
+                d.4.0, d.4.1, s.0, s.1
+            ));
+            return;
+        }
         if let Some(d) = &depth {
             size.get_or_insert(d.4);
             samples.get_or_insert(d.5);
