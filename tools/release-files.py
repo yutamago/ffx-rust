@@ -6,6 +6,8 @@ release package (tools/package-release.sh; docs/player.md; M5 stage 5).
   tools/release-files.py check DIR [--target T] [--dev] [--without-steam] [--name WORD]...
   tools/release-files.py selftest DIR [...]    check DIR, then that check
                                                catches a planted problem
+  tools/release-files.py sums DIR              DIR/SHA256SUMS.txt (as sha256sum
+                                               writes it, every other file, sorted)
   tools/release-files.py pkgdir NAME           a package's source folder
                                                (for a git dependency the
                                                checkout's root)
@@ -313,6 +315,18 @@ def selftest(root, dev, names, target=WINDOWS, steam=True):
     return 1 if bad else 0
 
 
+def sums(root):
+    """`root/SHA256SUMS.txt`: every other file's SHA-256, by path in byte
+    order, in sha256sum's format (no GNU tools needed: macOS, Git Bash)."""
+    root = pathlib.Path(root)
+    out = root / "SHA256SUMS.txt"
+    rels = sorted((f.relative_to(root).as_posix() for f in root.rglob("*")
+                   if f.is_file() and f != out), key=lambda r: r.encode())
+    lines = [f"{hashlib.sha256((root / r).read_bytes()).hexdigest()}  {r}\n" for r in rels]
+    out.write_text("".join(lines), newline="\n")
+    return 0
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n", 1)[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -327,6 +341,7 @@ def main():
         c.add_argument("--target", default=WINDOWS, choices=sorted(TARGETS))
         c.add_argument("--without-steam", action="store_true")
         c.add_argument("--name", action="append", default=[])
+    sub.add_parser("sums").add_argument("dir")
     d = sub.add_parser("pkgdir")
     d.add_argument("name")
     a = ap.parse_args()
@@ -337,6 +352,8 @@ def main():
         files = licence_files(p)
         print(files[0].parent if files else pathlib.Path(p["manifest_path"]).parent)
         sys.exit(0)
+    if a.cmd == "sums":
+        sys.exit(sums(a.dir))
     if a.cmd == "notices":
         sys.exit(notices(a.out, a.specs, a.allow_gpl))
     if a.cmd == "check":

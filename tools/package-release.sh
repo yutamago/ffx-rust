@@ -50,6 +50,9 @@
 # remapped (--remap-path-prefix), so the development build in target/ stays
 # as it is and no path of this machine ends up in the binaries; the check
 # (tools/release-files.py check) fails the package if one does.
+# Portable to macOS's bash 3.2 and BSD tools: an array that may be empty
+# expands as ${a[@]+"${a[@]}"} (bash < 4.4 calls "${a[@]}" unbound under
+# set -u); no GNU-only find, xargs or sed options.
 set -euo pipefail
 repo="$(cd "$(dirname "$0")/.." && pwd)"
 target=x86_64-pc-windows-msvc
@@ -138,7 +141,7 @@ elif [[ $dry == 0 ]]; then
         fi
         echo "building ffx-rust$exe (features: ${features:-none})"
         cargo build -q --release --locked --target "$target" -p ffx-host --bin ffx-rust \
-            --no-default-features "${feat[@]}"
+            --no-default-features ${feat[@]+"${feat[@]}"}
     elif [[ $windows == 1 ]]; then
         # the same for C code's __FILE__ (Unicorn, in a --dev package), clang-cl's spelling
         cmap="/clang:-ffile-prefix-map=$HOME/.cargo=cargo /clang:-ffile-prefix-map=$repo=ffx-rust /clang:-ffile-prefix-map=$HOME=~"
@@ -196,7 +199,7 @@ if [[ $windows == 1 ]]; then
     crlf docs/player.md "$stage/README.txt"
     crlf tools/release/play-ffx-rust.cmd "$stage/play-ffx-rust.cmd"
 else
-    sed 's/\r$//' docs/player.md >"$stage/README.txt"
+    tr -d '\r' <docs/player.md >"$stage/README.txt"
 fi
 
 lic="$stage/licences"
@@ -212,8 +215,8 @@ if [[ $dev == 1 ]]; then
     cp tools/release/unicorn-NOTICE.txt "$lic/"
     cp "$("$py" -I tools/release-files.py pkgdir unicorn-engine-sys | tr -d '\r')/COPYING" "$lic/unicorn-COPYING"
 fi
-"$py" -I tools/release-files.py notices "$lic/THIRD-PARTY.txt" "${specs[@]}" "${gpl[@]}"
-(cd "$stage" && find . -type f ! -name SHA256SUMS.txt -printf '%P\n' | LC_ALL=C sort | xargs -d '\n' sha256sum) >"$stage/SHA256SUMS.txt"
+"$py" -I tools/release-files.py notices "$lic/THIRD-PARTY.txt" "${specs[@]}" ${gpl[@]+"${gpl[@]}"}
+"$py" -I tools/release-files.py sums "$stage"
 
 # no game data, nothing of this machine: the Windows user name too
 names=()
@@ -228,11 +231,11 @@ checkflags=(--target "$target")
 [[ $dev == 1 ]] && checkflags+=(--dev)
 [[ $steam == 0 ]] && checkflags+=(--without-steam)
 if [[ $dry == 1 ]]; then
-    "$py" -I tools/release-files.py selftest "$stage" "${checkflags[@]}" "${names[@]}"
+    "$py" -I tools/release-files.py selftest "$stage" "${checkflags[@]}" ${names[@]+"${names[@]}"}
     echo "dry run: passed ($(find "$stage" -type f | wc -l) files staged, $(du -sh "$stage" | cut -f1))"
     exit 0
 fi
-"$py" -I tools/release-files.py check "$stage" "${checkflags[@]}" "${names[@]}"
+"$py" -I tools/release-files.py check "$stage" "${checkflags[@]}" ${names[@]+"${names[@]}"}
 
 mkdir -p "$out"
 out="$(cd "$out" && pwd)"
