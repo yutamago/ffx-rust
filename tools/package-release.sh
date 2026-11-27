@@ -27,9 +27,9 @@
 # --prebuilt DIR  take the programs from DIR instead of building them (they
 #              still go through the checks; build them with the same
 #              --remap-path-prefix, or the check finds the build paths).
-# --without-steam  a Windows package without steam_api64.dll (no Steamworks
-#              SDK here: the game runs, achievements stay off; ffx-launch
-#              says so). The other platforms carry no Steam library yet.
+# --without-steam  a package without Steam's library (steam_api64.dll,
+#              libsteam_api.so or libsteam_api.dylib; no Steamworks SDK here:
+#              the game runs, achievements stay off).
 # --out DIR    where the archive goes (default target/package/dist).
 #
 # FFX_RELEASE_FEATURES: ffx-host's features for the package (default "swf":
@@ -41,7 +41,9 @@
 # FFX_RELEASE_LABEL: replaces "<version>-<rev>" in the archive's name (the
 # workflow passes the tag, v0.2.0).
 # STEAMWORKS_SDK: the Steamworks SDK's sdk folder (default
-# ~/tools/steamworks_sdk_165/sdk), for redistributable_bin/win64/steam_api64.dll.
+# ~/tools/steamworks_sdk_165/sdk), for its redistributable_bin: win64/
+# steam_api64.dll, linux64/ and linuxarm64/libsteam_api.so,
+# osx/libsteam_api.dylib.
 # Its licence (the Steamworks SDK Access Agreement) is the user's to accept;
 # the DLL is never committed.
 # PYTHON: the Python 3 to run the checks with (default python3).
@@ -79,7 +81,6 @@ case "$target" in
 esac
 windows=0
 [[ $platform == win64 ]] && windows=1
-[[ $windows == 0 ]] && steam=0
 exe=""
 [[ $windows == 1 ]] && exe=.exe
 features="${FFX_RELEASE_FEATURES-swf}"
@@ -92,13 +93,19 @@ if [[ $dev == 1 ]] && ! has_unicorn; then
     features="dev-unicorn${features:+,$features}"
 fi
 sdk="${STEAMWORKS_SDK:-$HOME/tools/steamworks_sdk_165/sdk}"
-steam_dll="$sdk/redistributable_bin/win64/steam_api64.dll"
+case "$platform" in
+    win64) steam_lib=steam_api64.dll steam_dir=win64 steam_notice=steam_api64-NOTICE.txt ;;
+    linux-x64) steam_lib=libsteam_api.so steam_dir=linux64 steam_notice=libsteam_api-NOTICE.txt ;;
+    linux-arm64) steam_lib=libsteam_api.so steam_dir=linuxarm64 steam_notice=libsteam_api-NOTICE.txt ;;
+    macos-arm64) steam_lib=libsteam_api.dylib steam_dir=osx steam_notice=libsteam_api-NOTICE.txt ;;
+esac
+steam_dll="$sdk/redistributable_bin/$steam_dir/$steam_lib"
 version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
 rev="$(git rev-parse --short=9 HEAD)"
 git diff --quiet HEAD -- || rev="$rev-modified"
 name="ffx-rust-${FFX_RELEASE_LABEL:-$version-$rev}-$platform"
 [[ $dev == 1 ]] && name="$name-dev-not-for-release"
-echo "package: $name (ffx-host features: ${features:-none}$([[ $steam == 0 && $windows == 1 ]] && echo '; without Steam')$([[ $dry == 1 ]] && echo '; dry run'))"
+echo "package: $name (ffx-host features: ${features:-none}$([[ $steam == 0 ]] && echo '; without Steam')$([[ $dry == 1 ]] && echo '; dry run'))"
 
 # the release dependency trees: no GPL-family package unless --dev
 specs=("ffx-host:$target:$features")
@@ -180,14 +187,14 @@ for p in "${programs[@]}"; do
 done
 if [[ $steam == 1 ]]; then
     if [[ -f "$steam_dll" ]]; then
-        cp "$steam_dll" "$stage/steam_api64.dll"
+        cp "$steam_dll" "$stage/$steam_lib"
     elif [[ $dry == 1 ]]; then
-        echo "placeholder for steam_api64.dll (dry run: no Steamworks SDK at STEAMWORKS_SDK)" >"$stage/steam_api64.dll"
+        echo "placeholder for $steam_lib (dry run: no Steamworks SDK at STEAMWORKS_SDK)" >"$stage/$steam_lib"
     else
-        echo "package-release.sh: no steam_api64.dll at $steam_dll (set STEAMWORKS_SDK to the SDK's sdk folder, or --without-steam)" >&2
+        echo "package-release.sh: no $steam_lib at $steam_dll (set STEAMWORKS_SDK to the SDK's sdk folder, or --without-steam)" >&2
         exit 1
     fi
-    cp tools/release/steam_api64-NOTICE.txt "$stage/licences/"
+    cp "tools/release/$steam_notice" "$stage/licences/"
 fi
 # the report names functions with it (ffx-rust looks beside itself)
 cp symbols/ffx.sym "$stage/ffx.sym"

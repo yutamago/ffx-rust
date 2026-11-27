@@ -1,0 +1,21 @@
+libsteam_api.so / libsteam_api.dylib
+====================================
+
+libsteam_api.so (Linux) and libsteam_api.dylib (macOS) are Valve
+Corporation's Steam API library, the redistributables of the Steamworks
+SDK (version 1.65, sdk/redistributable_bin/linux64, linuxarm64 and osx).
+They are not part of ffx-rust and not under its licence (MIT OR
+Apache-2.0): they are Copyright (c) Valve Corporation, all rights
+reserved, and are redistributed with ffx-rust under the terms of the
+Steamworks SDK Access Agreement
+(https://partner.steamgames.com/documentation/sdk_access_agreement),
+which allows the SDK's redistributable files to be shipped with an
+application that uses them.
+
+ffx-rust loads it at run time to talk to the Steam client
+(achievements). Without it, or without Steam running, ffx-rust runs with
+Steam off. SteamAPI_RestartAppIfNecessary and ResetAllStats are never
+called through it.
+
+Steam and the Steam logo are trademarks of Valve Corporation. ffx-rust is
+not made, endorsed or supported by Valve.

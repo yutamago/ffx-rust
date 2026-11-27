@@ -69,21 +69,35 @@ COMMON = {
     "licences/ffx-movie-NOTICE",
     "licences/ruffle-LICENSE.md",
 }
-STEAM = {"steam_api64.dll", "licences/steam_api64-NOTICE.txt"}
+# Steam's library by target (the Steamworks SDK's redistributable) and its notice
+STEAM_LIBRARY = {
+    WINDOWS: "steam_api64.dll",
+    "x86_64-unknown-linux-gnu": "libsteam_api.so",
+    "aarch64-unknown-linux-gnu": "libsteam_api.so",
+    "aarch64-apple-darwin": "libsteam_api.dylib",
+}
+
+
+def steam_files(target=WINDOWS):
+    """Steam's library and its notice in `target`'s package."""
+    lib = STEAM_LIBRARY[target]
+    notice = "steam_api64-NOTICE.txt" if target == WINDOWS else "libsteam_api-NOTICE.txt"
+    return {lib, f"licences/{notice}"}
 
 
 def programs(target=WINDOWS, steam=True):
     """The executable files of `target`'s package."""
+    lib = {STEAM_LIBRARY[target]} if steam else set()
     if target == WINDOWS:
-        return {"ffx-rust.exe", "ffx-launch.exe"} | ({"steam_api64.dll"} if steam else set())
-    return {"ffx-rust"}
+        return {"ffx-rust.exe", "ffx-launch.exe"} | lib
+    return {"ffx-rust"} | lib
 
 
 def package(target=WINDOWS, steam=True):
-    """Every file of `target`'s package (Steam's only on Windows)."""
-    files = COMMON | programs(target, steam)
+    """Every file of `target`'s package."""
+    files = COMMON | programs(target, steam) | (steam_files(target) if steam else set())
     if target == WINDOWS:
-        files |= {"play-ffx-rust.cmd"} | (STEAM if steam else set())
+        files |= {"play-ffx-rust.cmd"}
     return files
 
 
@@ -184,7 +198,8 @@ def notices(out, specs, allow_gpl):
         "carry below (ffx-movie: libVorbis; zvidlib-vp8: libvpx/RFC 6386).",
         "Where a package ships no licence file of its own, the standard text",
         "of its licence applies (MIT and Apache-2.0: LICENSE-MIT, LICENSE-APACHE).",
-        "steam_api64.dll (Windows) is Valve's, not covered here: steam_api64-NOTICE.txt.",
+        "Steam's library (steam_api64.dll, libsteam_api.so, libsteam_api.dylib) is Valve's,",
+        "not covered here: steam_api64-NOTICE.txt or libsteam_api-NOTICE.txt.",
         "",
     ]
     if gpl:

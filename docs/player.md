@@ -17,7 +17,8 @@ below before you start, and keep a copy of your saves.
 ## What you need
 
 - FINAL FANTASY X/X-2 HD Remaster, installed through Steam.
-- Windows 10 or 11, 64-bit.
+- Windows 10 or 11, 64-bit. Test packages for Linux (x64 and ARM64) and
+  macOS (Apple silicon) exist too: see "On Linux and macOS" below.
 - For achievements: Steam running and signed in.
 
 ## Installing
@@ -74,6 +75,44 @@ a message says what and where, and nothing starts. If the game
 folder is the right one and a game file is missing, let Steam repair it:
 right-click the game, Properties, Installed Files, Verify integrity of
 game files.
+
+## On Linux and macOS
+
+The Linux and macOS packages hold one program, `ffx-rust`, Steam's
+library for that system and the same papers. You still need the game
+installed through Steam (on Linux through Steam's Proton, on a Mac
+copied over from a Windows or Linux installation, since the game has no
+Mac version):
+
+- **Starting.** Unpack the archive and start `ffx-rust` (double-click it,
+  or `./ffx-rust` in a terminal). It looks for the game as on Windows:
+  next to itself, in the folder it was started from, then in Steam's
+  libraries (`~/.steam/steam`, `~/.local/share/Steam`, the Flatpak and
+  Snap Steam folders on Linux; `~/Library/Application Support/Steam` on
+  a Mac). Elsewhere, set `FFX_GAME_DIR` to the folder with `FFX.exe`.
+  On a Mac, the first start may need a right-click, Open, because the
+  program isn't signed.
+- **Saves and settings.** On Linux, if you played the game through Proton,
+  ffx-rust uses Proton's saves and settings of the game
+  (`steamapps/compatdata/359870/pfx/drive_c/users/steamuser/Documents`
+  in the Steam library with the game), so both share them. Otherwise, and
+  on a Mac, they go to a folder of ffx-rust's own:
+  `~/.local/share/ffx-rust/Documents` on Linux (or under
+  `$XDG_DATA_HOME`), `~/Library/Application Support/ffx-rust/Documents`
+  on a Mac. To bring saves along, copy your Windows `Square Enix` folder
+  into it.
+- **Controls.** The keyboard and the mouse work as on Windows (the keys
+  are the keys in the same place on the keyboard, whatever their label).
+  Controllers work as Xbox controllers: buttons in the places an Xbox
+  controller has them, whatever the controller.
+- **Sound** plays on your system's default output.
+- **Steam.** With Steam running and signed in, achievements unlock as on
+  Windows; `libsteam_api.so` (Linux) or `libsteam_api.dylib` (Mac) from
+  the package must stay next to `ffx-rust`.
+- **Not yet:** the picture. The window opens, takes the controls and plays
+  the sound, but stays black until the new graphics part is finished.
+  Messages show in the terminal, and in a window when the system has
+  `zenity` or `kdialog` (Linux) or always (Mac).
 
 ## Saves and settings
 
@@ -158,7 +197,9 @@ ffx-rust is free software under the MIT or Apache-2.0 licence, at your
 choice (`licences\LICENSE-MIT`, `licences\LICENSE-APACHE`). It contains
 other people's free software, each under its own licence, all listed in
 `licences\THIRD-PARTY.txt` (the flash player Ruffle, the video decoder
-zvidlib-vp8, the libVorbis sound decoder and more). `steam_api64.dll` is
-Valve's and shipped under Valve's terms (`licences\steam_api64-NOTICE.txt`).
+zvidlib-vp8, the libVorbis sound decoder and more). Steam's library
+(`steam_api64.dll`, on Linux `libsteam_api.so`, on a Mac
+`libsteam_api.dylib`) is Valve's and shipped under Valve's terms
+(`licences\steam_api64-NOTICE.txt`, `licences/libsteam_api-NOTICE.txt`).
 FINAL FANTASY X is a trademark of Square Enix. ffx-rust is not made or
 endorsed by Square Enix or Valve.

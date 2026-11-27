@@ -41,8 +41,10 @@ same memory. The release runs no `FFX.exe` code.
 | `src/platform.rs` | the platform seam: the `Platform` trait, what the player-facing side asks of the operating system (below, "The platform seam") |
 | `src/requests.rs` | a frontend's requests (a developer save), served between two updates (`docs/state-api.md`, "Requests") |
 | `src/observe.rs` | the game-state API's snapshots (`crates/ffx-state`) at each frame boundary, for a frontend's observers (`docs/state-api.md`) |
-| `src/platform/windows.rs`, `windows/input.rs`, `windows/steam.rs` | `WindowsPlatform`: the real window and its messages, `DirectInput8`/`XInput`/raw input, WASAPI (the hook's `rust_audio_out.rs`), D3D11, `steam_api64.dll`, the documents folder and message box (`ffx-launch`'s `shell.rs`), `TerminateProcess` |
-| `src/platform/headless.rs` | `HeadlessPlatform`: no window, no devices, no device sound, the null device, no Steam (the Linux check, the null-device runs) |
+| `src/platform/windows.rs`, `windows/input.rs` | `WindowsPlatform`: the real window and its messages, `DirectInput8`/`XInput`/raw input, WASAPI (the hook's `rust_audio_out.rs`), D3D11, `steam_api64.dll`, the documents folder and message box (`ffx-launch`'s `shell.rs`), `TerminateProcess` |
+| `src/platform/native.rs`, `native/keys.rs`, `messages.rs`, `dinput.rs`, `pads.rs`, `audio.rs`, `dialog.rs` | `NativePlatform` (Linux, macOS): the winit window and its events as Win32 messages, the keyboard and mouse as `DirectInput` devices, gilrs pads as `XInput`, cpal sound, message boxes (below, "Native platform") |
+| `src/platform/steam_api.rs` | Steam's library loaded at run time (`steam_api64.dll`, `libsteam_api.so`, `libsteam_api.dylib`), for both real platforms (below, "Steam") |
+| `src/platform/headless.rs` | `HeadlessPlatform`: no window, no devices, no device sound, the null device, no Steam (the Linux check, the tests, harness games off Windows, the null-device runs) |
 | `src/harness.rs` | the test harness's protocol, served from `ffx-rust` (`docs/harness.md`, "Two processes"); its frames are the clock's updates |
 | `src/devsave.rs` | the harness's `devsave` and the archive reader under `debugLoadForViewer` (`docs/harness.md`, "Developer saves") |
 | `src/tcg_commit.rs` | Windows: commits Unicorn's translation buffers as they fill (below, "The 64-bit build on PC2") |
@@ -1285,7 +1287,7 @@ Without the feature the players are null: no image, the calls do nothing.
 `src/steam.rs` (2026-11-12, WP10) bridges the game's Steam calls to
 Valve's 64-bit `steam_api64.dll`, loaded at run time: `FFX_STEAM_API`,
 else beside `ffx-rust.exe` (the Windows platform's `Platform::steam`,
-`src/platform/windows/steam.rs`, since m6-seam). The DLL is the Steamworks SDK's
+`src/platform/steam_api.rs`, since m6-seam; the native platform's too). The DLL is the Steamworks SDK's
 (`sdk/redistributable_bin/win64/steam_api64.dll`, SDK 1.65: FileVersion
 10.87.46.89, sha256 `e6d9bafb...e776d`). It is never in git; the
 release package carries it beside `ffx-rust.exe` under the Steamworks
@@ -1330,7 +1332,7 @@ three the game registers (1101 `UserStatsReceived_t` 0x18, 1102
 sizes the game's own `GetCallbackSizeBytes` return); `steam::CALLBACKS`
 moves each field by its offsets all the same, padding zero.
 
-Steam absent. Without the DLL, on the headless platform (Linux), with `FFX_NO_STEAM` set, or
+Steam absent. Without the DLL, on the headless platform, with `FFX_NO_STEAM` set, or
 when `SteamAPI_Init` fails (Steam not running, no app id: the harness
 sets none, so replays stay off the account), the run is the one from before the
 bridge: `SteamAPI_Init` returns false, `Steam_Init` leaves `g_SteamReady`
@@ -1857,10 +1859,13 @@ Two sides meet there:
 | Implementation | What it is |
 |---|---|
 | `WindowsPlatform` (`src/platform/windows.rs`) | the real window and its message loop, `DirectInput8`/`XInput`/raw input (`windows/input.rs`), WASAPI (the hook's `rust_audio_out.rs`, compiled in), the D3D11 device (`src/d3d11.rs`), `steam_api64.dll` (`windows/steam.rs`), `SHGetFolderPathW(CSIDL_PERSONAL)` and `MessageBoxW` (`ffx-launch`'s `src/shell.rs`, compiled in: one copy for the launcher and the seam), `TerminateProcess`, `timeBeginPeriod` |
+| `NativePlatform` (`src/platform/native.rs`, Linux and macOS) | a winit window whose events become the Win32 messages `WindowsPlatform` delivers, the keyboard and mouse as foreground `DirectInput` devices, gilrs pads as `XInput` pads, cpal sound with WASAPI's queue rules, `libsteam_api` (`steam_api.rs`), a dialog program for message boxes, the null device until the wgpu back end (below, "Native platform") |
 | `HeadlessPlatform` (`src/platform/headless.rs`) | what the Linux check and the null-device runs had as stand-ins: a fake window (`0x00010010`) that gets no messages and is the 1920 x 1080 screen, no input devices (the layer's stand-ins and the harness's keys), no device sound, the recording null device, no Steam, no documents folder, message boxes on stderr |
 
 One platform serves the process. `platform::install(Box<dyn Platform>)`
-before the boot puts a frontend's in place; otherwise the first
+before the boot puts a frontend's in place; `platform::run_main` (from
+`ffx-rust`'s `main`) installs the native platform off Windows on a
+desktop (below, "Native platform"); otherwise the first
 `platform::get()` picks one: `FFX_HOST_PLATFORM=windows|headless`, by
 default Windows on Windows and headless elsewhere. Headless on Windows
 (`FFX_HOST_PLATFORM=headless`) is for harness-style runs without a window,
@@ -1971,6 +1976,165 @@ the other.
   so saves stay shared with `FFX.exe`); `message_box` is `OS.alert`;
   `end_process` asks Godot to quit and then ends the process, since it
   must not return.
+
+## Native platform
+
+(2026-11-28, m6-native.) `NativePlatform` (`src/platform/native.rs`) is
+the platform of a player's `ffx-rust` on Linux (x64, ARM64) and macOS
+(Apple silicon). `platform::run_main` chooses it when
+`FFX_HOST_PLATFORM=native`, or by default when nothing asks for headless:
+not a harness game (`FFX_HARNESS`), not the null device (`--gfx-null`,
+`FFX_HOST_GFX=null`), and a display (macOS always; Linux `DISPLAY` or
+`WAYLAND_DISPLAY`). `FFX_HOST_PLATFORM=headless` keeps the headless
+platform; tests, the Linux check and harness games off Windows stay
+headless (they never go through `run_main`). An event loop that can't
+be made (no display server after all) falls back to headless with a
+note.
+
+**Threads.** winit wants its event loop on the process's main thread
+(macOS insists), and the game's main thread blocks in its own loop
+(`Exec::run_entry`). So `run_main` makes the event loop on the main
+thread, runs the game (`ffx-rust`'s `run`: boot, entry, report) on a
+thread of its own, `ffx-rust-game` (64 MB of stack), and runs the loop
+until the game returns, then exits with its code. The two sides meet in
+one mutex (`native::State`): the loop thread turns window events into
+messages and device state and never waits for the game; the game thread
+takes them, and asks the loop thread only to make or drop the window
+(`on_loop`: a request through the loop's proxy, waited for). winit's
+window methods (title, size, visibility, cursor, full screen) are called
+from the game thread directly (winit forwards them to the main thread
+where the system wants that), never under the mutex. Other threads:
+`ffx-rust-pads` (gilrs, every 4 ms) and `ffx-rust-audio-out` (holds the
+cpal stream; the device's own callback thread pulls the queue).
+
+**The window.** One window (handle `0x00020010`), made at the game's
+`CreateWindowExA` with its title and size (`CW_USEDEFAULT`: 1280 x 720),
+decorated when the style has a caption, visible with `WS_VISIBLE` or at
+`ShowWindow`. The client area is the window: `AdjustWindowRect` adds
+nothing (the system draws its frame outside), so the game's size is the
+size it draws; `GetClientRect`, `GetWindowRect`, `ClientToScreen` follow
+the window. `SetWindowPos` moves and sizes it; a captionless rectangle
+covering the screen (the game's full-screen mode) becomes winit's
+borderless full screen. `SetWindowLongA(GWL_STYLE)` sets the decorations;
+`ShowCursor` keeps Windows' display count and hides the pointer below 0;
+`SetCursorPos` and `ClipCursor` do nothing, as on Windows.
+`GetSystemMetrics` answers the primary monitor's size. The window's icon
+is not set yet (Wayland and macOS take it from the desktop entry or the
+bundle).
+
+**Messages** (`native/messages.rs`): word for word what the Windows
+platform delivers. Sent: `WM_SIZE` (the kind and `height << 16 | width`),
+`WM_ACTIVATE` (`WA_ACTIVE`/`WA_INACTIVE`, minimised in the high word) and
+`WM_CLOSE` reach the game's procedure through `take_sent`; Windows also
+sends `WM_ACTIVATEAPP`, `WM_SETFOCUS`, `WM_KILLFOCUS` and `WM_DESTROY`,
+which `host_wndproc` answers itself, so the translation makes them and
+drops them the same way (`messages::GAME_SENT`). Posted, for
+`PeekMessage` (with its window and range filters; `WM_QUIT` passes every
+filter): `WM_KEYDOWN`/`WM_KEYUP` with the virtual key and `lParam` (repeat
+count 1, scan code, extended bit, context bit, previous state,
+transition), `WM_SYSKEYDOWN`/`UP` while Alt is held and for F10 and Alt,
+`WM_CHAR`/`WM_SYSCHAR` per UTF-16 unit of the key's text, posted by
+`TranslateMessage` right after the key as Windows does, `WM_MOUSEMOVE`,
+the button messages (`MK_*` in `wParam`), `WM_MOUSEWHEEL` (120 a notch);
+`PostMessageA` and `PostQuitMessage`. `DefWindowProcA` of Alt+F4 sends
+`WM_CLOSE`, as Windows' default procedure does. Keys are physical
+(`native/keys.rs`: winit's `KeyCode` to `DIK_*` and `VK_*`), so a key
+does what the key in that place of a US keyboard does on Windows.
+
+**Input** (`native/dinput.rs`, `native/pads.rs`). The system keyboard and
+mouse are `DirectInput` devices of the platform's: `CreateDevice` of
+`GUID_SysKeyboard`/`GUID_SysMouse`, the game's formats accepted,
+`GetDeviceState` the 256 scan-code bytes or `DIMOUSESTATE(2)` (raw motion
+since the last read, the wheel, the buttons). They behave as foreground
+devices: losing the focus releases every key and unacquires them (one
+`DIERR_INPUTLOST`, then `DIERR_NOTACQUIRED`), `Acquire` fails with
+`DIERR_OTHERAPPHASPRIO` until the window has the focus again, and the
+game's `Keyboard_Update` acquires again. `GetCapabilities` and
+`GetDeviceInfo` describe them, `EnumObjects` lists nothing (the game
+enumerates only `DirectInput` pads' axes), `GetDeviceData` has no items
+(the game never calls it). Game controllers come through gilrs (SDL's
+mappings to a standard layout) as `XInput` pads: each connected
+controller gets an `XInput` slot 0..3, `EnumDevices` lists them as
+gamepads (type 0x15) whose product GUID carries the vendor and product,
+`Input_IsXInputDevice` finds them in `xinput_ids`, and `XInputGetState`
+reads the buttons, triggers and sticks; `XInputSetState` plays gilrs'
+force feedback where the system has it. The harness's keys and
+background rule are the game-facing side's, as on Windows.
+
+**Sound** (`native/audio.rs`): cpal (ALSA on Linux, served by
+PulseAudio/PipeWire; Core Audio on macOS) with the WASAPI output's rules:
+`audio_push` appends a block, the queue keeps half a second (oldest
+dropped), playback starts at 4,800 frames and again after each underrun
+(counted), the same `FFX_RUST_AUDIO_OUT` switches. A device without 48
+kHz stereo f32 gets the mix resampled (linear) and spread over its
+channels.
+
+**Steam** (`platform/steam_api.rs`, shared with Windows):
+`libsteam_api.so` / `libsteam_api.dylib` beside the program or at
+`FFX_STEAM_API`, through libloading. The SDK's flat exports and the old
+interfaces' vtable slots are the same as on Windows (the overloads in
+`ISteamUserStats011` sit in pairs, so swapped pairs leave every slot the
+game calls where it is). Two differences are `crate::steam`'s: GCC and
+Clang put `CCallbackBase::Run(void *)` before `Run(void *, bool,
+SteamAPICall_t)` (MSVC the other way round), so the twins' vtable order
+is per system; and the callback structs are packed to 4
+(`VALVE_CALLBACK_PACK_SMALL`), so they are 4 bytes shorter (0x14, 0xc,
+0x94) at the same offsets. Not checked against a running Steam client
+here yet.
+
+**The documents folder** is `player::documents`' (the platform has none):
+the game's Proton prefix on Linux, else our own folder. **Message boxes**
+(`native/dialog.rs`): stderr, and `zenity` or `kdialog` on Linux,
+`osascript` on macOS, started as programs (no GTK or D-Bus library to
+build against); none in a harness game.
+
+**Background mode** (`FFX_HARNESS_BACKGROUND=1`): the window is made
+hidden and never shown or activated, the pointer the game reads stays far
+outside it, and on Linux the loop uses X11 when `DISPLAY` is set (a
+hidden X11 window stays unmapped; Wayland shows every window). Then
+`input::real` keeps the layer's stand-ins only in a harness game; outside
+one the devices are the platform's, but the window never gets the focus,
+so they read nothing.
+
+**Graphics.** `NativePlatform::graphics` is the null device until the
+wgpu back end (a parallel work package) is in place; the seam for it is
+`Platform::surface` (the window as an `Arc<dyn platform::Surface>`:
+raw-window-handle 0.6 handles and the client size, which
+`wgpu::Instance::create_surface` takes) and `Platform::on_window_thread`
+(runs a closure on the loop thread and waits: macOS makes a
+`CAMetalLayer` on the main thread only).
+
+**Portability** (docs/m6.md): `cpuid` answers one fixed processor on
+every host (`crt_start::cpuid`: SSE4.2, AVX, ERMS, a non-Atom
+`GenuineIntel`; the development machine's answers, so Windows runs here
+are unchanged), so the C runtime's `__isa_available` and feature words
+never depend on the machine (ARM64 hosts answered zeros, which sent the
+maths down an unported x87 path). Game paths are matched without case
+(`files::child`: a part that doesn't exist as written is looked up in its
+folder; the C runtime DLLs too). The arena commits whole host pages
+(16 KB on Apple silicon and some ARM64 Linux kernels), so neighbouring
+4 KB game regions may share one; the arena's own page bitmap still
+catches stray accesses. The arena has no write watch off Windows
+(Linux's soft-dirty bits are per process, `userfaultfd` write protection
+costs a fault per page): the D3D11 layer's discarding maps upload whole
+buffers there. The cost, measured on Windows with the watch switched off
+(`FFX_HOST_UNMAP_ALL=1`, above, "Speed": `fps-probe`'s battle): about 20
+MB more a frame through the back end, the render thread 11.5 → 13.3 ms a
+flip, well inside the 33 ms frame. A back end that wants it lower can
+compare the upload with its own copy of the buffer.
+
+**Building.** Linux needs ALSA's and udev's development files
+(`libasound2-dev`, `libudev-dev`, `pkg-config`; the release workflow
+installs them); winit loads X11 and Wayland at run time. macOS needs
+nothing besides Xcode's command-line tools. `cargo check --target
+aarch64-unknown-linux-gnu` from x86_64 needs `PKG_CONFIG_ALLOW_CROSS=1`
+(only the build scripts' probe; nothing links).
+
+Tests: `cargo test -p ffx-host --lib platform::native` (keys, messages,
+the `DirectInput` devices, pads, the sound queue and its converter, the
+choice of platform, the pump with `TranslateMessage`), `files` (paths
+without case), `arena` (host page spans), `steam` (the twins' vtable
+order per system).
 
 ## The harness: a second process
 
