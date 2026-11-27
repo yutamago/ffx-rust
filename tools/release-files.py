@@ -228,6 +228,9 @@ def check(root, dev, names, target=WINDOWS, steam=True):
         v = os.environ.get(env, "")
         if len(v) >= 3:
             words.add(v.lower())
+    # account names that are no one's (the CI runners' `runner`,
+    # `runneradmin`), as check-privacy treats them in paths
+    words -= privacy.GENERIC
     home = os.environ.get("HOME", "")
     literal = [s for s in {home, str(REPO)} if len(s) > 1]
     for f in sorted(root.rglob("*")):
@@ -280,6 +283,8 @@ def selftest(root, dev, names, target=WINDOWS, steam=True):
     main = "ffx-rust.exe" if target == WINDOWS else "ffx-rust"
     flags = ["--target", target, *(["--dev"] if dev else []), *([] if steam else ["--without-steam"])]
     user = os.environ.get("USER") or "someone"
+    if user.lower() in privacy.GENERIC:
+        user = "someone"  # a CI runner's account: its paths are no one's
     plants = [
         ("README.txt", f"\nC:\\Users\\{user}x\\Documents\n".encode(), "user path"),
         ("README.txt", b"\n/home/" + user.encode() + b"/ffx\n", "user path"),
