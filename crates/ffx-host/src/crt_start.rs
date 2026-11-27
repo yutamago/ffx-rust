@@ -361,18 +361,25 @@ fn onexit_init(e: &mut Exec, _: &Args) -> Ret {
     .unwrap_or(Ret::eax(0))
 }
 
-/// `cpuid(leaf, 0)` of the machine the host runs on (`eax`, `ebx`, `ecx`,
-/// `edx`); zeros elsewhere.
+/// `cpuid(leaf, 0)` as the game sees it (`eax`, `ebx`, `ecx`, `edx`): one
+/// fixed processor on every host (docs/m6.md), so the C runtime's choices
+/// never depend on the machine: an x86-64 processor with SSE4.2, AVX and
+/// ERMS (`GenuineIntel`, family 6 model 0x9a, not one of the Atom models
+/// `__isa_available_init` singles out): `__isa_available` 3, `__favor`
+/// 0xf, the feature word's ERMS bit; what the development machine's Intel
+/// Core Ultra 7 255H gives too. A host without `cpuid` (Apple silicon,
+/// ARM64 Linux) answered zeros before this, which sent the C runtime's
+/// maths down its x87 path.
 fn cpuid(leaf: u32) -> [u32; 4] {
-    #[cfg(target_arch = "x86_64")]
-    {
-        let r = std::arch::x86_64::__cpuid_count(leaf, 0);
-        [r.eax, r.ebx, r.ecx, r.edx]
-    }
-    #[cfg(not(target_arch = "x86_64"))]
-    {
-        let _ = leaf;
-        [0; 4]
+    match leaf {
+        // the highest leaf, "GenuineIntel" (ebx, edx, ecx)
+        0 => [0x20, 0x756e_6547, 0x6c65_746e, 0x4965_6e69],
+        // family 6 model 0x9a stepping 3; ecx: SSE3, SSSE3, SSE4.1, SSE4.2,
+        // POPCNT, XSAVE, OSXSAVE, AVX; edx: FPU .. SSE2 as every x86-64
+        1 => [0x0009_06a3, 0, 0x1c98_0201, 0x178b_fbff],
+        // ebx: AVX2 (5), ERMS (9)
+        7 => [0, 0x0000_0220, 0, 0],
+        _ => [0; 4],
     }
 }
 
@@ -380,8 +387,7 @@ fn cpuid(leaf: u32) -> [u32; 4] {
 /// (`IsProcessorFeaturePresent(10)`), `__isa_available` 1, 2 with SSE4.2,
 /// 3 with AVX, the `__favor` flags 1|2(|4)(|8); the feature word's bit 1
 /// for ERMS (`cpuid` 7) and bit 0 for the Atom models of a `GenuineIntel`
-/// processor. From the processor the host runs on (Unicorn's was
-/// Unicorn's). 0.
+/// processor. From [`cpuid`]'s fixed processor. 0.
 fn isa_init(e: &mut Exec, _: &Args) -> Ret {
     e.mem().write(ISA_AVAILABLE, 0u32);
     let flags = word(e, ISA_FLAGS) | 1;

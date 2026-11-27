@@ -395,7 +395,7 @@ fn state(exec: &Exec, original: &Exec) -> Vec<(String, u32, Vec<u8>)> {
         let mut a = vec![0; r.size as usize];
         exec.mem().read_bytes(r.start, &mut a);
         // the CRT's processor feature words: `__isa_available_init` runs in
-        // Rust on the host's own `cpuid` (as the game sees the machine),
+        // Rust on the fixed processor `crt_start::cpuid` answers (as the game sees it),
         // Unicorn's emulated processor reports fewer features (wp5b)
         let isa = [(0x00c6_13ec_u32, 4_u32), (0x0193_ed20, 4), (0x0193_ed24, 4)];
         let mut keep = Vec::new();

@@ -56,10 +56,7 @@ impl CrtData {
     /// The file beside `FFX.exe` in `dir`, if it is the known build.
     #[must_use]
     pub fn load(dir: &Path) -> Option<Self> {
-        let lower = CRT_FILE.to_ascii_lowercase();
-        let bytes = [CRT_FILE, lower.as_str()]
-            .iter()
-            .find_map(|n| std::fs::read(dir.join(n)).ok())?;
+        let bytes = std::fs::read(crate::files::child(dir, CRT_FILE)).ok()?;
         Self::from_bytes(&bytes)
     }
 
