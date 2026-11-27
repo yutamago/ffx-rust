@@ -4,8 +4,9 @@
 #
 # - A tag v* builds every platform and publishes a release with the
 #   platforms in PUBLISHED below.
-# - Run by hand (Actions, Release, Run workflow), it builds every platform
-#   and keeps the archives as the run's artifacts; nothing is published.
+# - Run by hand (Actions, Release, Run workflow), or on a pull request that
+#   changes the packaging, it builds every platform and keeps the archives
+#   as the run's artifacts; nothing is published.
 #
 # Steam: the Windows package carries steam_api64.dll when the repository
 # secret STEAM_API64_DLL_B64 holds it (base64; from the Steamworks SDK,
@@ -17,6 +18,13 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+  # a change to the packaging builds every package (nothing is published)
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
+      - tools/package-release.sh
+      - tools/release-files.py
+      - tools/check-licences.py
 
 permissions:
   contents: read
