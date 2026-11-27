@@ -112,6 +112,22 @@ pub struct WindowRequest<'a> {
     pub height: i32,
 }
 
+/// A window the wgpu back end draws into (`crate::gfx::wgpu`), handed out by
+/// a platform with a real window ([`Platform::gfx_window`]): its
+/// `raw-window-handle` handles and its client size.
+pub trait GfxWindow:
+    raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle + Send + Sync
+{
+    /// The client area in pixels (the surface's size; 0 while minimised).
+    fn size(&self) -> (u32, u32);
+    /// Runs `f` on the thread that owns the window and returns when it
+    /// ran: the back end makes its surface there (Metal needs the main
+    /// thread). Default: on the caller's thread.
+    fn on_window_thread(&self, f: Box<dyn FnOnce() + Send>) {
+        f();
+    }
+}
+
 /// A `DirectInput` property (`Set/GetProperty`): `MAKEDIPROP(n)` or a GUID.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Property {
@@ -257,6 +273,12 @@ pub trait Platform: Send + Sync {
     /// recording, so it doesn't depend on the back end); `Present` shows a
     /// frame.
     fn graphics(&self) -> Box<dyn crate::gfx::Backend>;
+    /// The window the wgpu back end draws into (`FFX_HOST_GFX=wgpu`, or a
+    /// platform's own `graphics` through `crate::gfx::wgpu_backend`);
+    /// `None`: offscreen.
+    fn gfx_window(&self) -> Option<std::sync::Arc<dyn GfxWindow>> {
+        None
+    }
 
     // ---- input (the game's input threads, inside the layer's calls) -----
     //

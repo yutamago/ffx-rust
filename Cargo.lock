@@ -1026,6 +1026,7 @@ version = "0.1.0"
 dependencies = [
  "ffx-bridge",
  "ffx-core",
+ "ffx-dxbc",
  "ffx-fpu",
  "ffx-gfx",
  "ffx-host-ports",
@@ -1043,9 +1044,12 @@ dependencies = [
  "libc",
  "md-5",
  "miniz_oxide 0.9.1",
+ "pollster",
+ "raw-window-handle",
  "thiserror",
  "unicorn-engine",
  "wasapi",
+ "wgpu",
  "windows",
  "windows-sys",
 ]
