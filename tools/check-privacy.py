@@ -73,7 +73,7 @@ GIT_DIR = [str(REPO)]
 
 def git(*args):
     return subprocess.run(["git", "-C", GIT_DIR[0], *args], capture_output=True,
-                          text=True, check=True).stdout
+                          text=True, encoding="utf-8", check=True).stdout
 
 
 def main():
@@ -95,7 +95,7 @@ def main():
     for name in git("grep", "-I", "-l", "-E", r"Users|/home/").split("\n"):
         if not name:
             continue
-        for n, line in enumerate((REPO / name).read_text(errors="replace").split("\n"), 1):
+        for n, line in enumerate((REPO / name).read_text(encoding="utf-8", errors="replace").split("\n"), 1):
             for m in USER_PATH.finditer(line):
                 who = m.group(1).lower()
                 if who not in GENERIC and who not in ALLOW and not who.startswith(("%", "$", "<")):

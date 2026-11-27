@@ -114,7 +114,7 @@ def parse_spec(spec):
 
 def metadata():
     r = subprocess.run(["cargo", "metadata", "--format-version", "1", "--offline"],
-                       cwd=REPO, capture_output=True, text=True, check=True)
+                       cwd=REPO, capture_output=True, text=True, encoding="utf-8", check=True)
     return json.loads(r.stdout)
 
 
@@ -172,7 +172,7 @@ def notices(out, specs, allow_gpl):
         src = "this project" if ours else (p.get("repository") or "") if p else ""
         rows.append((key[0], key[1], lic or "(none given)", src))
         for f in files:
-            body = f.read_text(errors="replace").strip()
+            body = f.read_text(encoding="utf-8", errors="replace").strip()
             h = hashlib.sha256(body.encode()).hexdigest()
             texts.setdefault(h, [body, set()])[1].add(f"{key[0]} {key[1]} ({f.name})")
     lines = [
@@ -198,7 +198,7 @@ def notices(out, specs, allow_gpl):
     lines += ["", "", "Licence texts, as the packages ship them", "=" * 40, ""]
     for h, (body, who) in sorted(texts.items(), key=lambda t: sorted(t[1][1])[0]):
         lines += ["-" * 72, "Used by: " + ", ".join(sorted(who)), "-" * 72, "", body, "", ""]
-    pathlib.Path(out).write_text("\n".join(lines) + "\n")
+    pathlib.Path(out).write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
     print(f"notices: {len(rows)} packages, {len(texts)} distinct licence texts, "
           f"{len(gpl)} GPL-family -> {out}")
     if gpl and not allow_gpl:
@@ -308,7 +308,7 @@ def selftest(root, dev, names, target=WINDOWS, steam=True):
                 fh.write(data)
             r = subprocess.run([sys.executable, "-I", __file__, "check", str(copy), *flags,
                                 *[a for n in names for a in ("--name", n)]],
-                               capture_output=True, text=True)
+                               capture_output=True, text=True, encoding="utf-8")
             ok = r.returncode == 1 and want in r.stdout
             print(f"selftest: planted {want} in {rel}: {'caught' if ok else 'MISSED'}")
             bad += not ok
@@ -323,7 +323,7 @@ def sums(root):
     rels = sorted((f.relative_to(root).as_posix() for f in root.rglob("*")
                    if f.is_file() and f != out), key=lambda r: r.encode())
     lines = [f"{hashlib.sha256((root / r).read_bytes()).hexdigest()}  {r}\n" for r in rels]
-    out.write_text("".join(lines), newline="\n")
+    out.write_text("".join(lines), encoding="utf-8", newline="\n")
     return 0
 
 

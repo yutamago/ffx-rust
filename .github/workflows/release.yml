@@ -25,6 +25,7 @@ on:
       - tools/package-release.sh
       - tools/release-files.py
       - tools/check-licences.py
+      - tools/check-privacy.py
 
 permissions:
   contents: read

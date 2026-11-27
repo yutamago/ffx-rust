@@ -78,7 +78,7 @@ def tree(crate, target, features=""):
         cmd += ["--target", target]
     if features:
         cmd += ["--features", features]
-    r = subprocess.run(cmd, cwd=REPO, capture_output=True, text=True)
+    r = subprocess.run(cmd, cwd=REPO, capture_output=True, text=True, encoding="utf-8")
     if r.returncode != 0:
         sys.stderr.write(r.stderr)
         return None
