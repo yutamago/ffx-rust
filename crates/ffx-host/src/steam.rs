@@ -1334,6 +1334,8 @@ mod tests {
 
     #[test]
     fn the_twins_are_laid_out_as_steam_api64_expects() {
+        type Run = unsafe extern "C" fn(*mut HostCallback, *const c_void);
+        type Size = unsafe extern "C" fn(*mut HostCallback) -> i32;
         // CCallbackBase on x64: vtable, flags at +8, id at +12
         assert_eq!(std::mem::offset_of!(HostCallback, flags), 8);
         assert_eq!(std::mem::offset_of!(HostCallback, id), 12);
@@ -1350,22 +1352,28 @@ mod tests {
             (t.vtable.run_call_result)(p, data.as_ptr().cast(), 0, 0);
         }
         // the slot order the library's compiler uses: MSVC puts
-        // `Run(void *)` second, GCC and Clang first
+        // `Run(void *)` second, GCC and Clang first; GetCallbackSizeBytes
+        // third. Called by position, as the DLL does (comparing addresses
+        // would not do: an optimised build may hold a function twice).
         // SAFETY: three function pointers, read as words.
         let slots: [usize; 3] = unsafe { std::mem::transmute_copy(t.vtable) };
-        let run = run_callback as unsafe extern "C" fn(*mut HostCallback, *const c_void) as usize;
-        assert_eq!(slots[usize::from(cfg!(windows))], run);
-        assert_eq!(
-            slots[2],
-            callback_size as unsafe extern "C" fn(*mut HostCallback) -> i32 as usize
-        );
+        let other = [9u8; 0x10];
+        // SAFETY: the slots hold these signatures (the vtable above).
+        unsafe {
+            let run: Run = std::mem::transmute(slots[usize::from(cfg!(windows))]);
+            run(p, other.as_ptr().cast());
+            let size: Size = std::mem::transmute(slots[2]);
+            assert_eq!(size(p), 0x10);
+        }
         let ev: Vec<Event> = HostCallback::take_events()
             .into_iter()
             .filter(|e| e.guest == 0x1234)
             .collect();
-        assert_eq!(ev.len(), 2);
+        assert_eq!(ev.len(), 3);
         assert_eq!(ev[0].data, data);
         assert_eq!(ev[0].id, 1102);
+        // the third came through the `Run(void *)` slot by position
+        assert_eq!(ev[2].data, other);
     }
 
     #[test]
