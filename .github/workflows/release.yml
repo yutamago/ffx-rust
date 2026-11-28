@@ -8,9 +8,12 @@
 #   changes the packaging, it builds every platform and keeps the archives
 #   as the run's artifacts; nothing is published.
 #
-# Steam: the Windows package carries steam_api64.dll when the repository
-# secret STEAM_API64_DLL_B64 holds it (base64; from the Steamworks SDK,
-# redistributable_bin/win64). Without it the package is built with
+# Steam: Valve's libraries (Steamworks SDK redistributables) may not be in
+# this public repository and are too large for a secret, so they live in the
+# private repository yutamago/ffx-rust-ci-assets (sdk/redistributable_bin/,
+# laid out as in the SDK). The workflow checks it out with a read-only
+# deploy key, the secret CI_ASSETS_DEPLOY_KEY, and points STEAMWORKS_SDK at
+# it. Without the secret (a fork's pull request) the packages are built with
 # --without-steam: the game runs, achievements stay off.
 name: Release
 
@@ -90,21 +93,34 @@ jobs:
       - name: Dependencies
         run: cargo fetch --locked
 
-      - name: Steam (optional)
+      - name: Steam's libraries available?
         id: steam
-        if: runner.os == 'Windows'
         env:
-          DLL_B64: ${{ secrets.STEAM_API64_DLL_B64 }}
+          KEY: ${{ secrets.CI_ASSETS_DEPLOY_KEY }}
         run: |
-          if [[ -n "$DLL_B64" ]]; then
-              sdk="$RUNNER_TEMP/steamworks/sdk"
-              mkdir -p "$sdk/redistributable_bin/win64"
-              printf '%s' "$DLL_B64" | base64 -d >"$sdk/redistributable_bin/win64/steam_api64.dll"
-              echo "STEAMWORKS_SDK=$sdk" >>"$GITHUB_ENV"
+          if [[ -n "$KEY" ]]; then
+              echo "assets=1" >>"$GITHUB_OUTPUT"
           else
-              echo "no STEAM_API64_DLL_B64 secret: the Windows package is built without steam_api64.dll"
+              echo "no CI_ASSETS_DEPLOY_KEY secret: the package is built without Steam's library"
               echo "flags=--without-steam" >>"$GITHUB_OUTPUT"
           fi
+
+      - name: Steam's libraries (private repository ffx-rust-ci-assets)
+        if: steps.steam.outputs.assets == '1'
+        uses: actions/checkout@v4
+        with:
+          repository: yutamago/ffx-rust-ci-assets
+          ssh-key: ${{ secrets.CI_ASSETS_DEPLOY_KEY }}
+          path: .ci-assets
+          persist-credentials: false
+
+      - name: Point the package at them
+        if: steps.steam.outputs.assets == '1'
+        run: |
+          sdk="$GITHUB_WORKSPACE/.ci-assets/sdk"
+          # Git Bash on Windows: the POSIX spelling, as the script tests it
+          if command -v cygpath >/dev/null 2>&1; then sdk="$(cygpath -u "$sdk")"; fi
+          echo "STEAMWORKS_SDK=$sdk" >>"$GITHUB_ENV"
 
       - name: Package
         env:

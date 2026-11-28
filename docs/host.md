@@ -2119,8 +2119,11 @@ GitHub release (a pre-release for `v0.*`) with the archives of the
 platforms in the workflow's `PUBLISHED` (today `win64`) and a
 `SHA256SUMS.txt`; run by hand it only keeps the archives as artifacts.
 `FFX_RELEASE_LABEL` (the tag) replaces `<version>-<rev>` in the names.
-The Windows package carries `steam_api64.dll` when the repository secret
-`STEAM_API64_DLL_B64` holds it (base64), else `--without-steam`.
+Steam's libraries (the Steamworks SDK's redistributables) come from the
+private repository `yutamago/ffx-rust-ci-assets` (`sdk/redistributable_bin/`,
+as in the SDK), checked out with a read-only deploy key (the secret
+`CI_ASSETS_DEPLOY_KEY`; a repository secret holds at most 48 KB, the
+libraries are 300-430 KB); without the secret, `--without-steam`.
 
 ```bash
 tools/package-release.sh --dry-run          # no build, no zip: stage, check, self-test (seconds)
