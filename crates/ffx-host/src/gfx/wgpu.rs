@@ -849,6 +849,18 @@ impl Wgpu {
                 w::TextureFormat::Rgba8Unorm
             }
         };
+        // FFX_HOST_WGPU_DEPTH32=1: 32-bit float depth for D24S8 (to measure
+        // what the depth format changes)
+        let format = if format == w::TextureFormat::Depth24PlusStencil8
+            && std::env::var("FFX_HOST_WGPU_DEPTH32").is_ok_and(|v| v == "1")
+            && device
+                .features()
+                .contains(w::Features::DEPTH32FLOAT_STENCIL8)
+        {
+            w::TextureFormat::Depth32FloatStencil8
+        } else {
+            format
+        };
         if format.is_compressed()
             && !device
                 .features()
@@ -3855,5 +3867,84 @@ impl Backend for Wgpu {
             Some(Obj::State(_, _, key)) => Some(*key as usize),
             _ => None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A device on any adapter (lavapipe on a machine without a GPU);
+    /// `None` skips the test where there is none.
+    fn device() -> Option<Wgpu> {
+        let mut g = Wgpu::new(None);
+        let mut desc = [0u32; 15];
+        desc[0] = 16;
+        desc[1] = 8;
+        desc[4] = 28;
+        desc[7] = 1;
+        desc[9] = 0x20;
+        (g.create_device(&SwapChainDesc(desc), 0) == S_OK).then_some(g)
+    }
+
+    #[test]
+    fn a_cleared_back_buffer_reads_back_as_bgra() {
+        let Some(mut g) = device() else {
+            eprintln!("no wgpu adapter: skipped");
+            return;
+        };
+        assert_eq!(g.back_buffer(1), S_OK);
+        let rtv = Create::View {
+            class: class::RTV,
+            resource: 1,
+            desc: None,
+        };
+        assert_eq!(g.create(2, &rtv), S_OK);
+        g.op(&Op::ClearTarget(2, [1.0, 0.0, 0.0, 1.0]));
+        let (w, h, px) = g.back_buffer_image().expect("an image");
+        assert_eq!((w, h), (16, 8));
+        assert_eq!(&px[..4], &[0, 0, 255, 255]);
+        assert!(g.problems().is_empty(), "{:?}", g.problems());
+    }
+
+    #[test]
+    fn writes_between_copies_keep_their_order() {
+        let Some(mut g) = device() else {
+            eprintln!("no wgpu adapter: skipped");
+            return;
+        };
+        // two 4 x 4 RGBA8 textures; a copy of the first, then a write to
+        // it: the copy must see the bytes from before the write
+        let desc = [4, 4, 1, 1, 28, 1, 0, 0, 0x8, 0, 0];
+        let init = [(16, 0, vec![7u8; 64])];
+        assert_eq!(
+            g.create(
+                10,
+                &Create::Texture {
+                    dims: 2,
+                    desc: &desc,
+                    init: &init
+                }
+            ),
+            S_OK
+        );
+        assert_eq!(
+            g.create(
+                11,
+                &Create::Texture {
+                    dims: 2,
+                    desc: &desc,
+                    init: &[]
+                }
+            ),
+            S_OK
+        );
+        g.op(&Op::Copy(11, 10));
+        g.op(&Op::Update(10, 0, None, &[9u8; 64], 16, 0));
+        let mut out = vec![0u8; 64];
+        assert!(g.read(11, 0, 16, &mut out));
+        assert!(out.iter().all(|&b| b == 7), "{out:?}");
+        assert!(g.read(10, 0, 16, &mut out));
+        assert!(out.iter().all(|&b| b == 9), "{out:?}");
     }
 }

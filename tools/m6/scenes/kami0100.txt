@@ -1,0 +1,6 @@
+# kami0100 (the book: alpha to coverage), as draw-gate-kami without its capture
+load direct 5 kami0100 lockstep
+lockstep on
+pin
+waitfor 0x01325d94:4 40000000 c0ffffff 1500
+wait 40
