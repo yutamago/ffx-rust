@@ -63,7 +63,11 @@ default = ["dev-unicorn"]
 # it (docs/host.md, "Without Unicorn").
 dev-unicorn = ["dep:unicorn-engine", "ffx-fpu/unicorn"]
 # Iggy's players on Ruffle (ffx-swf); without it the players are null.
-swf = ["dep:ffx-swf"]
+# Ruffle draws with wgpu already, so the wgpu back end comes with it.
+swf = ["dep:ffx-swf", "gfx-wgpu"]
+# The portable graphics back end (src/gfx/wgpu.rs; docs/host.md, "The
+# wgpu back end"): FFX_HOST_GFX=wgpu, the native platforms' default.
+gfx-wgpu = ["dep:wgpu", "dep:pollster", "dep:ffx-dxbc"]
 
 [dependencies]
 ffx-bridge.workspace = true
@@ -82,13 +86,29 @@ ffx-system.workspace = true
 # The Flash screens on Ruffle (src/iggy/swf.rs): heavy (wgpu), so a feature.
 ffx-swf = { workspace = true, optional = true }
 goblin.workspace = true
+# Steam's library, loaded at run time (src/platform/steam_api.rs)
+libloading = "0.8"
 md-5.workspace = true
+# the wgpu back end (feature gfx-wgpu), Ruffle's version
+pollster = { version = "0.4", optional = true }
+wgpu = { version = "30.0.1", optional = true }
+# the window a platform hands the wgpu back end (crate::platform::GfxWindow)
+raw-window-handle = "0.6.2"
+ffx-dxbc = { workspace = true, optional = true }
 miniz_oxide.workspace = true
 thiserror.workspace = true
 unicorn-engine = { workspace = true, optional = true }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+# The native platform off Windows (src/platform/native.rs; docs/host.md,
+# "Native platform"): the window and its events, the sound output, the
+# pads.
+[target.'cfg(not(windows))'.dependencies]
+cpal = "0.18"
+gilrs = "0.11"
+winit = { version = "0.30", default-features = false, features = ["rwh_06", "x11", "wayland", "wayland-dlopen"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { workspace = true, features = [

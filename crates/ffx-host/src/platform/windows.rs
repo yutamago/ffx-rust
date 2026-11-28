@@ -23,7 +23,8 @@
 //!   devices, `XInput`, the raw input device names.
 //! - **Sound** (`audio_out`): the mix on the default device through WASAPI
 //!   (the hook's `rust_audio_out.rs`, compiled here too).
-//! - **Steam** ([`steam`]): `steam_api64.dll`, loaded at run time.
+//! - **Steam** ([`steam`], `super::steam_api`): `steam_api64.dll`, loaded
+//!   at run time.
 //! - **The documents folder and message boxes** (`shell`, `ffx-launch`'s):
 //!   `SHGetFolderPathW(CSIDL_PERSONAL)`, `MessageBoxW`.
 //! - **The process end**: `TerminateProcess`.
@@ -58,7 +59,9 @@ mod input;
 /// file, compiled here too.
 #[path = "../../../ffx-launch/src/shell.rs"]
 mod shell;
-pub mod steam;
+/// Steam's library (`steam_api64.dll` here), shared with the native
+/// platform.
+pub use super::steam_api as steam;
 
 const WM_SIZE: u32 = 0x0005;
 const WM_ACTIVATE: u32 = 0x0006;

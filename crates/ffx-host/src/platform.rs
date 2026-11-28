@@ -15,17 +15,27 @@
 //!   message loop, `DirectInput8`/`XInput`/raw input, WASAPI, D3D11,
 //!   `steam_api64.dll`, the documents folder, `MessageBoxW`,
 //!   `TerminateProcess`;
+//! - [`native::NativePlatform`] (Linux, macOS): a winit window and its
+//!   events as Win32 messages, the keyboard and mouse as `DirectInput`
+//!   devices, gilrs pads as `XInput`, cpal sound, `libsteam_api`, a dialog
+//!   program for message boxes; its event loop runs on the process's main
+//!   thread and the game on another ([`run_main`]);
 //! - [`headless::HeadlessPlatform`]: no window (a stand-in that never gets a
 //!   message), no input devices, no device sound, the recording null
-//!   device, no Steam. The Linux check and the null-device runs use it.
+//!   device, no Steam. The Linux check, the tests, harness games off
+//!   Windows and the null-device runs use it.
 //!
-//! One platform serves the process: [`install`] one before the boot, or
-//! [`get`] picks it on first use (`FFX_HOST_PLATFORM=windows|headless`;
-//! default: Windows on Windows, headless elsewhere).
+//! One platform serves the process: [`install`] one before the boot (as
+//! [`run_main`] does for the native platform), or [`get`] picks it on first
+//! use (`FFX_HOST_PLATFORM=windows|headless`; default: Windows on Windows,
+//! headless elsewhere).
 
 use std::sync::OnceLock;
 
 pub mod headless;
+#[cfg(not(windows))]
+pub mod native;
+pub mod steam_api;
 #[cfg(windows)]
 pub mod windows;
 
@@ -110,6 +120,22 @@ pub struct WindowRequest<'a> {
     pub width: i32,
     /// See `x`.
     pub height: i32,
+}
+
+/// A window the wgpu back end draws into (`crate::gfx::wgpu`), handed out by
+/// a platform with a real window ([`Platform::gfx_window`]): its
+/// `raw-window-handle` handles and its client size.
+pub trait GfxWindow:
+    raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle + Send + Sync
+{
+    /// The client area in pixels (the surface's size; 0 while minimised).
+    fn size(&self) -> (u32, u32);
+    /// Runs `f` on the thread that owns the window and returns when it
+    /// ran: the back end makes its surface there (Metal needs the main
+    /// thread). Default: on the caller's thread.
+    fn on_window_thread(&self, f: Box<dyn FnOnce() + Send>) {
+        f();
+    }
 }
 
 /// A `DirectInput` property (`Set/GetProperty`): `MAKEDIPROP(n)` or a GUID.
@@ -257,6 +283,12 @@ pub trait Platform: Send + Sync {
     /// recording, so it doesn't depend on the back end); `Present` shows a
     /// frame.
     fn graphics(&self) -> Box<dyn crate::gfx::Backend>;
+    /// The window the wgpu back end draws into (`FFX_HOST_GFX=wgpu`, or a
+    /// platform's own `graphics` through `crate::gfx::wgpu_backend`);
+    /// `None`: offscreen.
+    fn gfx_window(&self) -> Option<std::sync::Arc<dyn GfxWindow>> {
+        None
+    }
 
     // ---- input (the game's input threads, inside the layer's calls) -----
     //
@@ -412,15 +444,20 @@ pub fn get() -> &'static dyn Platform {
 }
 
 /// The platform `FFX_HOST_PLATFORM` names (`windows`, `headless`), else
-/// the default: Windows on Windows, headless elsewhere.
+/// the default: Windows on Windows, headless elsewhere. The native
+/// platform is never chosen here: it needs the main thread for its event
+/// loop, so only [`run_main`] installs it.
 #[must_use]
 pub fn choose() -> Box<dyn Platform> {
     let asked = std::env::var("FFX_HOST_PLATFORM").unwrap_or_default();
     match asked.as_str() {
         "headless" => return Box::new(headless::HeadlessPlatform),
         "" | "windows" => {}
+        "native" => crate::log::note(
+            "FFX_HOST_PLATFORM=native: only ffx-rust's own start (platform::run_main) makes it; the default",
+        ),
         other => crate::log::note(&format!(
-            "FFX_HOST_PLATFORM={other}: not a platform (windows, headless); the default"
+            "FFX_HOST_PLATFORM={other}: not a platform (windows, native, headless); the default"
         )),
     }
     #[cfg(windows)]
@@ -434,4 +471,22 @@ pub fn choose() -> Box<dyn Platform> {
         }
         Box::new(headless::HeadlessPlatform)
     }
+}
+
+/// Runs a program's game (`game`, which boots and runs it) on the
+/// platform its system gives a player: off Windows the native platform
+/// when [`native::wanted`] says so (a desktop, not a harness game, not the
+/// null device; `FFX_HOST_PLATFORM=native|headless` decides otherwise),
+/// with its event loop on this thread, which must be the process's main
+/// thread, and `game` on a thread of its own; anywhere else `game` here,
+/// on the platform [`get`] picks. `game`'s exit code.
+pub fn run_main<F>(game: F) -> std::process::ExitCode
+where
+    F: FnOnce() -> std::process::ExitCode + Send + 'static,
+{
+    #[cfg(not(windows))]
+    if native::wanted() {
+        return native::run(game);
+    }
+    game()
 }

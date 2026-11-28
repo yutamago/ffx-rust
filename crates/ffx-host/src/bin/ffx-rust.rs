@@ -26,7 +26,9 @@
 //! "Game speed").
 //!
 //! `FFX_HOST_GFX=null` picks the null device as `--gfx-null` does (harness
-//! runs pass no arguments).
+//! runs pass no arguments); `FFX_HOST_GFX=wgpu` the wgpu back end
+//! (docs/host.md, "The wgpu back end"), on the platform's window or
+//! offscreen.
 //!
 //! Under the test harness (`FFX_HARNESS=<port>`, docs/harness.md "Two
 //! processes") it serves the harness protocol, takes its Documents folder
@@ -60,15 +62,27 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
-#[allow(clippy::too_many_lines)] // the argument loop and the report
+/// A player's run: no arguments, not under the harness.
+fn player() -> bool {
+    std::env::args_os().len() <= 1 && std::env::var_os("FFX_HARNESS").is_none()
+}
+
+/// The program on the platform its system gives a player
+/// (`ffx_host::platform::run_main`: off Windows on a desktop the native
+/// platform, whose event loop takes this, the main, thread and runs
+/// [`run`] on another).
 fn main() -> ExitCode {
-    // a player's run: no arguments, not under the harness
-    let player = std::env::args_os().len() <= 1 && std::env::var_os("FFX_HARNESS").is_none();
-    if player && std::env::var_os("SteamAppId").is_none_or(|v| v.is_empty()) {
+    if player() && std::env::var_os("SteamAppId").is_none_or(|v| v.is_empty()) {
         // SAFETY: the first thing the process does: no other thread exists
         // to read the environment.
         unsafe { std::env::set_var("SteamAppId", ffx_host::player::STEAM_APP_ID) };
     }
+    ffx_host::platform::run_main(run)
+}
+
+#[allow(clippy::too_many_lines)] // the argument loop and the report
+fn run() -> ExitCode {
+    let player = player();
     let mut args = std::env::args().skip(1);
     let mut game: Option<PathBuf> = std::env::var_os("FFX_GAME_DIR").map(PathBuf::from);
     let mut sym: Option<PathBuf> = None;
@@ -80,6 +94,9 @@ fn main() -> ExitCode {
     let mut opts = ffx_host::Options::default();
     // `FFX_HOST_GFX=null`: the null device, as `--gfx-null` (for harness
     // runs, which pass no arguments: a hang bisected to the real device)
+    if std::env::var("FFX_HOST_GFX").is_ok_and(|v| v == "wgpu") {
+        opts.gfx.backend = ffx_host::gfx::Choice::Wgpu;
+    }
     if std::env::var("FFX_HOST_GFX").is_ok_and(|v| v == "null") {
         opts.gfx.backend = ffx_host::gfx::Choice::Null;
     }

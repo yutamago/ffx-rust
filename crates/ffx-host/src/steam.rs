@@ -22,7 +22,7 @@
 //! (`Run(void *)`, slot 1), in the order Steam produced them.
 //!
 //! The library is the platform's (`crate::platform::Platform::steam`; on
-//! Windows `steam_api64.dll`, `crate::platform::windows::steam`). When it
+//! Windows `steam_api64.dll`, `crate::platform::steam_api`). When it
 //! is missing (beside `ffx-rust.exe`, or at `FFX_STEAM_API`), on the
 //! headless platform, or when `SteamAPI_Init` fails, Steam is
 //! absent as before this bridge: `SteamAPI_Init` returns false, so
@@ -236,13 +236,16 @@ pub struct Callback {
 /// both widths (`VALVE_CALLBACK_PACK_LARGE`), so the 64-bit and 32-bit
 /// layouts agree; the sizes are the game's own (`ReturnConst_006f1590`
 /// 0x18, `ReturnConst_006f15a0` 0x10, `ReturnConst_006f1580` 0x98 in the
-/// vtables `0x00b4b9f0`, `0x00b4ba00`, `0x00b4ba10`, slot 2).
+/// vtables `0x00b4b9f0`, `0x00b4ba00`, `0x00b4ba10`, slot 2). On Linux
+/// and macOS the library packs them to 4 (`VALVE_CALLBACK_PACK_SMALL`):
+/// the same offsets (no field there is 8-aligned past a 4-byte one), each
+/// struct 4 bytes shorter at the end ([`PACK_SMALL`]).
 pub const CALLBACKS: &[Callback] = &[
     Callback {
         id: 1101,
         name: "UserStatsReceived_t",
         size32: 0x18,
-        size64: 0x18,
+        size64: 0x18 - PACK_SMALL,
         fields: &[
             ("m_nGameID", 0, 0, 8),
             ("m_eResult", 8, 8, 4),
@@ -255,14 +258,14 @@ pub const CALLBACKS: &[Callback] = &[
         id: 1102,
         name: "UserStatsStored_t",
         size32: 0x10,
-        size64: 0x10,
+        size64: 0x10 - PACK_SMALL,
         fields: &[("m_nGameID", 0, 0, 8), ("m_eResult", 8, 8, 4)],
     },
     Callback {
         id: 1103,
         name: "UserAchievementStored_t",
         size32: 0x98,
-        size64: 0x98,
+        size64: 0x98 - PACK_SMALL,
         fields: &[
             ("m_nGameID", 0, 0, 8),
             ("m_bGroupAchievement", 8, 8, 1),
@@ -272,6 +275,10 @@ pub const CALLBACKS: &[Callback] = &[
         ],
     },
 ];
+
+/// What packing to 4 instead of 8 takes off the end of each of
+/// [`CALLBACKS`] in the 64-bit library: 4 off Windows, 0 on it.
+pub const PACK_SMALL: u32 = if cfg!(windows) { 0 } else { 4 };
 
 /// The layout of callback `id`.
 #[must_use]
@@ -597,13 +604,26 @@ pub fn read_cstr(mem: &impl Mem, at: u32) -> Option<CString> {
 // pointer, `uint8 m_nCallbackFlags` (+8), `int m_iCallback` (+12); its
 // virtuals are `Run(void *)` and `Run(void *, bool, SteamAPICall_t)`,
 // which MSVC places in reverse (the game's vtables show the same: slot 0
-// `ret 0x10`, slot 1 `ret 4`), then `GetCallbackSizeBytes`.
+// `ret 0x10`, slot 1 `ret 4`), then `GetCallbackSizeBytes`. GCC and Clang
+// (the Itanium C++ ABI: Linux's and macOS's libraries) keep the
+// declaration order: `Run(void *)` first. The fields are at the same
+// offsets in both.
 
-/// The twin vtable.
+/// The twin vtable (MSVC's order).
+#[cfg(windows)]
 #[repr(C)]
 struct HostVtable {
     run_call_result: unsafe extern "C" fn(*mut HostCallback, *const c_void, u8, u64),
     run: unsafe extern "C" fn(*mut HostCallback, *const c_void),
+    size: unsafe extern "C" fn(*mut HostCallback) -> i32,
+}
+
+/// The twin vtable (the Itanium ABI's order).
+#[cfg(not(windows))]
+#[repr(C)]
+struct HostVtable {
+    run: unsafe extern "C" fn(*mut HostCallback, *const c_void),
+    run_call_result: unsafe extern "C" fn(*mut HostCallback, *const c_void, u8, u64),
     size: unsafe extern "C" fn(*mut HostCallback) -> i32,
 }
 
@@ -685,14 +705,14 @@ unsafe fn queue(this: *mut HostCallback, p: *const c_void) {
     }
 }
 
-/// Slot 0: `Run(void *, bool, SteamAPICall_t)` (call results; the game
+/// `Run(void *, bool, SteamAPICall_t)` (slot 0 with MSVC, 1 elsewhere; call results; the game
 /// registers none, so this is never expected, but queued all the same).
 unsafe extern "C" fn run_call_result(this: *mut HostCallback, p: *const c_void, _: u8, _: u64) {
     // SAFETY: the DLL calls it on a twin it was given, with its struct.
     unsafe { queue(this, p) }
 }
 
-/// Slot 1: `Run(void *)`.
+/// `Run(void *)` (slot 1 with MSVC, 0 elsewhere).
 unsafe extern "C" fn run_callback(this: *mut HostCallback, p: *const c_void) {
     // SAFETY: as `run_call_result`.
     unsafe { queue(this, p) }
@@ -1314,6 +1334,8 @@ mod tests {
 
     #[test]
     fn the_twins_are_laid_out_as_steam_api64_expects() {
+        type Run = unsafe extern "C" fn(*mut HostCallback, *const c_void);
+        type Size = unsafe extern "C" fn(*mut HostCallback) -> i32;
         // CCallbackBase on x64: vtable, flags at +8, id at +12
         assert_eq!(std::mem::offset_of!(HostCallback, flags), 8);
         assert_eq!(std::mem::offset_of!(HostCallback, id), 12);
@@ -1329,13 +1351,29 @@ mod tests {
             (t.vtable.run)(p, data.as_ptr().cast());
             (t.vtable.run_call_result)(p, data.as_ptr().cast(), 0, 0);
         }
+        // the slot order the library's compiler uses: MSVC puts
+        // `Run(void *)` second, GCC and Clang first; GetCallbackSizeBytes
+        // third. Called by position, as the DLL does (comparing addresses
+        // would not do: an optimised build may hold a function twice).
+        // SAFETY: three function pointers, read as words.
+        let slots: [usize; 3] = unsafe { std::mem::transmute_copy(t.vtable) };
+        let other = [9u8; 0x10];
+        // SAFETY: the slots hold these signatures (the vtable above).
+        unsafe {
+            let run: Run = std::mem::transmute(slots[usize::from(cfg!(windows))]);
+            run(p, other.as_ptr().cast());
+            let size: Size = std::mem::transmute(slots[2]);
+            assert_eq!(size(p), 0x10);
+        }
         let ev: Vec<Event> = HostCallback::take_events()
             .into_iter()
             .filter(|e| e.guest == 0x1234)
             .collect();
-        assert_eq!(ev.len(), 2);
+        assert_eq!(ev.len(), 3);
         assert_eq!(ev[0].data, data);
         assert_eq!(ev[0].id, 1102);
+        // the third came through the `Run(void *)` slot by position
+        assert_eq!(ev[2].data, other);
     }
 
     #[test]

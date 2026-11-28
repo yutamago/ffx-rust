@@ -1,0 +1,6 @@
+# cdsp0000 (the deck), as draw-cdsp0000 without its capture
+load direct 1 cdsp0000 lockstep
+lockstep on
+pin
+waitfor 0x01325d94:4 40000000 c0ffffff 1500
+wait 40

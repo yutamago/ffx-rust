@@ -36,8 +36,10 @@ permissions:
 env:
   # The platforms a tag publishes. A platform joins when ffx-rust plays on
   # it; until then its archive is only a workflow artifact. Linux and macOS
-  # run on the headless platform today (no window, sound or input:
-  # crates/ffx-host/src/platform.rs), so they are built but not published.
+  # have the native platform and the wgpu back end
+  # (crates/ffx-host/src/platform/native.rs, src/gfx/wgpu.rs), but keyboard,
+  # pads and sound on real hardware and any run on macOS are still untested,
+  # so they are built but not published yet.
   PUBLISHED: "win64"
   CARGO_TERM_COLOR: always
 
@@ -89,6 +91,14 @@ jobs:
       - name: LLVM's resource compiler (ffx-rust.exe's icon)
         if: runner.os == 'Windows'
         run: echo "C:\\Program Files\\LLVM\\bin" >>"$GITHUB_PATH"
+
+      # the native platform's system libraries: ALSA (cpal's sound) and
+      # udev (gilrs' pads); winit loads X11 and Wayland at run time
+      - name: Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libasound2-dev libudev-dev pkg-config
 
       - name: Dependencies
         run: cargo fetch --locked

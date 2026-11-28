@@ -41,6 +41,9 @@ use crate::table::{Args, Ret};
 
 mod composite;
 pub mod gate;
+pub mod trace;
+#[cfg(feature = "gfx-wgpu")]
+pub mod wgpu;
 
 /// `D3D_FEATURE_LEVEL_11_0`.
 pub const FEATURE_LEVEL_11_0: u32 = 0xb000;
@@ -94,6 +97,33 @@ pub enum Choice {
     Default,
     /// The recording null device everywhere.
     Null,
+    /// The wgpu back end (`FFX_HOST_GFX=wgpu`) on the platform's window,
+    /// or offscreen; the null device in a build without it (feature
+    /// `gfx-wgpu`).
+    Wgpu,
+}
+
+/// The wgpu back end on `window` (offscreen with none): a platform's
+/// [`crate::platform::Platform::graphics`] off Windows, and
+/// [`Choice::Wgpu`]. In a build without the `gfx-wgpu` feature, the null
+/// device (with a note).
+#[must_use]
+#[cfg_attr(not(feature = "gfx-wgpu"), allow(clippy::needless_pass_by_value))]
+pub fn wgpu_backend(
+    window: Option<std::sync::Arc<dyn crate::platform::GfxWindow>>,
+) -> Box<dyn Backend> {
+    #[cfg(feature = "gfx-wgpu")]
+    {
+        Box::new(wgpu::Wgpu::new(window))
+    }
+    #[cfg(not(feature = "gfx-wgpu"))]
+    {
+        let _ = window;
+        crate::log::note(
+            "gfx: wgpu asked for, built without it (feature gfx-wgpu): the null device",
+        );
+        Box::new(Null::default())
+    }
 }
 
 /// How the layer runs ([`crate::Options::gfx`]).
@@ -537,6 +567,9 @@ pub struct Gfx {
     /// resolves (indices into `cmds`): the hook's capture records only
     /// `CopyResource`, so gate captures leave these out.
     region_copies: Vec<usize>,
+    /// `FFX_HOST_GFX_SHOTS`: the folder and every how many `Present`s
+    /// ([`trace`]).
+    shots: Option<(std::path::PathBuf, u32)>,
 }
 
 impl std::fmt::Debug for Gfx {
@@ -709,6 +742,18 @@ impl Gfx {
         let backend: Box<dyn Backend> = match config.backend {
             Choice::Null => Box::new(Null::default()),
             Choice::Default => crate::platform::get().graphics(),
+            Choice::Wgpu => wgpu_backend(crate::platform::get().gfx_window()),
+        };
+        // `FFX_HOST_GFX_TRACE`: every back-end call on file too ([`trace`])
+        let backend = match std::env::var_os("FFX_HOST_GFX_TRACE").filter(|v| !v.is_empty()) {
+            Some(path) => match trace::Tee::create(std::path::Path::new(&path)) {
+                Ok(out) => Box::new(trace::Tee::wrap(backend, out)),
+                Err(e) => {
+                    crate::log::note(&format!("gfx trace {}: {e}", path.display()));
+                    backend
+                }
+            },
+            None => backend,
         };
         let mut com = Com::new(e, method)?;
         let device = com.create(e, class::DEVICE);
@@ -745,6 +790,7 @@ impl Gfx {
             composite: composite::Objects::default(),
             gate,
             region_copies: Vec::new(),
+            shots: trace::shots_from_env(),
         };
         let bb = desc.back_buffer();
         g.resources.insert(
@@ -1508,6 +1554,15 @@ impl Gfx {
     fn present(&mut self, e: &mut Exec, a: &[u32]) -> u32 {
         let backend = &mut self.backend;
         crate::harness::on_present(|| backend.back_buffer_image());
+        if let Some((dir, every)) = &self.shots
+            && (self.presents + 1).is_multiple_of(*every)
+            && let Some((w, h, bgra)) = self.backend.back_buffer_image()
+        {
+            let path = dir.join(format!("present-{:05}.png", self.presents + 1));
+            if let Err(err) = trace::write_png(&path, w, h, &bgra) {
+                crate::log::note(&format!("gfx shot {}: {err}", path.display()));
+            }
+        }
         let hr = self.backend.present(a[1], a[2]);
         let f = self.frame();
         self.gate_present(e, &f);
