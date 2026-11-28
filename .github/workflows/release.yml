@@ -8,12 +8,12 @@
 #   changes the packaging, it builds every platform and keeps the archives
 #   as the run's artifacts; nothing is published.
 #
-# Steam: each package carries Steam's library when its repository secret
-# holds it (base64; from the Steamworks SDK's redistributable_bin):
-# STEAM_API64_DLL_B64 (win64/steam_api64.dll), LIBSTEAM_API_LINUX64_B64
-# (linux64/libsteam_api.so), LIBSTEAM_API_LINUXARM64_B64
-# (linuxarm64/libsteam_api.so), LIBSTEAM_API_OSX_B64
-# (osx/libsteam_api.dylib). Without it the package is built with
+# Steam: Valve's libraries (Steamworks SDK redistributables) may not be in
+# this public repository and are too large for a secret, so they live in the
+# private repository yutamago/ffx-rust-ci-assets (sdk/redistributable_bin/,
+# laid out as in the SDK). The workflow checks it out with a read-only
+# deploy key, the secret CI_ASSETS_DEPLOY_KEY, and points STEAMWORKS_SDK at
+# it. Without the secret (a fork's pull request) the packages are built with
 # --without-steam: the game runs, achievements stay off.
 name: Release
 
@@ -36,9 +36,10 @@ permissions:
 env:
   # The platforms a tag publishes. A platform joins when ffx-rust plays on
   # it; until then its archive is only a workflow artifact. Linux and macOS
-  # have the native platform (window, input, sound, Steam:
-  # crates/ffx-host/src/platform/native.rs) but draw on the null device until
-  # the wgpu back end lands, so they are built but not published.
+  # have the native platform and the wgpu back end
+  # (crates/ffx-host/src/platform/native.rs, src/gfx/wgpu.rs), but keyboard,
+  # pads and sound on real hardware and any run on macOS are still untested,
+  # so they are built but not published yet.
   PUBLISHED: "win64"
   CARGO_TERM_COLOR: always
 
@@ -52,23 +53,15 @@ jobs:
           - platform: win64
             os: windows-2025
             target: x86_64-pc-windows-msvc
-            steam: STEAM_API64_DLL_B64
-            steam_path: win64/steam_api64.dll
           - platform: macos-arm64
             os: macos-15
             target: aarch64-apple-darwin
-            steam: LIBSTEAM_API_OSX_B64
-            steam_path: osx/libsteam_api.dylib
           - platform: linux-x64
             os: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
-            steam: LIBSTEAM_API_LINUX64_B64
-            steam_path: linux64/libsteam_api.so
           - platform: linux-arm64
             os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
-            steam: LIBSTEAM_API_LINUXARM64_B64
-            steam_path: linuxarm64/libsteam_api.so
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -110,22 +103,34 @@ jobs:
       - name: Dependencies
         run: cargo fetch --locked
 
-      - name: Steam (optional)
+      - name: Steam's libraries available?
         id: steam
         env:
-          LIB_B64: ${{ secrets[matrix.steam] }}
-          LIB_PATH: ${{ matrix.steam_path }}
-          SECRET: ${{ matrix.steam }}
+          KEY: ${{ secrets.CI_ASSETS_DEPLOY_KEY }}
         run: |
-          if [[ -n "$LIB_B64" ]]; then
-              sdk="$RUNNER_TEMP/steamworks/sdk"
-              mkdir -p "$(dirname "$sdk/redistributable_bin/$LIB_PATH")"
-              printf '%s' "$LIB_B64" | base64 -d >"$sdk/redistributable_bin/$LIB_PATH"
-              echo "STEAMWORKS_SDK=$sdk" >>"$GITHUB_ENV"
+          if [[ -n "$KEY" ]]; then
+              echo "assets=1" >>"$GITHUB_OUTPUT"
           else
-              echo "no $SECRET secret: the package is built without $(basename "$LIB_PATH")"
+              echo "no CI_ASSETS_DEPLOY_KEY secret: the package is built without Steam's library"
               echo "flags=--without-steam" >>"$GITHUB_OUTPUT"
           fi
+
+      - name: Steam's libraries (private repository ffx-rust-ci-assets)
+        if: steps.steam.outputs.assets == '1'
+        uses: actions/checkout@v4
+        with:
+          repository: yutamago/ffx-rust-ci-assets
+          ssh-key: ${{ secrets.CI_ASSETS_DEPLOY_KEY }}
+          path: .ci-assets
+          persist-credentials: false
+
+      - name: Point the package at them
+        if: steps.steam.outputs.assets == '1'
+        run: |
+          sdk="$GITHUB_WORKSPACE/.ci-assets/sdk"
+          # Git Bash on Windows: the POSIX spelling, as the script tests it
+          if command -v cygpath >/dev/null 2>&1; then sdk="$(cygpath -u "$sdk")"; fi
+          echo "STEAMWORKS_SDK=$sdk" >>"$GITHUB_ENV"
 
       - name: Package
         env:
