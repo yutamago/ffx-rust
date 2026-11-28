@@ -74,11 +74,8 @@ impl Dll {
 pub fn load_runtime(arena: &Arena, dir: &std::path::Path) -> Result<Vec<Dll>> {
     let mut out = Vec::new();
     for name in RUNTIME {
-        let lower = name.to_ascii_lowercase();
-        let Some(bytes) = [name, lower.as_str()]
-            .iter()
-            .find_map(|n| std::fs::read(dir.join(n)).ok())
-        else {
+        // the name matched without case (both spellings ship)
+        let Ok(bytes) = std::fs::read(crate::files::child(dir, name)) else {
             break;
         };
         out.push(load(arena, &bytes, name)?);

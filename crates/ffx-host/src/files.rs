@@ -3,7 +3,9 @@
 //! caller's (`GameSetting.ini`, the saves), read-write. The game sees its
 //! folder as [`GAME_DIR_WIN`] and the documents folder as [`DOCUMENTS_WIN`];
 //! relative paths are relative to the game folder, as the original's
-//! working directory is the game folder.
+//! working directory is the game folder. Names are matched without case,
+//! as on Windows: off Windows each part of a path that doesn't exist as
+//! written is looked up in its folder without case ([`child`]).
 
 use std::collections::HashMap;
 use std::io::{Read, Seek, SeekFrom};
@@ -13,6 +15,22 @@ use std::path::{Path, PathBuf};
 pub const GAME_DIR_WIN: &str = "C:\\FFX";
 /// The documents folder as the game sees it (`SHGetFolderPathW`).
 pub const DOCUMENTS_WIN: &str = "C:\\FFXDocuments";
+
+/// `dir/name`, the name matched without case off Windows when it doesn't
+/// exist as written (a file the game is about to create keeps its name).
+#[must_use]
+pub fn child(dir: &Path, name: &str) -> PathBuf {
+    let exact = dir.join(name);
+    if cfg!(windows) || exact.exists() {
+        return exact;
+    }
+    let found = std::fs::read_dir(dir).ok().and_then(|entries| {
+        entries
+            .flatten()
+            .find(|e| e.file_name().to_string_lossy().eq_ignore_ascii_case(name))
+    });
+    found.map_or(exact, |e| e.path())
+}
 
 /// Open files by handle.
 #[derive(Debug, Default)]
@@ -73,7 +91,7 @@ impl Files {
             if part == ".." {
                 return None;
             }
-            p.push(part);
+            p = child(&p, part);
         }
         Some((p, docs))
     }
@@ -203,5 +221,29 @@ impl Files {
             Some(_) => 0x80,
             None => u32::MAX,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn game_paths_match_without_case() {
+        let root = std::env::temp_dir().join(format!("ffx-files-case-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("Data/Movie")).unwrap();
+        std::fs::write(root.join("Data/Movie/Intro.BIK"), b"x").unwrap();
+        let mut f = Files::new(&root);
+        let (p, docs) = f.resolve("C:\\FFX\\data\\movie\\intro.bik").unwrap();
+        assert!(!docs);
+        assert_eq!(p, root.join("Data/Movie/Intro.BIK"));
+        assert!(f.open("data/MOVIE/intro.bik", false, 3).is_some());
+        // a name that doesn't exist keeps its case (a file to be made)
+        assert_eq!(
+            f.resolve("data\\New.txt").unwrap().0,
+            root.join("Data/New.txt")
+        );
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

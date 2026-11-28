@@ -367,10 +367,40 @@ fn runs(addr: u32, len: u32, pages: &[u32]) -> Vec<(u32, u32)> {
     out
 }
 
-/// The OS side: reserve, commit, release.
+/// The OS side: reserve, commit, release. The host's pages may be larger
+/// than the game's 4 KB (16 KB on Apple silicon and some ARM64 Linux
+/// kernels): a commit makes every host page it touches accessible
+/// ([`host_span`]), so neighbouring game regions may share one; the arena's
+/// own page bitmap still says which game pages are mapped.
+///
+/// No write watch off Windows: the D3D11 layer's discarding maps then
+/// upload whole buffers instead of the pages written
+/// (`Arena::written` answers `None`; docs/host.md, "Native platform").
+/// Linux's soft-dirty bits are per process (clearing them for one buffer
+/// clears them for all), and `userfaultfd`'s write protection costs a
+/// fault per page, so neither replaces it.
 #[cfg(all(unix, target_pointer_width = "64"))]
 mod sys {
     use crate::{Error, Result};
+
+    /// The host's page size.
+    fn host_page() -> usize {
+        static PAGE: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+        // SAFETY: a plain query.
+        *PAGE.get_or_init(|| {
+            usize::try_from(unsafe { libc::sysconf(libc::_SC_PAGESIZE) })
+                .unwrap_or(0x1000)
+                .max(0x1000)
+        })
+    }
+
+    /// `start..start + size` widened to whole host pages of `page` bytes:
+    /// the offset and length to `mprotect`.
+    pub(super) fn host_span(start: u32, size: u32, page: usize) -> (usize, usize) {
+        let lo = (start as usize) / page * page;
+        let hi = (start as usize + size as usize).next_multiple_of(page);
+        (lo, hi - lo)
+    }
 
     /// No write watch here.
     pub(super) fn watch_reset(_: *mut u8, _: u32, _: u32) -> bool {
@@ -407,14 +437,12 @@ mod sys {
     }
 
     pub(super) fn commit(base: *mut u8, start: u32, size: u32) -> Result<()> {
-        // SAFETY: inside the reservation; anonymous pages read as zero.
-        let r = unsafe {
-            libc::mprotect(
-                base.add(start as usize).cast(),
-                size as usize,
-                libc::PROT_READ | libc::PROT_WRITE,
-            )
-        };
+        let (at, len) = host_span(start, size, host_page());
+        // SAFETY: inside the reservation (4 GB, a multiple of every page
+        // size); anonymous pages read as zero, and pages already
+        // accessible keep their bytes.
+        let r =
+            unsafe { libc::mprotect(base.add(at).cast(), len, libc::PROT_READ | libc::PROT_WRITE) };
         if r == 0 {
             Ok(())
         } else {
@@ -547,6 +575,17 @@ mod tests {
     #[test]
     fn written_pages_become_runs_inside_the_range() {
         assert_eq!(pages_around(0x1234, 0x10), (0x1000, 0x1000));
+        // 16 KB host pages: a 4 KB region at 0x5000 opens 0x4000..0x8000
+        #[cfg(all(unix, target_pointer_width = "64"))]
+        {
+            assert_eq!(sys::host_span(0x5000, 0x1000, 0x4000), (0x4000, 0x4000));
+            assert_eq!(sys::host_span(0x3000, 0x2000, 0x4000), (0, 0x8000));
+            assert_eq!(sys::host_span(0x5000, 0x1000, 0x1000), (0x5000, 0x1000));
+            assert_eq!(
+                sys::host_span(0xffff_f000, 0x1000, 0x4000),
+                (0xffff_c000, 0x4000)
+            );
+        }
         assert_eq!(pages_around(0x1ff0, 0x20), (0x1000, 0x2000));
         // the range 0x1800..0x5800; pages 0x1000, 0x2000 (joined), 0x4000, 0x5000
         let r = runs(0x1800, 0x4000, &[0x1000, 0x2000, 0x4000, 0x5000]);
