@@ -26,7 +26,8 @@ REPO = pathlib.Path(__file__).resolve().parent.parent
 USER_PATH = re.compile(
     r"(?i)(?:[A-Z]:\\{1,2}Users\\{1,2}|/mnt/[a-z]/Users/|/home/)([A-Za-z][\w.-]*)")
 # a path segment that is no one's name
-GENERIC = {"public", "default", "user", "username", "you", "me", "runner",
+GENERIC = {"public", "default", "user", "username", "you", "me",
+           "runner", "runneradmin",  # GitHub's Linux/macOS and Windows runners
            "deck"}  # SteamOS's one user on every Steam Deck (docs/m6.md)
 # quoted from FFX.exe: the PS2 developers' own paths
 ALLOW = {"yonishi"}
@@ -72,7 +73,7 @@ GIT_DIR = [str(REPO)]
 
 def git(*args):
     return subprocess.run(["git", "-C", GIT_DIR[0], *args], capture_output=True,
-                          text=True, check=True).stdout
+                          text=True, encoding="utf-8", check=True).stdout
 
 
 def main():
@@ -94,7 +95,7 @@ def main():
     for name in git("grep", "-I", "-l", "-E", r"Users|/home/").split("\n"):
         if not name:
             continue
-        for n, line in enumerate((REPO / name).read_text(errors="replace").split("\n"), 1):
+        for n, line in enumerate((REPO / name).read_text(encoding="utf-8", errors="replace").split("\n"), 1):
             for m in USER_PATH.finditer(line):
                 who = m.group(1).lower()
                 if who not in GENERIC and who not in ALLOW and not who.startswith(("%", "$", "<")):

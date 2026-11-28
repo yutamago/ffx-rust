@@ -665,6 +665,18 @@ is either ported or listed as unreachable with its evidence.
 
 ### M6: ports
 
+**Changed 2026-11-27 (user):** native, playable `ffx-rust` builds for
+Windows x64, macOS ARM64, Linux x64 and Linux ARM64; the Godot frontend
+is cancelled for now, and the work goes into making `ffx-rust` itself
+playable everywhere. That needs a native platform off Windows (window,
+input, sound, Steam, documents folder behind `ffx_host::platform::Platform`)
+and a native graphics back end (wgpu with `crates/ffx-dxbc`'s DXBC to WGSL,
+the survey's recommendation, `docs/m6.md`). Releases: ffx-rust only,
+built per platform by `.github/workflows/release.yml`; a platform is
+published once it plays (`docs/host.md`, "The release package"). The
+2026-11-15 decisions below are kept as the record; "No native graphics
+back end now" and the Godot plan no longer hold.
+
 Linux and the Steam Deck through Proton now; native platforms through a
 Godot frontend later (user, 2026-11-15). The survey that opened M6 (the
 Windows dependencies, the graphics options, a wgpu proof of concept on

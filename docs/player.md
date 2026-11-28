@@ -33,8 +33,15 @@ below before you start, and keep a copy of your saves.
 
 Pick one of these:
 
+- **Double-click `ffx-rust.exe`.** Started on its own, ffx-rust looks
+  for the game next to itself, then in the folder it was started from,
+  then in Steam's game folders (every Steam library on the computer). If
+  you installed the game through Steam, this is all it takes, wherever
+  you unpacked the package. A console window opens beside the game with
+  ffx-rust's messages; closing it closes the game.
 - **Package in the game folder.** If you unpacked the package into the
-  game folder (next to `FFX.exe`), double-click `play-ffx-rust.cmd`.
+  game folder (next to `FFX.exe`), double-click `play-ffx-rust.cmd`
+  (the same, without the console window).
 - **Package anywhere else.** Drag the game folder onto
   `play-ffx-rust.cmd`. To skip that every time, make a shortcut to
   `ffx-launch.exe` and add the game folder to its target, for example:
@@ -55,7 +62,12 @@ Pick one of these:
   Remove the line to go back to the normal game.
 
 Double-clicking `ffx-launch.exe` itself starts the original `FFX.exe`,
-not ffx-rust. Use `play-ffx-rust.cmd`, or `--rust` as above.
+not ffx-rust. Use `ffx-rust.exe`, `play-ffx-rust.cmd`, or `--rust` as
+above.
+
+If ffx-rust finds the game in none of those places, a message says so.
+Then set the environment variable `FFX_GAME_DIR` to the game folder, or
+use one of the other ways.
 
 If the game folder, a game file or a file of the package is missing,
 a message says what and where, and nothing starts. If the game

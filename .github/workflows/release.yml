@@ -1,0 +1,171 @@
+# ffx-rust's release packages (docs/host.md, "The release package"):
+# tools/package-release.sh once per platform, each on its own runner (native
+# builds, no cross-compiling), then one GitHub release with the archives.
+#
+# - A tag v* builds every platform and publishes a release with the
+#   platforms in PUBLISHED below.
+# - Run by hand (Actions, Release, Run workflow), or on a pull request that
+#   changes the packaging, it builds every platform and keeps the archives
+#   as the run's artifacts; nothing is published.
+#
+# Steam: Valve's libraries (Steamworks SDK redistributables) may not be in
+# this public repository and are too large for a secret, so they live in the
+# private repository yutamago/ffx-rust-ci-assets (sdk/redistributable_bin/,
+# laid out as in the SDK). The workflow checks it out with a read-only
+# deploy key, the secret CI_ASSETS_DEPLOY_KEY, and points STEAMWORKS_SDK at
+# it. Without the secret (a fork's pull request) the packages are built with
+# --without-steam: the game runs, achievements stay off.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+  # a change to the packaging builds every package (nothing is published)
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
+      - tools/package-release.sh
+      - tools/release-files.py
+      - tools/check-licences.py
+      - tools/check-privacy.py
+
+permissions:
+  contents: read
+
+env:
+  # The platforms a tag publishes. A platform joins when ffx-rust plays on
+  # it; until then its archive is only a workflow artifact. Linux and macOS
+  # run on the headless platform today (no window, sound or input:
+  # crates/ffx-host/src/platform.rs), so they are built but not published.
+  PUBLISHED: "win64"
+  CARGO_TERM_COLOR: always
+
+jobs:
+  package:
+    name: ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: win64
+            os: windows-2025
+            target: x86_64-pc-windows-msvc
+          - platform: macos-arm64
+            os: macos-15
+            target: aarch64-apple-darwin
+          - platform: linux-x64
+            os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+          - platform: linux-arm64
+            os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      # the files as committed (LF): Git for Windows would check the
+      # scripts out with CRLF, which bash refuses
+      - name: Line endings
+        run: git config --global core.autocrlf false
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Rust toolchain (rust-toolchain.toml)
+        run: |
+          rustup toolchain install || rustup show
+          rustc -vV
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+          workspaces: ". -> target/package"
+
+      - name: LLVM's resource compiler (ffx-rust.exe's icon)
+        if: runner.os == 'Windows'
+        run: echo "C:\\Program Files\\LLVM\\bin" >>"$GITHUB_PATH"
+
+      - name: Dependencies
+        run: cargo fetch --locked
+
+      - name: Steam's libraries available?
+        id: steam
+        env:
+          KEY: ${{ secrets.CI_ASSETS_DEPLOY_KEY }}
+        run: |
+          if [[ -n "$KEY" ]]; then
+              echo "assets=1" >>"$GITHUB_OUTPUT"
+          else
+              echo "no CI_ASSETS_DEPLOY_KEY secret: the package is built without Steam's library"
+              echo "flags=--without-steam" >>"$GITHUB_OUTPUT"
+          fi
+
+      - name: Steam's libraries (private repository ffx-rust-ci-assets)
+        if: steps.steam.outputs.assets == '1'
+        uses: actions/checkout@v4
+        with:
+          repository: yutamago/ffx-rust-ci-assets
+          ssh-key: ${{ secrets.CI_ASSETS_DEPLOY_KEY }}
+          path: .ci-assets
+          persist-credentials: false
+
+      - name: Point the package at them
+        if: steps.steam.outputs.assets == '1'
+        run: |
+          sdk="$GITHUB_WORKSPACE/.ci-assets/sdk"
+          # Git Bash on Windows: the POSIX spelling, as the script tests it
+          if command -v cygpath >/dev/null 2>&1; then sdk="$(cygpath -u "$sdk")"; fi
+          echo "STEAMWORKS_SDK=$sdk" >>"$GITHUB_ENV"
+
+      - name: Package
+        env:
+          PYTHON: python
+          FFX_RELEASE_LABEL: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
+        run: |
+          [[ -z "$FFX_RELEASE_LABEL" ]] && unset FFX_RELEASE_LABEL
+          tools/package-release.sh --target "${{ matrix.target }}" --out dist ${{ steps.steam.outputs.flags }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ffx-rust-${{ matrix.platform }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    name: GitHub release
+    needs: package
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          files=()
+          for p in $PUBLISHED; do
+              for f in dist/ffx-rust-*-"$p".zip dist/ffx-rust-*-"$p".tar.gz; do
+                  [[ -f "$f" ]] && files+=("$f")
+              done
+          done
+          if [[ ${#files[@]} -eq 0 ]]; then
+              echo "no archive for the platforms in PUBLISHED ($PUBLISHED)" >&2
+              exit 1
+          fi
+          (cd dist && sha256sum "${files[@]#dist/}") >SHA256SUMS.txt
+          pre=()
+          [[ "$TAG" == v0.* || "$TAG" == *-* ]] && pre=(--prerelease)
+          gh release create "$TAG" "${files[@]}" SHA256SUMS.txt \
+              --repo "$GITHUB_REPOSITORY" --title "ffx-rust $TAG" --generate-notes "${pre[@]}"
