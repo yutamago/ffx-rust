@@ -1,0 +1,9 @@
+# a battle on the deck, as draw-gate-battle without its capture
+load direct 1 cdsp0000 lockstep
+lockstep on
+pin
+wait 10
+battle 3 0 0
+waitfor 0x0112a8e0:1 01 ff 4000
+waitfor 0x023cc08c:4 40000000 ffffffff 1200
+wait 30

@@ -1,0 +1,22 @@
+# bsil0000 then bsil0300 (water, the village), as draw-gate-besaid without its captures
+load direct 3 bsil0000 lockstep
+lockstep on
+pin
+waitfor 0x01325d94:4 40000000 c0ffffff 1500
+wait 74
+pad down+left
+waitfor 0x0112ca90:4 14004600 ffffffff 600
+pad
+waitfor 0x01325d94:4 20000000 e0ffffff 1500
+pad up
+waitfor 0x0112d67c:2 7700 ffff 600
+pad
+wait 40
+waitfor 0x01326d84:4 00000000 ffffffff 3000
+wait 120
+pad right
+waitfor 0x0112ca90:4 29001400 ffffffff 900
+pad
+waitfor 0x01325d94:4 20000000 e0ffffff 1500
+pin
+wait 10

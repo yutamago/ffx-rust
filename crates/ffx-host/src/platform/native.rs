@@ -522,10 +522,18 @@ impl raw_window_handle::HasDisplayHandle for WindowSurface {
     }
 }
 
-impl super::Surface for WindowSurface {
+impl super::GfxWindow for WindowSurface {
     fn size(&self) -> (u32, u32) {
         let s = self.0.inner_size();
         (s.width, s.height)
+    }
+
+    /// On the event loop's thread (macOS: the main thread, where the
+    /// back end's `CAMetalLayer` must be made), waiting for it.
+    fn on_window_thread(&self, f: Box<dyn FnOnce() + Send>) {
+        if on_loop(move |_| f()).is_none() {
+            crate::log::note("native platform: no event loop for on_window_thread");
+        }
     }
 }
 
@@ -920,18 +928,13 @@ impl Platform for NativePlatform {
     }
 
     fn graphics(&self) -> Box<dyn crate::gfx::Backend> {
-        // the wgpu back end takes `surface()` once it is in place
-        Box::new(crate::gfx::Null::default())
+        // the wgpu back end on the game's window (offscreen before one
+        // exists; the null device in a build without `gfx-wgpu`)
+        crate::gfx::wgpu_backend(self.gfx_window())
     }
 
-    fn surface(&self) -> Option<Arc<dyn super::Surface>> {
-        game_window().map(|w| Arc::new(WindowSurface(w)) as Arc<dyn super::Surface>)
-    }
-
-    fn on_window_thread(&self, f: Box<dyn FnOnce() + Send>) {
-        if on_loop(move |_| f()).is_none() {
-            crate::log::note("native platform: no event loop for on_window_thread");
-        }
+    fn gfx_window(&self) -> Option<Arc<dyn super::GfxWindow>> {
+        game_window().map(|w| Arc::new(WindowSurface(w)) as Arc<dyn super::GfxWindow>)
     }
 
     fn input_devices(&self) -> bool {

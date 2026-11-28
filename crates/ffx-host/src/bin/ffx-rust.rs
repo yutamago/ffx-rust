@@ -26,7 +26,9 @@
 //! "Game speed").
 //!
 //! `FFX_HOST_GFX=null` picks the null device as `--gfx-null` does (harness
-//! runs pass no arguments).
+//! runs pass no arguments); `FFX_HOST_GFX=wgpu` the wgpu back end
+//! (docs/host.md, "The wgpu back end"), on the platform's window or
+//! offscreen.
 //!
 //! Under the test harness (`FFX_HARNESS=<port>`, docs/harness.md "Two
 //! processes") it serves the harness protocol, takes its Documents folder
@@ -92,6 +94,9 @@ fn run() -> ExitCode {
     let mut opts = ffx_host::Options::default();
     // `FFX_HOST_GFX=null`: the null device, as `--gfx-null` (for harness
     // runs, which pass no arguments: a hang bisected to the real device)
+    if std::env::var("FFX_HOST_GFX").is_ok_and(|v| v == "wgpu") {
+        opts.gfx.backend = ffx_host::gfx::Choice::Wgpu;
+    }
     if std::env::var("FFX_HOST_GFX").is_ok_and(|v| v == "null") {
         opts.gfx.backend = ffx_host::gfx::Choice::Null;
     }

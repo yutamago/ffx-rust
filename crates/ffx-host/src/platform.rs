@@ -39,16 +39,6 @@ pub mod steam_api;
 #[cfg(windows)]
 pub mod windows;
 
-/// A window a graphics back end draws into: its raw-window-handle 0.6
-/// handles and its client size (`wgpu::Instance::create_surface` takes an
-/// `Arc<dyn Surface>`).
-pub trait Surface:
-    raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle + Send + Sync
-{
-    /// The client area in physical pixels (0 x 0 while minimised).
-    fn size(&self) -> (u32, u32);
-}
-
 /// A rectangle, as Win32's `RECT`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Rect {
@@ -130,6 +120,22 @@ pub struct WindowRequest<'a> {
     pub width: i32,
     /// See `x`.
     pub height: i32,
+}
+
+/// A window the wgpu back end draws into (`crate::gfx::wgpu`), handed out by
+/// a platform with a real window ([`Platform::gfx_window`]): its
+/// `raw-window-handle` handles and its client size.
+pub trait GfxWindow:
+    raw_window_handle::HasWindowHandle + raw_window_handle::HasDisplayHandle + Send + Sync
+{
+    /// The client area in pixels (the surface's size; 0 while minimised).
+    fn size(&self) -> (u32, u32);
+    /// Runs `f` on the thread that owns the window and returns when it
+    /// ran: the back end makes its surface there (Metal needs the main
+    /// thread). Default: on the caller's thread.
+    fn on_window_thread(&self, f: Box<dyn FnOnce() + Send>) {
+        f();
+    }
 }
 
 /// A `DirectInput` property (`Set/GetProperty`): `MAKEDIPROP(n)` or a GUID.
@@ -277,17 +283,11 @@ pub trait Platform: Send + Sync {
     /// recording, so it doesn't depend on the back end); `Present` shows a
     /// frame.
     fn graphics(&self) -> Box<dyn crate::gfx::Backend>;
-    /// The game's window for a graphics back end that draws into it
-    /// (`None`: no window of this kind; draw offscreen). Asked at the
-    /// game's `D3D11CreateDevice(AndSwapChain)`, after `CreateWindowExA`.
-    fn surface(&self) -> Option<std::sync::Arc<dyn Surface>> {
+    /// The window the wgpu back end draws into (`FFX_HOST_GFX=wgpu`, or a
+    /// platform's own `graphics` through `crate::gfx::wgpu_backend`);
+    /// `None`: offscreen.
+    fn gfx_window(&self) -> Option<std::sync::Arc<dyn GfxWindow>> {
         None
-    }
-    /// Runs `f` on the thread that owns the window (macOS: the process's
-    /// main thread, where a `CAMetalLayer` must be made) and waits for it;
-    /// by default here.
-    fn on_window_thread(&self, f: Box<dyn FnOnce() + Send>) {
-        f();
     }
 
     // ---- input (the game's input threads, inside the layer's calls) -----

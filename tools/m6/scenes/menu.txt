@@ -1,0 +1,7 @@
+# the main menu on the deck, as draw-gate-deck without its capture
+load direct 1 cdsp0000 lockstep
+lockstep on
+pin
+wait 120
+press triangle 4 40
+wait 20
